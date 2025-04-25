@@ -24,6 +24,7 @@ First, as an easy start we can work with crystalline materials that also exist a
 4. (Mg,Fe)2​Al4​Si5​O18​ (Cordierite; NB: Achraf mentioned that Fe might be tricky due to different charge states)
 
 Later, more complicated glasses from Schott can be considered. The following are only the approximate compositions, taken from the internet:
+
 5. DGG3:
    - SiO2​ (~78.56%)
    - B2​O3​ (~12.7%)
