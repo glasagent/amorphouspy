@@ -51,4 +51,4 @@ jobs:
       run: |
         pip install --no-deps --no-build-isolation -e pyiron_glasagent
         cd notebooks
-        papermill Meltquench.ipynb Meltquench_out.ipynb-k "python3"
+        papermill Meltquench.ipynb Meltquench_out.ipynb -k "python3"
