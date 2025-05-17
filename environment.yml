@@ -1,0 +1,11 @@
+channels:
+- conda-forge
+dependencies:
+- python =3.12
+- ase =3.25.0
+- lammps =2024.06.27=*_openmpi_*
+- pandas =2.2.3
+- pyiron_atomistics =0.7.6
+- pyiron_base =0.12.0
+- scipy =1.15.2
+- structuretoolkit =0.0.32
