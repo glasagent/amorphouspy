@@ -13,7 +13,7 @@ jobs:
     - uses: psf/black@stable
       with:
         options: "--check --diff"
-        src: ./python_glasagent/src/python_glasagent
+        src: ./pyironglasagent/src/pyiron_glasagent
 
   pip_check:
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
     - name: Pip check
       shell: bash -l {0}
       run: |
-        pip install --no-deps --no-build-isolation -e python_glasagent
+        pip install --no-deps --no-build-isolation -e pyiron_glasagent
         pip check
 
   melt_quench:
@@ -49,7 +49,7 @@ jobs:
     - name: Installation and setup
       shell: bash -l {0}
       run: |
-        pip install --no-deps --no-build-isolation -e python_glasagent
+        pip install --no-deps --no-build-isolation -e pyiron_glasagent
         conda install -c conda-forge jupyter papermill
     - name: Tests
       shell: bash -l {0}
