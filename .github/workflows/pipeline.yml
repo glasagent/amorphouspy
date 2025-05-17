@@ -49,7 +49,6 @@ jobs:
     - name: Tests
       shell: bash -l {0}
       run: |
-        conda install -y -c conda-forge jupyter papermill
         pip install --no-deps --no-build-isolation -e pyiron_glasagent
         cd notebooks
         papermill Meltquench.ipynb Meltquench_out.ipynb-k "python3"
