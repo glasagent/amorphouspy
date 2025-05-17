@@ -13,7 +13,7 @@ jobs:
     - uses: psf/black@stable
       with:
         options: "--check --diff"
-        src: ./pyironglasagent/src/pyiron_glasagent
+        src: ./pyiron_glasagent/src/pyiron_glasagent
 
   pip_check:
     runs-on: ubuntu-latest
