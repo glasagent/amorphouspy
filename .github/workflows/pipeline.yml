@@ -35,7 +35,7 @@ jobs:
         pip check
 
   melt_quench:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - name: Conda config
@@ -46,13 +46,10 @@ jobs:
         miniforge-version: latest
         condarc-file: .condarc
         environment-file: environment.yml
-    - name: Installation and setup
-      shell: bash -l {0}
-      run: |
-        pip install --no-deps --no-build-isolation -e pyiron_glasagent
-        conda install -c conda-forge jupyter papermill
     - name: Tests
       shell: bash -l {0}
       run: |
+        conda install -y -c conda-forge jupyter papermill
+        pip install --no-deps --no-build-isolation -e pyiron_glasagent
         cd notebooks
         papermill Meltquench.ipynb Meltquench_out.ipynb-k "python3"
