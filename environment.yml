@@ -3,6 +3,7 @@ channels:
 dependencies:
 - python =3.12
 - ase =3.25.0
+- hatchling
 - lammps =2024.06.27=*_openmpi_*
 - pandas =2.2.3
 - pyiron_atomistics =0.7.6
