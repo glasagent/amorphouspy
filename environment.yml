@@ -10,8 +10,8 @@ dependencies:
 - pandas =2.2.3
 - papermill
 - pygraphviz =1.14
-- pyiron_atomistics =0.7.6
-- pyiron_base =0.11.12
+- pyiron_atomistics =0.7.7
+- pyiron_base =0.12.0
 - pyiron-data =0.0.30
 - scipy =1.15.2
 - structuretoolkit =0.0.32
