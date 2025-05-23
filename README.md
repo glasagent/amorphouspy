@@ -18,6 +18,12 @@ pip install -e pyiron_glass
 notebook notebooks/Meltquench.ipynb
 ```
 
+## Developer setup
+In addition, install
+```
+pip install black pylint pytest
+```
+
 
 # Current To Do's
 In the "GlasAgent Atomistik" meeting on 14.04.2025 with Jan, Achraf, Tilmann, Leopold and Marcel we decided on the following first steps:

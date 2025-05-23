@@ -3,11 +3,11 @@ channels:
 - conda-forge
 dependencies:
 - python =3.12
-- ase =3.25.0
+- ase >=3.25.0
 - hatchling
 - jupyter
 - lammps =2024.06.27=*_openmpi_*
-- networkx =3.4.2
+- networkx ~=3.4
 - pandas =2.2.3
 - papermill
 - pygraphviz =1.14
