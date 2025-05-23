@@ -1,15 +1,16 @@
 # Import atomic masses from ASE, which provides a complete and maintained data source
 from ase.data import atomic_masses_iupac2016, chemical_symbols
 
+
 def get_atomic_mass(element):
     """
     Get the atomic mass of an element.
-    
+
     Parameters
     ----------
     element : str or int
         Chemical symbol or atomic number
-        
+
     Returns
     -------
     float
@@ -20,5 +21,5 @@ def get_atomic_mass(element):
         atomic_number = chemical_symbols.index(element)
     else:
         atomic_number = element
-    
+
     return atomic_masses_iupac2016[atomic_number]

@@ -122,9 +122,7 @@ def create_random_atoms(
         attempts = 0
         while placed < count:
             if attempts >= max_attempts_per_atom:
-                raise RuntimeError(
-                    f"Failed to place {elem} atoms: increase box or reduce min_distance"
-                )
+                raise RuntimeError(f"Failed to place {elem} atoms: increase box or reduce min_distance")
             pos = np.random.uniform(0, box_length, size=3)
             if all(np.linalg.norm(pos - p) >= min_distance for p in positions):
                 atoms.append({"element": elem, "position": pos.tolist()})
@@ -137,9 +135,7 @@ def create_random_atoms(
     return atoms  # , atom_counts
 
 
-def get_box_from_density(
-    composition: str, n_molecules: int, STOICHIOMETRY: dict, density: float = 2.65
-) -> float:
+def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict, density: float = 2.65) -> float:
     """
     Calculate the cubic box length in angstroms needed for a given composition,
     number of molecules, and target density (g/cm^3).
@@ -172,10 +168,7 @@ def get_box_from_density(
 
     # 3. Total mass in grams
     #    (sum of atom_counts × atomic_mass) / Avogadro
-    total_mass_g = (
-        sum(atom_counts[el] * get_atomic_mass(el) for el in atom_counts)
-        / scipy.constants.Avogadro
-    )
+    total_mass_g = sum(atom_counts[el] * get_atomic_mass(el) for el in atom_counts) / scipy.constants.Avogadro
 
     # 4. Compute volume (cm3) and convert to \AA3 (1 cm3 = 1e24 \AA3)
     volume_cm3 = total_mass_g / density
@@ -205,9 +198,7 @@ def get_ase_structure(atoms_dict: dict):
     list_of_lines = []
     # with open(filename, 'w') as f:
     # Header
-    list_of_lines.append(
-        "LAMMPS data file via create_random_atoms and write_lammps_data\n\n"
-    )
+    list_of_lines.append("LAMMPS data file via create_random_atoms and write_lammps_data\n\n")
     list_of_lines.append(f"{n_atoms} atoms\n")
     list_of_lines.append(f"{n_types} atom types\n\n")
     # Box dims
@@ -218,7 +209,7 @@ def get_ase_structure(atoms_dict: dict):
     # Masses section
     list_of_lines.append("Masses\n\n")
     for elem, type_id in element_to_type.items():
-        mass = get_atomic_mass(elem) # You can later replace with real atomic masses if needed
+        mass = get_atomic_mass(elem)  # You can later replace with real atomic masses if needed
         list_of_lines.append(f"{type_id} {mass} # {elem}\n")
 
     list_of_lines.append("\nAtoms\n\n")
@@ -228,7 +219,9 @@ def get_ase_structure(atoms_dict: dict):
         elem = atom["element"]
         type_id = element_to_type[elem]
         x, y, z = atom["position"]
-        q = 0.0  # Charge, I put 0 for simplicity. the real value should be set by the potential parameters either in LAMMPS or in pyiron
+        q = 0.0
+        # Charge, I put 0 for simplicity.
+        # the real value should be set by the potential parameters either in LAMMPS or in pyiron
         # it can also be calculated automatically here if needed but the potential model should be specified in advance.
         # I wanted to keep these function as general as possible.
         list_of_lines.append(f"{i} {type_id} {q:.6f} {x:.6f} {y:.6f} {z:.6f}\n")
@@ -248,9 +241,7 @@ def get_structure_dict(
     max_attempts_per_atom=10000,
 ):
     STOICHIOMETRY = extract_stoichiometry(comp)
-    box_length = get_box_from_density(
-        comp, n_molecules=n_molecules, density=density, STOICHIOMETRY=STOICHIOMETRY
-    )
+    box_length = get_box_from_density(comp, n_molecules=n_molecules, density=density, STOICHIOMETRY=STOICHIOMETRY)
     atoms_dict = create_random_atoms(
         comp,
         n_molecules=n_molecules,

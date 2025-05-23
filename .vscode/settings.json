@@ -1,16 +1,10 @@
 {
-  "python.formatting.provider": "black",
-  "python.formatting.blackPath": "${env:CONDA_PREFIX}/bin/black",
   "editor.formatOnSave": true,
   "[python]": {
-    "editor.defaultFormatter": "ms-python.python",
-    "editor.formatOnSave": true
+    "editor.defaultFormatter": "ms-python.black-formatter"
   },
-  "python.linting.enabled": true,
-  "python.linting.pylintEnabled": true,
-  "python.linting.pylintPath": "${env:CONDA_PREFIX}/bin/pylint",
   "python.testing.pytestArgs": [
-    "src"
+    "pyiron_glass/src"
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true
