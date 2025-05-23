@@ -15,7 +15,7 @@ Later, these workflows serve as blueprints intended to be used by "Otto", the Gl
 ```
 conda env create -f environment.yml
 pip install -e pyiron_glass
-notebook notebooks/Meltquench.ipynb
+jupyter notebook notebooks/Meltquench.ipynb
 ```
 
 ## Developer setup
