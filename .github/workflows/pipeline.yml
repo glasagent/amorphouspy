@@ -13,7 +13,7 @@ jobs:
     - uses: psf/black@stable
       with:
         options: "--check --diff"
-        src: ./pyiron_glasagent/src/pyiron_glasagent
+        src: ./pyiron_glass/src/pyiron_glass
 
   pip_check:
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
     - name: Pip check
       shell: bash -l {0}
       run: |
-        pip install --no-deps --no-build-isolation -e pyiron_glasagent
+        pip install --no-deps --no-build-isolation -e pyiron_glass
         pip check
 
   melt_quench:
@@ -49,6 +49,6 @@ jobs:
     - name: Tests
       shell: bash -l {0}
       run: |
-        pip install --no-deps --no-build-isolation -e pyiron_glasagent
+        pip install --no-deps --no-build-isolation -e pyiron_glass
         cd notebooks
         papermill Meltquench.ipynb Meltquench_out.ipynb -k "python3"
