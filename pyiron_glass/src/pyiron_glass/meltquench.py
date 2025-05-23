@@ -57,7 +57,7 @@ def melt_quench_simulation(
     os.makedirs(working_directory, exist_ok=True)
 
     # 2) Stage 1: Heat up / initial NVT
-    shell_output, parsed_output, job_crashed = lammps_function(
+    _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
         structure=structure,
         potential=potential,
@@ -67,7 +67,8 @@ def melt_quench_simulation(
                 temperature_low,
                 temperature_high,
             ],  # heat from T = 300 K to T = 5000 K
-            "n_ionic_steps": 47_000,  # number of MD steps used for the heating can be changes to calculate  specific rate
+            "n_ionic_steps": 47_000,  # number of MD steps used for the heating
+            # can be changes to calculate  specific rate
             "time_step": 1.0,  # 1 fs time step
             "n_print": n_print,  # output every 1000 steps
             "seed": 12345,  # random seed for velocities
@@ -103,7 +104,7 @@ def melt_quench_simulation(
             os.remove(file_path)
 
     # 3) Stage 2: High-T NVT equilibration at e.g. 1000 K
-    shell_output, parsed_output, job_crashed = lammps_function(
+    _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
         structure=structure_1,
         potential=potential,
@@ -144,7 +145,7 @@ def melt_quench_simulation(
             os.remove(file_path)
 
     # Run Lammps just as a function - step3
-    shell_output, parsed_output, job_crashed = lammps_function(
+    _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
         structure=structure_2,
         potential=potential,
@@ -154,7 +155,8 @@ def melt_quench_simulation(
                 temperature_high,
                 temperature_low,
             ],  # cooling  from 5000 down to 300 K
-            "n_ionic_steps": 47_000,  # number of MD steps used for the cooling can be changes to calculate  specific rate.
+            # number of MD steps used for the cooling can be changes to calculate  specific rate.
+            "n_ionic_steps": 47_000,
             "time_step": 1.0,
             "n_print": n_print,
             "initial_temperature": 0,
@@ -188,7 +190,7 @@ def melt_quench_simulation(
             os.remove(file_path)
 
     # Run Lammps just as a function - step4
-    shell_output, parsed_output, job_crashed = lammps_function(
+    _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
         structure=structure_3,
         potential=potential,
@@ -196,7 +198,8 @@ def melt_quench_simulation(
         calc_kwargs={
             "temperature": temperature_low,  # cooling  from 5000 down to 300 K
             "pressure": 0.0,  # 0 MPa, release the pressure
-            "n_ionic_steps": 10_000,  # number of MD steps used for the cooling can be changes to calculate  specific rate.
+            # number of MD steps used for the cooling can be changes to calculate  specific rate.
+            "n_ionic_steps": 10_000,
             "time_step": 1.0,
             "n_print": n_print,
             "initial_temperature": 0,
@@ -229,14 +232,15 @@ def melt_quench_simulation(
             os.remove(file_path)
 
     # Run Lammps just as a function - step5
-    shell_output, parsed_output, job_crashed = lammps_function(
+    _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
         structure=structure_4,
         potential=potential,
         calc_mode="md",
         calc_kwargs={
             "temperature": temperature_low,  # cooling  from 5000 down to 300 K
-            "n_ionic_steps": 100_000,  # number of MD steps used for the cooling can be changes to calculate  specific rate.
+            # number of MD steps used for the cooling can be changes to calculate  specific rate.
+            "n_ionic_steps": 100_000,
             "time_step": 1.0,
             "n_print": n_print,
             "initial_temperature": 0,

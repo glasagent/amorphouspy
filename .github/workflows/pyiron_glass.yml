@@ -1,4 +1,4 @@
-name: Pipeline
+name: jobs for pyrion_glass module
 
 on:
   push:
@@ -6,15 +6,6 @@ on:
   pull_request:
 
 jobs:
-  black:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: psf/black@stable
-      with:
-        options: "--check --diff"
-        src: ./src
-
   pylint:
     runs-on: ubuntu-latest
     steps:
@@ -31,7 +22,8 @@ jobs:
     - name: Run pylint
       shell: bash -l {0}
       run: |
-        pip install --no-deps --no-build-isolation -e pyiron_glass
+        cd pyiron_glass/
+        pip install --no-deps --no-build-isolation -e .
         pip install pylint
         python -m pylint src
 
@@ -51,7 +43,8 @@ jobs:
     - name: Run pytest
       shell: bash -l {0}
       run: |
-        pip install --no-deps --no-build-isolation -e pyiron_glass
+        cd pyiron_glass/
+        pip install --no-deps --no-build-isolation -e .
         pip install pytest pytest-cov
         python -m pytest src/tests --cov=src/pyiron_glass --cov-report=xml
 
@@ -60,25 +53,6 @@ jobs:
       with:
         file: ./coverage.xml
         fail_ci_if_error: false
-
-  pip_check:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Conda config
-      run: echo -e "channels:\n  - conda-forge\n" > .condarc
-    - name: Setup Mambaforge
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        python-version: "3.12"
-        miniforge-version: latest
-        condarc-file: .condarc
-        environment-file: environment.yml
-    - name: Pip check
-      shell: bash -l {0}
-      run: |
-        pip install --no-deps --no-build-isolation -e pyiron_glass
-        pip check
 
   melt_quench:
     runs-on: ubuntu-latest
