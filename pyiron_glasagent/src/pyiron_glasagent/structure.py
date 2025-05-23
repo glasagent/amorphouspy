@@ -230,7 +230,7 @@ def get_ase_structure(atoms_dict: dict):
         elem = atom["element"]
         type_id = element_to_type[elem]
         x, y, z = atom["position"]
-        q = 0.0  # Charge, I put 0 for simplicity. the real value should be set by the potential parameters either in LAMMPS or in pyrion
+        q = 0.0  # Charge, I put 0 for simplicity. the real value should be set by the potential parameters either in LAMMPS or in pyiron
         # it can also be calculated automatically here if needed but the potential model should be specified in advance.
         # I wanted to keep these function as general as possible.
         list_of_lines.append(f"{i} {type_id} {q:.6f} {x:.6f} {y:.6f} {z:.6f}\n")
