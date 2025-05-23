@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pyiron_glasagent"
+name = "pyiron_glass"
 version = "0.0.1"
 description = "pyiron workflows for the glasagent"
 authors = [

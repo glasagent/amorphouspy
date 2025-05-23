@@ -7,8 +7,8 @@ from ase.io import read
 from pyiron_base import job
 import scipy
 
-from pyiron_glasagent.mass import ATOMIC_MASSES
-from pyiron_glasagent.shared import get_element_types_dict
+from pyiron_glass.mass import ATOMIC_MASSES
+from pyiron_glass.shared import get_element_types_dict
 
 # 1. Compile once: match an element symbol ([A-Z][a-z]*)
 #    followed by an optional integer count (\d*)

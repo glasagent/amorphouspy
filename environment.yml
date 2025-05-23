@@ -1,3 +1,4 @@
+name: pyiron-glass
 channels:
 - conda-forge
 dependencies:

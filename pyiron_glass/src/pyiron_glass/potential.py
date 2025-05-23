@@ -1,7 +1,7 @@
 import pandas
 from pyiron_base import job
 
-from pyiron_glasagent.shared import get_element_types_dict
+from pyiron_glass.shared import get_element_types_dict
 
 
 @job
