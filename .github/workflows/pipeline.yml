@@ -1,0 +1,54 @@
+name: Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  black:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: psf/black@stable
+      with:
+        options: "--check --diff"
+        src: ./pyiron_glasagent/src/pyiron_glasagent
+
+  pip_check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Conda config
+      run: echo -e "channels:\n  - conda-forge\n" > .condarc
+    - name: Setup Mambaforge
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        python-version: "3.12"
+        miniforge-version: latest
+        condarc-file: .condarc
+        environment-file: environment.yml
+    - name: Pip check
+      shell: bash -l {0}
+      run: |
+        pip install --no-deps --no-build-isolation -e pyiron_glasagent
+        pip check
+
+  melt_quench:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Conda config
+      run: echo -e "channels:\n  - conda-forge\n" > .condarc
+    - uses: conda-incubator/setup-miniconda@v3
+      with:
+        python-version: "3.12"
+        miniforge-version: latest
+        condarc-file: .condarc
+        environment-file: environment.yml
+    - name: Tests
+      shell: bash -l {0}
+      run: |
+        pip install --no-deps --no-build-isolation -e pyiron_glasagent
+        cd notebooks
+        papermill Meltquench.ipynb Meltquench_out.ipynb -k "python3"
