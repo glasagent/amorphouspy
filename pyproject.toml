@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pyiron_glass"
+version = "0.0.1"
+description = "pyiron workflows atomistic modeling of oxide glasses"
+authors = [
+  { name = "Achraf Atila", email = "achraf.atila@bam.de" },
+  { name = "Jan Janssen", email = "janssen@mpie.de" },
+  { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
+]
+license = { file = "../LICENSE" }
+dependencies = [
+  "ase",
+  "pandas",
+  "pyiron_atomistics",
+  "pyiron_base",
+  "scipy",
+  "structuretoolkit",
+]
+
+[tool.black]
+line-length = 120
+target-version = ['py312']
+include = '\.pyi?$'
+
+[tool.pytest]
+testpaths = ["src/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.pylint.master]
+max-line-length = 120
+max-locals = 25
+max-args = 10
+min-public-methods = 0
+max-public-methods = 20
+max-bool-expr = 5
+
+[tool.pylint.messages_control]
+disable = [
+    "C0103",  # Invalid name (too short, etc.)
+    "C0111",  # Missing docstring
+    "C0302",  # Too many lines in module
+    "C1801",  # Do not use len(SEQUENCE) to determine if a sequence is empty
+    "C0411",  # Import order
+    "R0903",  # Too few public methods
+    "R0913",  # Too many arguments
+    "R0914",  # Too many local variables
+    "W0212",  # Access to a protected member
+    "W0621",  # Redefining name from outer scope
+    "W0622",  # Redefining built-in
+]
