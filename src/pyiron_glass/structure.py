@@ -7,7 +7,7 @@ from ase.io import read
 from pyiron_base import job
 import scipy
 
-from pyiron_glass.mass import ATOMIC_MASSES
+from pyiron_glass.mass import get_atomic_mass
 from pyiron_glass.shared import get_element_types_dict
 
 # 1. Compile once: match an element symbol ([A-Z][a-z]*)
@@ -150,7 +150,7 @@ def get_box_from_density(
       1. Parse composition into oxide fractions.
       2. Compute molecule counts and adjust rounding discrepancies.
       3. Tally per-element atom counts via STOICHIOMETRY.
-      4. Compute total mass (g) using ATOMIC_MASSES and AVOGADRO.
+      4. Compute total mass (g) using get_atomic_mass and AVOGADRO.
       5. Derive volume (cm3) from mass/density, convert to angstrom3,
          and return cube root for box length.
     """
@@ -173,7 +173,7 @@ def get_box_from_density(
     # 3. Total mass in grams
     #    (sum of atom_counts × atomic_mass) / Avogadro
     total_mass_g = (
-        sum(atom_counts[el] * ATOMIC_MASSES[el] for el in atom_counts)
+        sum(atom_counts[el] * get_atomic_mass(el) for el in atom_counts)
         / scipy.constants.Avogadro
     )
 
@@ -218,9 +218,7 @@ def get_ase_structure(atoms_dict: dict):
     # Masses section
     list_of_lines.append("Masses\n\n")
     for elem, type_id in element_to_type.items():
-        mass = ATOMIC_MASSES[
-            elem
-        ]  # You can later replace with real atomic masses if needed
+        mass = get_atomic_mass(elem) # You can later replace with real atomic masses if needed
         list_of_lines.append(f"{type_id} {mass} # {elem}\n")
 
     list_of_lines.append("\nAtoms\n\n")
