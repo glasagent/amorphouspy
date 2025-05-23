@@ -5,10 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "pyiron_glass"
 version = "0.0.1"
-description = "pyiron workflows for the glasagent"
+description = "pyiron workflows atomistic modeling of oxide glasses"
 authors = [
   { name = "Achraf Atila", email = "achraf.atila@bam.de" },
   { name = "Jan Janssen", email = "janssen@mpie.de" },
+  { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
 ]
 license = { file = "../LICENSE" }
 dependencies = [
@@ -19,3 +20,8 @@ dependencies = [
   "scipy==1.15.2",
   "structuretoolkit==0.0.32",
 ]
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+include = '\.pyi?$'
