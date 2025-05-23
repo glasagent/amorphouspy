@@ -18,7 +18,7 @@ ELEMENT = re.compile(r"([A-Z][a-z]*)(\d*)")
 
 def extract_composition(composition: str) -> dict[str, float]:
     """
-    Function written to extract the fraction of each elemet from a given composition.
+    Function written to extract the fraction of each element from a given composition.
     The composition can be given as a fraction or in mol%, and the function will return
     the molar fraction in all cases
     Example of usage: extract_composition("0.25CaO-0.25Al2O3-0.5SiO2")
