@@ -1,7 +1,23 @@
-# Scope of the project
+# pyiron workflows for atomistic modeling of oxide glasses
+
 This project aims at setting up pyiron-workflows to perform atomistic simulations for glasses.
 This concerns, but is not limited to, generating initial structural models, performing melt-quenching simulations as well as analysing relevant properties. 
-Later, these workflows serve as blueprints intended to be used by "Otto". 
+
+Later, these workflows serve as blueprints intended to be used by "Otto", the GlasAgent. 
+
+## Contents
+
+- `pyiron_glass`: pyiron workflows for atomistic modeling of oxide glasses
+- `notebooks`: Jupyter notebooks for atomistic modeling of oxide glasses	
+
+## Installation
+
+```
+conda env create -f environment.yml
+pip install -e pyiron_glass
+notebook notebooks/Meltquench.ipynb
+```
+
 
 # Current To Do's
 In the "GlasAgent Atomistik" meeting on 14.04.2025 with Jan, Achraf, Tilmann, Leopold and Marcel we decided on the following first steps:
