@@ -1,0 +1,10 @@
+{
+  "python.formatting.provider": "black",
+  "python.formatting.blackPath": "${env:CONDA_PREFIX}/bin/black",
+  "editor.formatOnSave": true,
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.python",
+    "editor.formatOnSave": true
+  },
+  "python.linting.enabled": true
+}
