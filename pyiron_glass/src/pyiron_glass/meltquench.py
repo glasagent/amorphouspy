@@ -49,9 +49,17 @@ def melt_quench_simulation(
     temperature_high=5000.0,
     temperature_low=300.0,
     n_print=1000,
+    heating_rate=1e12,
+    cooling_rate=1e12,
 ):
-    # Here is an attempt to create a LAMMPS simulation with pyiron_atomistics
-    # I am not very sure this is the best way to do it, however, I think it is working
+    """
+    Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
+    """
+
+    seconds_to_femtos = 1e-15
+
+    heating_steps = int((temperature_high - temperature_low) / (heating_rate*seconds_to_femtos))
+    cooling_steps = int((temperature_high - temperature_low) / (cooling_rate*seconds_to_femtos))
 
     # Create working directory
     os.makedirs(working_directory, exist_ok=True)
@@ -66,11 +74,10 @@ def melt_quench_simulation(
             "temperature": [
                 temperature_low,
                 temperature_high,
-            ],  # heat from T = 300 K to T = 5000 K
-            "n_ionic_steps": 47_000,  # number of MD steps used for the heating
-            # can be changes to calculate  specific rate
+            ],  # heat from T = temperature_low in K to T = temperature_high K
+            "n_ionic_steps": heating_steps,  # number of MD steps used for the heating calculated from the heating rate
             "time_step": 1.0,  # 1 fs time step
-            "n_print": n_print,  # output every 1000 steps
+            "n_print": n_print,  # output every n_print steps
             "seed": 12345,  # random seed for velocities
             "initial_temperature": temperature_low,  # initialize at 300 K
             #
@@ -154,9 +161,8 @@ def melt_quench_simulation(
             "temperature": [
                 temperature_high,
                 temperature_low,
-            ],  # cooling  from 5000 down to 300 K
-            # number of MD steps used for the cooling can be changes to calculate  specific rate.
-            "n_ionic_steps": 47_000,
+            ],  # cooling  from temperature_high down to temperature_low K.
+            "n_ionic_steps": cooling_steps,
             "time_step": 1.0,
             "n_print": n_print,
             "initial_temperature": 0,
