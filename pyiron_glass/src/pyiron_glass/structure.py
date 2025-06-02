@@ -1,7 +1,7 @@
-import numpy as np
 import re
 from typing import Dict
 from io import StringIO
+import numpy as np
 
 from ase.io import read
 from pyiron_base import job
@@ -70,7 +70,6 @@ def extract_stoichiometry(composition: str) -> Dict[str, Dict[str, int]]:
     return stoichiometry
 
 
-
 def create_random_atoms(
     composition: str,
     n_molecules: int,
@@ -94,12 +93,12 @@ def create_random_atoms(
         atoms: list of {"element": str, "position": [x, y, z]}
         atom_counts: dict of total counts per element
     """
-    import numpy as np
+
 
     def minimum_image_distance(pos1, pos2, box_length):
         delta = np.abs(pos1 - pos2)
         delta = np.where(delta > 0.5 * box_length, box_length - delta, delta)
-        return np.sqrt((delta ** 2).sum())
+        return np.sqrt((delta**2).sum())
 
     np.random.seed(seed)
 
