@@ -7,7 +7,7 @@ from pyiron_glass.shared import get_element_types_dict
 pedone_potential_params = {
     "Li": {"q": 0.6, "morse": (0.001114, 3.429506, 2.681360), "repulsion": 1.0},
     "Na": {"q": 0.6, "morse": (0.023363, 1.763867, 3.006315), "repulsion": 5.0},
-    "K":  {"q": 0.6, "morse": (0.011612, 2.062605, 3.305308), "repulsion": 5.0},
+    "K": {"q": 0.6, "morse": (0.011612, 2.062605, 3.305308), "repulsion": 5.0},
     "Be": {"q": 1.2, "morse": (0.239919, 2.527420, 1.815405), "repulsion": 1.0},
     "Mg": {"q": 1.2, "morse": (0.038908, 2.281000, 2.586153), "repulsion": 5.0},
     "Ca": {"q": 1.2, "morse": (0.030211, 2.241334, 2.923245), "repulsion": 5.0},
@@ -29,23 +29,24 @@ pedone_potential_params = {
     "Si": {"q": 2.4, "morse": (0.340554, 2.006700, 2.100000), "repulsion": 1.0},
     "Ge": {"q": 2.4, "morse": (0.158118, 2.294230, 2.261313), "repulsion": 5.0},
     "Sn": {"q": 2.4, "morse": (0.079400, 2.156770, 2.633076), "repulsion": 3.0},
-    "P":  {"q": 3.0, "morse": (0.831326, 2.585833, 1.800790), "repulsion": 1.0},
+    "P": {"q": 3.0, "morse": (0.831326, 2.585833, 1.800790), "repulsion": 1.0},
     "Nd": {"q": 1.8, "morse": (0.014580, 1.825100, 3.398717), "repulsion": 3.0},
     "Gd": {"q": 1.8, "morse": (0.000132, 2.013000, 4.351589), "repulsion": 3.0},
     "Er": {"q": 1.8, "morse": (0.040448, 2.294078, 2.837722), "repulsion": 3.0},
-    "O":  {"q": -1.2, "morse": (0.042395, 1.379316, 3.618701), "repulsion": 22.0},
+    "O": {"q": -1.2, "morse": (0.042395, 1.379316, 3.618701), "repulsion": 22.0},
 }
+
 
 @job
 def generate_potential(atoms_dict):
     types = get_element_types_dict(atoms_dict)
     config_lines = [
-        "# A. Pedone et.al., JPCB (2006) \n",
+        "# A. Pedone et.al., JPCB (2006), https://doi.org/10.1021/jp0611018\n",
         "units metal\n",
         "dimension 3\n",
         "atom_style charge\n",
         "\n",
-        "# create groups ###\n"
+        "# create groups ###\n",
     ]
 
     species = list(types.keys())
@@ -58,11 +59,13 @@ def generate_potential(atoms_dict):
         charge = pedone_potential_params[elem]["q"]
         config_lines.append(f"set type {types[elem]} charge {charge}\n")
 
-    config_lines.extend([
-        "\n### Pedone Potential Parameters ###\n",
-        "pair_style hybrid/overlay coul/dsf 0.25 8.0 morse 5.5 lennard/mdf 5.5 5.5\n",
-        "pair_coeff * * coul/dsf\n"
-    ])
+    config_lines.extend(
+        [
+            "\n### Pedone Potential Parameters ###\n",
+            "pair_style hybrid/overlay coul/dsf 0.25 8.0 morse 5.5 lennard/mdf 5.5 5.5\n",
+            "pair_coeff * * coul/dsf\n",
+        ]
+    )
 
     o_type = types.get("O")
     for elem in species:
@@ -70,29 +73,18 @@ def generate_potential(atoms_dict):
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
             config_lines.append(f"pair_coeff {i_type} {o_type} morse {D} {a} {r0}\n")
+            C = pedone_potential_params[elem]["repulsion"]
+            config_lines.append(f"pair_coeff {i_type} {o_type} lennard/mdf {C} 0.0\n")
 
         if elem != "O":
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
             config_lines.append(f"pair_coeff {i_type} {o_type} morse {D} {a} {r0}\n")
-
-    for elem in species:
-        if elem == "O":
-            i_type = types[elem]
-            C = pedone_potential_params[elem]["repulsion"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} lennard/mdf {C} 0.0\n")
-
-        if elem != "O":
-            i_type = types[elem]
             C = pedone_potential_params[elem]["repulsion"]
             config_lines.append(f"pair_coeff {i_type} {o_type} lennard/mdf {C} 0.0\n")
 
     config_lines.append("\npair_modify shift yes\n")
 
-    return pandas.DataFrame({
-        "Name": ["Pedone"],
-        "Filename": [[]],
-        "Model": ["Morse"],
-        "Species": [species],
-        "Config": [config_lines]
-    })
+    return pandas.DataFrame(
+        {"Name": ["Pedone"], "Filename": [[]], "Model": ["Morse"], "Species": [species], "Config": [config_lines]}
+    )

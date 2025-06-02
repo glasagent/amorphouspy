@@ -48,18 +48,44 @@ def melt_quench_simulation(
     working_directory,
     temperature_high=5000.0,
     temperature_low=300.0,
+    timestep=1.0,  # time step in fs
+    heating_rate=1e12,  # heating rate in K/s
+    cooling_rate=1e12,  # cooling rate in K/s
     n_print=1000,
-    heating_rate=1e12,
-    cooling_rate=1e12,
 ):
     """
     Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
+    This function heats a structure to a high temperature, equilibrates it,
+    and then cools it down to a low temperature, simulating a melt-quench process.
+    The heating and cooling rates are given in K/s, and the conversion into simulation steps is done automatically.
+    Parameters
+    ----------
+    structure : Atoms
+        The initial atomic structure to be melted and quenched.
+    potential : str
+        The potential file to be used for the simulation.
+    working_directory : str
+        The directory where the simulation files will be stored.
+    temperature_high : float, optional
+        The high temperature to which the structure will be heated (default is 5000.0 K).
+    temperature_low : float, optional
+        The low temperature to which the structure will be cooled (default is 300.0 K).
+    n_print : int, optional
+        The frequency of output during the simulation (default is 1000).
+    heating_rate : float, optional
+        The rate at which the temperature is increased during the heating phase, in K/s (default is 1e12 K/s).
+    cooling_rate : float, optional
+        The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
+    Returns
+    -------
+    dict
+        A dictionary containing the simulation steps and temperature data.
     """
 
-    seconds_to_femtos = 1e-15
+    seconds_to_femtos = 1e15
 
-    heating_steps = int((temperature_high - temperature_low) / (heating_rate*seconds_to_femtos))
-    cooling_steps = int((temperature_high - temperature_low) / (cooling_rate*seconds_to_femtos))
+    heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
+    cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
     # Create working directory
     os.makedirs(working_directory, exist_ok=True)
@@ -76,7 +102,7 @@ def melt_quench_simulation(
                 temperature_high,
             ],  # heat from T = temperature_low in K to T = temperature_high K
             "n_ionic_steps": heating_steps,  # number of MD steps used for the heating calculated from the heating rate
-            "time_step": 1.0,  # 1 fs time step
+            "time_step": timestep,  # default is 1 fs time step
             "n_print": n_print,  # output every n_print steps
             "seed": 12345,  # random seed for velocities
             "initial_temperature": temperature_low,  # initialize at 300 K
@@ -119,7 +145,7 @@ def melt_quench_simulation(
         calc_kwargs={
             "temperature": temperature_high,
             "n_ionic_steps": 1_000,
-            "time_step": 1.0,
+            "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": 0,
             "pressure": None,
@@ -163,7 +189,7 @@ def melt_quench_simulation(
                 temperature_low,
             ],  # cooling  from temperature_high down to temperature_low K.
             "n_ionic_steps": cooling_steps,
-            "time_step": 1.0,
+            "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": 0,
             "pressure": None,
@@ -206,7 +232,7 @@ def melt_quench_simulation(
             "pressure": 0.0,  # 0 MPa, release the pressure
             # number of MD steps used for the cooling can be changes to calculate  specific rate.
             "n_ionic_steps": 10_000,
-            "time_step": 1.0,
+            "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": 0,
         },
@@ -247,7 +273,7 @@ def melt_quench_simulation(
             "temperature": temperature_low,  # cooling  from 5000 down to 300 K
             # number of MD steps used for the cooling can be changes to calculate  specific rate.
             "n_ionic_steps": 100_000,
-            "time_step": 1.0,
+            "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": 0,
         },
