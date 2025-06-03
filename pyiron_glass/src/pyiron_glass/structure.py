@@ -94,7 +94,6 @@ def create_random_atoms(
         atom_counts: dict of total counts per element
     """
 
-
     def minimum_image_distance(pos1, pos2, box_length):
         delta = np.abs(pos1 - pos2)
         delta = np.where(delta > 0.5 * box_length, box_length - delta, delta)
