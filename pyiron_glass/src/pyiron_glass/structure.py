@@ -1,7 +1,7 @@
-import numpy as np
 import re
 from typing import Dict
 from io import StringIO
+import numpy as np
 
 from ase.io import read
 from pyiron_base import job
@@ -80,31 +80,36 @@ def create_random_atoms(
     max_attempts_per_atom: int = 100000,
 ):
     """
-    Generate random atom positions in a cubic box, according to a given composition.
+    Generate random atom positions in a periodic cubic box, according to a given composition.
 
     - composition: e.g. "0.25CaO-0.25Al2O3-0.5SiO2"
     - n_molecules: total number of molecules to define atom counts
-    - box_length: size of cubic box (calculate automatically from density of provided manually)
-    - min_distance: minimum distance between any two atoms the default value should be fine in general.
+    - box_length: size of cubic box (calculate automatically from density or provide manually)
+    - min_distance: minimum distance between any two atoms
     - seed: random seed for reproducibility
-    - max_attempts_per_atom: fallback for dense packing 100000 is a good value that should be enough in most cases.
+    - max_attempts_per_atom: max attempts to place an atom before giving up
 
     Returns:
-        atoms: list of {"element": str, "position": [x,y,z]}
+        atoms: list of {"element": str, "position": [x, y, z]}
         atom_counts: dict of total counts per element
     """
+
+
+    def minimum_image_distance(pos1, pos2, box_length):
+        delta = np.abs(pos1 - pos2)
+        delta = np.where(delta > 0.5 * box_length, box_length - delta, delta)
+        return np.sqrt((delta**2).sum())
+
     np.random.seed(seed)
 
     # 1. Determine total atom counts
     comp_dict = extract_composition(composition)
     molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
-    # adjust rounding error
     diff = n_molecules - sum(molecule_counts.values())
     if diff:
         main = max(comp_dict, key=comp_dict.get)
         molecule_counts[main] += diff
 
-    # compute per-element counts
     atom_counts = {}
     for ox, mol_cnt in molecule_counts.items():
         stoich = STOICHIOMETRY.get(ox)
@@ -113,7 +118,7 @@ def create_random_atoms(
         for elem, num in stoich.items():
             atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
 
-    # 2. Place atoms with min distance
+    # 2. Place atoms with min distance using periodic boundary conditions
     atoms = []
     positions = []
 
@@ -124,7 +129,7 @@ def create_random_atoms(
             if attempts >= max_attempts_per_atom:
                 raise RuntimeError(f"Failed to place {elem} atoms: increase box or reduce min_distance")
             pos = np.random.uniform(0, box_length, size=3)
-            if all(np.linalg.norm(pos - p) >= min_distance for p in positions):
+            if all(minimum_image_distance(pos, p, box_length) >= min_distance for p in positions):
                 atoms.append({"element": elem, "position": pos.tolist()})
                 positions.append(pos)
                 placed += 1
