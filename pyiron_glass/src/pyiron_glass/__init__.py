@@ -13,7 +13,6 @@ from pyiron_glass.structure_analysis import (
     write_distribution_to_file,
     compute_angles,
     write_angle_distribution,
-
 )
 
 __all__ = [
@@ -28,6 +27,4 @@ __all__ = [
     "write_distribution_to_file",
     "compute_angles",
     "write_angle_distribution",
-
-
 ]
