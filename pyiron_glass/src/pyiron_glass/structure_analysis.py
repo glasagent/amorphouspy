@@ -125,9 +125,19 @@ def compute_cell_list(
     return cells, n_cells, inv_cell_size
 
 
-def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> List[np.ndarray]:
-    shifts = [-1, 0, 1]
-    return [(ci + [dx, dy, dz]) % n_cells for dx in shifts for dy in shifts for dz in shifts]
+SHIFT_GRID_3D = np.stack(np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexing="ij"), axis=-1).reshape(-1, 3)
+
+
+def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
+    """
+    Generates neighboring cell indices for a given cell index in a 3D grid.
+    Args:
+        ci (np.ndarray): Current cell index as a 3-element array.
+        n_cells (np.ndarray): Total number of cells in each dimension.
+    Returns:
+        np.ndarray: Array of neighboring cell indices.
+    """
+    return (ci + SHIFT_GRID_3D) % n_cells
 
 
 def compute_distance(rij, box_size):
