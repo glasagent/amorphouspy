@@ -438,8 +438,3 @@ def test_compute_network_connectivity():
 
     delete_sample_dump()
 
-
-# Run tests manually if needed
-if __name__ == "__main__":
-    test_compute_coordination_O()
-    test_compute_network_connectivity()
