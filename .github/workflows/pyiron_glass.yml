@@ -68,26 +68,27 @@ jobs:
         file: ./coverage.xml
         fail_ci_if_error: false
 
-  # melt_quench:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #   - name: Conda config
-  #     run: echo -e "channels:\n  - conda-forge\n" > .condarc
-  #   - uses: conda-incubator/setup-miniconda@v3
-  #     with:
-  #       python-version: "3.12"
-  #       miniforge-version: latest
-  #       condarc-file: .condarc
-  #       environment-file: environment.yml
-  #   - name: Install dependencies
-  #     working-directory: pyiron_glass
-  #     shell: bash -l {0}
-  #     run: |
-  #       pip install --no-deps --no-build-isolation -e .
-  #       pip install -r requirements-dev.txt
-  #   - name: test notebooks
-  #     working-directory: pyiron_glass
-  #     shell: bash -l {0}
-  #     run: |
-  #       papermill Meltquench.ipynb Meltquench_out.ipynb -k "python3"
+
+#   melt_quench:
+#     runs-on: ubuntu-latest
+#     steps:
+#     - uses: actions/checkout@v4
+#     - name: Conda config
+#       run: echo -e "channels:\n  - conda-forge\n" > .condarc
+#     - uses: conda-incubator/setup-miniconda@v3
+#       with:
+#         python-version: "3.12"
+#         miniforge-version: latest
+#         condarc-file: .condarc
+#         environment-file: environment.yml
+#     - name: Install dependencies
+#       working-directory: pyiron_glass
+#       shell: bash -l {0}
+#       run: |
+#         pip install --no-deps --no-build-isolation -e .
+#         pip install -r requirements-dev.txt
+#     - name: test notebooks
+#       shell: bash -l {0}
+#       run: |
+#         cd notebooks
+#         papermill Meltquench.ipynb Meltquench_out.ipynb -k "python3"
