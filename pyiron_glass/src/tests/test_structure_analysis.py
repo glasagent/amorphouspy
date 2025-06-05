@@ -23,6 +23,7 @@ Expected network connectivity:
 expected_NC = (4 * (1 - x) - 2 * x) / (1 - x)
 Reference: https://doi.org/10.1039/D4TB02414A
 """
+
 from . import DATA_DIR
 
 import pytest
