@@ -60,10 +60,8 @@ jobs:
       shell: bash -l {0}
       working-directory: pyiron_glass
       run: |
-        # for some reason, pytest-cov does not find the pyiron_glass module in the line below
-        #pytest --nbval-lax ../notebooks/*ipynb --cov=src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
-        cp -r ../notebooks/* .
-        pytest --nbval-lax *ipynb --cov=src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
+        # absolute path in --cov is necessary here, otherwise it gets confused
+        pytest --nbval-lax ../notebooks/*ipynb --cov=$(pwd)/src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
