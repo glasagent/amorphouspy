@@ -18,12 +18,11 @@ def _get_structure(
 ):
     if indices is not None and len(indices) != len(structure):
         snapshot = Atoms(
-            species=structure.species,
-            indices=indices,
             positions=np.zeros(indices.shape + (3,)),
             cell=cell,
             pbc=structure.pbc,
         )
+        snapshot.set_array("indices", indices)
     else:
         snapshot = structure.copy()
         if cell is not None:

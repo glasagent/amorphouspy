@@ -2,4 +2,6 @@ __pycache__/
 *.log
 .DS_Store
 *.dat
+*.dump
+*.dump.gz
 .coverage*
