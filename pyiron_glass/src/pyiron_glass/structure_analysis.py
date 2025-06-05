@@ -171,7 +171,7 @@ def get_neighbors(
     cells, n_cells, inv_cell_size = compute_cell_list(coords, box_size, cutoff)
     neighbors = [[] for _ in range(N)]
     for i in range(N):
-        if types[i] != target_type:
+        if types[i] not in target_type:
             continue
         ci = np.floor(coords[i] * inv_cell_size).astype(int) % n_cells
         for cj in get_neighbor_cells(ci, n_cells):
@@ -207,7 +207,7 @@ def compute_coordination(
     types: np.ndarray,
     coords: np.ndarray,
     box_size: np.ndarray,
-    target_type: int,
+    target_type: List[int],
     cutoff: float,
     neighbor_types: Union[List[int], None] = None,
 ) -> Tuple[Dict[int, int], Dict[int, int]]:
@@ -238,38 +238,57 @@ def compute_Qn(
     coords: np.ndarray,
     box_size: np.ndarray,
     cutoff: float,
-    Si_types: List[int],
+    Former_types: List[int],
     O_type: int,
-) -> Dict[int, int]:
+) -> Union[Dict[int, int], Tuple[Dict[int, int], Dict[int, Dict[int, int]]]]:
     """
-    Calculates Qn distribution: number of bridging oxygens per silicon atom.
+    Calculates Qn distribution: number of bridging oxygens per former atom,
+    and partial Qn distributions for each former type (if more than one).
 
     Args:
         ids (np.ndarray): Atom IDs.
         types (np.ndarray): Atom types.
         coords (np.ndarray): Atom coordinates.
         box_size (np.ndarray): Simulation box dimensions.
-        cutoff (float): Cutoff radius for Si-O neighbor search.
-        Si_types (List[int]): Atom types considered as silicon.
+        cutoff (float): Cutoff radius for former-O neighbor search.
+        Former_types (List[int]): Atom types considered as formers (e.g., Si, B, etc.).
         O_type (int): Atom type considered as oxygen.
 
     Returns:
-        Dict[int, int]: Mapping from Qn to count.
+        If len(Former_types) == 1:
+            Dict[int, int]: Total Qn distribution.
+        If len(Former_types) > 1:
+            Tuple[
+                Dict[int, int],  # Total Qn distribution
+                Dict[int, Dict[int, int]]  # Partial Qn per former type
+            ]
     """
-    neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, Si_types, [O_type])))
+    neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, Former_types, [O_type])))
+    _, coord_numbers_O = compute_coordination(ids, types, coords, box_size, O_type, cutoff, neighbor_types=Former_types)
 
-    _, coord_numbers_O = compute_coordination(ids, types, coords, box_size, O_type, cutoff, neighbor_types=Si_types)
+    total_Qn_counts = defaultdict(int)
+    compute_partials = len(Former_types) > 1
+    if compute_partials:
+        partial_Qn_counts = {f_type: defaultdict(int) for f_type in Former_types}
 
-    Qn_counts = {}
     for idx, atom_type in enumerate(types):
-        if atom_type in Si_types:
+        if atom_type in Former_types:
             bridging_count = 0
             for j in neighbors.get(idx, []):
                 if types[j] == O_type and coord_numbers_O.get(ids[j], 0) >= 2:
                     bridging_count += 1
-            Qn_counts[bridging_count] = Qn_counts.get(bridging_count, 0) + 1
-    full_Qn_counts = {n: Qn_counts.get(n, 0) for n in range(7)}
-    return full_Qn_counts
+            total_Qn_counts[bridging_count] += 1
+            if compute_partials:
+                partial_Qn_counts[atom_type][bridging_count] += 1
+
+    # Normalize output
+    total_Qn_counts = {n: total_Qn_counts.get(n, 0) for n in range(7)}
+    if compute_partials:
+        for f_type in Former_types:
+            partial_Qn_counts[f_type] = {n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)}
+        return total_Qn_counts, partial_Qn_counts
+
+    return total_Qn_counts
 
 
 def compute_network_connectivity(Qn_dist: Dict[int, int]) -> float:

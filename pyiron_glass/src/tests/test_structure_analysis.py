@@ -75,7 +75,7 @@ def test_compute_coordination_O():
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
-    O_coord_dist, _ = compute_coordination(ids, types, coords, box_size, O_type, cutoff_map["O"], former_types)
+    O_coord_dist, _ = compute_coordination(ids, types, coords, box_size, [O_type], cutoff_map["O"], former_types)
 
     # Check types
     assert isinstance(O_coord_dist, dict), "O coordination should return a dictionary"
@@ -93,7 +93,7 @@ def test_compute_network_connectivity():
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
-    Qn_dist = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, O_type)
+    Qn_dist = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
     net_conn = compute_network_connectivity(Qn_dist)
 
     # Type checks
