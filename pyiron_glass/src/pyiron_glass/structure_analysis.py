@@ -244,7 +244,7 @@ def compute_Qn(
     """
     Calculates Qn distribution: number of bridging oxygens per former atom,
     and partial Qn distributions for each former type (if more than one).
-
+    
     Args:
         ids (np.ndarray): Atom IDs.
         types (np.ndarray): Atom types.
@@ -289,6 +289,7 @@ def compute_Qn(
         return total_Qn_counts, partial_Qn_counts
 
     return total_Qn_counts
+
 
 
 def compute_network_connectivity(Qn_dist: Dict[int, int]) -> float:

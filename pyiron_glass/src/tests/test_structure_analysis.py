@@ -77,6 +77,7 @@ def test_compute_coordination_O():
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
     O_coord_dist, _ = compute_coordination(ids, types, coords, box_size, [O_type], cutoff_map["O"], former_types)
 
+
     # Check types
     assert isinstance(O_coord_dist, dict), "O coordination should return a dictionary"
     assert all(isinstance(k, int) for k in O_coord_dist.keys()), "Keys of O coordination should be integers"
@@ -94,6 +95,7 @@ def test_compute_network_connectivity():
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
     Qn_dist = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
+
     net_conn = compute_network_connectivity(Qn_dist)
 
     # Type checks
