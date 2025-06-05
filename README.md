@@ -21,7 +21,7 @@ jupyter notebook notebooks/Meltquench.ipynb
 ## Developer setup
 In addition, install
 ```
-pip install black pylint pytest
+pip install -r pyiron_glass/requirements-dev.txt
 ```
 
 
