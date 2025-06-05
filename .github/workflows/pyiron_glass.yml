@@ -63,11 +63,17 @@ jobs:
         # absolute path in --cov is necessary here, otherwise it gets confused
         pytest --nbval-lax ../notebooks/*ipynb --cov=$(pwd)/src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
 
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+    - name: Pytest coverage comment
+      uses: MishaKav/pytest-coverage-comment@main
       with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
+        pytest-xml-coverage-path: pyiron_glass/coverage.xml
+
+
+    # - name: Upload coverage to Codecov
+    #   uses: codecov/codecov-action@v3
+    #   with:
+    #     file: ./coverage.xml
+    #     fail_ci_if_error: false
 
 
 #   melt_quench:
