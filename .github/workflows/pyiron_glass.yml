@@ -70,5 +70,6 @@ jobs:
       shell: bash -l {0}
       run: |
         pip install --no-deps --no-build-isolation -e pyiron_glass
+        pip install -r pyiron_glass/requirements-dev.txt
         cd notebooks
         papermill Meltquench.ipynb Meltquench_out.ipynb -k "python3"
