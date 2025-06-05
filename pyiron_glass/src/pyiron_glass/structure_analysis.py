@@ -20,12 +20,12 @@ from collections import defaultdict
 from typing import Tuple, List, Dict, Union
 
 
-def read_lammps_dump(filename: str, unwrap=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Reads a LAMMPS dump file and extracts atom IDs, types, coordinates, and box size.
 
     Args:
-        filename (str): Path to the LAMMPS dump file (can be gzipped).
+        filepath (str): Path to the LAMMPS dump file (can be gzipped).
         unwrap (bool): If True, use unwrapped coordinates.
 
     Returns:
@@ -35,8 +35,8 @@ def read_lammps_dump(filename: str, unwrap=False) -> Tuple[np.ndarray, np.ndarra
             - coords_out (np.ndarray): Wrapped or unwrapped coordinates.
             - box_size (np.ndarray): Dimensions of the simulation box.
     """
-    open_func = gzip.open if filename.endswith(".gz") else open
-    with open_func(filename, "rt") as f:
+    open_func = gzip.open if str(filepath).endswith(".gz") else open
+    with open_func(filepath, "rt") as f:
         # Read line by line until reaching required info
         n_atoms = None
         box_bounds = []
@@ -295,14 +295,14 @@ def compute_network_connectivity(Qn_dist: Dict[int, int]) -> float:
 
 
 def write_distribution_to_file(
-    composition: float, filename: str, dist: Dict[int, int], label: str, append: bool = False
+    composition: float, filepath: str, dist: Dict[int, int], label: str, append: bool = False
 ) -> None:
     """
     Writes a coordination/Qn histogram to a text file.
 
     Args:
         composition (float): Composition value to label row.
-        filename (str): Output filename.
+        filepath (str): Output filepath.
         dist (Dict[int, int]): Histogram data.
         label (str): Prefix for headers (e.g., Si or Q).
         append (bool): Append mode; writes header only if file does not exist.
@@ -312,8 +312,8 @@ def write_distribution_to_file(
     headers = [f"{label}_{i}" for i in range(max_n + 1)] + [f"{label}_tot"]
     values = [dist.get(i, 0) for i in range(max_n + 1)] + [total]
     mode = "a" if append else "w"
-    write_header = not append or not os.path.exists(filename)
-    with open(filename, mode, encoding="utf-8") as f:
+    write_header = not append or not os.path.exists(filepath)
+    with open(filepath, mode, encoding="utf-8") as f:
         if write_header:
             f.write("Composition " + " ".join(headers) + "\n")
         f.write(str(composition) + " " + " ".join(map(str, values)) + "\n")
@@ -373,7 +373,7 @@ def compute_angles(
 
 
 def write_angle_distribution(
-    bin_centers: np.ndarray, angle_hist: np.ndarray, composition: float, filename: str, append: bool = False
+    bin_centers: np.ndarray, angle_hist: np.ndarray, composition: float, filepath: str, append: bool = False
 ) -> None:
     """
     Writes angle distribution to a text file.
@@ -382,12 +382,12 @@ def write_angle_distribution(
         bin_centers (np.ndarray): Angle bin centers in degrees.
         angle_hist (np.ndarray): Normalized angle histogram.
         composition (float): Composition value (e.g., % modifier).
-        filename (str): Output filename.
+        filepath (str): Output filepath.
         append (bool): Whether to append to file.
     """
     mode = "a" if append else "w"
-    write_header = not append or not os.path.exists(filename)
-    with open(filename, mode, encoding="utf-8") as f:
+    write_header = not append or not os.path.exists(filepath)
+    with open(filepath, mode, encoding="utf-8") as f:
         if write_header:
             f.write("Composition " + " ".join(f"{b:.1f}" for b in bin_centers) + "\n")
         f.write(f"{composition} " + " ".join(f"{v:.6f}" for v in angle_hist) + "\n")

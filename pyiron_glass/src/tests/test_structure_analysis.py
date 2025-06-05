@@ -23,6 +23,7 @@ Expected network connectivity:
 expected_NC = (4 * (1 - x) - 2 * x) / (1 - x)
 Reference: https://doi.org/10.1039/D4TB02414A
 """
+from . import DATA_DIR
 
 import pytest
 from pyiron_glass import (
@@ -71,7 +72,7 @@ modifier_types = [t for t, e in type_map.items() if e in modifiers]
 
 def test_compute_coordination_O():
     """Test the compute_coordination function for oxygens."""
-    filename = "../../../data/20Na2O-80SiO2.dump"
+    filename = DATA_DIR / "20Na2O-80SiO2.dump"
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
@@ -89,7 +90,7 @@ def test_compute_coordination_O():
 
 def test_compute_network_connectivity():
     """Test the compute_network_connectivity function."""
-    filename = "../../../data/20Na2O-80SiO2.dump"
+    filename = DATA_DIR / "20Na2O-80SiO2.dump"
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
