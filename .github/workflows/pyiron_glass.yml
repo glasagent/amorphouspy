@@ -65,9 +65,8 @@ jobs:
 
     - name: Pytest coverage comment
       uses: MishaKav/pytest-coverage-comment@main
-      working-directory: pyiron_glass
       with:
-        pytest-xml-coverage-path: ./coverage.xml
+        pytest-xml-coverage-path: pyiron_glass/coverage.xml
 
 
     # - name: Upload coverage to Codecov
