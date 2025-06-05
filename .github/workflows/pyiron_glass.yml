@@ -62,7 +62,7 @@ jobs:
       run: |
         # for some reason, pytest-cov does not find the pyiron_glass module in the line below
         #pytest --nbval-lax ../notebooks/*ipynb --cov=src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
-        cp ../notebooks/*ipynb .
+        cp -r ../notebooks/* .
         pytest --nbval-lax *ipynb --cov=src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
 
     - name: Upload coverage to Codecov
