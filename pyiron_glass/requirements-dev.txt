@@ -2,4 +2,5 @@ black
 pylint
 pytest
 pytest-cov
-papermill
+nbval
+# papermill
