@@ -288,6 +288,23 @@ def melt_quench_simulation(
         executable_path=None,
         input_control_file=None,
     )
+
+    structure_final = _get_structure(
+        structure=structure_4,
+        cell=parsed_output["generic"]["cells"][-1],
+        indices=parsed_output["generic"]["indices"][-1],
+        positions=parsed_output["generic"]["positions"][-1],
+        unwrapped_positions=None,
+        total_displacements=None,
+        wrap_atoms=True,
+    )
+    structure_final.set_velocities(parsed_output["generic"]["velocities"][-1])
+
+    for filename in os.listdir(working_directory):
+        file_path = os.path.join(working_directory, filename)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
     for filename in os.listdir(working_directory):
         file_path = os.path.join(working_directory, filename)
         if os.path.isfile(file_path):
@@ -295,6 +312,8 @@ def melt_quench_simulation(
 
     os.rmdir(working_directory)
     return {
+        "structure": structure_final,
         "steps": parsed_output["generic"]["steps"],
         "temperature": parsed_output["generic"]["temperature"],
+        "generic": parsed_output["generic"],
     }
