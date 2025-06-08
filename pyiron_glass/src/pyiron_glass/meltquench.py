@@ -51,7 +51,7 @@ def melt_quench_simulation(
     heating_rate=1e12,  # heating rate in K/s
     cooling_rate=1e12,  # cooling rate in K/s
     n_print=1000,
-): # pylint: disable=too-many-positional-arguments
+):  # pylint: disable=too-many-positional-arguments
     """
     Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
     This function heats a structure to a high temperature, equilibrates it,
