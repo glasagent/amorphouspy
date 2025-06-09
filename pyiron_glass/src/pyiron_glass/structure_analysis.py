@@ -240,10 +240,10 @@ def compute_Qn(
     cutoff: float,
     Former_types: List[int],
     O_type: int,
-) -> Union[Dict[int, int], Tuple[Dict[int, int], Dict[int, Dict[int, int]]]]:
+) -> Tuple[Dict[int, int], Dict[int, Dict[int, int]]]:
     """
     Calculates Qn distribution: number of bridging oxygens per former atom,
-    and partial Qn distributions for each former type (if more than one).
+    and partial Qn distributions for each former type.
 
     Args:
         ids (np.ndarray): Atom IDs.
@@ -255,21 +255,16 @@ def compute_Qn(
         O_type (int): Atom type considered as oxygen.
 
     Returns:
-        If len(Former_types) == 1:
-            Dict[int, int]: Total Qn distribution.
-        If len(Former_types) > 1:
-            Tuple[
-                Dict[int, int],  # Total Qn distribution
-                Dict[int, Dict[int, int]]  # Partial Qn per former type
-            ]
+        Tuple[
+            Dict[int, int],              # Total Qn distribution
+            Dict[int, Dict[int, int]]   # Partial Qn per former type
+        ]
     """
     neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, Former_types, [O_type])))
     _, coord_numbers_O = compute_coordination(ids, types, coords, box_size, O_type, cutoff, neighbor_types=Former_types)
 
     total_Qn_counts = defaultdict(int)
-    compute_partials = len(Former_types) > 1
-    if compute_partials:
-        partial_Qn_counts = {f_type: defaultdict(int) for f_type in Former_types}
+    partial_Qn_counts = {f_type: defaultdict(int) for f_type in Former_types}
 
     for idx, atom_type in enumerate(types):
         if atom_type in Former_types:
@@ -278,17 +273,14 @@ def compute_Qn(
                 if types[j] == O_type and coord_numbers_O.get(ids[j], 0) >= 2:
                     bridging_count += 1
             total_Qn_counts[bridging_count] += 1
-            if compute_partials:
-                partial_Qn_counts[atom_type][bridging_count] += 1
+            partial_Qn_counts[atom_type][bridging_count] += 1
 
     # Normalize output
     total_Qn_counts = {n: total_Qn_counts.get(n, 0) for n in range(7)}
-    if compute_partials:
-        for f_type in Former_types:
-            partial_Qn_counts[f_type] = {n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)}
-        return total_Qn_counts, partial_Qn_counts
+    for f_type in Former_types:
+        partial_Qn_counts[f_type] = {n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)}
 
-    return total_Qn_counts
+    return total_Qn_counts, partial_Qn_counts
 
 
 def compute_network_connectivity(Qn_dist: Dict[int, int]) -> float:
