@@ -62,7 +62,7 @@ def generate_potential(atoms_dict):
     config_lines.extend(
         [
             "\n### Pedone Potential Parameters ###\n",
-            "pair_style hybrid/overlay coul/dsf 0.25 8.0 morse 5.5 lennard/mdf 5.5 5.5\n",
+            "pair_style hybrid/overlay coul/dsf 0.25 8.0 pedone 5.5\n",
             "pair_coeff * * coul/dsf\n",
         ]
     )
@@ -72,19 +72,17 @@ def generate_potential(atoms_dict):
         if elem == "O":
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} morse {D} {a} {r0}\n")
             C = pedone_potential_params[elem]["repulsion"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} lennard/mdf {C} 0.0\n")
+            config_lines.append(f"pair_coeff {i_type} {o_type} pedone {D} {a} {r0} {C}\n")
 
         if elem != "O":
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} morse {D} {a} {r0}\n")
             C = pedone_potential_params[elem]["repulsion"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} lennard/mdf {C} 0.0\n")
+            config_lines.append(f"pair_coeff {i_type} {o_type} pedone {D} {a} {r0} {C}\n")
 
     config_lines.append("\npair_modify shift yes\n")
 
     return pandas.DataFrame(
-        {"Name": ["Pedone"], "Filename": [[]], "Model": ["Morse"], "Species": [species], "Config": [config_lines]}
+        {"Name": ["Pedone"], "Filename": [[]], "Model": ["Pedone"], "Species": [species], "Config": [config_lines]}
     )

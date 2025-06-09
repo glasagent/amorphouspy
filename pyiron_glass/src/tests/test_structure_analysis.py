@@ -77,7 +77,7 @@ def test_compute_coordination_O():
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
-    O_coord_dist, _ = compute_coordination(ids, types, coords, box_size, O_type, cutoff_map["O"], former_types)
+    O_coord_dist, _ = compute_coordination(ids, types, coords, box_size, [O_type], cutoff_map["O"], former_types)
 
     # Check types
     assert isinstance(O_coord_dist, dict), "O coordination should return a dictionary"
@@ -95,7 +95,8 @@ def test_compute_network_connectivity():
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
-    Qn_dist = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, O_type)
+    Qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
+
     net_conn = compute_network_connectivity(Qn_dist)
 
     # Type checks
@@ -104,3 +105,43 @@ def test_compute_network_connectivity():
 
     # Expected NC ≈ 3.5 for 20Na2O-80SiO2
     assert net_conn == pytest.approx(expected_NC), f"Network connectivity should be {expected_NC}, got {net_conn}"
+
+
+def test_compute_network_connectivity_multi():
+    """Test the compute_network_connectivity function."""
+
+    filename = DATA_DIR / "20Na2O-10B2O3-70SiO2.dump"
+
+    # Cutoff distances for computing coordination numbers (in Ångström)
+    cutoff_map = {
+        "O": 1.9,
+        "Si": 1.9,
+        "B": 1.9,
+        "Na": 3.0,
+    }
+
+    # Mapping from atom type ID to element name
+    type_map = {
+        1: "O",
+        2: "Si",
+        3: "B",
+        4: "Na",
+    }
+
+    network_formers = {"Si", "B"}
+    O_type = [t for t, e in type_map.items() if e == "O"][0]
+    former_types = [t for t, e in type_map.items() if e in network_formers]
+
+    ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
+
+    # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
+    Qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
+
+    net_conn = compute_network_connectivity(Qn_dist)
+
+    # Type checks
+    assert isinstance(net_conn, float), "Network connectivity should return a float"
+    assert net_conn >= 0, "Network connectivity should be non-negative"
+
+    # Expected NC ≈ pr_Qn for 20Na2O-10B2O3-70SiO2.dump
+    assert round(net_conn, 3) == pytest.approx(3.577), f"Network connectivity should be {3.577}, got {net_conn}"
