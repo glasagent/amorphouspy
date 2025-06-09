@@ -95,7 +95,7 @@ def test_compute_network_connectivity():
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
-    Qn_dist = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
+    Qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
 
     net_conn = compute_network_connectivity(Qn_dist)
 
