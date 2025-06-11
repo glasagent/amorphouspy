@@ -78,7 +78,7 @@ def _run_lammps_step(
     initial_temperature,
     temperature_end=None,
     pressure=None,
-): # pylint: disable=too-many-positional-arguments
+):  # pylint: disable=too-many-positional-arguments
     """
     Run a single LAMMPS MD step with given parameters and return the final structure and parsed output.
 
