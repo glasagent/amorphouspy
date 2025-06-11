@@ -17,7 +17,7 @@ def _get_structure(
     wrap_atoms=True,
 ):
     """
-    Create a new structure snapshot based on the given atomic data.
+    Return an updated `Atoms` object based on the provided information.
 
     Parameters
     ----------
@@ -67,7 +67,7 @@ def _get_structure(
     return snapshot
 
 
-def _run_lammps_step(
+def _run_lammps_md(
     structure,
     potential,
     working_directory,
@@ -78,9 +78,10 @@ def _run_lammps_step(
     initial_temperature,
     temperature_end=None,
     pressure=None,
+    langevin=False,
 ):  # pylint: disable=too-many-positional-arguments
     """
-    Run a single LAMMPS MD step with given parameters and return the final structure and parsed output.
+    Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
     Parameters
     ----------
@@ -126,6 +127,7 @@ def _run_lammps_step(
             "initial_temperature": initial_temperature,
             "seed": 12345,
             "pressure": pressure,
+            "langevin": langevin,
         },
         cutoff_radius=None,
         units="metal",
@@ -181,6 +183,7 @@ def melt_quench_simulation(
     heating_rate=1e12,
     cooling_rate=1e12,
     n_print=1000,
+    langevin=False,
 ):  # pylint: disable=too-many-positional-arguments
     """
     Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
@@ -219,7 +222,7 @@ def melt_quench_simulation(
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
     # Stage 1: Heating from low to high T
-    structure, _ = _run_lammps_step(
+    structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
         working_directory=working_directory,
@@ -229,10 +232,11 @@ def melt_quench_simulation(
         timestep=timestep,
         n_print=n_print,
         initial_temperature=temperature_low,
+        langevin=langevin,
     )
 
     # Stage 2: Equilibration at high T
-    structure, _ = _run_lammps_step(
+    structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
         working_directory=working_directory,
@@ -241,10 +245,11 @@ def melt_quench_simulation(
         timestep=timestep,
         n_print=n_print,
         initial_temperature=0,
+        langevin=langevin,
     )
 
     # Stage 3: Cooling from high to low T
-    structure, _ = _run_lammps_step(
+    structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
         working_directory=working_directory,
@@ -254,10 +259,11 @@ def melt_quench_simulation(
         timestep=timestep,
         n_print=n_print,
         initial_temperature=0,
+        langevin=langevin,
     )
 
     # Stage 4: Pressure release at low T
-    structure, _ = _run_lammps_step(
+    structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
         working_directory=working_directory,
@@ -267,10 +273,11 @@ def melt_quench_simulation(
         n_print=n_print,
         initial_temperature=0,
         pressure=0.0,
+        langevin=langevin,
     )
 
     # Stage 5: Long equilibration at low T
-    structure_final, parsed_output = _run_lammps_step(
+    structure_final, parsed_output = _run_lammps_md(
         structure=structure,
         potential=potential,
         working_directory=working_directory,
@@ -279,6 +286,7 @@ def melt_quench_simulation(
         timestep=timestep,
         n_print=n_print,
         initial_temperature=0,
+        langevin=langevin,
     )
 
     shutil.rmtree(working_directory)
