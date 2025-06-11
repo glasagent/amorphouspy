@@ -12,7 +12,7 @@ def test_reproducibility():
     min_distance = 1.6  # Angstrom
     max_attempts_per_atom = 100000  # Max attempts to place an atom
 
-    kwargs = dict(
+    kwargs = dict(  # pylint: disable=use-dict-literal
         n_molecules=n_molecules,
         box_length=box_length,
         min_distance=min_distance,
