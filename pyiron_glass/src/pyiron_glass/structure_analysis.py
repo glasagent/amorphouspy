@@ -1,15 +1,16 @@
 """
 Author: Achraf Atila (achraf.atila@bam.de)
-Description: This script have function to be used for analyzing multicomponent glass structure this include for now:
+Description: This script defines functions to be used for analyzing multicomponent glass structure.
+Current implementations include analyses of:
 
 Coordination numbers
-Bridging oxygens
-Non-bridging oxygens
+Fraction of bridging oxygens
+Fraction of non-bridging oxygens
 Bond angle distributions
 Qn distributions
 Network connectivity
-more to come...
-Note: For now, this script is designed to work with LAMMPS dump files.
+
+NB: For now, only LAMMPS dump files can be handeled.
 It reads a lammps dump file and uses a cell list algorithm for neighbor search under periodic boundary conditions (PBC).
 """
 
@@ -19,7 +20,11 @@ import os
 from collections import defaultdict
 from typing import Tuple, List, Dict, Union
 
-
+# HACK: Why not use the ase.io.read function instead of working with some very custom formats here?
+# Disclaimer: ASE can read dump files, but mapping the lammps atom types needs to be done manually.
+# Still, if suppoert for other file formats might be needed later, ASE instead of custom read functions
+# might be a better choice.
+# ASE also has bond angle distributions and neighbor lists implemented.
 def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Reads a LAMMPS dump file and extracts atom IDs, types, coordinates, and box size.
