@@ -186,10 +186,16 @@ def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict
 @job
 def get_ase_structure(atoms_dict: dict):
     """
-    Write a LAMMPS data file from atom list.
+    Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file 
+    format string, which is then read into an ASE Atoms object.The ASE Atoms object is then returned.
+    atoms_dict is expected to specify a cubic box. Triclinic boxes are not supported.
 
     Parameters:
-        atoms_dict (dict): dictionary of atom counts
+        atoms_dict : dict
+            Dictionary that must contain the atom counts and box dimensions under the 
+            keys "atoms" and "box".
+    Returns:
+        ase.Atoms object of the specified structure
     """
     atoms = atoms_dict["atoms"]
     box_length = atoms_dict["box"]
@@ -244,6 +250,27 @@ def get_structure_dict(
     min_distance=1.6,
     max_attempts_per_atom=10000,
 ):
+    """
+    Generate a structure dictionary for a given composition, number of molecules, and density.
+    This function creates a cubic box of atoms based on the specified composition and density.
+    It uses the `create_random_atoms` function to generate atom positions and returns a dictionary
+    containing the atoms and box length.
+    Parameters:
+        comp : str
+            Composition string, e.g. "0.25CaO-0.25Al2O3-0.5SiO2" or "79SiO2-13B2O3-3Al2O3-4Na2O-1K2O"
+        n_molecules : int
+            Total number of molecules (actually atoms) to define atom counts.
+        density : float
+            Density in g/cm^3, default is 2.96 g/cm^3.
+        min_distance : float
+            Minimum distance between any two atoms in angstroms, default is 1.6 Å.
+        max_attempts_per_atom : int
+            Maximum attempts to place an atom before giving up, default is 10000.
+    Returns:
+        dict: A dictionary containing:
+            - "atoms": A list of atom dictionaries with keys "element" and "position".
+            - "box": The length of the cubic box in angstroms.
+    """
     STOICHIOMETRY = extract_stoichiometry(comp)
     box_length = get_box_from_density(comp, n_molecules=n_molecules, density=density, STOICHIOMETRY=STOICHIOMETRY)
     atoms_dict = create_random_atoms(
