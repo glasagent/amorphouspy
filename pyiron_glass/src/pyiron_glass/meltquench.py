@@ -98,13 +98,18 @@ def _run_lammps_md(
     timestep : float
         Time step for integration in femtoseconds.
     n_print : int
-        Frequency of output writing.
-    initial_temperature : float
-        Initial temperature to assign to the atoms.
+        Frequency of output writing in simulation steps.
+    initial_temperature : None or float
+        Initial temperature according to which the initial velocity field is created. If None, the initial 
+        temperature will be twice the target temperature (which would go immediately down to the target temperature 
+        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the 
+        initial velocity given in structure will be used).
     temperature_end : float, optional
         Final temperature for ramping. If None, no temperature ramp is applied.
     pressure : float, optional
         Target pressure for NPT simulations. If None, NVT is used.
+    langevin : bool, optional
+        Whether to use Langevin dynamics
 
     Returns
     -------
@@ -125,7 +130,7 @@ def _run_lammps_md(
             "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": initial_temperature,
-            "seed": 12345,
+            "seed": 12345,     # TODO: add seed as function argument to _run_lammps_md() after testing phase is over
             "pressure": pressure,
             "langevin": langevin,
         },
@@ -151,7 +156,7 @@ def _run_lammps_md(
     )
     new_structure.set_velocities(parsed_output["generic"]["velocities"][-1])
 
-    _clean_directory(working_directory)
+    _clean_directory(working_directory) # TODO: discuss whether it is a good idea to always empty the working directory. Danger of deleting already present files by mistake.
 
     return new_structure, parsed_output
 
@@ -209,7 +214,9 @@ def melt_quench_simulation(
         The rate at which the temperature is increased during the heating phase, in K/s (default is 1e12 K/s).
     cooling_rate : float, optional
         The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
-
+    langevin : bool, optional
+        Whether to use Langevin dynamics.
+        
     Returns
     -------
     dict
