@@ -222,6 +222,8 @@ def melt_quench_simulation(
         The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
     langevin : bool, optional
         Whether to use Langevin dynamics.
+    seed : int, optional
+        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
 
     Returns
     -------
