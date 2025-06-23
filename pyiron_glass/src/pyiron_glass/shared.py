@@ -15,5 +15,4 @@ def get_element_types_dict(atoms_dict: dict):
     elements = sorted(set(atom["element"] for atom in atoms))
     element_to_type = {elem: i + 1 for i, elem in enumerate(elements)}  # e.g., {'Al':1, 'Ca':2, 'Na':3, 'O':4, 'Si':5}
     return element_to_type
-    # TODO: Discuss whether it would be easier to hard-code the atomic types such that types can be looked up
-    # consistently across different simulations.
+    # TODO: Discuss hard-coding of atomic types for easier lookup and consistency. # pylint: disable=fixme

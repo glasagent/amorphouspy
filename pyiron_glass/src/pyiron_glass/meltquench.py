@@ -79,6 +79,7 @@ def _run_lammps_md(
     temperature_end=None,
     pressure=None,
     langevin=False,
+    seed=12345,
 ):  # pylint: disable=too-many-positional-arguments
     """
     Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
@@ -101,15 +102,17 @@ def _run_lammps_md(
         Frequency of output writing in simulation steps.
     initial_temperature : None or float
         Initial temperature according to which the initial velocity field is created. If None, the initial 
-        temperature will be twice the target temperature (which would go immediately down to the target temperature 
-        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the 
-        initial velocity given in structure will be used).
+        temperature will be twice the target temperature (which would go immediately down to the target temperature
+        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
+        initial velocity given in structure will be used and seed to initialize velocities will be ignored).
     temperature_end : float, optional
         Final temperature for ramping. If None, no temperature ramp is applied.
     pressure : float, optional
         Target pressure for NPT simulations. If None, NVT is used.
     langevin : bool, optional
         Whether to use Langevin dynamics
+    seed : int, optional
+        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
 
     Returns
     -------
@@ -130,7 +133,7 @@ def _run_lammps_md(
             "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": initial_temperature,
-            "seed": 12345,     # TODO: add seed as function argument to _run_lammps_md() after testing phase is over
+            "seed": seed,    
             "pressure": pressure,
             "langevin": langevin,
         },
@@ -156,7 +159,9 @@ def _run_lammps_md(
     )
     new_structure.set_velocities(parsed_output["generic"]["velocities"][-1])
 
-    _clean_directory(working_directory) # TODO: discuss whether it is a good idea to always empty the working directory. Danger of deleting already present files by mistake.
+    # TODO: discuss whether it is a good idea to always empty the working directory. # pylint: disable=fixme
+    # Danger of deleting already present files by mistake if an existing working directory is used.
+    _clean_directory(working_directory) 
 
     return new_structure, parsed_output
 
@@ -189,6 +194,7 @@ def melt_quench_simulation(
     cooling_rate=1e12,
     n_print=1000,
     langevin=False,
+    seed=12345,
 ):  # pylint: disable=too-many-positional-arguments
     """
     Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
@@ -240,6 +246,7 @@ def melt_quench_simulation(
         n_print=n_print,
         initial_temperature=temperature_low,
         langevin=langevin,
+        seed=seed,
     )
 
     # Stage 2: Equilibration at high T

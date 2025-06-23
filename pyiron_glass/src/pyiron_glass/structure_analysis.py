@@ -11,7 +11,8 @@ Qn distributions
 Network connectivity
 
 NB: For now, only LAMMPS dump files can be handeled.
-It reads a lammps dump file and uses a cell list algorithm for neighbor search under periodic boundary conditions (PBC).
+It reads a lammps dump file and uses a cell list algorithm for neighbor search 
+under periodic boundary conditions (PBC).
 """
 
 import numpy as np
