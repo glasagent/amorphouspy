@@ -6,7 +6,7 @@ def get_element_types_dict(atoms_dict: dict):
     This function assumes that the input dictionary contains a key "atoms" which is a list of dictionaries,
     each representing an atom with an "element" key indicating the element symbol.
     Args:
-        atoms_dict (dict): A dictionary containing atom information, typically with a key "atoms" that is a list 
+        atoms_dict (dict): A dictionary containing atom information, typically with a key "atoms" that is a list
         of atom dictionaries.
     Returns:
         dict: A dictionary mapping element symbols to unique integer types.

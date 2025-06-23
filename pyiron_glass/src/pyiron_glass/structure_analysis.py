@@ -11,7 +11,7 @@ Qn distributions
 Network connectivity
 
 NB: For now, only LAMMPS dump files can be handeled.
-It reads a lammps dump file and uses a cell list algorithm for neighbor search 
+It reads a lammps dump file and uses a cell list algorithm for neighbor search
 under periodic boundary conditions (PBC).
 """
 
@@ -20,6 +20,7 @@ import gzip
 import os
 from collections import defaultdict
 from typing import Tuple, List, Dict, Union
+
 
 # HACK: Why not use the ase.io.read function instead of working with some very custom formats here?
 # Disclaimer: ASE can read dump files, but mapping the lammps atom types needs to be done manually.

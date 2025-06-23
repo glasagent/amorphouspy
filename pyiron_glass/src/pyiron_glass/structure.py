@@ -186,13 +186,13 @@ def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict
 @job
 def get_ase_structure(atoms_dict: dict):
     """
-    Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file 
+    Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file
     format string, which is then read into an ASE Atoms object.The ASE Atoms object is then returned.
     atoms_dict is expected to specify a cubic box. Triclinic boxes are not supported.
 
     Parameters:
         atoms_dict : dict
-            Dictionary that must contain the atom counts and box dimensions under the 
+            Dictionary that must contain the atom counts and box dimensions under the
             keys "atoms" and "box".
     Returns:
         ase.Atoms object of the specified structure

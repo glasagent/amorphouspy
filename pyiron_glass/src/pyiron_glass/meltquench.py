@@ -101,7 +101,7 @@ def _run_lammps_md(
     n_print : int
         Frequency of output writing in simulation steps.
     initial_temperature : None or float
-        Initial temperature according to which the initial velocity field is created. If None, the initial 
+        Initial temperature according to which the initial velocity field is created. If None, the initial
         temperature will be twice the target temperature (which would go immediately down to the target temperature
         as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
         initial velocity given in structure will be used and seed to initialize velocities will be ignored).
@@ -133,7 +133,7 @@ def _run_lammps_md(
             "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": initial_temperature,
-            "seed": seed,    
+            "seed": seed,
             "pressure": pressure,
             "langevin": langevin,
         },
@@ -161,7 +161,7 @@ def _run_lammps_md(
 
     # TODO: discuss whether it is a good idea to always empty the working directory. # pylint: disable=fixme
     # Danger of deleting already present files by mistake if an existing working directory is used.
-    _clean_directory(working_directory) 
+    _clean_directory(working_directory)
 
     return new_structure, parsed_output
 
@@ -222,7 +222,7 @@ def melt_quench_simulation(
         The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
     langevin : bool, optional
         Whether to use Langevin dynamics.
-        
+
     Returns
     -------
     dict
