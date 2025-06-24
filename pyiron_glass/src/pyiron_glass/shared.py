@@ -1,3 +1,4 @@
+# See issue #31: It could be beneficial to hardcode every element type to be able to always identify the elements
 def get_element_types_dict(atoms_dict: dict):
     """
     Get a dictionary mapping element symbols to unique integer types (not to be confused with the position in
@@ -15,4 +16,3 @@ def get_element_types_dict(atoms_dict: dict):
     elements = sorted(set(atom["element"] for atom in atoms))
     element_to_type = {elem: i + 1 for i, elem in enumerate(elements)}  # e.g., {'Al':1, 'Ca':2, 'Na':3, 'O':4, 'Si':5}
     return element_to_type
-    # TODO: Discuss hard-coding of atomic types for easier lookup and consistency. # pylint: disable=fixme

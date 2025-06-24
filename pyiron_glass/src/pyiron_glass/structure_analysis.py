@@ -21,12 +21,7 @@ import os
 from collections import defaultdict
 from typing import Tuple, List, Dict, Union
 
-
-# HACK: Why not use the ase.io.read function instead of working with some very custom formats here?
-# Disclaimer: ASE can read dump files, but mapping the lammps atom types needs to be done manually.
-# Still, if suppoert for other file formats might be needed later, ASE instead of custom read functions
-# might be a better choice.
-# ASE also has bond angle distributions and neighbor lists implemented.
+# See issue #30: Why not use ase.io.read instead of custom parser function?
 def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Reads a LAMMPS dump file and extracts atom IDs, types, coordinates, and box size.

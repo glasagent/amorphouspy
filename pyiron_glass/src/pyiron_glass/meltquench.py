@@ -159,8 +159,7 @@ def _run_lammps_md(
     )
     new_structure.set_velocities(parsed_output["generic"]["velocities"][-1])
 
-    # TODO: discuss whether it is a good idea to always empty the working directory. # pylint: disable=fixme
-    # Danger of deleting already present files by mistake if an existing working directory is used.
+    # see issue #32: Consider implementing a more robust cleanup procedure for temporary files.
     _clean_directory(working_directory)
 
     return new_structure, parsed_output
@@ -305,6 +304,7 @@ def melt_quench_simulation(
         langevin=langevin,
     )
 
+    # see issue #32: Consider implementing a more robust cleanup procedure for temporary files.
     shutil.rmtree(working_directory)
 
     return {
