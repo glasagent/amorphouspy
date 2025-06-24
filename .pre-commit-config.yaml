@@ -1,0 +1,9 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.0 # pin the same Ruff version you depend on
+    hooks:
+      # 1) lint + autofix
+      - id: ruff
+        args: [--fix] # important: run with --fix
+      # 2) final formatting pass
+      - id: ruff-format

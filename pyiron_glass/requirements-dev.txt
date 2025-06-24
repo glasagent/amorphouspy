@@ -1,5 +1,5 @@
-black
-pylint
+pre-commit
+ruff
 pytest
 pytest-cov
 nbval

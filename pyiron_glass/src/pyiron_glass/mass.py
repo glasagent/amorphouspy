@@ -3,8 +3,7 @@ from ase.data import atomic_masses_iupac2016, chemical_symbols
 
 
 def get_atomic_mass(element):
-    """
-    Get the atomic mass of an element.
+    """Get the atomic mass of an element.
 
     Parameters
     ----------
@@ -15,6 +14,7 @@ def get_atomic_mass(element):
     -------
     float
         Atomic mass in g/mol
+
     """
     if isinstance(element, str):
         # Convert element symbol to atomic number

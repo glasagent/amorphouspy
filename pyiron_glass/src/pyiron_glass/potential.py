@@ -1,6 +1,7 @@
 # Author: Achraf Atila (achraf.atila@bam.de)
 import pandas
 from pyiron_base import job
+
 from pyiron_glass.shared import get_element_types_dict
 
 # Complete dictionary of Pedone parameters
@@ -64,7 +65,7 @@ def generate_potential(atoms_dict):
             "\n### Pedone Potential Parameters ###\n",
             "pair_style hybrid/overlay coul/dsf 0.25 8.0 pedone 5.5\n",
             "pair_coeff * * coul/dsf\n",
-        ]
+        ],
     )
 
     o_type = types.get("O")
@@ -84,5 +85,5 @@ def generate_potential(atoms_dict):
     config_lines.append("\npair_modify shift yes\n")
 
     return pandas.DataFrame(
-        {"Name": ["Pedone"], "Filename": [[]], "Model": ["Pedone"], "Species": [species], "Config": [config_lines]}
+        {"Name": ["Pedone"], "Filename": [[]], "Model": ["Pedone"], "Species": [species], "Config": [config_lines]},
     )

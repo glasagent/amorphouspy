@@ -1,9 +1,10 @@
 import os
 import shutil
+
 import numpy as np
 from ase.atoms import Atoms
-from pyiron_base import job
 from pyiron_atomistics.lammps.lammps import lammps_function
+from pyiron_base import job
 from structuretoolkit.common import center_coordinates_in_unit_cell
 
 
@@ -16,8 +17,7 @@ def _get_structure(
     total_displacements=None,
     wrap_atoms=True,
 ):
-    """
-    Return an updated `Atoms` object based on the provided information.
+    """Return an updated `Atoms` object based on the provided information.
 
     Parameters
     ----------
@@ -40,8 +40,8 @@ def _get_structure(
     -------
     Atoms
         The newly constructed atomic structure with updated positions and cell.
-    """
 
+    """
     if indices is not None and len(indices) != len(structure):
         snapshot = Atoms(
             positions=np.zeros(indices.shape + (3,)),
@@ -81,8 +81,7 @@ def _run_lammps_md(
     langevin=False,
     seed=12345,
 ):  # pylint: disable=too-many-positional-arguments
-    """
-    Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
+    """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
     Parameters
     ----------
@@ -118,8 +117,8 @@ def _run_lammps_md(
     -------
     tuple
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
-    """
 
+    """
     temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
     _shell_output, parsed_output, _job_crashed = lammps_function(
@@ -166,15 +165,14 @@ def _run_lammps_md(
 
 
 def _clean_directory(directory):
-    """
-    Remove all files in the specified directory.
+    """Remove all files in the specified directory.
 
     Parameters
     ----------
     directory : str
         Path to the directory to be cleaned.
-    """
 
+    """
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)
         if os.path.isfile(file_path):
@@ -195,8 +193,7 @@ def melt_quench_simulation(
     langevin=False,
     seed=12345,
 ):  # pylint: disable=too-many-positional-arguments
-    """
-    Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
+    """Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
     This function heats a structure to a high temperature, equilibrates it,
     and then cools it down to a low temperature, simulating a melt-quench process.
     The heating and cooling rates are given in K/s, and the conversion into simulation steps is done automatically.
@@ -228,6 +225,7 @@ def melt_quench_simulation(
     -------
     dict
         A dictionary containing the simulation steps and temperature data.
+
     """
     os.makedirs(working_directory, exist_ok=True)
 

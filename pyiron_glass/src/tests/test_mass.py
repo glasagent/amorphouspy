@@ -1,4 +1,5 @@
 import pytest
+
 from pyiron_glass.mass import get_atomic_mass
 
 

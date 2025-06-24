@@ -1,5 +1,4 @@
-"""
-Author: Achraf Atila (achraf.atila@bam.de)
+"""Author: Achraf Atila (achraf.atila@bam.de)
 Description: This script defines functions to be used for analyzing multicomponent glass structure.
 Current implementations include analyses of:
 
@@ -15,17 +14,16 @@ It reads a lammps dump file and uses a cell list algorithm for neighbor search
 under periodic boundary conditions (PBC).
 """
 
-import numpy as np
 import gzip
 import os
 from collections import defaultdict
-from typing import Tuple, List, Dict, Union
+
+import numpy as np
 
 
 # See issue #30: Why not use ase.io.read instead of custom parser function?
-def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Reads a LAMMPS dump file and extracts atom IDs, types, coordinates, and box size.
+def read_lammps_dump(filepath: str, unwrap=False) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Reads a LAMMPS dump file and extracts atom IDs, types, coordinates, and box size.
 
     Args:
         filepath (str): Path to the LAMMPS dump file (can be gzipped).
@@ -37,6 +35,7 @@ def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarra
             - types (np.ndarray): Array of atom types.
             - coords_out (np.ndarray): Wrapped or unwrapped coordinates.
             - box_size (np.ndarray): Dimensions of the simulation box.
+
     """
     open_func = gzip.open if str(filepath).endswith(".gz") else open
     with open_func(filepath, "rt") as f:
@@ -78,10 +77,13 @@ def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarra
 
 
 def remove_atom_type(
-    ids: np.ndarray, types: np.ndarray, coords: np.ndarray, box_size: np.ndarray, remove_types: List[int]
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Removes atoms of specified types from the system.
+    ids: np.ndarray,
+    types: np.ndarray,
+    coords: np.ndarray,
+    box_size: np.ndarray,
+    remove_types: list[int],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Removes atoms of specified types from the system.
 
     Args:
         ids (np.ndarray): Atom IDs.
@@ -96,16 +98,18 @@ def remove_atom_type(
             - Filtered types (np.ndarray)
             - Filtered coords (np.ndarray)
             - Original box_size (np.ndarray)
+
     """
     mask = np.isin(types, remove_types, invert=True)
     return ids[mask], types[mask], coords[mask], box_size
 
 
 def compute_cell_list(
-    coords: np.ndarray, box_size: np.ndarray, cutoff: float
-) -> Tuple[Dict[Tuple[int, int, int], List[int]], np.ndarray, np.ndarray]:
-    """
-    Constructs a cell list to accelerate neighbor search.
+    coords: np.ndarray,
+    box_size: np.ndarray,
+    cutoff: float,
+) -> tuple[dict[tuple[int, int, int], list[int]], np.ndarray, np.ndarray]:
+    """Constructs a cell list to accelerate neighbor search.
 
     Args:
         coords (np.ndarray): Atom coordinates.
@@ -117,6 +121,7 @@ def compute_cell_list(
             - cells (Dict[Tuple[int, int, int], List[int]]): Cell to atom index mapping.
             - n_cells (np.ndarray): Number of cells in each dimension.
             - inv_cell_size (np.ndarray): Inverse of the cell size in each dimension.
+
     """
     cells = defaultdict(list)
     n_cells = np.maximum(1, np.floor(box_size / cutoff)).astype(int)
@@ -132,13 +137,15 @@ SHIFT_GRID_3D = np.stack(np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexin
 
 
 def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
-    """
-    Generates neighboring cell indices for a given cell index in a 3D grid.
+    """Generates neighboring cell indices for a given cell index in a 3D grid.
+
     Args:
         ci (np.ndarray): Current cell index as a 3-element array.
         n_cells (np.ndarray): Total number of cells in each dimension.
+
     Returns:
         np.ndarray: Array of neighboring cell indices.
+
     """
     return (ci + SHIFT_GRID_3D) % n_cells
 
@@ -154,10 +161,9 @@ def get_neighbors(
     box_size: np.ndarray,
     cutoff: float,
     target_type: int,
-    neighbor_types: Union[List[int], None] = None,
-) -> List[List[int]]:
-    """
-    Finds neighbors of specified type(s) using a cell list.
+    neighbor_types: list[int] | None = None,
+) -> list[list[int]]:
+    """Finds neighbors of specified type(s) using a cell list.
 
     Args:
         coords (np.ndarray): Atom coordinates.
@@ -169,6 +175,7 @@ def get_neighbors(
 
     Returns:
         List[List[int]]: Neighbor indices for each atom.
+
     """
     N = len(coords)
     cells, n_cells, inv_cell_size = compute_cell_list(coords, box_size, cutoff)
@@ -189,15 +196,15 @@ def get_neighbors(
     return neighbors
 
 
-def count_distribution(coord_numbers: Dict[int, int]) -> Dict[int, int]:
-    """
-    Converts coordination numbers to a histogram distribution.
+def count_distribution(coord_numbers: dict[int, int]) -> dict[int, int]:
+    """Converts coordination numbers to a histogram distribution.
 
     Args:
         coord_numbers (Dict[int, int]): Mapping from atom ID to coordination number.
 
     Returns:
         Dict[int, int]: Coordination number frequency histogram.
+
     """
     dist = {}
     for cn in coord_numbers.values():
@@ -210,12 +217,11 @@ def compute_coordination(
     types: np.ndarray,
     coords: np.ndarray,
     box_size: np.ndarray,
-    target_type: List[int],
+    target_type: list[int],
     cutoff: float,
-    neighbor_types: Union[List[int], None] = None,
-) -> Tuple[Dict[int, int], Dict[int, int]]:
-    """
-    Computes coordination number for atoms of a target type.
+    neighbor_types: list[int] | None = None,
+) -> tuple[dict[int, int], dict[int, int]]:
+    """Computes coordination number for atoms of a target type.
 
     Args:
         ids (np.ndarray): Atom IDs.
@@ -228,6 +234,7 @@ def compute_coordination(
 
     Returns:
         Dict[int, int]: Mapping from atom ID to coordination number.
+
     """
     neighbors = get_neighbors(coords, types, box_size, cutoff, target_type, neighbor_types)
     coord_numbers = {ids[idx]: len(neighbors[idx]) for idx, atom_type in enumerate(types) if atom_type == target_type}
@@ -241,11 +248,10 @@ def compute_Qn(
     coords: np.ndarray,
     box_size: np.ndarray,
     cutoff: float,
-    Former_types: List[int],
+    Former_types: list[int],
     O_type: int,
-) -> Tuple[Dict[int, int], Dict[int, Dict[int, int]]]:
-    """
-    Calculates Qn distribution: number of bridging oxygens per former atom,
+) -> tuple[dict[int, int], dict[int, dict[int, int]]]:
+    """Calculates Qn distribution: number of bridging oxygens per former atom,
     and partial Qn distributions for each former type.
 
     Args:
@@ -262,6 +268,7 @@ def compute_Qn(
             Dict[int, int],              # Total Qn distribution
             Dict[int, Dict[int, int]]   # Partial Qn per former type
         ]
+
     """
     neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, Former_types, [O_type])))
     _, coord_numbers_O = compute_coordination(ids, types, coords, box_size, O_type, cutoff, neighbor_types=Former_types)
@@ -286,9 +293,8 @@ def compute_Qn(
     return total_Qn_counts, partial_Qn_counts
 
 
-def compute_network_connectivity(Qn_dist: Dict[int, int]) -> float:
-    """
-    Computes average network connectivity based on Qn distribution.
+def compute_network_connectivity(Qn_dist: dict[int, int]) -> float:
+    """Computes average network connectivity based on Qn distribution.
 
     Args:
         Qn_dist (Dict[int, int]): Qn distribution histogram.
@@ -298,8 +304,8 @@ def compute_network_connectivity(Qn_dist: Dict[int, int]) -> float:
 
     Raises:
         ValueError: If Qn_dist is empty or total_formers is zero.
-    """
 
+    """
     total_formers = sum(Qn_dist.values())
 
     if total_formers == 0:
@@ -309,10 +315,13 @@ def compute_network_connectivity(Qn_dist: Dict[int, int]) -> float:
 
 
 def write_distribution_to_file(
-    composition: float, filepath: str, dist: Dict[int, int], label: str, append: bool = False
+    composition: float,
+    filepath: str,
+    dist: dict[int, int],
+    label: str,
+    append: bool = False,
 ) -> None:
-    """
-    Writes a coordination/Qn histogram to a text file.
+    """Writes a coordination/Qn histogram to a text file.
 
     Args:
         composition (float): Composition value to label row.
@@ -320,6 +329,7 @@ def write_distribution_to_file(
         dist (Dict[int, int]): Histogram data.
         label (str): Prefix for headers (e.g., Si or Q).
         append (bool): Append mode; writes header only if file does not exist.
+
     """
     max_n = max(dist.keys(), default=0)
     total = sum(dist.values())
@@ -341,9 +351,8 @@ def compute_angles(
     neighbor_type: int,
     cutoff: float,
     bins: int = 180,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Computes bond angle distribution between triplets of neighbor_type-center-neighbor_type.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Computes bond angle distribution between triplets of neighbor_type-center-neighbor_type.
 
     Args:
         types (np.ndarray): Atom types.
@@ -358,6 +367,7 @@ def compute_angles(
         Tuple containing:
             - bin_centers (np.ndarray): Centers of angle bins in degrees.
             - angle_hist (np.ndarray): Normalized histogram of angles.
+
     """
     neighbors = get_neighbors(coords, types, box_size, cutoff, center_type, [neighbor_type])
     angles = []
@@ -387,10 +397,13 @@ def compute_angles(
 
 
 def write_angle_distribution(
-    bin_centers: np.ndarray, angle_hist: np.ndarray, composition: float, filepath: str, append: bool = False
+    bin_centers: np.ndarray,
+    angle_hist: np.ndarray,
+    composition: float,
+    filepath: str,
+    append: bool = False,
 ) -> None:
-    """
-    Writes angle distribution to a text file.
+    """Writes angle distribution to a text file.
 
     Args:
         bin_centers (np.ndarray): Angle bin centers in degrees.
@@ -398,6 +411,7 @@ def write_angle_distribution(
         composition (float): Composition value (e.g., % modifier).
         filepath (str): Output filepath.
         append (bool): Whether to append to file.
+
     """
     mode = "a" if append else "w"
     write_header = not append or not os.path.exists(filepath)

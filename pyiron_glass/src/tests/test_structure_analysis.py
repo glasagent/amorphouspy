@@ -1,5 +1,4 @@
-"""
-Author: Achraf Atila (achraf.atila@bam.de)
+"""Author: Achraf Atila (achraf.atila@bam.de)
 
 This script provides tests for structural analysis functions related to glassy systems.
 The 0.2Na2O-0.8SiO2 glass is used. It calculates expected values for non-bridging oxygens (NBO),
@@ -24,15 +23,16 @@ expected_NC = (4 * (1 - x) - 2 * x) / (1 - x)
 Reference: https://doi.org/10.1039/D4TB02414A
 """
 
-from . import DATA_DIR
-
 import pytest
+
 from pyiron_glass import (
-    read_lammps_dump,
     compute_coordination,
-    compute_Qn,
     compute_network_connectivity,
+    compute_Qn,
+    read_lammps_dump,
 )
+
+from . import DATA_DIR
 
 # Glass composition parameters
 x = 0.2  # Sodium molar fraction (20% Na2O, 80% SiO2)
@@ -109,7 +109,6 @@ def test_compute_network_connectivity():
 
 def test_compute_network_connectivity_multi():
     """Test the compute_network_connectivity function."""
-
     filename = DATA_DIR / "20Na2O-10B2O3-70SiO2.dump"
 
     # Cutoff distances for computing coordination numbers (in Ångström)

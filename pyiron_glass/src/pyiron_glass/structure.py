@@ -1,11 +1,10 @@
 import re
-from typing import Dict
 from io import StringIO
-import numpy as np
 
+import numpy as np
+import scipy
 from ase.io import read
 from pyiron_base import job
-import scipy
 
 from pyiron_glass.mass import get_atomic_mass
 from pyiron_glass.shared import get_element_types_dict
@@ -17,8 +16,7 @@ ELEMENT = re.compile(r"([A-Z][a-z]*)(\d*)")
 
 
 def extract_composition(composition: str) -> dict[str, float]:
-    """
-    Function written to extract the fraction of each element from a given composition.
+    """Function written to extract the fraction of each element from a given composition.
     The composition can be given as a fraction or in mol%, and the function will return
     the molar fraction in all cases
     Example of usage: extract_composition("0.25CaO-0.25Al2O3-0.5SiO2")
@@ -44,12 +42,11 @@ def extract_composition(composition: str) -> dict[str, float]:
     return comp_dict
 
 
-def parse_formula(formula: str) -> Dict[str, int]:
-    """
-    Parse a chemical formula (e.g. "Al2O3") and return
+def parse_formula(formula: str) -> dict[str, int]:
+    """Parse a chemical formula (e.g. "Al2O3") and return
     a dict of element counts: {"Al": 2, "O": 3}.
     """
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for elem, cnt_str in ELEMENT.findall(formula):
         # Default to 1 if no digits were captured
         cnt = int(cnt_str) if cnt_str else 1
@@ -57,14 +54,13 @@ def parse_formula(formula: str) -> Dict[str, int]:
     return counts
 
 
-def extract_stoichiometry(composition: str) -> Dict[str, Dict[str, int]]:
-    """
-    Given a composition string, return a mapping:
+def extract_stoichiometry(composition: str) -> dict[str, dict[str, int]]:
+    """Given a composition string, return a mapping:
         { oxide_formula: { element: count, ... }, ... }
     Uses extract_composition() to isolate formulas first.
     """
     comp_dict = extract_composition(composition)
-    stoichiometry: Dict[str, Dict[str, int]] = {}
+    stoichiometry: dict[str, dict[str, int]] = {}
     for oxide in comp_dict:
         stoichiometry[oxide] = parse_formula(oxide)
     return stoichiometry
@@ -79,8 +75,7 @@ def create_random_atoms(
     seed: int = 42,
     max_attempts_per_atom: int = 100000,
 ):
-    """
-    Generate random atom positions in a periodic cubic box, according to a given composition.
+    """Generate random atom positions in a periodic cubic box, according to a given composition.
 
     - composition: e.g. "0.25CaO-0.25Al2O3-0.5SiO2"
     - n_molecules: total number of molecules to define atom counts
@@ -92,6 +87,7 @@ def create_random_atoms(
     Returns:
         atoms: list of {"element": str, "position": [x, y, z]}
         atom_counts: dict of total counts per element
+
     """
 
     def minimum_image_distance(pos1, pos2, box_length):
@@ -140,8 +136,7 @@ def create_random_atoms(
 
 
 def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict, density: float = 2.65) -> float:
-    """
-    Calculate the cubic box length in angstroms needed for a given composition,
+    """Calculate the cubic box length in angstroms needed for a given composition,
     number of molecules, and target density (g/cm^3).
     very straightforward function that calculates the box length from the density
     and the number of molecules.
@@ -185,17 +180,20 @@ def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict
 
 @job
 def get_ase_structure(atoms_dict: dict):
-    """
-    Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file
+    """Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file
     format string, which is then read into an ASE Atoms object.The ASE Atoms object is then returned.
     atoms_dict is expected to specify a cubic box. Triclinic boxes are not supported.
 
-    Parameters:
+    Parameters
+    ----------
         atoms_dict : dict
             Dictionary that must contain the atom counts and box dimensions under the
             keys "atoms" and "box".
-    Returns:
+
+    Returns
+    -------
         ase.Atoms object of the specified structure
+
     """
     atoms = atoms_dict["atoms"]
     box_length = atoms_dict["box"]
@@ -250,12 +248,13 @@ def get_structure_dict(
     min_distance=1.6,
     max_attempts_per_atom=10000,
 ):
-    """
-    Generate a structure dictionary for a given composition, number of molecules, and density.
+    """Generate a structure dictionary for a given composition, number of molecules, and density.
     This function creates a cubic box of atoms based on the specified composition and density.
     It uses the `create_random_atoms` function to generate atom positions and returns a dictionary
     containing the atoms and box length.
-    Parameters:
+
+    Parameters
+    ----------
         comp : str
             Composition string, e.g. "0.25CaO-0.25Al2O3-0.5SiO2" or "79SiO2-13B2O3-3Al2O3-4Na2O-1K2O"
         n_molecules : int
@@ -266,10 +265,13 @@ def get_structure_dict(
             Minimum distance between any two atoms in angstroms, default is 1.6 Å.
         max_attempts_per_atom : int
             Maximum attempts to place an atom before giving up, default is 10000.
-    Returns:
+
+    Returns
+    -------
         dict: A dictionary containing:
             - "atoms": A list of atom dictionaries with keys "element" and "position".
             - "box": The length of the cubic box in angstroms.
+
     """
     STOICHIOMETRY = extract_stoichiometry(comp)
     box_length = get_box_from_density(comp, n_molecules=n_molecules, density=density, STOICHIOMETRY=STOICHIOMETRY)
