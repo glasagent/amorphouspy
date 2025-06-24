@@ -9,12 +9,6 @@ from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
 from structuretoolkit.common import center_coordinates_in_unit_cell
 
-# Constants
-SECONDS_TO_FEMTOSECONDS = 1e15
-EQUILIBRATION_STEPS_HIGH_T = 1000
-PRESSURE_RELEASE_STEPS = 10000
-FINAL_EQUILIBRATION_STEPS = 100000
-
 
 def _get_structure(
     structure: Atoms,
@@ -23,6 +17,7 @@ def _get_structure(
     positions: np.ndarray | None = None,
     unwrapped_positions: np.ndarray | None = None,
     total_displacements: np.ndarray | None = None,
+    *,
     wrap_atoms: bool = True,
 ) -> Atoms:
     """Return an updated `Atoms` object based on the provided information.
@@ -86,6 +81,7 @@ def _run_lammps_md(
     initial_temperature: float,
     temperature_end: float | None = None,
     pressure: float | None = None,
+    *,
     langevin: bool = False,
     seed: int = 12345,
 ) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
@@ -127,9 +123,7 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-    temp_setting = (
-        [temperature, temperature_end] if temperature_end is not None else temperature
-    )
+    temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
     _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
@@ -200,6 +194,7 @@ def melt_quench_simulation(
     heating_rate: float = 1e12,
     cooling_rate: float = 1e12,
     n_print: int = 1000,
+    *,
     langevin: bool = False,
     seed: int = 12345,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
@@ -242,14 +237,9 @@ def melt_quench_simulation(
     """
     Path(working_directory).mkdir(parents=True, exist_ok=True)
 
-    heating_steps = int(
-        ((temperature_high - temperature_low) / (timestep * heating_rate))
-        * SECONDS_TO_FEMTOSECONDS
-    )
-    cooling_steps = int(
-        ((temperature_high - temperature_low) / (timestep * cooling_rate))
-        * SECONDS_TO_FEMTOSECONDS
-    )
+    seconds_to_femtos = 1e15
+    heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
+    cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
     # Stage 1: Heating from low to high T
     structure, _ = _run_lammps_md(
@@ -272,7 +262,7 @@ def melt_quench_simulation(
         potential=potential,
         working_directory=working_directory,
         temperature=temperature_high,
-        n_ionic_steps=EQUILIBRATION_STEPS_HIGH_T,
+        n_ionic_steps=1_000,
         timestep=timestep,
         n_print=n_print,
         initial_temperature=0,
@@ -299,7 +289,7 @@ def melt_quench_simulation(
         potential=potential,
         working_directory=working_directory,
         temperature=temperature_low,
-        n_ionic_steps=PRESSURE_RELEASE_STEPS,
+        n_ionic_steps=10_000,
         timestep=timestep,
         n_print=n_print,
         initial_temperature=0,
@@ -313,7 +303,7 @@ def melt_quench_simulation(
         potential=potential,
         working_directory=working_directory,
         temperature=temperature_low,
-        n_ionic_steps=FINAL_EQUILIBRATION_STEPS,
+        n_ionic_steps=100_000,
         timestep=timestep,
         n_print=n_print,
         initial_temperature=0,

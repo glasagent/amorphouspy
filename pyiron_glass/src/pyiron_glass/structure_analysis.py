@@ -38,7 +38,9 @@ MIN_COORDINATION_FOR_BRIDGING = 2
 
 # See issue #30: Why not use ase.io.read instead of custom parser function?
 def read_lammps_dump(
-    filepath: str, *, unwrap: bool = False
+    filepath: str,
+    *,
+    unwrap: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Read a LAMMPS dump file and extract atom IDs, types, coordinates, and box size.
 
@@ -151,7 +153,8 @@ def compute_cell_list(
 
 
 SHIFT_GRID_3D = np.stack(
-    np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexing="ij"), axis=-1
+    np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexing="ij"),
+    axis=-1,
 ).reshape(-1, 3)
 
 
@@ -266,13 +269,14 @@ def compute_coordination(
 
     """
     neighbors = get_neighbors(
-        coords, types, box_size, cutoff, target_type, neighbor_types
+        coords,
+        types,
+        box_size,
+        cutoff,
+        target_type,
+        neighbor_types,
     )
-    coord_numbers = {
-        ids[idx]: len(neighbors[idx])
-        for idx, atom_type in enumerate(types)
-        if atom_type == target_type
-    }
+    coord_numbers = {ids[idx]: len(neighbors[idx]) for idx, atom_type in enumerate(types) if atom_type == target_type}
     coord_numbers_distribution = count_distribution(coord_numbers)
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
 
@@ -308,11 +312,17 @@ def compute_Qn(
     """
     neighbors = dict(
         enumerate(
-            get_neighbors(coords, types, box_size, cutoff, Former_types, [O_type])
-        )
+            get_neighbors(coords, types, box_size, cutoff, Former_types, [O_type]),
+        ),
     )
     _, coord_numbers_O = compute_coordination(
-        ids, types, coords, box_size, O_type, cutoff, neighbor_types=Former_types
+        ids,
+        types,
+        coords,
+        box_size,
+        O_type,
+        cutoff,
+        neighbor_types=Former_types,
     )
 
     total_Qn_counts = defaultdict(int)
@@ -322,10 +332,7 @@ def compute_Qn(
         if atom_type in Former_types:
             bridging_count = 0
             for j in neighbors.get(idx, []):
-                if (
-                    types[j] == O_type
-                    and coord_numbers_O.get(ids[j], 0) >= MIN_COORDINATION_FOR_BRIDGING
-                ):
+                if types[j] == O_type and coord_numbers_O.get(ids[j], 0) >= MIN_COORDINATION_FOR_BRIDGING:
                     bridging_count += 1
             total_Qn_counts[bridging_count] += 1
             partial_Qn_counts[atom_type][bridging_count] += 1
@@ -333,9 +340,7 @@ def compute_Qn(
     # Normalize output
     total_Qn_counts = {n: total_Qn_counts.get(n, 0) for n in range(7)}
     for f_type in Former_types:
-        partial_Qn_counts[f_type] = {
-            n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)
-        }
+        partial_Qn_counts[f_type] = {n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)}
 
     return total_Qn_counts, partial_Qn_counts
 
@@ -367,6 +372,7 @@ def write_distribution_to_file(
     filepath: str,
     dist: dict[int, int],
     label: str,
+    *,
     append: bool = False,
 ) -> None:
     """Write a coordination/Qn histogram to a text file.
@@ -418,7 +424,12 @@ def compute_angles(
 
     """
     neighbors = get_neighbors(
-        coords, types, box_size, cutoff, center_type, [neighbor_type]
+        coords,
+        types,
+        box_size,
+        cutoff,
+        center_type,
+        [neighbor_type],
     )
     angles = []
     for i, atom_type in enumerate(types):
@@ -442,7 +453,10 @@ def compute_angles(
                 angle = np.arccos(cos_theta) * 180 / np.pi
                 angles.append(angle)
     angle_hist, bin_edges = np.histogram(
-        angles, bins=bins, range=(0, 180), density=True
+        angles,
+        bins=bins,
+        range=(0, 180),
+        density=True,
     )
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     return bin_centers, angle_hist

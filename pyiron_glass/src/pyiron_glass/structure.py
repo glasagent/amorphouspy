@@ -98,7 +98,9 @@ def create_random_atoms(
     """
 
     def minimum_image_distance(
-        pos1: np.ndarray, pos2: np.ndarray, box_length: float
+        pos1: np.ndarray,
+        pos2: np.ndarray,
+        box_length: float,
     ) -> float:
         delta = np.abs(pos1 - pos2)
         delta = np.where(delta > 0.5 * box_length, box_length - delta, delta)
@@ -132,15 +134,10 @@ def create_random_atoms(
         attempts = 0
         while placed < count:
             if attempts >= max_attempts_per_atom:
-                msg = (
-                    f"Failed to place {elem} atoms: increase box or reduce min_distance"
-                )
+                msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
                 raise RuntimeError(msg)
             pos = rng.uniform(0, box_length, size=3)
-            if all(
-                minimum_image_distance(pos, p, box_length) >= min_distance
-                for p in positions
-            ):
+            if all(minimum_image_distance(pos, p, box_length) >= min_distance for p in positions):
                 atoms.append({"element": elem, "position": pos.tolist()})
                 positions.append(pos)
                 placed += 1
@@ -188,10 +185,7 @@ def get_box_from_density(
 
     # 3. Total mass in grams
     #    (sum of atom_counts * atomic_mass) / Avogadro
-    total_mass_g = (
-        sum(atom_counts[el] * get_atomic_mass(el) for el in atom_counts)
-        / scipy.constants.Avogadro
-    )
+    total_mass_g = sum(atom_counts[el] * get_atomic_mass(el) for el in atom_counts) / scipy.constants.Avogadro
 
     # 4. Compute volume (cm3) and convert to \AA3 (1 cm3 = 1e24 \AA3)
     volume_cm3 = total_mass_g / density
@@ -231,7 +225,7 @@ def get_ase_structure(atoms_dict: dict) -> Atoms:
     # with open(filename, 'w') as f:
     # Header
     list_of_lines.append(
-        "LAMMPS data file via create_random_atoms and write_lammps_data\n\n"
+        "LAMMPS data file via create_random_atoms and write_lammps_data\n\n",
     )
     list_of_lines.append(f"{n_atoms} atoms\n")
     list_of_lines.append(f"{n_types} atom types\n\n")
@@ -244,7 +238,7 @@ def get_ase_structure(atoms_dict: dict) -> Atoms:
     list_of_lines.append("Masses\n\n")
     for elem, type_id in element_to_type.items():
         mass = get_atomic_mass(
-            elem
+            elem,
         )  # You can later replace with real atomic masses if needed
         list_of_lines.append(f"{type_id} {mass} # {elem}\n")
 
@@ -304,7 +298,10 @@ def get_structure_dict(
     """
     STOICHIOMETRY = extract_stoichiometry(comp)
     box_length = get_box_from_density(
-        comp, n_molecules=n_molecules, density=density, STOICHIOMETRY=STOICHIOMETRY
+        comp,
+        n_molecules=n_molecules,
+        density=density,
+        STOICHIOMETRY=STOICHIOMETRY,
     )
     atoms_dict = create_random_atoms(
         comp,

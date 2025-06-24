@@ -80,25 +80,23 @@ def test_compute_coordination_o() -> None:
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
     o_coord_dist, _ = compute_coordination(
-        ids, types, coords, box_size, [O_type], cutoff_map["O"], former_types
+        ids,
+        types,
+        coords,
+        box_size,
+        [O_type],
+        cutoff_map["O"],
+        former_types,
     )
 
     # Check types
     assert isinstance(o_coord_dist, dict), "O coordination should return a dictionary"
-    assert all(
-        isinstance(k, int) for k in o_coord_dist
-    ), "Keys of O coordination should be integers"
-    assert all(
-        isinstance(v, int) for v in o_coord_dist.values()
-    ), "Values of O coordination should be integers"
+    assert all(isinstance(k, int) for k in o_coord_dist), "Keys of O coordination should be integers"
+    assert all(isinstance(v, int) for v in o_coord_dist.values()), "Values of O coordination should be integers"
 
     # Two categories: NBO (coordination = 1) and BO (coordination = 2)
-    assert (
-        o_coord_dist.get(1, 0) == N_NBO
-    ), f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
-    assert (
-        o_coord_dist.get(2, 0) == N_BO
-    ), f"BO count mismatch. Expected {N_BO}, got {o_coord_dist.get(2, 0)}"
+    assert o_coord_dist.get(1, 0) == N_NBO, f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
+    assert o_coord_dist.get(2, 0) == N_BO, f"BO count mismatch. Expected {N_BO}, got {o_coord_dist.get(2, 0)}"
 
 
 def test_compute_network_connectivity() -> None:
@@ -108,7 +106,13 @@ def test_compute_network_connectivity() -> None:
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
     Qn_dist, _ = compute_Qn(
-        ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type]
+        ids,
+        types,
+        coords,
+        box_size,
+        cutoff_map["O"],
+        former_types,
+        [O_type],
     )
 
     net_conn = compute_network_connectivity(Qn_dist)
@@ -119,7 +123,7 @@ def test_compute_network_connectivity() -> None:
 
     # Expected NC ≈ 3.5 for 20Na2O-80SiO2
     assert net_conn == pytest.approx(
-        expected_nc
+        expected_nc,
     ), f"Network connectivity should be {expected_nc}, got {net_conn}"
 
 
@@ -151,7 +155,13 @@ def test_compute_network_connectivity_multi() -> None:
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
     Qn_dist, _ = compute_Qn(
-        ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type_multi]
+        ids,
+        types,
+        coords,
+        box_size,
+        cutoff_map["O"],
+        former_types,
+        [O_type_multi],
     )
 
     net_conn = compute_network_connectivity(Qn_dist)
@@ -162,5 +172,5 @@ def test_compute_network_connectivity_multi() -> None:
 
     # Expected NC ≈ pr_Qn for 20Na2O-10B2O3-70SiO2.dump
     assert round(net_conn, 3) == pytest.approx(
-        3.577
+        3.577,
     ), f"Network connectivity should be {3.577}, got {net_conn}"
