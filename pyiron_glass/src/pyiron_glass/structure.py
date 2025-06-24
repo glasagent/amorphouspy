@@ -5,6 +5,7 @@ from io import StringIO
 
 import numpy as np
 import scipy
+from ase.atoms import Atoms
 from ase.io import read
 from pyiron_base import job
 
@@ -46,8 +47,9 @@ def extract_composition(composition: str) -> dict[str, float]:
 
 
 def parse_formula(formula: str) -> dict[str, int]:
-    """Parse a chemical formula (e.g. "Al2O3") and return
-    a dict of element counts: {"Al": 2, "O": 3}.
+    """Parse a chemical formula (e.g. "Al2O3") and return a dict of element counts.
+
+    Example: {"Al": 2, "O": 3}.
     """
     counts: dict[str, int] = {}
     for elem, cnt_str in ELEMENT.findall(formula):
@@ -72,12 +74,12 @@ def extract_stoichiometry(composition: str) -> dict[str, dict[str, int]]:
 def create_random_atoms(
     composition: str,
     n_molecules: int,
-    STOICHIOMETRY: dict,
+    stoichiometry: dict[str, dict[str, int]],
     box_length: float = 50.0,
     min_distance: float = 1.6,
     seed: int = 42,
     max_attempts_per_atom: int = 100000,
-):
+) -> tuple[list[dict[str, str | list[float]]], dict[str, int]]:
     """Generate random atom positions in a periodic cubic box, according to a given composition.
 
     - composition: e.g. "0.25CaO-0.25Al2O3-0.5SiO2"
@@ -110,7 +112,7 @@ def create_random_atoms(
 
     atom_counts = {}
     for ox, mol_cnt in molecule_counts.items():
-        stoich = STOICHIOMETRY.get(ox)
+        stoich = stoichiometry.get(ox)
         if stoich is None:
             msg = f"Unknown oxide formula: {ox}"
             raise KeyError(msg)
@@ -137,19 +139,24 @@ def create_random_atoms(
             else:
                 attempts += 1
 
-    return atoms  # , atom_counts
+    return atoms, atom_counts
 
 
-def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict, density: float = 2.65) -> float:
-    """Calculate the cubic box length in angstroms needed for a given composition,
-    number of molecules, and target density (g/cm^3).
-    very straightforward function that calculates the box length from the density
+def get_box_from_density(
+    composition: str,
+    n_molecules: int,
+    stoichiometry: dict[str, dict[str, int]],
+    density: float = 2.65,
+) -> float:
+    """Calculate the cubic box length in angstroms needed for a given composition.
+
+    Very straightforward function that calculates the box length from the density
     and the number of molecules.
 
     Steps:
       1. Parse composition into oxide fractions.
       2. Compute molecule counts and adjust rounding discrepancies.
-      3. Tally per-element atom counts via STOICHIOMETRY.
+      3. Tally per-element atom counts via stoichiometry.
       4. Compute total mass (g) using get_atomic_mass and AVOGADRO.
       5. Derive volume (cm3) from mass/density, convert to angstrom3,
          and return cube root for box length.
@@ -166,7 +173,7 @@ def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict
     # 2. Compute per-element atom counts
     atom_counts: dict[str, int] = {}
     for oxide, mol_cnt in molecule_counts.items():
-        stoich = STOICHIOMETRY[oxide]
+        stoich = stoichiometry[oxide]
         for elem, num in stoich.items():
             atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
 
@@ -183,20 +190,23 @@ def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict
 
 
 @job
-def get_ase_structure(atoms_dict: dict):
-    """Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file
-    format string, which is then read into an ASE Atoms object.The ASE Atoms object is then returned.
+def get_ase_structure(atoms_dict: dict) -> Atoms:
+    """Generate a LAMMPS data file format string and read into an ASE Atoms object.
+
+    Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file
+    format string, which is then read into an ASE Atoms object. The ASE Atoms object is then returned.
     atoms_dict is expected to specify a cubic box. Triclinic boxes are not supported.
 
     Parameters
     ----------
-        atoms_dict : dict
-            Dictionary that must contain the atom counts and box dimensions under the
-            keys "atoms" and "box".
+    atoms_dict : dict
+        Dictionary that must contain the atom counts and box dimensions under the
+        keys "atoms" and "box".
 
     Returns
     -------
-        ase.Atoms object of the specified structure
+    ase.Atoms
+        ASE Atoms object of the specified structure.
 
     """
     atoms = atoms_dict["atoms"]
