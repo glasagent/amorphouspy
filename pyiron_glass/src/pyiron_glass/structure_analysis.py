@@ -5,15 +5,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 This script defines functions to be used for analyzing multicomponent glass structure.
 Current implementations include analyses of:
 
-- Coordinatidef compute_Qn_dist(
-    ids: np.ndarray,
-    types: np.ndarray,
-    coords: np.ndarray,
-    box_size: np.ndarray,
-    cutoff: float,
-    former_types: list[int],
-    O_type: int,
-) -> tuple[dict[int, int], dict[int, dict[int, int]]]:s
+- Coordination numbers
 - Fraction of bridging oxygens
 - Fraction of non-bridging oxygens
 - Bond angle distributions
