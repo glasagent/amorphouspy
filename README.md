@@ -27,7 +27,7 @@ pre-commit install
 ```
 
 
-## Upcoming milestonesls
+## Upcoming milestones
 
 - Integration of existing GlasDigital workflows (DFT and classical MD) for determining density and elastic moduli into current pyiorn version and adaptation to glasses (BAM2,MS12)
 - Defining pyiron workflows (classical MD) to determine high-temperature viscosity and generation of structural models via melt-quenching (BAM2 with input from Schott, MS12)
