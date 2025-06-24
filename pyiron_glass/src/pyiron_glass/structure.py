@@ -93,7 +93,6 @@ def create_random_atoms(
 
     Returns:
         atoms: list of {"element": str, "position": [x, y, z]}
-        atom_counts: dict of total counts per element
 
     """
 
@@ -145,7 +144,7 @@ def create_random_atoms(
             else:
                 attempts += 1
 
-    return atoms, atom_counts
+    return atoms
 
 
 def get_box_from_density(
