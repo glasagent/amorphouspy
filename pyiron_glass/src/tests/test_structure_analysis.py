@@ -68,7 +68,7 @@ type_map = {
 
 network_formers = {"Si"}
 modifiers = {"Na"}
-o_type = next(t for t, e in type_map.items() if e == "O")
+O_type = next(t for t, e in type_map.items() if e == "O")
 former_types = [t for t, e in type_map.items() if e in network_formers]
 modifier_types = [t for t, e in type_map.items() if e in modifiers]
 
@@ -79,16 +79,26 @@ def test_compute_coordination_o() -> None:
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
-    o_coord_dist, _ = compute_coordination(ids, types, coords, box_size, [o_type], cutoff_map["O"], former_types)
+    o_coord_dist, _ = compute_coordination(
+        ids, types, coords, box_size, [O_type], cutoff_map["O"], former_types
+    )
 
     # Check types
     assert isinstance(o_coord_dist, dict), "O coordination should return a dictionary"
-    assert all(isinstance(k, int) for k in o_coord_dist), "Keys of O coordination should be integers"
-    assert all(isinstance(v, int) for v in o_coord_dist.values()), "Values of O coordination should be integers"
+    assert all(
+        isinstance(k, int) for k in o_coord_dist
+    ), "Keys of O coordination should be integers"
+    assert all(
+        isinstance(v, int) for v in o_coord_dist.values()
+    ), "Values of O coordination should be integers"
 
     # Two categories: NBO (coordination = 1) and BO (coordination = 2)
-    assert o_coord_dist.get(1, 0) == N_NBO, f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
-    assert o_coord_dist.get(2, 0) == N_BO, f"BO count mismatch. Expected {N_BO}, got {o_coord_dist.get(2, 0)}"
+    assert (
+        o_coord_dist.get(1, 0) == N_NBO
+    ), f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
+    assert (
+        o_coord_dist.get(2, 0) == N_BO
+    ), f"BO count mismatch. Expected {N_BO}, got {o_coord_dist.get(2, 0)}"
 
 
 def test_compute_network_connectivity() -> None:
@@ -97,16 +107,20 @@ def test_compute_network_connectivity() -> None:
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
-    qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [o_type])
+    Qn_dist, _ = compute_Qn(
+        ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type]
+    )
 
-    net_conn = compute_network_connectivity(qn_dist)
+    net_conn = compute_network_connectivity(Qn_dist)
 
     # Type checks
     assert isinstance(net_conn, float), "Network connectivity should return a float"
     assert net_conn >= 0, "Network connectivity should be non-negative"
 
     # Expected NC ≈ 3.5 for 20Na2O-80SiO2
-    assert net_conn == pytest.approx(expected_nc), f"Network connectivity should be {expected_nc}, got {net_conn}"
+    assert net_conn == pytest.approx(
+        expected_nc
+    ), f"Network connectivity should be {expected_nc}, got {net_conn}"
 
 
 def test_compute_network_connectivity_multi() -> None:
@@ -130,19 +144,23 @@ def test_compute_network_connectivity_multi() -> None:
     }
 
     network_formers = {"Si", "B"}
-    o_type_multi = next(t for t, e in type_map.items() if e == "O")
+    O_type_multi = next(t for t, e in type_map.items() if e == "O")
     former_types = [t for t, e in type_map.items() if e in network_formers]
 
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
-    qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [o_type_multi])
+    Qn_dist, _ = compute_Qn(
+        ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type_multi]
+    )
 
-    net_conn = compute_network_connectivity(qn_dist)
+    net_conn = compute_network_connectivity(Qn_dist)
 
     # Type checks
     assert isinstance(net_conn, float), "Network connectivity should return a float"
     assert net_conn >= 0, "Network connectivity should be non-negative"
 
     # Expected NC ≈ pr_Qn for 20Na2O-10B2O3-70SiO2.dump
-    assert round(net_conn, 3) == pytest.approx(3.577), f"Network connectivity should be {3.577}, got {net_conn}"
+    assert round(net_conn, 3) == pytest.approx(
+        3.577
+    ), f"Network connectivity should be {3.577}, got {net_conn}"

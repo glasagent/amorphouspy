@@ -23,7 +23,6 @@ def _get_structure(
     positions: np.ndarray | None = None,
     unwrapped_positions: np.ndarray | None = None,
     total_displacements: np.ndarray | None = None,
-    *,
     wrap_atoms: bool = True,
 ) -> Atoms:
     """Return an updated `Atoms` object based on the provided information.
@@ -87,7 +86,6 @@ def _run_lammps_md(
     initial_temperature: float,
     temperature_end: float | None = None,
     pressure: float | None = None,
-    *,
     langevin: bool = False,
     seed: int = 12345,
 ) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
@@ -129,7 +127,9 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-    temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
+    temp_setting = (
+        [temperature, temperature_end] if temperature_end is not None else temperature
+    )
 
     _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
@@ -200,7 +200,6 @@ def melt_quench_simulation(
     heating_rate: float = 1e12,
     cooling_rate: float = 1e12,
     n_print: int = 1000,
-    *,
     langevin: bool = False,
     seed: int = 12345,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
@@ -243,8 +242,14 @@ def melt_quench_simulation(
     """
     Path(working_directory).mkdir(parents=True, exist_ok=True)
 
-    heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * SECONDS_TO_FEMTOSECONDS)
-    cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * SECONDS_TO_FEMTOSECONDS)
+    heating_steps = int(
+        ((temperature_high - temperature_low) / (timestep * heating_rate))
+        * SECONDS_TO_FEMTOSECONDS
+    )
+    cooling_steps = int(
+        ((temperature_high - temperature_low) / (timestep * cooling_rate))
+        * SECONDS_TO_FEMTOSECONDS
+    )
 
     # Stage 1: Heating from low to high T
     structure, _ = _run_lammps_md(

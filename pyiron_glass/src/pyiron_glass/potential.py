@@ -82,22 +82,32 @@ def generate_potential(atoms_dict: dict) -> pd.DataFrame:
         ],
     )
 
-    o_type = types.get("O")
+    O_type = types.get("O")
     for elem in species:
         if elem == "O":
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
             C = pedone_potential_params[elem]["repulsion"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} pedone {D} {a} {r0} {C}\n")
+            config_lines.append(
+                f"pair_coeff {i_type} {O_type} pedone {D} {a} {r0} {C}\n"
+            )
 
         if elem != "O":
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
             C = pedone_potential_params[elem]["repulsion"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} pedone {D} {a} {r0} {C}\n")
+            config_lines.append(
+                f"pair_coeff {i_type} {O_type} pedone {D} {a} {r0} {C}\n"
+            )
 
     config_lines.append("\npair_modify shift yes\n")
 
     return pd.DataFrame(
-        {"Name": ["Pedone"], "Filename": [[]], "Model": ["Pedone"], "Species": [species], "Config": [config_lines]},
+        {
+            "Name": ["Pedone"],
+            "Filename": [[]],
+            "Model": ["Pedone"],
+            "Species": [species],
+            "Config": [config_lines],
+        },
     )

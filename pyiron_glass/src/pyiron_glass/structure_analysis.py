@@ -5,7 +5,15 @@ Author: Achraf Atila (achraf.atila@bam.de)
 This script defines functions to be used for analyzing multicomponent glass structure.
 Current implementations include analyses of:
 
-- Coordination numbers
+- Coordinatidef compute_Qn_dist(
+    ids: np.ndarray,
+    types: np.ndarray,
+    coords: np.ndarray,
+    box_size: np.ndarray,
+    cutoff: float,
+    former_types: list[int],
+    O_type: int,
+) -> tuple[dict[int, int], dict[int, dict[int, int]]]:s
 - Fraction of bridging oxygens
 - Fraction of non-bridging oxygens
 - Bond angle distributions
@@ -18,14 +26,20 @@ under periodic boundary conditions (PBC).
 """
 
 import gzip
-import os
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 
+# Constants
+MIN_NEIGHBORS_FOR_ANGLE = 2
+MIN_COORDINATION_FOR_BRIDGING = 2
+
 
 # See issue #30: Why not use ase.io.read instead of custom parser function?
-def read_lammps_dump(filepath: str, unwrap: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def read_lammps_dump(
+    filepath: str, *, unwrap: bool = False
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Read a LAMMPS dump file and extract atom IDs, types, coordinates, and box size.
 
     Args:
@@ -136,7 +150,9 @@ def compute_cell_list(
     return cells, n_cells, inv_cell_size
 
 
-SHIFT_GRID_3D = np.stack(np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexing="ij"), axis=-1).reshape(-1, 3)
+SHIFT_GRID_3D = np.stack(
+    np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexing="ij"), axis=-1
+).reshape(-1, 3)
 
 
 def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
@@ -176,7 +192,7 @@ def get_neighbors(
     target_type: int,
     neighbor_types: list[int] | None = None,
 ) -> list[list[int]]:
-    """Finds neighbors of specified type(s) using a cell list.
+    """Find neighbors of specified type(s) using a cell list.
 
     Args:
         coords (np.ndarray): Atom coordinates.
@@ -210,7 +226,7 @@ def get_neighbors(
 
 
 def count_distribution(coord_numbers: dict[int, int]) -> dict[int, int]:
-    """Converts coordination numbers to a histogram distribution.
+    """Convert coordination numbers to a histogram distribution.
 
     Args:
         coord_numbers (Dict[int, int]): Mapping from atom ID to coordination number.
@@ -234,7 +250,7 @@ def compute_coordination(
     cutoff: float,
     neighbor_types: list[int] | None = None,
 ) -> tuple[dict[int, int], dict[int, int]]:
-    """Computes coordination number for atoms of a target type.
+    """Compute coordination number for atoms of a target type.
 
     Args:
         ids (np.ndarray): Atom IDs.
@@ -249,8 +265,14 @@ def compute_coordination(
         Dict[int, int]: Mapping from atom ID to coordination number.
 
     """
-    neighbors = get_neighbors(coords, types, box_size, cutoff, target_type, neighbor_types)
-    coord_numbers = {ids[idx]: len(neighbors[idx]) for idx, atom_type in enumerate(types) if atom_type == target_type}
+    neighbors = get_neighbors(
+        coords, types, box_size, cutoff, target_type, neighbor_types
+    )
+    coord_numbers = {
+        ids[idx]: len(neighbors[idx])
+        for idx, atom_type in enumerate(types)
+        if atom_type == target_type
+    }
     coord_numbers_distribution = count_distribution(coord_numbers)
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
 
@@ -264,8 +286,9 @@ def compute_Qn(
     Former_types: list[int],
     O_type: int,
 ) -> tuple[dict[int, int], dict[int, dict[int, int]]]:
-    """Calculates Qn distribution: number of bridging oxygens per former atom,
-    and partial Qn distributions for each former type.
+    """Calculate Qn distribution: number of bridging oxygens per former atom.
+
+    And partial Qn distributions for each former type.
 
     Args:
         ids (np.ndarray): Atom IDs.
@@ -283,8 +306,14 @@ def compute_Qn(
         ]
 
     """
-    neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, Former_types, [O_type])))
-    _, coord_numbers_O = compute_coordination(ids, types, coords, box_size, O_type, cutoff, neighbor_types=Former_types)
+    neighbors = dict(
+        enumerate(
+            get_neighbors(coords, types, box_size, cutoff, Former_types, [O_type])
+        )
+    )
+    _, coord_numbers_O = compute_coordination(
+        ids, types, coords, box_size, O_type, cutoff, neighbor_types=Former_types
+    )
 
     total_Qn_counts = defaultdict(int)
     partial_Qn_counts = {f_type: defaultdict(int) for f_type in Former_types}
@@ -293,7 +322,10 @@ def compute_Qn(
         if atom_type in Former_types:
             bridging_count = 0
             for j in neighbors.get(idx, []):
-                if types[j] == O_type and coord_numbers_O.get(ids[j], 0) >= 2:
+                if (
+                    types[j] == O_type
+                    and coord_numbers_O.get(ids[j], 0) >= MIN_COORDINATION_FOR_BRIDGING
+                ):
                     bridging_count += 1
             total_Qn_counts[bridging_count] += 1
             partial_Qn_counts[atom_type][bridging_count] += 1
@@ -301,13 +333,15 @@ def compute_Qn(
     # Normalize output
     total_Qn_counts = {n: total_Qn_counts.get(n, 0) for n in range(7)}
     for f_type in Former_types:
-        partial_Qn_counts[f_type] = {n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)}
+        partial_Qn_counts[f_type] = {
+            n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)
+        }
 
     return total_Qn_counts, partial_Qn_counts
 
 
 def compute_network_connectivity(Qn_dist: dict[int, int]) -> float:
-    """Computes average network connectivity based on Qn distribution.
+    """Compute average network connectivity based on Qn distribution.
 
     Args:
         Qn_dist (Dict[int, int]): Qn distribution histogram.
@@ -335,7 +369,7 @@ def write_distribution_to_file(
     label: str,
     append: bool = False,
 ) -> None:
-    """Writes a coordination/Qn histogram to a text file.
+    """Write a coordination/Qn histogram to a text file.
 
     Args:
         composition (float): Composition value to label row.
@@ -350,8 +384,8 @@ def write_distribution_to_file(
     headers = [f"{label}_{i}" for i in range(max_n + 1)] + [f"{label}_tot"]
     values = [dist.get(i, 0) for i in range(max_n + 1)] + [total]
     mode = "a" if append else "w"
-    write_header = not append or not os.path.exists(filepath)
-    with open(filepath, mode, encoding="utf-8") as f:
+    write_header = not append or not Path(filepath).exists()
+    with Path(filepath).open(mode, encoding="utf-8") as f:
         if write_header:
             f.write("Composition " + " ".join(headers) + "\n")
         f.write(str(composition) + " " + " ".join(map(str, values)) + "\n")
@@ -366,7 +400,7 @@ def compute_angles(
     cutoff: float,
     bins: int = 180,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Computes bond angle distribution between triplets of neighbor_type-center-neighbor_type.
+    """Compute bond angle distribution between triplets of neighbor_type-center-neighbor_type.
 
     Args:
         types (np.ndarray): Atom types.
@@ -383,13 +417,15 @@ def compute_angles(
             - angle_hist (np.ndarray): Normalized histogram of angles.
 
     """
-    neighbors = get_neighbors(coords, types, box_size, cutoff, center_type, [neighbor_type])
+    neighbors = get_neighbors(
+        coords, types, box_size, cutoff, center_type, [neighbor_type]
+    )
     angles = []
     for i, atom_type in enumerate(types):
         if atom_type != center_type:
             continue
         neigh_ids = neighbors[i]
-        if len(neigh_ids) < 2:
+        if len(neigh_ids) < MIN_NEIGHBORS_FOR_ANGLE:
             continue
         for j, id_j in enumerate(neigh_ids):
             for k in range(j + 1, len(neigh_ids)):
@@ -405,7 +441,9 @@ def compute_angles(
                 cos_theta = np.clip(np.dot(v1, v2) / (norm_v1 * norm_v2), -1.0, 1.0)
                 angle = np.arccos(cos_theta) * 180 / np.pi
                 angles.append(angle)
-    angle_hist, bin_edges = np.histogram(angles, bins=bins, range=(0, 180), density=True)
+    angle_hist, bin_edges = np.histogram(
+        angles, bins=bins, range=(0, 180), density=True
+    )
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     return bin_centers, angle_hist
 
@@ -415,9 +453,10 @@ def write_angle_distribution(
     angle_hist: np.ndarray,
     composition: float,
     filepath: str,
+    *,
     append: bool = False,
 ) -> None:
-    """Writes angle distribution to a text file.
+    """Write angle distribution to a text file.
 
     Args:
         bin_centers (np.ndarray): Angle bin centers in degrees.
@@ -428,8 +467,8 @@ def write_angle_distribution(
 
     """
     mode = "a" if append else "w"
-    write_header = not append or not os.path.exists(filepath)
-    with open(filepath, mode, encoding="utf-8") as f:
+    write_header = not append or not Path(filepath).exists()
+    with Path(filepath).open(mode, encoding="utf-8") as f:
         if write_header:
             f.write("Composition " + " ".join(f"{b:.1f}" for b in bin_centers) + "\n")
         f.write(f"{composition} " + " ".join(f"{v:.6f}" for v in angle_hist) + "\n")

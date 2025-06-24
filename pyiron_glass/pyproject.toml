@@ -46,6 +46,8 @@ ignore   = [
   "PLR0913",
   "S101",
   "N802",
+  "N803",
   "N806",
+  "FBT002",
 ]
 fixable  = ["ALL"]           # allow --fix to touch everything
