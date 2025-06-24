@@ -21,6 +21,7 @@ import os
 from collections import defaultdict
 from typing import Tuple, List, Dict, Union
 
+
 # See issue #30: Why not use ase.io.read instead of custom parser function?
 def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
