@@ -1,16 +1,18 @@
 """
 Author: Achraf Atila (achraf.atila@bam.de)
-Description: This script have function to be used for analyzing multicomponent glass structure this include for now:
+Description: This script defines functions to be used for analyzing multicomponent glass structure.
+Current implementations include analyses of:
 
 Coordination numbers
-Bridging oxygens
-Non-bridging oxygens
+Fraction of bridging oxygens
+Fraction of non-bridging oxygens
 Bond angle distributions
 Qn distributions
 Network connectivity
-more to come...
-Note: For now, this script is designed to work with LAMMPS dump files.
-It reads a lammps dump file and uses a cell list algorithm for neighbor search under periodic boundary conditions (PBC).
+
+NB: For now, only LAMMPS dump files can be handeled.
+It reads a lammps dump file and uses a cell list algorithm for neighbor search
+under periodic boundary conditions (PBC).
 """
 
 import numpy as np
@@ -20,6 +22,7 @@ from collections import defaultdict
 from typing import Tuple, List, Dict, Union
 
 
+# See issue #30: Why not use ase.io.read instead of custom parser function?
 def read_lammps_dump(filepath: str, unwrap=False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Reads a LAMMPS dump file and extracts atom IDs, types, coordinates, and box size.

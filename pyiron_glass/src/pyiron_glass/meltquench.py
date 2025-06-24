@@ -79,6 +79,7 @@ def _run_lammps_md(
     temperature_end=None,
     pressure=None,
     langevin=False,
+    seed=12345,
 ):  # pylint: disable=too-many-positional-arguments
     """
     Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
@@ -98,13 +99,20 @@ def _run_lammps_md(
     timestep : float
         Time step for integration in femtoseconds.
     n_print : int
-        Frequency of output writing.
-    initial_temperature : float
-        Initial temperature to assign to the atoms.
+        Frequency of output writing in simulation steps.
+    initial_temperature : None or float
+        Initial temperature according to which the initial velocity field is created. If None, the initial
+        temperature will be twice the target temperature (which would go immediately down to the target temperature
+        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
+        initial velocity given in structure will be used and seed to initialize velocities will be ignored).
     temperature_end : float, optional
         Final temperature for ramping. If None, no temperature ramp is applied.
     pressure : float, optional
         Target pressure for NPT simulations. If None, NVT is used.
+    langevin : bool, optional
+        Whether to use Langevin dynamics
+    seed : int, optional
+        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
 
     Returns
     -------
@@ -125,7 +133,7 @@ def _run_lammps_md(
             "time_step": timestep,
             "n_print": n_print,
             "initial_temperature": initial_temperature,
-            "seed": 12345,
+            "seed": seed,
             "pressure": pressure,
             "langevin": langevin,
         },
@@ -151,6 +159,7 @@ def _run_lammps_md(
     )
     new_structure.set_velocities(parsed_output["generic"]["velocities"][-1])
 
+    # see issue #32: Consider implementing a more robust cleanup procedure for temporary files.
     _clean_directory(working_directory)
 
     return new_structure, parsed_output
@@ -184,6 +193,7 @@ def melt_quench_simulation(
     cooling_rate=1e12,
     n_print=1000,
     langevin=False,
+    seed=12345,
 ):  # pylint: disable=too-many-positional-arguments
     """
     Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
@@ -209,6 +219,10 @@ def melt_quench_simulation(
         The rate at which the temperature is increased during the heating phase, in K/s (default is 1e12 K/s).
     cooling_rate : float, optional
         The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
+    langevin : bool, optional
+        Whether to use Langevin dynamics.
+    seed : int, optional
+        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
 
     Returns
     -------
@@ -233,6 +247,7 @@ def melt_quench_simulation(
         n_print=n_print,
         initial_temperature=temperature_low,
         langevin=langevin,
+        seed=seed,
     )
 
     # Stage 2: Equilibration at high T
@@ -289,6 +304,7 @@ def melt_quench_simulation(
         langevin=langevin,
     )
 
+    # see issue #32: Consider implementing a more robust cleanup procedure for temporary files.
     shutil.rmtree(working_directory)
 
     return {
