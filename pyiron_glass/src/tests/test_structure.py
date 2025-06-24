@@ -17,7 +17,7 @@ def test_reproducibility() -> None:
         "box_length": box_length,
         "min_distance": min_distance,
         "max_attempts_per_atom": max_attempts_per_atom,
-        "STOICHIOMETRY": ps.extract_stoichiometry(comp),
+        "stoichiometry": ps.extract_stoichiometry(comp),
         "seed": seed,
     }
 

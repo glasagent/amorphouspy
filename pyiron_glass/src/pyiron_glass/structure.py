@@ -296,12 +296,12 @@ def get_structure_dict(
         - "box": The length of the cubic box in angstroms.
 
     """
-    STOICHIOMETRY = extract_stoichiometry(comp)
+    stoichiometry = extract_stoichiometry(comp)
     box_length = get_box_from_density(
         comp,
         n_molecules=n_molecules,
         density=density,
-        STOICHIOMETRY=STOICHIOMETRY,
+        stoichiometry=stoichiometry,
     )
     atoms_dict = create_random_atoms(
         comp,
@@ -309,6 +309,6 @@ def get_structure_dict(
         box_length=box_length,
         min_distance=min_distance,
         max_attempts_per_atom=max_attempts_per_atom,
-        STOICHIOMETRY=STOICHIOMETRY,
+        stoichiometry=stoichiometry,
     )
     return {"atoms": atoms_dict, "box": box_length}
