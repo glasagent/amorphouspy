@@ -1,4 +1,6 @@
-"""Author: Achraf Atila (achraf.atila@bam.de)
+"""Tests for structural analysis functions related to glassy systems.
+
+Author: Achraf Atila (achraf.atila@bam.de)
 
 This script provides tests for structural analysis functions related to glassy systems.
 The 0.2Na2O-0.8SiO2 glass is used. It calculates expected values for non-bridging oxygens (NBO),
@@ -47,7 +49,7 @@ N_NBO = int(2 * x * N_mols)  # Number of non-bridging oxygens (40)
 N_BO = N_O - N_NBO  # Number of bridging oxygens (140)
 
 # Expected network connectivity
-expected_NC = (4 * (1 - x) - 2 * x) / (1 - x)  # 3.5
+expected_nc = (4 * (1 - x) - 2 * x) / (1 - x)  # 3.5
 
 # Cutoff distances for computing coordination numbers (in Ångström)
 cutoff_map = {
@@ -66,48 +68,48 @@ type_map = {
 
 network_formers = {"Si"}
 modifiers = {"Na"}
-O_type = [t for t, e in type_map.items() if e == "O"][0]
+o_type = next(t for t, e in type_map.items() if e == "O")
 former_types = [t for t, e in type_map.items() if e in network_formers]
 modifier_types = [t for t, e in type_map.items() if e in modifiers]
 
 
-def test_compute_coordination_O():
+def test_compute_coordination_o() -> None:
     """Test the compute_coordination function for oxygens."""
     filename = DATA_DIR / "20Na2O-80SiO2.dump"
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
-    O_coord_dist, _ = compute_coordination(ids, types, coords, box_size, [O_type], cutoff_map["O"], former_types)
+    o_coord_dist, _ = compute_coordination(ids, types, coords, box_size, [o_type], cutoff_map["O"], former_types)
 
     # Check types
-    assert isinstance(O_coord_dist, dict), "O coordination should return a dictionary"
-    assert all(isinstance(k, int) for k in O_coord_dist.keys()), "Keys of O coordination should be integers"
-    assert all(isinstance(v, int) for v in O_coord_dist.values()), "Values of O coordination should be integers"
+    assert isinstance(o_coord_dist, dict), "O coordination should return a dictionary"
+    assert all(isinstance(k, int) for k in o_coord_dist), "Keys of O coordination should be integers"
+    assert all(isinstance(v, int) for v in o_coord_dist.values()), "Values of O coordination should be integers"
 
     # Two categories: NBO (coordination = 1) and BO (coordination = 2)
-    assert O_coord_dist.get(1, 0) == N_NBO, f"NBO count mismatch. Expected {N_NBO}, got {O_coord_dist.get(1, 0)}"
-    assert O_coord_dist.get(2, 0) == N_BO, f"BO count mismatch. Expected {N_BO}, got {O_coord_dist.get(2, 0)}"
+    assert o_coord_dist.get(1, 0) == N_NBO, f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
+    assert o_coord_dist.get(2, 0) == N_BO, f"BO count mismatch. Expected {N_BO}, got {o_coord_dist.get(2, 0)}"
 
 
-def test_compute_network_connectivity():
+def test_compute_network_connectivity() -> None:
     """Test the compute_network_connectivity function."""
     filename = DATA_DIR / "20Na2O-80SiO2.dump"
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
-    Qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
+    qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [o_type])
 
-    net_conn = compute_network_connectivity(Qn_dist)
+    net_conn = compute_network_connectivity(qn_dist)
 
     # Type checks
     assert isinstance(net_conn, float), "Network connectivity should return a float"
     assert net_conn >= 0, "Network connectivity should be non-negative"
 
     # Expected NC ≈ 3.5 for 20Na2O-80SiO2
-    assert net_conn == pytest.approx(expected_NC), f"Network connectivity should be {expected_NC}, got {net_conn}"
+    assert net_conn == pytest.approx(expected_nc), f"Network connectivity should be {expected_nc}, got {net_conn}"
 
 
-def test_compute_network_connectivity_multi():
+def test_compute_network_connectivity_multi() -> None:
     """Test the compute_network_connectivity function."""
     filename = DATA_DIR / "20Na2O-10B2O3-70SiO2.dump"
 
@@ -128,15 +130,15 @@ def test_compute_network_connectivity_multi():
     }
 
     network_formers = {"Si", "B"}
-    O_type = [t for t, e in type_map.items() if e == "O"][0]
+    o_type_multi = next(t for t, e in type_map.items() if e == "O")
     former_types = [t for t, e in type_map.items() if e in network_formers]
 
     ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
 
     # compute_Qn returns a Qn distribution dict: {0: count, 1: count, ..., 6: count}
-    Qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [O_type])
+    qn_dist, _ = compute_Qn(ids, types, coords, box_size, cutoff_map["O"], former_types, [o_type_multi])
 
-    net_conn = compute_network_connectivity(Qn_dist)
+    net_conn = compute_network_connectivity(qn_dist)
 
     # Type checks
     assert isinstance(net_conn, float), "Network connectivity should return a float"

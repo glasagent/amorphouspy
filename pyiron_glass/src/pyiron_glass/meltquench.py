@@ -1,3 +1,5 @@
+"""Melt-quench simulation workflows for glass systems using LAMMPS."""
+
 import os
 import shutil
 
@@ -44,7 +46,7 @@ def _get_structure(
     """
     if indices is not None and len(indices) != len(structure):
         snapshot = Atoms(
-            positions=np.zeros(indices.shape + (3,)),
+            positions=np.zeros((*indices.shape, 3)),
             cell=cell,
             pbc=structure.pbc,
         )
@@ -164,7 +166,7 @@ def _run_lammps_md(
     return new_structure, parsed_output
 
 
-def _clean_directory(directory):
+def _clean_directory(directory) -> None:
     """Remove all files in the specified directory.
 
     Parameters

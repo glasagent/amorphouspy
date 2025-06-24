@@ -1,15 +1,18 @@
-"""Author: Achraf Atila (achraf.atila@bam.de)
-Description: This script defines functions to be used for analyzing multicomponent glass structure.
+"""Structural analysis functions for multicomponent glass systems.
+
+Author: Achraf Atila (achraf.atila@bam.de)
+
+This script defines functions to be used for analyzing multicomponent glass structure.
 Current implementations include analyses of:
 
-Coordination numbers
-Fraction of bridging oxygens
-Fraction of non-bridging oxygens
-Bond angle distributions
-Qn distributions
-Network connectivity
+- Coordination numbers
+- Fraction of bridging oxygens
+- Fraction of non-bridging oxygens
+- Bond angle distributions
+- Qn distributions
+- Network connectivity
 
-NB: For now, only LAMMPS dump files can be handeled.
+Note: For now, only LAMMPS dump files can be handled.
 It reads a lammps dump file and uses a cell list algorithm for neighbor search
 under periodic boundary conditions (PBC).
 """
@@ -22,8 +25,8 @@ import numpy as np
 
 
 # See issue #30: Why not use ase.io.read instead of custom parser function?
-def read_lammps_dump(filepath: str, unwrap=False) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Reads a LAMMPS dump file and extracts atom IDs, types, coordinates, and box size.
+def read_lammps_dump(filepath: str, unwrap: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Read a LAMMPS dump file and extract atom IDs, types, coordinates, and box size.
 
     Args:
         filepath (str): Path to the LAMMPS dump file (can be gzipped).
@@ -59,7 +62,8 @@ def read_lammps_dump(filepath: str, unwrap=False) -> tuple[np.ndarray, np.ndarra
                     break
 
     if n_atoms is None or not box_bounds:
-        raise ValueError("Missing 'NUMBER OF ATOMS' or 'BOX BOUNDS' section in dump file.")
+        msg = "Missing 'NUMBER OF ATOMS' or 'BOX BOUNDS' section in dump file."
+        raise ValueError(msg)
 
     box_bounds = np.array(box_bounds)
     box_lower = box_bounds[:, 0]
@@ -83,7 +87,7 @@ def remove_atom_type(
     box_size: np.ndarray,
     remove_types: list[int],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Removes atoms of specified types from the system.
+    """Remove atoms of specified types from the system.
 
     Args:
         ids (np.ndarray): Atom IDs.
@@ -109,7 +113,7 @@ def compute_cell_list(
     box_size: np.ndarray,
     cutoff: float,
 ) -> tuple[dict[tuple[int, int, int], list[int]], np.ndarray, np.ndarray]:
-    """Constructs a cell list to accelerate neighbor search.
+    """Construct a cell list to accelerate neighbor search.
 
     Args:
         coords (np.ndarray): Atom coordinates.
@@ -125,7 +129,6 @@ def compute_cell_list(
     """
     cells = defaultdict(list)
     n_cells = np.maximum(1, np.floor(box_size / cutoff)).astype(int)
-    # n_cells = np.floor(box_size / cutoff).astype(int)
     inv_cell_size = n_cells / box_size
     atom_cells = np.floor(coords * inv_cell_size).astype(int) % n_cells
     for idx, cell in enumerate(atom_cells):
@@ -137,7 +140,7 @@ SHIFT_GRID_3D = np.stack(np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexin
 
 
 def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
-    """Generates neighboring cell indices for a given cell index in a 3D grid.
+    """Generate neighboring cell indices for a given cell index in a 3D grid.
 
     Args:
         ci (np.ndarray): Current cell index as a 3-element array.
@@ -150,7 +153,17 @@ def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
     return (ci + SHIFT_GRID_3D) % n_cells
 
 
-def compute_distance(rij, box_size):
+def compute_distance(rij: np.ndarray, box_size: np.ndarray) -> float:
+    """Compute minimum image distance between two atoms.
+
+    Args:
+        rij: Vector between two atoms
+        box_size: Box dimensions for periodic boundary conditions
+
+    Returns:
+        Minimum image distance
+
+    """
     rij -= box_size * np.round(rij / box_size)
     return np.linalg.norm(rij)
 
@@ -309,7 +322,8 @@ def compute_network_connectivity(Qn_dist: dict[int, int]) -> float:
     total_formers = sum(Qn_dist.values())
 
     if total_formers == 0:
-        raise ValueError("total_formers is zero, cannot compute network connectivity.")
+        msg = "total_formers is zero, cannot compute network connectivity."
+        raise ValueError(msg)
 
     return sum(n * (count / total_formers) for n, count in Qn_dist.items())
 

@@ -4,7 +4,7 @@ repos:
   hooks:
     # -------- lint & autofix ------------------------------------
     - id: ruff-check
-      args: [--fix]                 # auto-fix what can be fixed
+      args: [--unsafe-fixes, --fix]                 # auto-fix what can be fixed
       files: ^pyiron_glass/.*\.py$  # *only* staged files inside src/
     # -------- final formatting pass -----------------------------
     - id: ruff-format

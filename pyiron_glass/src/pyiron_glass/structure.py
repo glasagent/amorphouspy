@@ -1,3 +1,5 @@
+"""Structure generation and analysis for oxide glass systems."""
+
 import re
 from io import StringIO
 
@@ -20,7 +22,7 @@ def extract_composition(composition: str) -> dict[str, float]:
     The composition can be given as a fraction or in mol%, and the function will return
     the molar fraction in all cases
     Example of usage: extract_composition("0.25CaO-0.25Al2O3-0.5SiO2")
-                      extract_composition("79SiO2-13B2O3-3Al2O3-4Na2O-1K2O")
+                      extract_composition("79SiO2-13B2O3-3Al2O3-4Na2O-1K2O").
 
     Example of an output:
     print(extract_composition("0.25CaO-0.25Al2O3-0.5SiO2"))
@@ -38,7 +40,8 @@ def extract_composition(composition: str) -> dict[str, float]:
         comp_dict[oxide] = frac
         total += frac
     if round(total, 2) < 1.0:
-        raise ValueError(f"Component sum ({total:.2f}) is less than 1.00")
+        msg = f"Component sum ({total:.2f}) is less than 1.00"
+        raise ValueError(msg)
     return comp_dict
 
 
@@ -109,7 +112,8 @@ def create_random_atoms(
     for ox, mol_cnt in molecule_counts.items():
         stoich = STOICHIOMETRY.get(ox)
         if stoich is None:
-            raise KeyError(f"Unknown oxide formula: {ox}")
+            msg = f"Unknown oxide formula: {ox}"
+            raise KeyError(msg)
         for elem, num in stoich.items():
             atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
 
@@ -122,7 +126,8 @@ def create_random_atoms(
         attempts = 0
         while placed < count:
             if attempts >= max_attempts_per_atom:
-                raise RuntimeError(f"Failed to place {elem} atoms: increase box or reduce min_distance")
+                msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
+                raise RuntimeError(msg)
             pos = np.random.uniform(0, box_length, size=3)
             if all(minimum_image_distance(pos, p, box_length) >= min_distance for p in positions):
                 atoms.append({"element": elem, "position": pos.tolist()})
@@ -174,8 +179,7 @@ def get_box_from_density(composition: str, n_molecules: int, STOICHIOMETRY: dict
     volume_A3 = volume_cm3 * 1e24
 
     # 5. Box length in \AA
-    box_length_A = volume_A3 ** (1 / 3)
-    return box_length_A
+    return volume_A3 ** (1 / 3)
 
 
 @job
