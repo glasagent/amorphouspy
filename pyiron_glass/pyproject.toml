@@ -21,36 +21,34 @@ dependencies = [
   "structuretoolkit",
 ]
 
-[tool.black]
-line-length = 120
-target-version = ['py312']
-include = '\.pyi?$'
-
 [tool.pytest]
 testpaths = ["src/tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 
-[tool.pylint.master]
-max-line-length = 120
-max-args = 7
-max-positional-arguments= 7
-#max-locals = 25
-#max-bool-expr = 5
+[tool.ruff]
+# Target Python version
+target-version = "py312"
+# Line length control
+line-length = 120
 
-[tool.pylint.messages_control]
-disable = [
-    "C0103",  # Invalid name (too short, etc.)
-    "C0111",  # Missing docstring
-    "C0206",  # consider iterating with .items()
-    "C0302",  # Too many lines in module
-    "C1801",  # Do not use len(SEQUENCE) to determine if a sequence is empty
-    "C0411",  # Import order
-    "R0903",  # Too few public methods
-    "R0913",  # Too many arguments
-    "R0914",  # Too many local variables
-    "W0212",  # Access to a protected member
-    "W0621",  # Redefining name from outer scope
-    "W0622",  # Redefining built-in
+[tool.ruff.format]           # formatter tweaks
+quote-style  = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint]             # linter rules
+select   = ["ALL"]           # enable every rule Ruff knows
+ignore   = [
+  "D203", 
+  "PLR0913",
+  "S101",
+  "N802",
+  "N803",
+  "N806",
+  "FBT002",
+  "COM812",
 ]
+fixable  = ["ALL"]           # allow --fix to touch everything

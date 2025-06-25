@@ -1,3 +1,5 @@
+"""Test package for pyiron_glass."""
+
 from pathlib import Path
 
 # This file makes the tests directory a Python package

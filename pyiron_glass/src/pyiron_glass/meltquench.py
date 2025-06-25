@@ -1,23 +1,26 @@
-import os
+"""Melt-quench simulation workflows for glass systems using LAMMPS."""
+
 import shutil
+from pathlib import Path
+
 import numpy as np
 from ase.atoms import Atoms
-from pyiron_base import job
 from pyiron_atomistics.lammps.lammps import lammps_function
+from pyiron_base import job
 from structuretoolkit.common import center_coordinates_in_unit_cell
 
 
 def _get_structure(
-    structure,
-    cell,
-    indices,
-    positions=None,
-    unwrapped_positions=None,
-    total_displacements=None,
-    wrap_atoms=True,
-):
-    """
-    Return an updated `Atoms` object based on the provided information.
+    structure: Atoms,
+    cell: np.ndarray,
+    indices: np.ndarray,
+    positions: np.ndarray | None = None,
+    unwrapped_positions: np.ndarray | None = None,
+    total_displacements: np.ndarray | None = None,
+    *,
+    wrap_atoms: bool = True,
+) -> Atoms:
+    """Return an updated `Atoms` object based on the provided information.
 
     Parameters
     ----------
@@ -40,11 +43,11 @@ def _get_structure(
     -------
     Atoms
         The newly constructed atomic structure with updated positions and cell.
-    """
 
+    """
     if indices is not None and len(indices) != len(structure):
         snapshot = Atoms(
-            positions=np.zeros(indices.shape + (3,)),
+            positions=np.zeros((*indices.shape, 3)),
             cell=cell,
             pbc=structure.pbc,
         )
@@ -68,21 +71,21 @@ def _get_structure(
 
 
 def _run_lammps_md(
-    structure,
-    potential,
-    working_directory,
-    temperature,
-    n_ionic_steps,
-    timestep,
-    n_print,
-    initial_temperature,
-    temperature_end=None,
-    pressure=None,
-    langevin=False,
-    seed=12345,
-):  # pylint: disable=too-many-positional-arguments
-    """
-    Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
+    structure: Atoms,
+    potential: str,
+    working_directory: str,
+    temperature: float | list[float],
+    n_ionic_steps: int,
+    timestep: float,
+    n_print: int,
+    initial_temperature: float,
+    temperature_end: float | None = None,
+    pressure: float | None = None,
+    *,
+    langevin: bool = False,
+    seed: int = 12345,
+) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
+    """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
     Parameters
     ----------
@@ -118,8 +121,8 @@ def _run_lammps_md(
     -------
     tuple
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
-    """
 
+    """
     temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
     _shell_output, parsed_output, _job_crashed = lammps_function(
@@ -165,38 +168,38 @@ def _run_lammps_md(
     return new_structure, parsed_output
 
 
-def _clean_directory(directory):
-    """
-    Remove all files in the specified directory.
+def _clean_directory(directory: str) -> None:
+    """Remove all files in the specified directory.
 
     Parameters
     ----------
     directory : str
         Path to the directory to be cleaned.
-    """
 
-    for filename in os.listdir(directory):
-        file_path = os.path.join(directory, filename)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
+    """
+    directory_path = Path(directory)
+    for file_path in directory_path.iterdir():
+        if file_path.is_file():
+            file_path.unlink()
 
 
 @job
 def melt_quench_simulation(
-    structure,
-    potential,
-    working_directory,
-    temperature_high=5000.0,
-    temperature_low=300.0,
-    timestep=1.0,
-    heating_rate=1e12,
-    cooling_rate=1e12,
-    n_print=1000,
-    langevin=False,
-    seed=12345,
-):  # pylint: disable=too-many-positional-arguments
-    """
-    Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
+    structure: Atoms,
+    potential: str,
+    working_directory: str,
+    temperature_high: float = 5000.0,
+    temperature_low: float = 300.0,
+    timestep: float = 1.0,
+    heating_rate: float = 1e12,
+    cooling_rate: float = 1e12,
+    n_print: int = 1000,
+    *,
+    langevin: bool = False,
+    seed: int = 12345,
+) -> dict:  # pylint: disable=too-many-positional-arguments
+    """Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
+
     This function heats a structure to a high temperature, equilibrates it,
     and then cools it down to a low temperature, simulating a melt-quench process.
     The heating and cooling rates are given in K/s, and the conversion into simulation steps is done automatically.
@@ -213,12 +216,14 @@ def melt_quench_simulation(
         The high temperature to which the structure will be heated (default is 5000.0 K).
     temperature_low : float, optional
         The low temperature to which the structure will be cooled (default is 300.0 K).
-    n_print : int, optional
-        The frequency of output during the simulation (default is 1000).
+    timestep : float, optional
+        Time step for integration in femtoseconds (default is 1.0 fs).
     heating_rate : float, optional
         The rate at which the temperature is increased during the heating phase, in K/s (default is 1e12 K/s).
     cooling_rate : float, optional
         The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
+    n_print : int, optional
+        The frequency of output during the simulation (default is 1000).
     langevin : bool, optional
         Whether to use Langevin dynamics.
     seed : int, optional
@@ -228,8 +233,9 @@ def melt_quench_simulation(
     -------
     dict
         A dictionary containing the simulation steps and temperature data.
+
     """
-    os.makedirs(working_directory, exist_ok=True)
+    Path(working_directory).mkdir(parents=True, exist_ok=True)
 
     seconds_to_femtos = 1e15
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)

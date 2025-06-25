@@ -1,6 +1,9 @@
+"""LAMMPS potential generation for oxide glass simulations."""
+
 # Author: Achraf Atila (achraf.atila@bam.de)
-import pandas
+import pandas as pd
 from pyiron_base import job
+
 from pyiron_glass.shared import get_element_types_dict
 
 # Complete dictionary of Pedone parameters
@@ -38,7 +41,20 @@ pedone_potential_params = {
 
 
 @job
-def generate_potential(atoms_dict):
+def generate_potential(atoms_dict: dict) -> pd.DataFrame:
+    """Generate LAMMPS potential configuration for glass simulations.
+
+    Parameters
+    ----------
+    atoms_dict : dict
+        Dictionary containing atomic structure information
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing potential configuration
+
+    """
     types = get_element_types_dict(atoms_dict)
     config_lines = [
         "# A. Pedone et.al., JPCB (2006), https://doi.org/10.1021/jp0611018\n",
@@ -51,8 +67,7 @@ def generate_potential(atoms_dict):
 
     species = list(types.keys())
 
-    for elem in species:
-        config_lines.append(f"group {elem} type {types[elem]}\n")
+    config_lines.extend(f"group {elem} type {types[elem]}\n" for elem in species)
 
     config_lines.append("\n### set charges ###\n")
     for elem in species:
@@ -64,25 +79,35 @@ def generate_potential(atoms_dict):
             "\n### Pedone Potential Parameters ###\n",
             "pair_style hybrid/overlay coul/dsf 0.25 8.0 pedone 5.5\n",
             "pair_coeff * * coul/dsf\n",
-        ]
+        ],
     )
 
-    o_type = types.get("O")
+    O_type = types.get("O")
     for elem in species:
         if elem == "O":
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
             C = pedone_potential_params[elem]["repulsion"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} pedone {D} {a} {r0} {C}\n")
+            config_lines.append(
+                f"pair_coeff {i_type} {O_type} pedone {D} {a} {r0} {C}\n",
+            )
 
         if elem != "O":
             i_type = types[elem]
             D, a, r0 = pedone_potential_params[elem]["morse"]
             C = pedone_potential_params[elem]["repulsion"]
-            config_lines.append(f"pair_coeff {i_type} {o_type} pedone {D} {a} {r0} {C}\n")
+            config_lines.append(
+                f"pair_coeff {i_type} {O_type} pedone {D} {a} {r0} {C}\n",
+            )
 
     config_lines.append("\npair_modify shift yes\n")
 
-    return pandas.DataFrame(
-        {"Name": ["Pedone"], "Filename": [[]], "Model": ["Pedone"], "Species": [species], "Config": [config_lines]}
+    return pd.DataFrame(
+        {
+            "Name": ["Pedone"],
+            "Filename": [[]],
+            "Model": ["Pedone"],
+            "Species": [species],
+            "Config": [config_lines],
+        },
     )

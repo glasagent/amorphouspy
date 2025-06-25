@@ -1,0 +1,11 @@
+repos:
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.12.0
+  hooks:
+    # -------- lint & autofix ------------------------------------
+    - id: ruff-check
+      args: [--unsafe-fixes, --fix]                 # auto-fix what can be fixed
+      files: ^pyiron_glass/.*\.py$  # *only* staged files inside src/
+    # -------- final formatting pass -----------------------------
+    - id: ruff-format
+      files: ^pyiron_glass/.*\.py$  # *only* staged files inside src/

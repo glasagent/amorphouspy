@@ -1,8 +1,11 @@
+"""Tests for mass calculation utilities."""
+
 import pytest
+
 from pyiron_glass.mass import get_atomic_mass
 
 
-def test_get_atomic_mass():
+def test_get_atomic_mass() -> None:
     """Test that the get_atomic_mass function works correctly."""
     # Test by element symbol
     assert get_atomic_mass("H") == pytest.approx(1.008)
