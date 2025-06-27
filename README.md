@@ -8,6 +8,7 @@ Later, these workflows serve as blueprints intended to be used by "Otto", the Gl
 ## Contents
 
 - `pyiron_glass`: pyiron workflows for atomistic modeling of oxide glasses
+- `pyiron_glass_api`: MCP server implementation for `pyiron_glass`
 - `notebooks`: Jupyter notebooks for atomistic modeling of oxide glasses	
 
 ## Installation
@@ -16,6 +17,7 @@ Later, these workflows serve as blueprints intended to be used by "Otto", the Gl
 conda env create -f environment.yml
 conda activate pyiron-glass
 pip install -e pyiron_glass
+pip install -e pyiron_glass_api  # optional, for MCP server
 jupyter notebook notebooks/Meltquench.ipynb
 ```
 
@@ -24,6 +26,12 @@ In addition, install
 ```
 pip install -r pyiron_glass/requirements-dev.txt
 pre-commit install
+```
+
+## MCP server
+
+```
+python -m uvicorn pyiron_glass_api.app:http_app --host
 ```
 
 

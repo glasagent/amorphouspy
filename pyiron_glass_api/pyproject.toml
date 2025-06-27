@@ -3,22 +3,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pyiron_glass"
+name = "pyiron_glass_api"
 version = "0.0.1"
-description = "pyiron workflows atomistic modeling of oxide glasses"
+description = "Model Context Protocol server for launching glass simulations via pyiron_glass"
 authors = [
-  { name = "Achraf Atila", email = "achraf.atila@bam.de" },
-  { name = "Jan Janssen", email = "janssen@mpie.de" },
   { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
 ]
 license = { file = "../LICENSE" }
 dependencies = [
-  "ase",
-  "pandas",
-  "pyiron_atomistics",
-  "pyiron_base",
-  "scipy",
-  "structuretoolkit",
+  "pyiron_glass",
+  "fastmcp",
+  "uvicorn",
 ]
 
 [tool.pytest]
