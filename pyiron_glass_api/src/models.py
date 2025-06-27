@@ -6,7 +6,7 @@ including meltquench simulations and other glass modeling workflows.
 """
 
 from typing import List, Literal
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class MeltquenchRequest(BaseModel):
@@ -32,13 +32,20 @@ class MeltquenchRequest(BaseModel):
     unit: Literal["wt", "mol"] = Field(
         ..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent"
     )
+    n_molecules: int = Field(
+        200, description="Number of molecules for simulation", gt=0
+    )
     density: float = Field(2.69, description="Target density in g/cm³", gt=0)
-    # n_molecules: int = Field(200, description="Number of molecules for simulation", gt=0)
-    # temperature_high: int = Field(5000, description="High temperature for melting in K", gt=0)
-    # temperature_low: int = Field(300, description="Low temperature for quenching in K", gt=0)
+    temperature_high: int = Field(
+        5000, description="High temperature for melting in K", gt=0
+    )
+    temperature_low: int = Field(
+        300, description="Low temperature for quenching in K", gt=0
+    )
 
-    @validator("values")
-    def validate_values_sum(cls, v, values):
+    @field_validator("values")
+    @classmethod
+    def validate_values_sum(cls, v):
         """Ensure composition values sum to approximately 100 (for percentages) or 1 (for fractions)."""
         total = sum(v)
         if total > 1.1:  # Likely percentages
@@ -53,10 +60,11 @@ class MeltquenchRequest(BaseModel):
                 )
         return v
 
-    @validator("components")
-    def validate_components_length(cls, v, values):
+    @field_validator("components")
+    @classmethod
+    def validate_components_length(cls, v, info):
         """Ensure components and values lists have the same length."""
-        if "values" in values and len(v) != len(values["values"]):
+        if info.data and "values" in info.data and len(v) != len(info.data["values"]):
             raise ValueError("Components and values lists must have the same length")
         return v
 

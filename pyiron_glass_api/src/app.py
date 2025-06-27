@@ -13,11 +13,20 @@ Example usage:
 from uuid import uuid4
 from typing import Dict
 import json
+import logging
 import anyio
 from fastmcp import FastMCP
 from fastmcp.utilities import types
 
 from models import MeltquenchRequest
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler("mcp_server.log")],
+)
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP("long_runner")
 
@@ -64,6 +73,9 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
         task_id (str): Unique identifier for the task
         request (MeltquenchRequest): Validated meltquench parameters
     """
+    logger.info(f"Starting meltquench simulation for task {task_id}")
+    logger.info(f"Request parameters: {request.model_dump()}")
+
     try:
         # Import pyiron_glass modules (import here to avoid startup dependencies)
         import numpy as np
@@ -87,9 +99,11 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
             comp_parts.append(f"{fraction}{component}")
 
         composition = "-".join(comp_parts)
+        logger.info(f"Task {task_id}: Generated composition string: {composition}")
 
         # Update task status
         _task_store[task_id]["status"] = "Creating structure"
+        logger.info(f"Task {task_id}: Creating structure")
 
         # Create pyiron project and generate structure
         pr = Project(f"meltquench_{task_id}")
@@ -102,19 +116,25 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
             max_attempts_per_atom=10000,
             pyiron_project=pr,
         )
+        logger.info(
+            f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms"
+        )
 
         structure = get_ase_structure(
             atoms_dict=atoms_dict,
             pyiron_project=pr,
         )
+        logger.info(f"Task {task_id}: ASE structure created")
 
         potential = generate_potential(
             atoms_dict=atoms_dict,
             pyiron_project=pr,
         )
+        logger.info(f"Task {task_id}: Potential generated")
 
         # Update task status
         _task_store[task_id]["status"] = "Running meltquench simulation"
+        logger.info(f"Task {task_id}: Starting meltquench simulation")
 
         # Run meltquench simulation
         delayed = melt_quench_simulation(
@@ -131,12 +151,17 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
         )
 
         # Execute the simulation
+        logger.info(f"Task {task_id}: Executing simulation workflow")
         result = delayed.pull()
+        logger.info(f"Task {task_id}: Simulation completed successfully")
 
         # Calculate final density
         V = np.mean(result["generic"]["volume"]) * 1e-24  # volume in cm³
         massTot = result["structure"].get_masses().sum() / units._Nav
         final_density = massTot / V
+        logger.info(
+            f"Task {task_id}: Final density calculated: {final_density:.3f} g/cm³"
+        )
 
         # Store results
         _task_store[task_id]["state"] = "complete"
@@ -147,8 +172,12 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
             "final_density": float(final_density),
             "simulation_steps": len(result["steps"]),
         }
+        logger.info(f"Task {task_id}: Results stored, simulation complete")
 
     except Exception as exc:
+        logger.error(
+            f"Task {task_id}: Simulation failed with error: {str(exc)}", exc_info=True
+        )
         _task_store[task_id]["state"] = "error"
         _task_store[task_id]["error"] = str(exc)
 
@@ -163,16 +192,6 @@ async def start_meltquench(request_json: str) -> types.TextContent:
 
     Returns:
         types.TextContent: Task ID that can be used to check status
-
-    Example:
-        request = {
-            "components": ["CaO", "Al2O3", "SiO2"],
-            "values": [25.0, 25.0, 50.0],
-            "unit": "mol",
-            "n_molecules": 200,
-            "density": 2.69
-        }
-        start_meltquench(json.dumps(request)) -> "task-id-string"
     """
     try:
         # Parse and validate the request
@@ -180,6 +199,8 @@ async def start_meltquench(request_json: str) -> types.TextContent:
         request = MeltquenchRequest(**request_data)
 
         task_id = str(uuid4())
+        logger.info(f"Creating new meltquench task with ID: {task_id}")
+
         _task_store[task_id] = {"state": "processing", "status": "Initializing"}
 
         # Start the background task
@@ -188,8 +209,10 @@ async def start_meltquench(request_json: str) -> types.TextContent:
         return types.TextContent(text=task_id)
 
     except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON format in meltquench request: {str(e)}")
         return types.TextContent(text=f"ERROR: Invalid JSON format - {str(e)}")
     except Exception as e:
+        logger.error(f"Error starting meltquench task: {str(e)}", exc_info=True)
         return types.TextContent(text=f"ERROR: {str(e)}")
 
 
@@ -210,8 +233,10 @@ async def check(task_id: str) -> types.TextContent:
         - Task result: Task completed successfully (JSON for meltquench)
         - "ERROR: <message>": Task failed with error
     """
+    logger.debug(f"Checking status for task: {task_id}")
     meta = _task_store.get(task_id)
     if not meta:
+        logger.warning(f"Unknown task ID requested: {task_id}")
         return types.TextContent(text="unknown task")
     if meta["state"] == "complete":
         # Return JSON for meltquench results, simple text for sleep results
