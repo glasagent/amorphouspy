@@ -21,8 +21,7 @@ from pyiron_glass.structure import get_ase_structure, get_structure_dict  # noqa
 from pyiron_glass.workflows.meltquench import melt_quench_simulation  # noqa: F401
 from pyiron_glass.workflows.viscosity import viscosity_simulation  # noqa: F401
 
-__all__ =
-    [
+__all__ = [
         "compute_angles",
         "compute_cavities",
         "compute_coordination",
