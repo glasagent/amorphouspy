@@ -1,6 +1,4 @@
-"""
-Pyiron Glass package for atomistic modeling of oxide glasses.
-"""
+"""Pyiron Glass package for atomistic modeling of oxide glasses."""
 
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
 from pyiron_glass.workflows.viscosity import viscosity_simulation
