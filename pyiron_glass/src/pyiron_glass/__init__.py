@@ -1,4 +1,6 @@
-"""PyIron Glass package for atomistic modeling of oxide glasses."""
+"""
+Pyiron Glass package for atomistic modeling of oxide glasses.
+"""
 
 from pyiron_glass.workflows.meltquench import (
     melt_quench_simulation,
@@ -20,14 +22,14 @@ from pyiron_glass.analysis.qn_network_connectivity import (
     compute_qn,
     compute_network_connectivity,
 )
-
 from pyiron_glass.analysis.rings import compute_rings
 from pyiron_glass.analysis.cavities import compute_cavities
 
 
 __all__ = [
     "compute_rings",
-    "compute_cavities" "compute_qn",
+    "compute_cavities",
+    "compute_qn",
     "compute_angles",
     "compute_coordination",
     "compute_network_connectivity",
@@ -43,3 +45,5 @@ __all__ = [
     "write_angle_distribution",
     "write_distribution_to_file",
 ]
+
+__version__ = "0.0.1"
