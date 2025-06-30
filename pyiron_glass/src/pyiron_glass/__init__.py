@@ -2,10 +2,8 @@
 Pyiron Glass package for atomistic modeling of oxide glasses.
 """
 
-from pyiron_glass.workflows.meltquench import (
-    melt_quench_simulation,
-    viscosity_simulation,
-)
+from pyiron_glass.workflows.meltquench import melt_quench_simulation
+from pyiron_glass.workflows.viscosity import viscosity_simulation
 from pyiron_glass.potentials.potential import generate_potential
 from pyiron_glass.potentials import potential
 from pyiron_glass.structure import get_ase_structure, get_structure_dict
