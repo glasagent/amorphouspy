@@ -26,8 +26,7 @@ def compute_qn(
     former_types: list[int],
     o_type: int,
 ) -> tuple[dict[int, int], dict[int, dict[int, int]]]:
-    """
-    Calculate Qn distribution: number of bridging oxygens per former atom,
+    """Calculate Qn distribution: number of bridging oxygens per former atom,
     and partial Qn distributions for each former type.
 
     The Q^n distribution characterizes connectivity of tetrahedral
@@ -87,8 +86,7 @@ def compute_qn(
 
 
 def compute_network_connectivity(qn_dist: dict[int, int]) -> float:
-    """
-    Compute average network connectivity based on Qn distribution.
+    """Compute average network connectivity based on Qn distribution.
 
     Args:
         qn_dist (dict[int, int]): Qn distribution histogram.
