@@ -1,9 +1,11 @@
 """Melt-quench simulation workflows for glass systems using LAMMPS."""
 
+from ase.atoms import Atoms
+import numpy as np
 import shutil
 from pathlib import Path
-import numpy as np
-from ase.atoms import Atoms
+
+
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
 from structuretoolkit.common import center_coordinates_in_unit_cell

@@ -1,7 +1,7 @@
 """Viscosity simulation workflows for glass systems using LAMMPS."""
 
 
-def viscosity_simulation():
+def viscosity_simulation() -> dict:
     """
     Perform a viscosity simulation on a glass system using LAMMPS.
 
@@ -10,6 +10,7 @@ def viscosity_simulation():
 
     Returns:
         None
+
     """
     # Placeholder for actual implementation
-    print("Viscosity simulation workflow is not yet implemented.")
+    return {"message": "Viscosity simulation workflow is not yet implemented."}
