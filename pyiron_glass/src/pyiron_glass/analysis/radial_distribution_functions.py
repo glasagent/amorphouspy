@@ -5,6 +5,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 import numpy as np
+
 from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.shared import count_distribution
 
