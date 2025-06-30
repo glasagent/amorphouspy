@@ -1,0 +1,6 @@
+"""Analysis subpackage of pyiron_glass.
+
+Contains modules for structural analysis of atomistic glass simulations,
+including ring statistics, cavity detection, Qn calculation,
+radial distribution functions, and bond angle distributions.
+"""
