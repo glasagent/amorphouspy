@@ -52,3 +52,8 @@ ignore   = [
   "COM812",
 ]
 fixable  = ["ALL"]           # allow --fix to touch everything
+
+[tool.uv.workspace]
+members = [
+    "pyiron_glass",
+]

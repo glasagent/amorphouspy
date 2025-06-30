@@ -1,5 +1,4 @@
-"""Structural analysis functions to get the Qn and network connectivity
-of multicomponent glass systems.
+"""Structural analysis functions to get the Qn and network connectivity of multicomponent glass systems.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 This module provides functions to compute the Q^n distribution,
@@ -10,9 +9,11 @@ distribution.
 """
 
 from collections import defaultdict
+
 import numpy as np
-from pyiron_glass.neighbors import get_neighbors
+
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination
+from pyiron_glass.neighbors import get_neighbors
 
 MIN_COORDINATION_FOR_BRIDGING = 2
 
@@ -26,8 +27,7 @@ def compute_qn(
     former_types: list[int],
     o_type: int,
 ) -> tuple[dict[int, int], dict[int, dict[int, int]]]:
-    """Calculate Qn distribution: number of bridging oxygens per former atom,
-    and partial Qn distributions for each former type.
+    """Calculate Qn distribution.
 
     The Q^n distribution characterizes connectivity of tetrahedral
     network-forming units based on bridging oxygens (BOs) count.
@@ -46,6 +46,7 @@ def compute_qn(
             dict[int, int],             # Total Qn distribution
             dict[int, dict[int, int]]   # Partial Qn per former type
         ]
+
     """
     neighbors = dict(
         enumerate(
@@ -96,9 +97,11 @@ def compute_network_connectivity(qn_dist: dict[int, int]) -> float:
 
     Raises:
         ValueError: If qn_dist is empty or sum of counts is zero.
+
     """
     total_formers = sum(qn_dist.values())
     if total_formers == 0:
-        raise ValueError("total_formers is zero, cannot compute network connectivity.")
+        error_msg = "total_formers is zero, cannot compute network connectivity."
+        raise ValueError(error_msg)
 
     return sum(n * (count / total_formers) for n, count in qn_dist.items())

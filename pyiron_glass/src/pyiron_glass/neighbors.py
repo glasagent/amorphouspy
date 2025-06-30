@@ -1,12 +1,11 @@
-"""
-module to get the neighbors within a cutoff distance.
+"""module to get the neighbors within a cutoff distance.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 from collections import defaultdict
-import numpy as np
 
+import numpy as np
 
 SHIFT_GRID_3D = np.stack(
     np.meshgrid([-1, 0, 1], [-1, 0, 1], [-1, 0, 1], indexing="ij"),

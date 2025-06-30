@@ -190,8 +190,7 @@ def get_box_from_density(
     # 3. Total mass in grams
     #    (sum of atom_counts * atomic_mass) / Avogadro
     total_mass_g = (
-        sum(count * get_atomic_mass(elem) for elem, count in atom_counts.items()) 
-        #sum(count * atom_counts[el] * get_atomic_mass(el) for el in atom_counts.items())
+        sum(count * get_atomic_mass(elem) for elem, count in atom_counts.items())
         / scipy.constants.Avogadro
     )
 
@@ -207,11 +206,11 @@ def get_box_from_density(
 def get_ase_structure(atoms_dict: dict) -> Atoms:
     """Generate a LAMMPS data file format string and read into an ASE Atoms object.
 
-    Based on the specifications in the provided atoms_dict, 
+    Based on the specifications in the provided atoms_dict,
     this function generates a LAMMPS data file
-    format string, which is then read into an ASE Atoms object. 
+    format string, which is then read into an ASE Atoms object.
     The ASE Atoms object is then returned.
-    atoms_dict is expected to specify a cubic box. 
+    atoms_dict is expected to specify a cubic box.
     Triclinic boxes are not supported.
 
     Parameters
@@ -278,8 +277,7 @@ def get_structure_dict(
     min_distance: float = 1.6,
     max_attempts_per_atom: int = 10000,
 ) -> dict:
-    """Generate a structure dictionary for a given composition, 
-    number of molecules, and density.
+    """Generate a structure dictionary for a given composition, number of molecules, and density.
 
     This function creates a cubic box of atoms based on the specified composition and density.
     It uses the `create_random_atoms` function to generate atom positions and returns a dictionary

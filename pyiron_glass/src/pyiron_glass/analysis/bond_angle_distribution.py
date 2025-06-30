@@ -15,8 +15,8 @@ Currently implemented:
 """
 
 import numpy as np
-from pyiron_glass.neighbors import get_neighbors
 
+from pyiron_glass.neighbors import get_neighbors
 
 MIN_NEIGHBORS_FOR_ANGLE = 2
 
@@ -43,7 +43,7 @@ def compute_angles(
 
     Returns:
         tuple[np.ndarray, np.ndarray]: Bin centers (degrees), normalized angle histogram.
-        
+
     """
     neighbors = get_neighbors(
         coords,
