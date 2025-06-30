@@ -1,5 +1,6 @@
 """Viscosity simulation workflows for glass systems using LAMMPS."""
 
+
 def viscosity_simulation():
     """
     Perform a viscosity simulation on a glass system using LAMMPS.
@@ -12,4 +13,3 @@ def viscosity_simulation():
     """
     # Placeholder for actual implementation
     print("Viscosity simulation workflow is not yet implemented.")
-

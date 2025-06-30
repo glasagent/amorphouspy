@@ -13,6 +13,7 @@ SHIFT_GRID_3D = np.stack(
     axis=-1,
 ).reshape(-1, 3)
 
+
 def compute_cell_list(
     coords: np.ndarray,
     box_size: np.ndarray,
@@ -39,7 +40,6 @@ def compute_cell_list(
     for idx, cell in enumerate(atom_cells):
         cells[tuple(cell)].append(idx)
     return cells, n_cells, inv_cell_size
-
 
 
 def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
@@ -93,10 +93,10 @@ def get_neighbors(
         List[List[int]]: Neighbor indices for each atom.
 
     """
-    N = len(coords)
+    number_of_atoms = len(coords)
     cells, n_cells, inv_cell_size = compute_cell_list(coords, box_size, cutoff)
-    neighbors = [[] for _ in range(N)]
-    for i in range(N):
+    neighbors = [[] for _ in range(number_of_atoms)]
+    for i in range(number_of_atoms):
         if types[i] not in target_type:
             continue
         ci = np.floor(coords[i] * inv_cell_size).astype(int) % n_cells
@@ -110,4 +110,3 @@ def get_neighbors(
                     if dist <= cutoff:
                         neighbors[i].append(j)
     return neighbors
-

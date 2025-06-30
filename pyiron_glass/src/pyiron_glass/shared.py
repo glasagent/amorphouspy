@@ -1,7 +1,8 @@
 """Shared utilities for pyiron_glass package."""
 
 
-# See issue #31: It could be beneficial to hardcode every element type to be able to always identify the elements
+# See issue #31: It could be beneficial to hardcode
+# every element type to be able to always identify the elements
 def get_element_types_dict(atoms_dict: dict) -> dict[str, int]:
     """Get a dictionary mapping element symbols to unique integer types.
 
@@ -10,7 +11,8 @@ def get_element_types_dict(atoms_dict: dict) -> dict[str, int]:
     a unique identifier (not to be confused with the position in the periodic table).
 
     Args:
-        atoms_dict (dict): A dictionary containing atom information, typically with a key "atoms" that is a list
+        atoms_dict (dict): A dictionary containing atom information,
+        typically with a key "atoms" that is a list
         of atom dictionaries.
 
     Returns:

@@ -5,9 +5,8 @@ Author: Achraf Atila (achraf.atila@bam.de)
 Get cavity distribution.
 """
 
-# TODO
+# Implement this analysis
 
-#Implement this analysis
 
 def compute_cavities():
     """

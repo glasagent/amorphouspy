@@ -87,4 +87,3 @@ def compute_angles(
     )
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
     return bin_centers, angle_hist
-

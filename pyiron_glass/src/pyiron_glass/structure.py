@@ -133,10 +133,15 @@ def create_random_atoms(
         attempts = 0
         while placed < count:
             if attempts >= max_attempts_per_atom:
-                msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
+                msg = (
+                    f"Failed to place {elem} atoms: increase box or reduce min_distance"
+                )
                 raise RuntimeError(msg)
             pos = rng.uniform(0, box_length, size=3)
-            if all(minimum_image_distance(pos, p, box_length) >= min_distance for p in positions):
+            if all(
+                minimum_image_distance(pos, p, box_length) >= min_distance
+                for p in positions
+            ):
                 atoms.append({"element": elem, "position": pos.tolist()})
                 positions.append(pos)
                 placed += 1
@@ -184,23 +189,30 @@ def get_box_from_density(
 
     # 3. Total mass in grams
     #    (sum of atom_counts * atomic_mass) / Avogadro
-    total_mass_g = sum(atom_counts[el] * get_atomic_mass(el) for el in atom_counts) / scipy.constants.Avogadro
+    total_mass_g = (
+        sum(count * get_atomic_mass(elem) for elem, count in atom_counts.items()) 
+        #sum(count * atom_counts[el] * get_atomic_mass(el) for el in atom_counts.items())
+        / scipy.constants.Avogadro
+    )
 
     # 4. Compute volume (cm3) and convert to \AA3 (1 cm3 = 1e24 \AA3)
     volume_cm3 = total_mass_g / density
-    volume_A3 = volume_cm3 * 1e24
+    volume_ang3 = volume_cm3 * 1e24
 
     # 5. Box length in \AA
-    return volume_A3 ** (1 / 3)
+    return volume_ang3 ** (1 / 3)
 
 
 @job
 def get_ase_structure(atoms_dict: dict) -> Atoms:
     """Generate a LAMMPS data file format string and read into an ASE Atoms object.
 
-    Based on the specifications in the provided atoms_dict, this function generates a LAMMPS data file
-    format string, which is then read into an ASE Atoms object. The ASE Atoms object is then returned.
-    atoms_dict is expected to specify a cubic box. Triclinic boxes are not supported.
+    Based on the specifications in the provided atoms_dict, 
+    this function generates a LAMMPS data file
+    format string, which is then read into an ASE Atoms object. 
+    The ASE Atoms object is then returned.
+    atoms_dict is expected to specify a cubic box. 
+    Triclinic boxes are not supported.
 
     Parameters
     ----------
@@ -250,9 +262,6 @@ def get_ase_structure(atoms_dict: dict) -> Atoms:
         x, y, z = atom["position"]
         q = 0.0
         # Charge, I put 0 for simplicity.
-        # the real value should be set by the potential parameters either in LAMMPS or in pyiron
-        # it can also be calculated automatically here if needed but the potential model should be specified in advance.
-        # I wanted to keep these function as general as possible.
         list_of_lines.append(f"{i} {type_id} {q:.6f} {x:.6f} {y:.6f} {z:.6f}\n")
     return read(
         filename=StringIO("".join(list_of_lines)),
@@ -269,7 +278,8 @@ def get_structure_dict(
     min_distance: float = 1.6,
     max_attempts_per_atom: int = 10000,
 ) -> dict:
-    """Generate a structure dictionary for a given composition, number of molecules, and density.
+    """Generate a structure dictionary for a given composition, 
+    number of molecules, and density.
 
     This function creates a cubic box of atoms based on the specified composition and density.
     It uses the `create_random_atoms` function to generate atom positions and returns a dictionary

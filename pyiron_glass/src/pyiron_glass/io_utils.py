@@ -3,20 +3,20 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 
 
-It includes a lightweight parser for LAMMPS dump files and methods 
+It includes a lightweight parser for LAMMPS dump files and methods
 for handling wrapped and unwrapped atomic coordinates.
 
 Currently implemented:
 
 - read_lammps_dump: Efficiently reads LAMMPS dump files (including
-  gzipped files), extracts atom IDs, types, coordinates (wrapped or 
-  unwrapped), and simulation box dimensions. Designed for use in 
+  gzipped files), extracts atom IDs, types, coordinates (wrapped or
+  unwrapped), and simulation box dimensions. Designed for use in
   structural analyses of disordered materials.
 
 """
 
 # TODO
-# implement ASE based parser using a wrapper around ase.io.read 
+# implement ASE based parser using a wrapper around ase.io.read
 
 
 import gzip
@@ -84,7 +84,6 @@ def read_lammps_dump(
     return ids, types, coords_out, box_size
 
 
-
 def write_distribution_to_file(
     composition: float,
     filepath: str,
@@ -113,7 +112,6 @@ def write_distribution_to_file(
         if write_header:
             f.write("Composition " + " ".join(headers) + "\n")
         f.write(str(composition) + " " + " ".join(map(str, values)) + "\n")
-
 
 
 def write_angle_distribution(

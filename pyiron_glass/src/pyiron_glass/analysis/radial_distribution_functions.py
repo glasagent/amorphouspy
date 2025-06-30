@@ -5,10 +5,10 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 """
 
-from collections import defaultdict
 import numpy as np
 from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.shared import count_distribution
+
 
 def compute_coordination(
     ids: np.ndarray,
@@ -42,10 +42,14 @@ def compute_coordination(
         target_type,
         neighbor_types,
     )
-    coord_numbers = {ids[idx]: len(neighbors[idx]) for idx, atom_type in enumerate(types) if atom_type == target_type}
+    coord_numbers = {
+        ids[idx]: len(neighbors[idx])
+        for idx, atom_type in enumerate(types)
+        if atom_type == target_type
+    }
     coord_numbers_distribution = count_distribution(coord_numbers)
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
 
 
-# TODO 
+
 # ADD RDF

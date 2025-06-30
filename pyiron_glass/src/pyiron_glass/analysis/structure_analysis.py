@@ -268,7 +268,11 @@ def compute_coordination(
         target_type,
         neighbor_types,
     )
-    coord_numbers = {ids[idx]: len(neighbors[idx]) for idx, atom_type in enumerate(types) if atom_type == target_type}
+    coord_numbers = {
+        ids[idx]: len(neighbors[idx])
+        for idx, atom_type in enumerate(types)
+        if atom_type == target_type
+    }
     coord_numbers_distribution = count_distribution(coord_numbers)
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
 
@@ -324,7 +328,10 @@ def compute_Qn(
         if atom_type in Former_types:
             bridging_count = 0
             for j in neighbors.get(idx, []):
-                if types[j] == O_type and coord_numbers_O.get(ids[j], 0) >= MIN_COORDINATION_FOR_BRIDGING:
+                if (
+                    types[j] == O_type
+                    and coord_numbers_O.get(ids[j], 0) >= MIN_COORDINATION_FOR_BRIDGING
+                ):
                     bridging_count += 1
             total_Qn_counts[bridging_count] += 1
             partial_Qn_counts[atom_type][bridging_count] += 1
@@ -332,7 +339,9 @@ def compute_Qn(
     # Normalize output
     total_Qn_counts = {n: total_Qn_counts.get(n, 0) for n in range(7)}
     for f_type in Former_types:
-        partial_Qn_counts[f_type] = {n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)}
+        partial_Qn_counts[f_type] = {
+            n: partial_Qn_counts[f_type].get(n, 0) for n in range(7)
+        }
 
     return total_Qn_counts, partial_Qn_counts
 
