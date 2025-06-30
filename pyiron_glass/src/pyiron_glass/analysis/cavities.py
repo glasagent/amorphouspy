@@ -4,7 +4,6 @@ Author: Achraf Atila (achraf.atila@bam.de)
 Get cavity distribution.
 """
 
-import numpy as np
 
 def compute_cavities(
 ) -> dict:

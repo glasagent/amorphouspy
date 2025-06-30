@@ -43,6 +43,7 @@ def compute_angles(
 
     Returns:
         tuple[np.ndarray, np.ndarray]: Bin centers (degrees), normalized angle histogram.
+        
     """
     neighbors = get_neighbors(
         coords,

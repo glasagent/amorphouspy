@@ -10,6 +10,7 @@ def compute_rings() -> dict:
 
     Returns:
         dict: Dictionary with ring size distribution.
+        
     """
     # Placeholder for actual implementation.
     # This function should compute ring size distribution and return as dict.
