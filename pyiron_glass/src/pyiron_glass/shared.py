@@ -20,3 +20,19 @@ def get_element_types_dict(atoms_dict: dict) -> dict[str, int]:
     atoms = atoms_dict["atoms"]
     elements = sorted({atom["element"] for atom in atoms})
     return {elem: i + 1 for i, elem in enumerate(elements)}
+
+
+def count_distribution(coord_numbers: dict[int, int]) -> dict[int, int]:
+    """Convert coordination numbers to a histogram distribution.
+
+    Args:
+        coord_numbers (Dict[int, int]): Mapping from atom ID to coordination number.
+
+    Returns:
+        Dict[int, int]: Coordination number frequency histogram.
+
+    """
+    dist = {}
+    for cn in coord_numbers.values():
+        dist[cn] = dist.get(cn, 0) + 1
+    return dist

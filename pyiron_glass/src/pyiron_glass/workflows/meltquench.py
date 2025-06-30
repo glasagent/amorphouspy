@@ -2,7 +2,6 @@
 
 import shutil
 from pathlib import Path
-
 import numpy as np
 from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
