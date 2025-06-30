@@ -15,7 +15,6 @@ Currently implemented:
 
 """
 
-# TODO
 # implement ASE based parser using a wrapper around ase.io.read
 
 

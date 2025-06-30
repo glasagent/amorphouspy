@@ -21,7 +21,7 @@ from pyiron_glass.structure import get_ase_structure, get_structure_dict  # noqa
 from pyiron_glass.workflows.meltquench import melt_quench_simulation  # noqa: F401
 from pyiron_glass.workflows.viscosity import viscosity_simulation  # noqa: F401
 
-__all__ = sorted(
+__all__ =
     [
         "compute_angles",
         "compute_cavities",
@@ -31,16 +31,16 @@ __all__ = sorted(
         "compute_rings",
         "count_distribution",
         "generate_potential",
-        "melt_quench_simulation",
         "get_ase_structure",
         "get_neighbors",
         "get_structure_dict",
+        "melt_quench_simulation",
         "potential",
         "read_lammps_dump",
         "viscosity_simulation",
         "write_angle_distribution",
         "write_distribution_to_file",
     ]
-)
+
 
 __version__ = "0.0.1"

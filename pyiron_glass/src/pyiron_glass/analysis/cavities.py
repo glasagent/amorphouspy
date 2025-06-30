@@ -1,21 +1,15 @@
-"""
-Structural analysis functions for multicomponent glass systems.
+"""Structural analysis functions for multicomponent glass systems.
 Author: Achraf Atila (achraf.atila@bam.de)
 
 Get cavity distribution.
 """
 
-# Implement this analysis
+import numpy as np
 
-
-def compute_cavities():
+def compute_cavities(
+) -> dict:
     """
-    Compute the cavity distribution in a glass structure.
-
-    Returns:
-        dict: A dictionary containing the cavity distribution.
+    Compute cavity distribution in a glass structure via grid-based void analysis.
     """
-    # Placeholder for actual implementation
-    # This function should compute the cavity distribution
-    # and return it as a dictionary.
+    # Placeholder implementation
     return {"cavity_distribution": "Not implemented yet"}

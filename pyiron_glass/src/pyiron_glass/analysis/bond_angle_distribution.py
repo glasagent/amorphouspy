@@ -1,5 +1,4 @@
-"""
-Structural analysis functions for multicomponent glass systems.
+"""Structural analysis functions for multicomponent glass systems.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 
@@ -13,14 +12,12 @@ Currently implemented:
 - compute_angles: Calculates bond angle distributions for atom
   triplets of the form neighbor-center-neighbor, filtered by atomic
   types and distance cutoff.
-
 """
 
 import numpy as np
 from pyiron_glass.neighbors import get_neighbors
 
 
-# Constants
 MIN_NEIGHBORS_FOR_ANGLE = 2
 
 
@@ -38,17 +35,14 @@ def compute_angles(
     Args:
         types (np.ndarray): Atom types.
         coords (np.ndarray): Atom coordinates.
-        box_size (np.ndarray): Box size.
-        center_type (int): Atom type at the center of the angle (e.g., Si).
-        neighbor_type (int): Atom type forming the angle with the center (e.g., O).
-        cutoff (float): Cutoff for neighbor search.
-        bins (int): Number of bins in histogram (default: 180 for 1° resolution).
+        box_size (np.ndarray): Simulation box size.
+        center_type (int): Atom type at the angle center.
+        neighbor_type (int): Atom type forming the angle with center.
+        cutoff (float): Neighbor search cutoff.
+        bins (int): Number of histogram bins (default: 180).
 
     Returns:
-        Tuple containing:
-            - bin_centers (np.ndarray): Centers of angle bins in degrees.
-            - angle_hist (np.ndarray): Normalized histogram of angles.
-
+        tuple[np.ndarray, np.ndarray]: Bin centers (degrees), normalized angle histogram.
     """
     neighbors = get_neighbors(
         coords,

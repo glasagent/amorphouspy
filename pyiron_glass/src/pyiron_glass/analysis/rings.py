@@ -1,22 +1,16 @@
-"""
-Structural analysis functions for multicomponent glass systems.
+"""Structural analysis functions for multicomponent glass systems.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 
-compute ring size distribution
+Compute ring size distribution.
 """
 
-# write function to compute the ring size distribution
-
-
-def compute_rings():
-    """
-    Compute the ring size distribution in a glass structure.
+def compute_rings() -> dict:
+    """Compute the ring size distribution in a glass structure.
 
     Returns:
-        dict: A dictionary containing the ring size distribution.
+        dict: Dictionary with ring size distribution.
     """
-    # Placeholder for actual implementation
-    # This function should compute the ring size distribution
-    # and return it as a dictionary.
+    # Placeholder for actual implementation.
+    # This function should compute ring size distribution and return as dict.
     return {"ring_size_distribution": "Not implemented yet"}
