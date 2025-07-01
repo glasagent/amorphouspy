@@ -123,9 +123,7 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-    temp_setting = (
-        [temperature, temperature_end] if temperature_end is not None else temperature
-    )
+    temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
     _shell_output, parsed_output, _job_crashed = lammps_function(
         working_directory=working_directory,
@@ -240,14 +238,8 @@ def melt_quench_simulation(
     Path(working_directory).mkdir(parents=True, exist_ok=True)
 
     seconds_to_femtos = 1e15
-    heating_steps = int(
-        ((temperature_high - temperature_low) / (timestep * heating_rate))
-        * seconds_to_femtos
-    )
-    cooling_steps = int(
-        ((temperature_high - temperature_low) / (timestep * cooling_rate))
-        * seconds_to_femtos
-    )
+    heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
+    cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
     # Stage 1: Heating from low to high T
     structure, _ = _run_lammps_md(
