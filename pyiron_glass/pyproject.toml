@@ -42,7 +42,8 @@ line-ending = "auto"
 [tool.ruff.lint]             # linter rules
 select   = ["ALL"]           # enable every rule Ruff knows
 ignore   = [
-  "D203", 
+  "D203",
+  "D213", 
   "PLR0913",
   "S101",
   "N802",
