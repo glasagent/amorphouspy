@@ -18,7 +18,5 @@ def get_atomic_mass(element: str | int) -> float:
         Atomic mass in g/mol
 
     """
-    atomic_number = (
-        chemical_symbols.index(element) if isinstance(element, str) else element
-    )
+    atomic_number = chemical_symbols.index(element) if isinstance(element, str) else element
     return atomic_masses_iupac2016[atomic_number]

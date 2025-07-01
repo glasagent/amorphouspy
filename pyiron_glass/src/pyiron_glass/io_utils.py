@@ -17,7 +17,6 @@ Currently implemented:
 
 # implement ASE based parser using a wrapper around ase.io.read
 
-
 import gzip
 from pathlib import Path
 

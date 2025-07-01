@@ -133,15 +133,10 @@ def create_random_atoms(
         attempts = 0
         while placed < count:
             if attempts >= max_attempts_per_atom:
-                msg = (
-                    f"Failed to place {elem} atoms: increase box or reduce min_distance"
-                )
+                msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
                 raise RuntimeError(msg)
             pos = rng.uniform(0, box_length, size=3)
-            if all(
-                minimum_image_distance(pos, p, box_length) >= min_distance
-                for p in positions
-            ):
+            if all(minimum_image_distance(pos, p, box_length) >= min_distance for p in positions):
                 atoms.append({"element": elem, "position": pos.tolist()})
                 positions.append(pos)
                 placed += 1
@@ -189,10 +184,7 @@ def get_box_from_density(
 
     # 3. Total mass in grams
     #    (sum of atom_counts * atomic_mass) / Avogadro
-    total_mass_g = (
-        sum(count * get_atomic_mass(elem) for elem, count in atom_counts.items())
-        / scipy.constants.Avogadro
-    )
+    total_mass_g = sum(count * get_atomic_mass(elem) for elem, count in atom_counts.items()) / scipy.constants.Avogadro
 
     # 4. Compute volume (cm3) and convert to \AA3 (1 cm3 = 1e24 \AA3)
     volume_cm3 = total_mass_g / density

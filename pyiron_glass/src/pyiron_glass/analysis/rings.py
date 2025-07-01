@@ -5,6 +5,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 Compute ring size distribution.
 """
 
+
 def compute_rings() -> dict:
     """Compute the ring size distribution in a glass structure.
 

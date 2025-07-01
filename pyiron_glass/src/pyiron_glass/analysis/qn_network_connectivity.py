@@ -48,11 +48,7 @@ def compute_qn(
         ]
 
     """
-    neighbors = dict(
-        enumerate(
-            get_neighbors(coords, types, box_size, cutoff, former_types, [o_type])
-        )
-    )
+    neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, former_types, [o_type])))
 
     _, coord_numbers_o = compute_coordination(
         ids,

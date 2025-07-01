@@ -6,8 +6,7 @@ Get cavity distribution.
 """
 
 
-def compute_cavities(
-) -> dict:
+def compute_cavities() -> dict:
     """Compute cavity distribution in a glass structure via grid-based void analysis."""
     # Placeholder implementation
     return {"cavity_distribution": "Not implemented yet"}
