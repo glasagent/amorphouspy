@@ -1,74 +1,39 @@
 """Melt-quench simulation workflows for glass systems using LAMMPS."""
 
-import shutil
 from pathlib import Path
 import tempfile
-
-import numpy as np
 from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
-from structuretoolkit.common import center_coordinates_in_unit_cell
 
 
-def _get_structure(
-    structure: Atoms,
-    cell: np.ndarray,
-    indices: np.ndarray,
-    positions: np.ndarray | None = None,
-    unwrapped_positions: np.ndarray | None = None,
-    total_displacements: np.ndarray | None = None,
-    *,
-    wrap_atoms: bool = True,
-) -> Atoms:
-    """Return an updated `Atoms` object based on the provided information.
+def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict) -> Atoms:
+    """Construct an `Atoms` object from parsed output data.
 
     Parameters
     ----------
-    structure : Atoms
-        The reference atomic structure.
-    cell : ndarray
-        The simulation cell to assign to the new structure.
-    indices : ndarray
-        Indices of the atoms to include in the new snapshot.
-    positions : ndarray, optional
-        Wrapped atomic positions.
-    unwrapped_positions : ndarray, optional
-        Unwrapped atomic positions.
-    total_displacements : ndarray, optional
-        Total atomic displacements to be added to the initial positions.
-    wrap_atoms : bool, optional
-        Whether to wrap atoms inside the unit cell (default is True).
+    initial_structure : Atoms
+        The initial atomic structure to use as a template.
+    parsed_output : dict
+        Parsed output containing atomic positions, cell, and indices.
 
     Returns
     -------
     Atoms
-        The newly constructed atomic structure with updated positions and cell.
+        An `Atoms` object with updated positions and cell.
 
     """
-    if indices is not None and len(indices) != len(structure):
-        snapshot = Atoms(
-            positions=np.zeros((*indices.shape, 3)),
-            cell=cell,
-            pbc=structure.pbc,
-        )
-        snapshot.set_array("indices", indices)
-    else:
-        snapshot = structure.copy()
-        if cell is not None:
-            snapshot.cell = cell
-        if indices is not None:
-            snapshot.set_array("indices", indices)
 
-    if wrap_atoms:
-        snapshot.positions = positions
-        snapshot = center_coordinates_in_unit_cell(snapshot)
-    elif unwrapped_positions is not None:
-        snapshot.positions = unwrapped_positions
-    else:
-        snapshot.positions += total_displacements
+    # Take a copy of the initial structure as template and update the relevant properties
+    atoms_copy = initial_structure.copy()
+    atoms_copy.set_array("indices", parsed_output["generic"]["indices"][-1])
+    atoms_copy.set_positions(parsed_output["generic"]["positions"][-1])
+    atoms_copy.set_velocities(parsed_output["generic"]["velocities"][-1])
+    atoms_copy.set_cell(parsed_output["generic"]["cells"][-1])
+    atoms_copy.set_pbc(True)
+    atoms_copy.wrap()
 
-    return snapshot
+    return atoms_copy
 
 
 def _run_lammps_md(
@@ -132,10 +97,12 @@ def _run_lammps_md(
 
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
-        tmp_path = Path(tmpdir)
+        tmp_path = str(Path(tmpdir))
 
+        # defines the temperature protocol
         temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
+        # Sets up the LAMMPS simulations
         _shell_output, parsed_output, _job_crashed = lammps_function(
             working_directory=tmp_path,
             structure=structure,
@@ -164,15 +131,10 @@ def _run_lammps_md(
             input_control_file=None,
         )
 
-        new_structure = _get_structure(
-            structure=structure,
-            cell=parsed_output["generic"]["cells"][-1],
-            indices=parsed_output["generic"]["indices"][-1],
-            positions=parsed_output["generic"]["positions"][-1],
-            wrap_atoms=True,
-        )
-        new_structure.set_velocities(parsed_output["generic"]["velocities"][-1])
-
+        # Retrives the final structure from the parsed output
+        new_structure = _structure_from_parsed_output(
+            initial_structure=structure,
+            parsed_output=parsed_output)
 
     return new_structure, parsed_output
 
