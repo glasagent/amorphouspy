@@ -29,8 +29,13 @@ pre-commit install
 
 ## Upcoming milestones
 
-- Integration of existing GlasDigital workflows (DFT and classical MD) for determining density and elastic moduli into current pyiorn version and adaptation to glasses (BAM2,MS12)
-- Defining pyiron workflows (classical MD) to determine high-temperature viscosity and generation of structural models via melt-quenching (BAM2 with input from Schott, MS12)
+- MS12 (due end of the year): Integration of existing GlasDigital workflows (DFT and classical MD) for determining density and elastic moduli into current pyiron version and adaptation to glasses (DONE?)
+- MS12 (due end of the year): Defining pyiron workflows (classical MD) to determine high-temperature viscosity (TODO) and generation of structural models via melt-quenching (DONE)
+
+- MS42 (due end of June 2028): Feature generation of ML and semi-empirical models based on glass structures
+- MS42 (due end of June 2028): State-of-the-art MLIP available
+- MS42 (due end of June 2028): Workflows for more complex properties implemented
+- MS60 (end of project, end of 2029): Demonstrator ready
 
 ## Material systems to start with (proposed by Leopold (@ltalirz))
 
