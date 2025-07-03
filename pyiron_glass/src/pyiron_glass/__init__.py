@@ -9,7 +9,6 @@ from pyiron_glass.analysis.qn_network_connectivity import (
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination
 from pyiron_glass.analysis.rings import compute_rings
 from pyiron_glass.io_utils import (
-    get_properties_for_structure_analysis,
     write_angle_distribution,
     write_distribution_to_file,
 )
@@ -17,7 +16,7 @@ from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.potentials import potential
 from pyiron_glass.potentials.potential import generate_potential
 from pyiron_glass.shared import count_distribution
-from pyiron_glass.structure import get_ase_structure, get_structure_dict
+from pyiron_glass.structure import get_ase_structure
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
 from pyiron_glass.workflows.viscosity import viscosity_simulation
 
@@ -32,8 +31,7 @@ __all__ = [
     "generate_potential",
     "get_ase_structure",
     "get_neighbors",
-    "get_properties_for_structure_analysis"
-    "get_structure_dict",
+    "get_properties_for_structure_analysisget_structure_dict",
     "melt_quench_simulation",
     "potential",
     "viscosity_simulation",
