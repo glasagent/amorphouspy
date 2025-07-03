@@ -1,7 +1,8 @@
 """Melt-quench simulation workflows for glass systems using LAMMPS."""
 
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
 from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
@@ -23,7 +24,6 @@ def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict)
         An `Atoms` object with updated positions and cell.
 
     """
-
     # Take a copy of the initial structure as template and update the relevant properties
     atoms_copy = initial_structure.copy()
     atoms_copy.set_array("indices", parsed_output["generic"]["indices"][-1])
@@ -81,8 +81,8 @@ def _run_lammps_md(
     seed : int, optional
         Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
     tmp_working_directory : str | Path | None
-        Specifies the location of the temporary directory to run the simulations. Per default (None), the 
-        directory is located in the operating systems location for temperary files. With the specification 
+        Specifies the location of the temporary directory to run the simulations. Per default (None), the
+        directory is located in the operating systems location for temperary files. With the specification
         of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
         tmp_working_directory needs to exist beforehand.
 
@@ -93,8 +93,6 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-
-
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
@@ -132,9 +130,7 @@ def _run_lammps_md(
         )
 
         # Retrives the final structure from the parsed output
-        new_structure = _structure_from_parsed_output(
-            initial_structure=structure,
-            parsed_output=parsed_output)
+        new_structure = _structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
 
     return new_structure, parsed_output
 
@@ -183,8 +179,8 @@ def melt_quench_simulation(
     seed : int, optional
         Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
     tmp_working_directory : str | Path | None
-        Specifies the location of the temporary directory to run the simulations. Per default (None), the 
-        directory is located in the operating systems location for temperary files. With the specification 
+        Specifies the location of the temporary directory to run the simulations. Per default (None), the
+        directory is located in the operating systems location for temperary files. With the specification
         of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
         tmp_working_directory needs to exist beforehand.
 
@@ -194,7 +190,6 @@ def melt_quench_simulation(
         A dictionary containing the simulation steps and temperature data.
 
     """
-
     seconds_to_femtos = 1e15
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
