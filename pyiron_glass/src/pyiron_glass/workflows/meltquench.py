@@ -8,7 +8,7 @@ from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
 
 
-def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict) -> Atoms:
+def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict, *, wrap: bool = False) -> Atoms:
     """Construct an `Atoms` object from parsed output data.
 
     Parameters
@@ -17,6 +17,10 @@ def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict)
         The initial atomic structure to use as a template.
     parsed_output : dict
         Parsed output containing atomic positions, cell, and indices.
+    wrap : bool, optional
+        Whether to wrap the atomic positions to the simulation cell (default is False).
+        Keeping the unwrapped positions is more beneficial if structures are passed between
+        different LAMMPS simulations in one workflow to ensure continuity.
 
     Returns
     -------
@@ -31,7 +35,8 @@ def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict)
     atoms_copy.set_velocities(parsed_output["generic"]["velocities"][-1])
     atoms_copy.set_cell(parsed_output["generic"]["cells"][-1])
     atoms_copy.set_pbc(True)
-    atoms_copy.wrap()
+    if wrap:
+        atoms_copy.wrap()
 
     return atoms_copy
 

@@ -26,12 +26,13 @@ Reference: https://doi.org/10.1039/D4TB02414A
 """
 
 import pytest
+from ase.io import read
 
 from pyiron_glass import (
     compute_coordination,
     compute_network_connectivity,
     compute_qn,
-    read_lammps_dump,
+    get_properties_for_structure_analysis,
 )
 
 from . import DATA_DIR
@@ -76,7 +77,8 @@ modifier_types = [t for t, e in type_map.items() if e in modifiers]
 def test_compute_coordination_o() -> None:
     """Test the compute_coordination function for oxygens."""
     filename = DATA_DIR / "20Na2O-80SiO2.dump"
-    ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
+    atoms = read(filename, format="lammps-dump-text")
+    ids, types, coords, box_size = get_properties_for_structure_analysis(atoms)
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
     o_coord_dist, _ = compute_coordination(
@@ -102,7 +104,8 @@ def test_compute_coordination_o() -> None:
 def test_compute_network_connectivity() -> None:
     """Test the compute_network_connectivity function."""
     filename = DATA_DIR / "20Na2O-80SiO2.dump"
-    ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
+    atoms = read(filename, format="lammps-dump-text")
+    ids, types, coords, box_size = get_properties_for_structure_analysis(atoms)
 
     # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
     qn_dist, _ = compute_qn(
@@ -151,7 +154,8 @@ def test_compute_network_connectivity_multi() -> None:
     O_type_multi = next(t for t, e in type_map.items() if e == "O")
     former_types = [t for t, e in type_map.items() if e in network_formers]
 
-    ids, types, coords, box_size = read_lammps_dump(filename, unwrap=False)
+    atoms = read(filename, format="lammps-dump-text")
+    ids, types, coords, box_size = get_properties_for_structure_analysis(atoms)
 
     # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
     qn_dist, _ = compute_qn(
