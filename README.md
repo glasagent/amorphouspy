@@ -29,13 +29,20 @@ pre-commit install
 
 ## Upcoming milestones
 
-- MS12 (due end of the year): Integration of existing GlasDigital workflows (DFT and classical MD) for determining density and elastic moduli into current pyiron version and adaptation to glasses (DONE?)
-- MS12 (due end of the year): Defining pyiron workflows (classical MD) to determine high-temperature viscosity (TODO) and generation of structural models via melt-quenching (DONE)
+- MS12 (end of 2025): Integration of existing GlasDigital workflows (DFT and classical MD) for determining density and elastic moduli into current pyiron version and adaptation to glasses
+- MS12 (end of 2025): Defining pyiron workflows (classical MD) to determine high-temperature viscosity (TODO) and generation of structural models via melt-quenching (DONE)
 
-- MS42 (due end of June 2028): Feature generation of ML and semi-empirical models based on glass structures
-- MS42 (due end of June 2028): State-of-the-art MLIP available
-- MS42 (due end of June 2028): Workflows for more complex properties implemented
-- MS60 (end of project, end of 2029): Demonstrator ready
+----------------------------------------------------------
+
+- MS42 (end of June 2028): Feature generation for ML and semi-empirical models based on glass structure​
+
+- MS42 (end of June 2028): State-of-the art MLIP available​ (Testing started)
+- MS42 (end of June 2028): Workflows for complex property analyses​. 
+  - Qn values (DONE/TODO)
+  - RDFs (DONE/TODO)
+  - Network analysis (DONE/TODO)
+  - Anisotropy analysis (TODO)
+- MS60 (end of 2030): Demonstrator ready​
 
 ## Material systems to start with (proposed by Leopold (@ltalirz))
 
@@ -60,3 +67,97 @@ Later, more complicated glasses from Schott can be considered. The following are
    - Na2​O (~7%)
    - Al2​O3​ (~5%)
    - CaO (~1.5%)
+
+# Approximate pyiron-glass workflow diagram 
+
+```mermaid
+%% Mermaid v10+ optimized vertical timeline
+%% Enable in compatible Mermaid live editors: https://mermaid-js.github.io/mermaid-live-editor
+
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 60}} }%%
+flowchart LR
+
+   subgraph "User Input"
+      UserStructure[User Structure]
+      AdhocGeneration["Ad-hoc Structure<br/>Generation Workflow<br/>- Composition<br/>- System Size"]
+      Database["Internal/External<br/>Database"]
+      InitialStructure["Initial<br/>Structure"]
+   end
+
+
+    TemperatureProgram["Temperature<br/>Program"]
+    Strain[Strain/Stress]
+    GenericSimulationSettings["Generic Simulation<br/>Settings"]
+    Others[...]
+    FF[Interatomic Potential]
+
+   subgraph "Workflows"
+      WorkflowSettings["Workflow<br/>Settings"]
+      MeltQuench["Melt-Quench<br/>Simulation"]
+      StructureAnalysis["Structure<br/>Analysis"]
+      ElasticModuliSimulation["Elastic Moduli<br/>Simulation"]
+      ViscositySimulation["Viscosity<br/>Simulation"]
+      CTESimulation["CTE<br/>Simulation"]
+      AnisotropyAnalysis["Anisotropy<br/>Analysis"]
+      OthersWorkflow[...]
+   end
+
+   subgraph "Output"
+      GlassStructure["Glass<br/>Structure"]
+      RDF[RDF]
+      BondAngleDistribution["Bond Angle<br/>Distribution"]
+      QnDistribution["Qn Values"]
+      NetworkAnalysis["Network<br/>Analysis"]
+      ElasticModuli["Elastic<br/>Moduli"]
+      Viscosity[Viscosity]
+      CTE[CTE]
+      Anisotropy[Anisotropy]
+      OthersOutput[...]
+   end
+
+   subgraph "Legend"
+      Done[Done]
+      Working[Working]
+      Future[Future]
+   end
+
+
+   
+   UserStructure --> InitialStructure
+   Database --> InitialStructure
+   AdhocGeneration --> InitialStructure
+   
+   InitialStructure --> WorkflowSettings
+   FF --> WorkflowSettings
+   GenericSimulationSettings --> WorkflowSettings
+   TemperatureProgram --> WorkflowSettings
+   Strain --> WorkflowSettings
+   Others --> WorkflowSettings
+   
+
+   GlassStructure --> InitialStructure
+   WorkflowSettings --> MeltQuench --> GlassStructure 
+   WorkflowSettings --> StructureAnalysis
+   WorkflowSettings --> ElasticModuliSimulation --> ElasticModuli
+   WorkflowSettings --> ViscositySimulation --> Viscosity
+   WorkflowSettings --> CTESimulation --> CTE
+   WorkflowSettings --> AnisotropyAnalysis --> Anisotropy
+   WorkflowSettings --> OthersWorkflow --> OthersOutput
+   StructureAnalysis --> RDF
+   StructureAnalysis --> BondAngleDistribution
+   StructureAnalysis --> NetworkAnalysis
+   StructureAnalysis --> QnDistribution 
+
+
+%% Styling
+   classDef future fill:#ea580c,stroke:#f97316,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef done fill:#059669,stroke:#10b981,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef working fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef none fill:#333333,stroke:#ffffff,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+
+
+class Done,Composition,AdhocGeneration,InitialStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings, done
+class Working,ViscositySimulation,ElasticModuliSimulation,Strain,FF working
+class Future,CTESimulation,AnisotropyAnalysis,Database, future
+class ElasticModuli,Viscosity,CTE,Anisotropy,Others,OthersWorkflow,OthersOutput none
+```
