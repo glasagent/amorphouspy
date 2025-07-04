@@ -1,4 +1,6 @@
 test/
+viscosity/
+glass/
 lmp_tmp_directory/
 *.dat
 *.log
