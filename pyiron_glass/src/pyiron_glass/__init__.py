@@ -9,7 +9,7 @@ from pyiron_glass.analysis.qn_network_connectivity import (
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination
 from pyiron_glass.analysis.rings import compute_rings
 from pyiron_glass.io_utils import (
-    read_lammps_dump,
+    get_properties_for_structure_analysis,
     write_angle_distribution,
     write_distribution_to_file,
 )
@@ -32,10 +32,10 @@ __all__ = [
     "generate_potential",
     "get_ase_structure",
     "get_neighbors",
+    "get_properties_for_structure_analysis",
     "get_structure_dict",
     "melt_quench_simulation",
     "potential",
-    "read_lammps_dump",
     "viscosity_simulation",
     "write_angle_distribution",
     "write_distribution_to_file",

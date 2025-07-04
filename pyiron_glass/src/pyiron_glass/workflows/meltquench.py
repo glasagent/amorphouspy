@@ -1,79 +1,49 @@
 """Melt-quench simulation workflows for glass systems using LAMMPS."""
 
-import shutil
+import tempfile
 from pathlib import Path
 
-import numpy as np
 from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
-from structuretoolkit.common import center_coordinates_in_unit_cell
 
 
-def _get_structure(
-    structure: Atoms,
-    cell: np.ndarray,
-    indices: np.ndarray,
-    positions: np.ndarray | None = None,
-    unwrapped_positions: np.ndarray | None = None,
-    total_displacements: np.ndarray | None = None,
-    *,
-    wrap_atoms: bool = True,
-) -> Atoms:
-    """Return an updated `Atoms` object based on the provided information.
+def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict, *, wrap: bool = False) -> Atoms:
+    """Construct an `Atoms` object from parsed output data.
 
     Parameters
     ----------
-    structure : Atoms
-        The reference atomic structure.
-    cell : ndarray
-        The simulation cell to assign to the new structure.
-    indices : ndarray
-        Indices of the atoms to include in the new snapshot.
-    positions : ndarray, optional
-        Wrapped atomic positions.
-    unwrapped_positions : ndarray, optional
-        Unwrapped atomic positions.
-    total_displacements : ndarray, optional
-        Total atomic displacements to be added to the initial positions.
-    wrap_atoms : bool, optional
-        Whether to wrap atoms inside the unit cell (default is True).
+    initial_structure : Atoms
+        The initial atomic structure to use as a template.
+    parsed_output : dict
+        Parsed output containing atomic positions, cell, and indices.
+    wrap : bool, optional
+        Whether to wrap the atomic positions to the simulation cell (default is False).
+        Keeping the unwrapped positions is more beneficial if structures are passed between
+        different LAMMPS simulations in one workflow to ensure continuity.
 
     Returns
     -------
     Atoms
-        The newly constructed atomic structure with updated positions and cell.
+        An `Atoms` object with updated positions and cell.
 
     """
-    if indices is not None and len(indices) != len(structure):
-        snapshot = Atoms(
-            positions=np.zeros((*indices.shape, 3)),
-            cell=cell,
-            pbc=structure.pbc,
-        )
-        snapshot.set_array("indices", indices)
-    else:
-        snapshot = structure.copy()
-        if cell is not None:
-            snapshot.cell = cell
-        if indices is not None:
-            snapshot.set_array("indices", indices)
+    # Take a copy of the initial structure as template and update the relevant properties
+    atoms_copy = initial_structure.copy()
+    atoms_copy.set_array("indices", parsed_output["generic"]["indices"][-1])
+    atoms_copy.set_positions(parsed_output["generic"]["positions"][-1])
+    atoms_copy.set_velocities(parsed_output["generic"]["velocities"][-1])
+    atoms_copy.set_cell(parsed_output["generic"]["cells"][-1])
+    atoms_copy.set_pbc(True)
+    if wrap:
+        atoms_copy.wrap()
 
-    if wrap_atoms:
-        snapshot.positions = positions
-        snapshot = center_coordinates_in_unit_cell(snapshot)
-    elif unwrapped_positions is not None:
-        snapshot.positions = unwrapped_positions
-    else:
-        snapshot.positions += total_displacements
-
-    return snapshot
+    return atoms_copy
 
 
 def _run_lammps_md(
     structure: Atoms,
     potential: str,
-    working_directory: str,
     temperature: float | list[float],
     n_ionic_steps: int,
     timestep: float,
@@ -84,6 +54,7 @@ def _run_lammps_md(
     *,
     langevin: bool = False,
     seed: int = 12345,
+    tmp_working_directory: str | Path | None = None,
 ) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
     """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
@@ -93,8 +64,6 @@ def _run_lammps_md(
         The atomic structure to simulate.
     potential : str
         The potential file to be used for the simulation.
-    working_directory : str
-        The directory where the simulation files will be stored.
     temperature : float or list
         The target temperature for the MD run. Can be a single value or a list [start, end].
     n_ionic_steps : int
@@ -116,6 +85,12 @@ def _run_lammps_md(
         Whether to use Langevin dynamics
     seed : int, optional
         Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+    tmp_working_directory : str | Path | None
+        Specifies the location of the temporary directory to run the simulations. Per default (None), the
+        directory is located in the operating systems location for temperary files. With the specification
+        of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
+        tmp_working_directory needs to exist beforehand.
+
 
     Returns
     -------
@@ -123,71 +98,52 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-    temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
+    # Creates a temporary directory for the simulation in the specified working directory.
+    with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
+        tmp_path = str(Path(tmpdir))
 
-    _shell_output, parsed_output, _job_crashed = lammps_function(
-        working_directory=working_directory,
-        structure=structure,
-        potential=potential,
-        calc_mode="md",
-        calc_kwargs={
-            "temperature": temp_setting,
-            "n_ionic_steps": n_ionic_steps,
-            "time_step": timestep,
-            "n_print": n_print,
-            "initial_temperature": initial_temperature,
-            "seed": seed,
-            "pressure": pressure,
-            "langevin": langevin,
-        },
-        cutoff_radius=None,
-        units="metal",
-        bonds_kwargs={},
-        server_kwargs={},
-        enable_h5md=False,
-        write_restart_file=False,
-        read_restart_file=False,
-        restart_file="restart.out",
-        executable_version=None,
-        executable_path=None,
-        input_control_file=None,
-    )
+        # defines the temperature protocol
+        temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
-    new_structure = _get_structure(
-        structure=structure,
-        cell=parsed_output["generic"]["cells"][-1],
-        indices=parsed_output["generic"]["indices"][-1],
-        positions=parsed_output["generic"]["positions"][-1],
-        wrap_atoms=True,
-    )
-    new_structure.set_velocities(parsed_output["generic"]["velocities"][-1])
+        # Sets up the LAMMPS simulations
+        _shell_output, parsed_output, _job_crashed = lammps_function(
+            working_directory=tmp_path,
+            structure=structure,
+            potential=potential,
+            calc_mode="md",
+            calc_kwargs={
+                "temperature": temp_setting,
+                "n_ionic_steps": n_ionic_steps,
+                "time_step": timestep,
+                "n_print": n_print,
+                "initial_temperature": initial_temperature,
+                "seed": seed,
+                "pressure": pressure,
+                "langevin": langevin,
+            },
+            cutoff_radius=None,
+            units="metal",
+            bonds_kwargs={},
+            server_kwargs={},
+            enable_h5md=False,
+            write_restart_file=False,
+            read_restart_file=False,
+            restart_file="restart.out",
+            executable_version=None,
+            executable_path=None,
+            input_control_file=None,
+        )
 
-    # see issue #32: Consider implementing a more robust cleanup procedure for temporary files.
-    _clean_directory(working_directory)
+        # Retrives the final structure from the parsed output
+        new_structure = _structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
 
     return new_structure, parsed_output
-
-
-def _clean_directory(directory: str) -> None:
-    """Remove all files in the specified directory.
-
-    Parameters
-    ----------
-    directory : str
-        Path to the directory to be cleaned.
-
-    """
-    directory_path = Path(directory)
-    for file_path in directory_path.iterdir():
-        if file_path.is_file():
-            file_path.unlink()
 
 
 @job
 def melt_quench_simulation(
     structure: Atoms,
     potential: str,
-    working_directory: str,
     temperature_high: float = 5000.0,
     temperature_low: float = 300.0,
     timestep: float = 1.0,
@@ -197,6 +153,7 @@ def melt_quench_simulation(
     *,
     langevin: bool = False,
     seed: int = 12345,
+    tmp_working_directory: str | Path | None = None,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
     """Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
 
@@ -210,8 +167,6 @@ def melt_quench_simulation(
         The initial atomic structure to be melted and quenched.
     potential : str
         The potential file to be used for the simulation.
-    working_directory : str
-        The directory where the simulation files will be stored.
     temperature_high : float, optional
         The high temperature to which the structure will be heated (default is 5000.0 K).
     temperature_low : float, optional
@@ -228,6 +183,11 @@ def melt_quench_simulation(
         Whether to use Langevin dynamics.
     seed : int, optional
         Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+    tmp_working_directory : str | Path | None
+        Specifies the location of the temporary directory to run the simulations. Per default (None), the
+        directory is located in the operating systems location for temperary files. With the specification
+        of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
+        tmp_working_directory needs to exist beforehand.
 
     Returns
     -------
@@ -235,8 +195,6 @@ def melt_quench_simulation(
         A dictionary containing the simulation steps and temperature data.
 
     """
-    Path(working_directory).mkdir(parents=True, exist_ok=True)
-
     seconds_to_femtos = 1e15
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
@@ -245,7 +203,7 @@ def melt_quench_simulation(
     structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
-        working_directory=working_directory,
+        tmp_working_directory=tmp_working_directory,
         temperature=temperature_low,
         temperature_end=temperature_high,
         n_ionic_steps=heating_steps,
@@ -260,7 +218,7 @@ def melt_quench_simulation(
     structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
-        working_directory=working_directory,
+        tmp_working_directory=tmp_working_directory,
         temperature=temperature_high,
         n_ionic_steps=1_000,
         timestep=timestep,
@@ -273,7 +231,7 @@ def melt_quench_simulation(
     structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
-        working_directory=working_directory,
+        tmp_working_directory=tmp_working_directory,
         temperature=temperature_high,
         temperature_end=temperature_low,
         n_ionic_steps=cooling_steps,
@@ -287,7 +245,7 @@ def melt_quench_simulation(
     structure, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
-        working_directory=working_directory,
+        tmp_working_directory=tmp_working_directory,
         temperature=temperature_low,
         n_ionic_steps=10_000,
         timestep=timestep,
@@ -301,7 +259,7 @@ def melt_quench_simulation(
     structure_final, parsed_output = _run_lammps_md(
         structure=structure,
         potential=potential,
-        working_directory=working_directory,
+        tmp_working_directory=tmp_working_directory,
         temperature=temperature_low,
         n_ionic_steps=100_000,
         timestep=timestep,
@@ -309,9 +267,6 @@ def melt_quench_simulation(
         initial_temperature=0,
         langevin=langevin,
     )
-
-    # see issue #32: Consider implementing a more robust cleanup procedure for temporary files.
-    shutil.rmtree(working_directory)
 
     return {
         "structure": structure_final,
