@@ -79,9 +79,11 @@ flowchart LR
 
    subgraph "User Input"
       UserStructure[User Structure]
-      AdhocGeneration["Ad-hoc Structure<br/>Generation Workflow<br/>- Composition<br/>- System Size"]
       Database["Internal/External<br/>Database"]
-      InitialStructure["Initial<br/>Structure"]
+      InputStructure["Initial<br/>Structure"]
+      AdhocGeneration["Structure Generation"]
+      Composition["Composition"]
+      Density["Density"]
    end
 
 
@@ -116,18 +118,21 @@ flowchart LR
    end
 
    subgraph "Legend"
-      Done[Done]
+      Implemented[Implemented]
+      Validated[Validated]
       Working[Working]
       Future[Future]
    end
 
 
    
-   UserStructure --> InitialStructure
-   Database --> InitialStructure
-   AdhocGeneration --> InitialStructure
+   UserStructure --> InputStructure
+   Database --> InputStructure
+   AdhocGeneration --> InputStructure
+   Density --> AdhocGeneration
+   Composition --> AdhocGeneration
    
-   InitialStructure --> WorkflowSettings
+   InputStructure --> WorkflowSettings
    FF --> WorkflowSettings
    GenericSimulationSettings --> WorkflowSettings
    TemperatureProgram --> WorkflowSettings
@@ -135,7 +140,7 @@ flowchart LR
    Others --> WorkflowSettings
    
 
-   GlassStructure --> InitialStructure
+   GlassStructure --> InputStructure
    WorkflowSettings --> MeltQuench --> GlassStructure 
    WorkflowSettings --> StructureAnalysis
    WorkflowSettings --> ElasticModuliSimulation --> ElasticModuli
@@ -151,12 +156,14 @@ flowchart LR
 
 %% Styling
    classDef future fill:#ea580c,stroke:#f97316,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
-   classDef done fill:#059669,stroke:#10b981,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef implemented fill:#bbf7d0,stroke:#10b981,stroke-width:2px,color:#166534,font-weight:bold,font-size:22px;
+   classDef validated fill:#059669,stroke:#10b981,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
    classDef working fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
    classDef none fill:#333333,stroke:#ffffff,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
 
 
-class Done,Composition,AdhocGeneration,InitialStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings, done
+class Implemented,Composition,AdhocGeneration,InputStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings, implemented
+class Validated validated
 class Working,ViscositySimulation,ElasticModuliSimulation,Strain,FF working
 class Future,CTESimulation,AnisotropyAnalysis,Database, future
 class ElasticModuli,Viscosity,CTE,Anisotropy,Others,OthersWorkflow,OthersOutput none
