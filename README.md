@@ -71,8 +71,7 @@ Later, more complicated glasses from Schott can be considered. The following are
 # Approximate pyiron-glass workflow diagram 
 
 ```mermaid
-%% Mermaid v10+ optimized vertical timeline
-%% Enable in compatible Mermaid live editors: https://mermaid-js.github.io/mermaid-live-editor
+%% Mermaid live editor: https://mermaid-js.github.io/mermaid-live-editor
 
 %%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 60}} }%%
 flowchart LR
@@ -118,10 +117,10 @@ flowchart LR
    end
 
    subgraph "Legend"
+      Future[Future]
+      Underway[Underway]
       Implemented[Implemented]
       Validated[Validated]
-      Working[Working]
-      Future[Future]
    end
 
 
@@ -158,13 +157,13 @@ flowchart LR
    classDef future fill:#ea580c,stroke:#f97316,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
    classDef implemented fill:#bbf7d0,stroke:#10b981,stroke-width:2px,color:#166534,font-weight:bold,font-size:22px;
    classDef validated fill:#059669,stroke:#10b981,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
-   classDef working fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef underway fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
    classDef none fill:#333333,stroke:#ffffff,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
 
 
-class Implemented,Composition,AdhocGeneration,InputStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings, implemented
+class Implemented,Density,Composition,AdhocGeneration,InputStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings implemented
 class Validated validated
-class Working,ViscositySimulation,ElasticModuliSimulation,Strain,FF working
+class Underway,ViscositySimulation,ElasticModuliSimulation,Strain,FF underway
 class Future,CTESimulation,AnisotropyAnalysis,Database, future
 class ElasticModuli,Viscosity,CTE,Anisotropy,Others,OthersWorkflow,OthersOutput none
 ```
