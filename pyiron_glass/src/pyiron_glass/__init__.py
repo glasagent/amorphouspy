@@ -6,7 +6,7 @@ from pyiron_glass.analysis.qn_network_connectivity import (
     compute_network_connectivity,
     compute_qn,
 )
-from pyiron_glass.analysis.radial_distribution_functions import compute_coordination
+from pyiron_glass.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from pyiron_glass.analysis.rings import compute_rings
 from pyiron_glass.io_utils import (
     get_properties_for_structure_analysis,
@@ -27,6 +27,7 @@ __all__ = [
     "compute_coordination",
     "compute_network_connectivity",
     "compute_qn",
+    "compute_rdf",
     "compute_rings",
     "count_distribution",
     "generate_potential",
