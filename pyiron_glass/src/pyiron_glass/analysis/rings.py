@@ -64,7 +64,7 @@ def write_xyz(
 
     N = coords.shape[0]
     path = Path(filename)
-    with path.open(filename, "w") as f:
+    with path.open("w") as f:
         f.write(f"{N}\n")
         if box_size is not None:
             f.write(f"CUB {box_size[0]:.8f} {box_size[1]:.8f} {box_size[2]:.8f}\n")
