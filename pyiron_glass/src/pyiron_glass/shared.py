@@ -1,5 +1,8 @@
 """Shared utilities for pyiron_glass package."""
 
+import numpy as np
+from ase.data import chemical_symbols
+
 
 # See issue #31: It could be beneficial to hardcode
 # every element type to be able to always identify the elements
@@ -38,3 +41,29 @@ def count_distribution(coord_numbers: dict[int, int]) -> dict[int, int]:
     for cn in coord_numbers.values():
         dist[cn] = dist.get(cn, 0) + 1
     return dist
+
+
+def type_to_dict(types: np.array) -> dict[int, str]:
+    """Generate a dictionary mapping atomic numbers (types) to element symbols from an ASE Atoms structure.
+
+    Parameters
+    ----------
+    types : np.array
+        array containing atom types in the simulation.
+
+    Returns
+    -------
+    type_dict : dict[int, str]
+        Dictionary mapping atomic numbers to corresponding element symbols.
+
+    """
+    # Extract unique atomic types from structure
+    unique_types = np.unique(types)
+
+    # Map atomic numbers to element symbols using ASE's periodic table
+    element_symbols: list[str] = [chemical_symbols[z] for z in unique_types]
+
+    # Create the type-to-symbol dictionary
+    type_dict: dict[int, str] = dict(zip(unique_types, element_symbols, strict=False))
+
+    return type_dict
