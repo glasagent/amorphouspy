@@ -234,9 +234,7 @@ def viscosity_simulation(
     """
     Path(working_directory).mkdir(parents=True, exist_ok=True)
 
-
-
-     # Stage 0: Langevin dynamics at T
+    # Stage 0: Langevin dynamics at T
     structure0, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
