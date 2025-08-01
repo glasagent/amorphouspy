@@ -193,7 +193,7 @@ def viscosity_simulation(
     working_directory: str,
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
-    production_steps: int = 1_000_000,
+    production_steps: int = 10_000_000,
     n_print: int = 1,
     *,
     langevin: bool = False,
@@ -234,13 +234,28 @@ def viscosity_simulation(
     """
     Path(working_directory).mkdir(parents=True, exist_ok=True)
 
-    # Stage 1: NVT at T
-    structure1, _ = _run_lammps_md(
+    # Stage 0: Langevin dynamics at T
+    structure0, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
         working_directory=working_directory,
-        temperature=temperature_sim,
+        temperature=5000,
         n_ionic_steps=10_000,
+        timestep=timestep,
+        n_print=1000,
+        initial_temperature=temperature_sim,
+        langevin=True,
+        seed=seed,
+        delete_folder=True,
+    )
+
+    # Stage 1: cooling to T of interest in NVT
+    structure1, _ = _run_lammps_md(
+        structure=structure0,
+        potential=potential,
+        working_directory=working_directory,
+        temperature=[5000, temperature_sim],
+        n_ionic_steps=1_000_000,
         timestep=timestep,
         n_print=1000,
         initial_temperature=temperature_sim,
@@ -249,7 +264,7 @@ def viscosity_simulation(
         delete_folder=True,
     )
 
-    # Stage 2: Equilibration in NPT at T
+    # Stage 2: Equilibration in NVT at T
     structure2, _ = _run_lammps_md(
         structure=structure1,
         potential=potential,
@@ -258,15 +273,30 @@ def viscosity_simulation(
         n_ionic_steps=100_000,
         timestep=timestep,
         n_print=1000,
+        initial_temperature=temperature_sim,
+        langevin=langevin,
+        seed=seed,
+        delete_folder=True,
+    )
+
+    # Stage 3: Equilibration in NPT at T
+    structure3, _ = _run_lammps_md(
+        structure=structure2,
+        potential=potential,
+        working_directory=working_directory,
+        temperature=temperature_sim,
+        n_ionic_steps=1_000_000,
+        timestep=timestep,
+        n_print=1000,
         initial_temperature=0,
         pressure=0.0,
         langevin=langevin,
         delete_folder=True,
     )
 
-    # Stage 3: Equilibration NVT at T
-    structure3, _ = _run_lammps_md(
-        structure=structure2,
+    # Stage 4: Equilibration NVT at T
+    structure4, _ = _run_lammps_md(
+        structure=structure3,
         potential=potential,
         working_directory=working_directory,
         temperature=temperature_sim,
@@ -278,9 +308,9 @@ def viscosity_simulation(
         delete_folder=True,
     )
 
-    # Stage 4: Production simulation for viscosity at T
+    # Stage 5: Production simulation for viscosity at T
     structure_final, parsed_output = _run_lammps_md(
-        structure=structure3,
+        structure=structure4,
         potential=potential,
         working_directory=working_directory,
         temperature=temperature_sim,
