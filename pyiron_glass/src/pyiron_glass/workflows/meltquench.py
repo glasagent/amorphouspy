@@ -51,6 +51,7 @@ def _run_lammps_md(
     initial_temperature: float,
     temperature_end: float | None = None,
     pressure: float | None = None,
+    server_kwargs: dict | None = None,
     *,
     langevin: bool = False,
     seed: int = 12345,
@@ -81,6 +82,8 @@ def _run_lammps_md(
         Final temperature for ramping. If None, no temperature ramp is applied.
     pressure : float, optional
         Target pressure for NPT simulations. If None, NVT is used.
+    server_kwargs : dict | None, optional
+        Additional keyword arguments for the server.
     langevin : bool, optional
         Whether to use Langevin dynamics
     seed : int, optional
@@ -124,14 +127,15 @@ def _run_lammps_md(
             cutoff_radius=None,
             units="metal",
             bonds_kwargs={},
-            server_kwargs={},
+            server_kwargs=server_kwargs,
             enable_h5md=False,
             write_restart_file=False,
             read_restart_file=False,
             restart_file="restart.out",
-            executable_version=None,
             executable_path=None,
-            input_control_file=None,
+            input_control_file={
+                "thermo_modify": "flush yes",
+            },
         )
 
         # Retrives the final structure from the parsed output
@@ -151,6 +155,7 @@ def melt_quench_simulation(
     cooling_rate: float = 1e12,
     n_print: int = 1000,
     *,
+    server_kwargs: dict | None = None,
     langevin: bool = False,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
@@ -179,6 +184,8 @@ def melt_quench_simulation(
         The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
     n_print : int, optional
         The frequency of output during the simulation (default is 1000).
+    server_kwargs : dict | None, optional
+        Additional keyword arguments for the server.
     langevin : bool, optional
         Whether to use Langevin dynamics.
     seed : int, optional
@@ -212,6 +219,7 @@ def melt_quench_simulation(
         initial_temperature=temperature_low,
         langevin=langevin,
         seed=seed,
+        server_kwargs=server_kwargs,
     )
 
     # Stage 2: Equilibration at high T
@@ -220,11 +228,12 @@ def melt_quench_simulation(
         potential=potential,
         tmp_working_directory=tmp_working_directory,
         temperature=temperature_high,
-        n_ionic_steps=1_000,
+        n_ionic_steps=10_000,
         timestep=timestep,
         n_print=n_print,
         initial_temperature=0,
         langevin=langevin,
+        server_kwargs=server_kwargs,
     )
 
     # Stage 3: Cooling from high to low T
@@ -239,6 +248,7 @@ def melt_quench_simulation(
         n_print=n_print,
         initial_temperature=0,
         langevin=langevin,
+        server_kwargs=server_kwargs,
     )
 
     # Stage 4: Pressure release at low T
@@ -253,6 +263,7 @@ def melt_quench_simulation(
         initial_temperature=0,
         pressure=0.0,
         langevin=langevin,
+        server_kwargs=server_kwargs,
     )
 
     # Stage 5: Long equilibration at low T
@@ -266,11 +277,17 @@ def melt_quench_simulation(
         n_print=n_print,
         initial_temperature=0,
         langevin=langevin,
+        server_kwargs=server_kwargs,
     )
+
+    result = parsed_output.get("generic", None)
+
+    if result is None:
+        msg = "The 'generic' key is missing from parsed_output."
+        raise KeyError(msg)
+        result = {}
 
     return {
         "structure": structure_final,
-        "steps": parsed_output["generic"]["steps"],
-        "temperature": parsed_output["generic"]["temperature"],
-        "generic": parsed_output["generic"],
+        "result": result,
     }
