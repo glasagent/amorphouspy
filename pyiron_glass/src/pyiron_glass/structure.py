@@ -195,7 +195,7 @@ def get_box_from_density(
 
 
 @job
-def get_ase_structure(atoms_dict: dict, replicate=(1, 1, 1)) -> Atoms:
+def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1, 1)) -> Atoms:
     """Generate a LAMMPS data file format string and read into an ASE Atoms object.
 
     Based on the specifications in the provided atoms_dict,

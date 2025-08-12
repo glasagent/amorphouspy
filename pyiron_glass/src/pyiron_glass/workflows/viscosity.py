@@ -1,12 +1,11 @@
 """Viscosity simulation workflows for glass systems using LAMMPS and Green-Kubo method."""
 
-import numpy as np
+import tempfile
+from pathlib import Path
+
 from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
-from structuretoolkit.common import center_coordinates_in_unit_cell
-import tempfile
-from pathlib import Path
 
 
 def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict, *, wrap: bool = False) -> Atoms:
@@ -51,7 +50,7 @@ def _run_lammps_md(
     n_print: int,
     initial_temperature: float,
     pressure: float | None = None,
-    server_kwargs: dict = {},
+    server_kwargs: dict | None = None,
     *,
     langevin: bool = False,
     seed: int = 12345,
@@ -82,6 +81,8 @@ def _run_lammps_md(
         Final temperature for ramping. If None, no temperature ramp is applied.
     pressure : float, optional
         Target pressure for NPT simulations. If None, NVT is used.
+    server_kwargs : dict | None, optional
+        Additional keyword arguments for the server.
     langevin : bool, optional
         Whether to use Langevin dynamics
     seed : int, optional
@@ -152,7 +153,7 @@ def viscosity_simulation(
     timestep: float = 1.0,
     production_steps: int = 10_000_000,
     n_print: int = 1,
-    server_kwargs: dict = {},
+    server_kwargs: dict | None = None,
     *,
     langevin: bool = False,
     seed: int = 12345,
@@ -180,6 +181,8 @@ def viscosity_simulation(
         The number of steps for the production.
     n_print : int, optional
         The frequency of output during the simulation (default is 1000).
+    server_kwargs : dict | None, optional
+        Additional arguments for the server.
     langevin : bool, optional
         Whether to use Langevin dynamics.
     seed : int, optional
@@ -191,7 +194,6 @@ def viscosity_simulation(
         A dictionary containing the simulation steps and temperature data.
 
     """
-
     # Stage 0: Langevin dynamics at T
     structure0, _ = _run_lammps_md(
         structure=structure,
@@ -283,8 +285,8 @@ def viscosity_simulation(
     result = parsed_output.get("generic", None)
 
     if result is None:
-        print("Warning: 'generic' key not found in parsed_output.")
-        # Handle the absence of the 'generic' key as needed
+        msg = "The 'generic' key is missing from parsed_output."
+        raise KeyError(msg)
         result = {}
 
     return {"result": result}

@@ -51,7 +51,7 @@ def _run_lammps_md(
     initial_temperature: float,
     temperature_end: float | None = None,
     pressure: float | None = None,
-    server_kwargs: dict = {},
+    server_kwargs: dict | None = None,
     *,
     langevin: bool = False,
     seed: int = 12345,
@@ -82,6 +82,8 @@ def _run_lammps_md(
         Final temperature for ramping. If None, no temperature ramp is applied.
     pressure : float, optional
         Target pressure for NPT simulations. If None, NVT is used.
+    server_kwargs : dict | None, optional
+        Additional keyword arguments for the server.
     langevin : bool, optional
         Whether to use Langevin dynamics
     seed : int, optional
@@ -153,7 +155,7 @@ def melt_quench_simulation(
     cooling_rate: float = 1e12,
     n_print: int = 1000,
     *,
-    server_kwargs: dict = {},
+    server_kwargs: dict | None = None,
     langevin: bool = False,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
@@ -182,6 +184,8 @@ def melt_quench_simulation(
         The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
     n_print : int, optional
         The frequency of output during the simulation (default is 1000).
+    server_kwargs : dict | None, optional
+        Additional keyword arguments for the server.
     langevin : bool, optional
         Whether to use Langevin dynamics.
     seed : int, optional
@@ -276,7 +280,14 @@ def melt_quench_simulation(
         server_kwargs=server_kwargs,
     )
 
+    result = parsed_output.get("generic", None)
+
+    if result is None:
+        msg = "The 'generic' key is missing from parsed_output."
+        raise KeyError(msg)
+        result = {}
+
     return {
         "structure": structure_final,
-        "generic": parsed_output["generic"],
+        "result": result,
     }
