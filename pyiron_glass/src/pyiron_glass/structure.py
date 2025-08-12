@@ -195,7 +195,7 @@ def get_box_from_density(
 
 
 @job
-def get_ase_structure(atoms_dict: dict) -> Atoms:
+def get_ase_structure(atoms_dict: dict, replicate=(1, 1, 1)) -> Atoms:
     """Generate a LAMMPS data file format string and read into an ASE Atoms object.
 
     Based on the specifications in the provided atoms_dict,
@@ -210,6 +210,9 @@ def get_ase_structure(atoms_dict: dict) -> Atoms:
     atoms_dict : dict
         Dictionary that must contain the atom counts and box dimensions under the
         keys "atoms" and "box".
+    replicate : tuple of int, optional
+        Replication factors for the box in x, y, and z directions.
+        Default is (1, 1, 1), meaning no replication.
 
     Returns
     -------
@@ -219,41 +222,53 @@ def get_ase_structure(atoms_dict: dict) -> Atoms:
     """
     atoms = atoms_dict["atoms"]
     box_length = atoms_dict["box"]
-    n_atoms = len(atoms)
+    nx, ny, nz = replicate
+    n_atoms_orig = len(atoms)
+
     element_to_type = get_element_types_dict(atoms_dict=atoms_dict)
     n_types = len(element_to_type)
 
     list_of_lines = []
-    # with open(filename, 'w') as f:
-    # Header
-    list_of_lines.append(
-        "LAMMPS data file via create_random_atoms and write_lammps_data\n\n",
-    )
+    list_of_lines.append("LAMMPS data file via create_random_atoms and write_lammps_data\n\n")
+
+    n_atoms = n_atoms_orig * nx * ny * nz
     list_of_lines.append(f"{n_atoms} atoms\n")
     list_of_lines.append(f"{n_types} atom types\n\n")
-    # Box dims
-    list_of_lines.append(f"0.0 {box_length} xlo xhi\n")
-    list_of_lines.append(f"0.0 {box_length} ylo yhi\n")
-    list_of_lines.append(f"0.0 {box_length} zlo zhi\n\n")
 
-    # Masses section
+    # Adjust box size by replication factors
+    new_box_length_x = box_length * nx
+    new_box_length_y = box_length * ny
+    new_box_length_z = box_length * nz
+
+    list_of_lines.append(f"0.0 {new_box_length_x} xlo xhi\n")
+    list_of_lines.append(f"0.0 {new_box_length_y} ylo yhi\n")
+    list_of_lines.append(f"0.0 {new_box_length_z} zlo zhi\n\n")
+
     list_of_lines.append("Masses\n\n")
     for elem, type_id in element_to_type.items():
-        mass = get_atomic_mass(
-            elem,
-        )  # You can later replace with real atomic masses if needed
+        mass = get_atomic_mass(elem)
         list_of_lines.append(f"{type_id} {mass} # {elem}\n")
 
     list_of_lines.append("\nAtoms\n\n")
 
-    # Atoms section
-    for i, atom in enumerate(atoms, start=1):
-        elem = atom["element"]
-        type_id = element_to_type[elem]
-        x, y, z = atom["position"]
-        q = 0.0
-        # Charge, I put 0 for simplicity.
-        list_of_lines.append(f"{i} {type_id} {q:.6f} {x:.6f} {y:.6f} {z:.6f}\n")
+    atom_id = 1
+    for ix in range(nx):
+        for iy in range(ny):
+            for iz in range(nz):
+                for atom in atoms:
+                    elem = atom["element"]
+                    type_id = element_to_type[elem]
+                    x, y, z = atom["position"]
+                    # Shift positions according to replication
+                    x_shifted = x + ix * box_length
+                    y_shifted = y + iy * box_length
+                    z_shifted = z + iz * box_length
+                    q = 0.0
+                    list_of_lines.append(
+                        f"{atom_id} {type_id} {q:.6f} {x_shifted:.6f} {y_shifted:.6f} {z_shifted:.6f}\n"
+                    )
+                    atom_id += 1
+
     return read(
         filename=StringIO("".join(list_of_lines)),
         format="lammps-data",
