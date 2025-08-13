@@ -20,4 +20,3 @@ def test_check_neutral_oxide_nao2() -> None:
     with pytest.raises(ValueError, match="Cannot determine oxidation states for 'NaO2'") as excinfo:
         check_neutral_oxide("NaO2")
     assert "Cannot determine oxidation states" in str(excinfo.value)
-
