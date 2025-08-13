@@ -1,7 +1,5 @@
 """Tests for density calculation utilities."""
 
-import pytest
-
 from pyiron_glass.structure import get_glass_density_from_model
 
 # Constants
@@ -10,7 +8,6 @@ TOLERANCE = 0.01  # g/cm³ acceptable deviation
 
 def test_get_glass_density_from_model() -> None:
     """Test density calculation with various cases."""
-    # Test basic composition
     density = get_glass_density_from_model("80SiO2-20Na2O")
     assert abs(density - 2.391) < TOLERANCE
 
