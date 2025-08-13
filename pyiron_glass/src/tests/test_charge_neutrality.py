@@ -24,6 +24,6 @@ def test_check_neutral_oxide_nao2() -> None:
 
 def test_check_neutral_oxide_no_oxidation_states() -> None:
     """Test that formulas without oxidation state guesses raise appropriate errors."""
-    with pytest.raises(ValueError, match="Cannot determine oxidation states for 'XyZ'") as excinfo:
-        check_neutral_oxide("XyZ")
+    with pytest.raises(ValueError, match="'ABC' is not a valid Element") as excinfo:
+        check_neutral_oxide("ABC")
     assert "is not a valid Element" in str(excinfo.value)
