@@ -17,7 +17,7 @@ from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.potentials import potential
 from pyiron_glass.potentials.potential import generate_potential
 from pyiron_glass.shared import count_distribution, type_to_dict
-from pyiron_glass.structure import get_ase_structure, get_structure_dict
+from pyiron_glass.structure import get_ase_structure, get_glass_density_from_model, get_structure_dict
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
 from pyiron_glass.workflows.viscosity import viscosity_simulation
 
@@ -33,6 +33,7 @@ __all__ = [
     "generate_bond_length_dict",
     "generate_potential",
     "get_ase_structure",
+    "get_glass_density_from_model",
     "get_neighbors",
     "get_properties_for_structure_analysis",
     "get_structure_dict",
