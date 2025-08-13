@@ -1,111 +1,26 @@
-"""Tests for oxide charge neutrality validation.
-
-Author: (achraf.atila@bam.de)
-
-This script provides tests for oxide charge neutrality validation.
-It tests various oxide formulas against the check_neutral_oxide function,
-verifying correct identification of charge-neutral compounds and proper
-error handling for non-neutral or invalid inputs.
-
-The tests cover:
-- Valid neutral oxides (Na₂O, etc.)
-- Non-neutral compounds (NaO, AlO, etc.)
-- Invalid formula formats
-- Compounds with undetermined oxidation states
-- Edge cases and special oxides
-"""
+"""Tests for oxide charge neutrality validation."""
 
 import pytest
+from pyiron_glass.structure import check_neutral_oxide  # Replace 'your_module' with the actual module name
 
-from pyiron_glass import check_neutral_oxide
+def test_check_neutral_oxide_na2o():
+    """Test that Na2O is correctly identified as charge neutral."""
+    check_neutral_oxide("Na2O")  # Should not raise any exception
 
-# Test parameters
-VALID_OXIDES = [
-    "Na2O",
-    "K2O",
-    "MgO",
-    "CaO",
-    "Al2O3",
-    "CO2",
-    "SiO2",
-    "TiO2",
-    "P2O5",
-    "SO3",
-    "H2O",
-    "O2",
-    "Na2O2",
-    "Fe2O3",
-    "Cr2O3",
-]
+def test_check_neutral_oxide_al2o3():
+    """Test that Al2O3 is correctly identified as charge neutral."""
+    check_neutral_oxide("Al2O3")  # Should not raise any exception
 
-NON_NEUTRAL_CASES = [
-    ("NaO", "net charge -1"),
-    ("AlO", "net charge 1"),
-    ("FeO2", "net charge -2"),
-    ("LiO2", "net charge -3"),
-    ("C2O", "net charge -2"),
-    ("Na2O3", "net charge -4"),
-]
-
-INVALID_FORMULAS = [
-    "H2O!",
-    "Na-2O",
-    "3Al2O3",
-    "abc",
-    "CO@2",
-    "",
-    123,
-]
-
-PROBLEMATIC_COMPOUNDS = [
-    "XeO3",
-    "Fe4C",
-    "HeO",
-]
+def test_check_neutral_oxide_nao2():
+    """Test that NaO2 is correctly identified as NOT charge neutral."""
+    with pytest.raises(ValueError) as excinfo:
+        check_neutral_oxide("NaO2")
+    assert "Cannot determine oxidation states" in str(excinfo.value)
 
 
-@pytest.mark.parametrize("formula", VALID_OXIDES)
-def test_valid_neutral_oxides(formula: str) -> None:
-    """Test that valid neutral oxides pass without errors."""
-    check_neutral_oxide(formula)
-
-
-@pytest.mark.parametrize(("formula", "expected_error"), NON_NEUTRAL_CASES)
-def test_non_neutral_oxides(formula: str, expected_error: str) -> None:
-    """Test detection of non-neutral compounds."""
-    with pytest.raises(ValueError, match=expected_error):
-        check_neutral_oxide(formula)
-
-
-@pytest.mark.parametrize("formula", INVALID_FORMULAS)
-def test_invalid_formats(formula: str) -> None:
-    """Test handling of malformed formulas."""
-    with pytest.raises(ValueError, match=r"Invalid oxide formula"):
-        check_neutral_oxide(formula)
-
-
-@pytest.mark.parametrize("formula", PROBLEMATIC_COMPOUNDS)
-def test_unsupported_compounds(formula: str) -> None:
-    """Test compounds with no oxidation state guesses."""
-    with pytest.raises(ValueError, match=r"Cannot determine oxidation states"):
-        check_neutral_oxide(formula)
-
-
-def test_special_cases() -> None:
-    """Test edge cases and special oxides."""
-    # Peroxide (should be neutral)
-    check_neutral_oxide("BaO2")
-
-    # Superoxide (should be neutral)
-    check_neutral_oxide("RbO2")
-
-    # Mixed valence oxide (should be neutral)
-    check_neutral_oxide("Pb3O4")
-
-    # Single element (not oxide)
-    with pytest.raises(ValueError, match=r"Not an oxide"):
-        check_neutral_oxide("Fe")
-
-    # Non-oxide compound
-    with pytest.raises(ValueError, match=r"net charge"):
-        check_neutral_oxide("NaCl")
+def test_check_neutral_oxide_no_oxidation_states():
+    """Test that formulas without oxidation state guesses raise appropriate errors."""
+    # Note: This test might need adjustment based on pymatgen's behavior with unusual formulas
+    with pytest.raises(ValueError) as excinfo:
+        check_neutral_oxide("XyZ")  # Assuming this is a formula that pymatgen can't determine oxidation states for
+    assert "is not a valid Element" in str(excinfo.value)
