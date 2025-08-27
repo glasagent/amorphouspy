@@ -25,6 +25,7 @@ expected_NC = (4 * (1 - x) - 2 * x) / (1 - x)
 Reference: https://doi.org/10.1039/D4TB02414A
 """
 
+import numpy as np
 import pytest
 from ase.io import read
 
@@ -32,7 +33,6 @@ from pyiron_glass import (
     compute_coordination,
     compute_network_connectivity,
     compute_qn,
-    get_properties_for_structure_analysis,
 )
 
 from . import DATA_DIR
@@ -52,40 +52,28 @@ N_BO = N_O - N_NBO  # Number of bridging oxygens (140)
 # Expected network connectivity
 expected_nc = (4 * (1 - x) - 2 * x) / (1 - x)  # 3.5
 
-# Cutoff distances for computing coordination numbers (in Ångström)
-cutoff_map = {
-    "O": 1.9,
-    "Si": 1.9,
-    "Na": 3.0,
-}
-
-# Mapping from atom type ID to element name
-type_map = {
-    1: "Na",
-    2: "O",
-    3: "Si",
-}
-
-
-network_formers = {"Si"}
-modifiers = {"Na"}
-O_type = next(t for t, e in type_map.items() if e == "O")
-former_types = [t for t, e in type_map.items() if e in network_formers]
-modifier_types = [t for t, e in type_map.items() if e in modifiers]
-
 
 def test_compute_coordination_o() -> None:
     """Test the compute_coordination function for oxygens."""
     filename = DATA_DIR / "20Na2O-80SiO2.dump"
     atoms = read(filename, format="lammps-dump-text")
-    ids, types, coords, box_size = get_properties_for_structure_analysis(atoms)
+    type_id = atoms.get_atomic_numbers().copy()  # this currently holds IDs 1/2/3
+    to_Z = np.array([0, 11, 8, 14], dtype=int)  # index 0 unused; 1->8, 2->14, 3->11
+    Z = to_Z[type_id]  # vectorized mapping 1/2/3 -> 8/14/11
+    atoms.set_atomic_numbers(Z)  # fixes both numbers and symbols
+
+    # Preserve original LAMMPS IDs and expose a clean 'type' = atomic numbers
+    atoms.new_array("lammps_type", type_id)  # keeps 1/2/3 if you still need them
+    atoms.arrays["type"] = Z  # downstream code can index by atomic number
+
+    cutoff_map = {"O": 1.9, "Si": 1.9, "Na": 3.0}
+
+    O_type = [8]
+    former_types = [14]
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
     o_coord_dist, _ = compute_coordination(
-        ids,
-        types,
-        coords,
-        box_size,
+        atoms,
         [O_type],
         cutoff_map["O"],
         former_types,
@@ -105,14 +93,23 @@ def test_compute_network_connectivity() -> None:
     """Test the compute_network_connectivity function."""
     filename = DATA_DIR / "20Na2O-80SiO2.dump"
     atoms = read(filename, format="lammps-dump-text")
-    ids, types, coords, box_size = get_properties_for_structure_analysis(atoms)
+    type_id = atoms.get_atomic_numbers().copy()  # this currently holds IDs 1/2/3
+    to_Z = np.array([0, 11, 8, 14], dtype=int)  # index 0 unused; 1->8, 2->14, 3->11
+    Z = to_Z[type_id]  # vectorized mapping 1/2/3 -> 8/14/11
+    atoms.set_atomic_numbers(Z)  # fixes both numbers and symbols
+
+    # Preserve original LAMMPS IDs and expose a clean 'type' = atomic numbers
+    atoms.new_array("lammps_type", type_id)  # keeps 1/2/3 if you still need them
+    atoms.arrays["type"] = Z  # downstream code can index by atomic number
+
+    cutoff_map = {"O": 1.9, "Si": 1.9, "Na": 3.0}
+
+    O_type = [8]
+    former_types = [14]
 
     # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
     qn_dist, _ = compute_qn(
-        ids,
-        types,
-        coords,
-        box_size,
+        atoms,
         cutoff_map["O"],
         former_types,
         [O_type],
@@ -135,34 +132,24 @@ def test_compute_network_connectivity_multi() -> None:
     filename = DATA_DIR / "20Na2O-10B2O3-70SiO2.dump"
 
     # Cutoff distances for computing coordination numbers (in Ångström)
-    cutoff_map = {
-        "O": 1.9,
-        "Si": 1.9,
-        "B": 1.9,
-        "Na": 3.0,
-    }
-
-    # Mapping from atom type ID to element name
-    type_map = {
-        1: "O",
-        2: "Si",
-        3: "B",
-        4: "Na",
-    }
-
-    network_formers = {"Si", "B"}
-    O_type_multi = next(t for t, e in type_map.items() if e == "O")
-    former_types = [t for t, e in type_map.items() if e in network_formers]
+    cutoff_map = {"O": 1.9, "Si": 1.9, "B": 1.9, "Na": 3.0}
 
     atoms = read(filename, format="lammps-dump-text")
-    ids, types, coords, box_size = get_properties_for_structure_analysis(atoms)
+    type_id = atoms.get_atomic_numbers().copy()  # this currently holds IDs 1/2/3
+    to_Z = np.array([0, 8, 14, 5, 11], dtype=int)  # index 0 unused; 1->8, 2->14, 3->5, 4->11
+    Z = to_Z[type_id]  # vectorized mapping 1/2/3 -> 8/14/5/11
+    atoms.set_atomic_numbers(Z)  # fixes both numbers and symbols
+
+    # Preserve original LAMMPS IDs and expose a clean 'type' = atomic numbers
+    atoms.new_array("lammps_type", type_id)  # keeps 1/2/3 if you still need them
+    atoms.arrays["type"] = Z  # downstream code can index by atomic number
+
+    O_type_multi = [8]
+    former_types = [5, 14]
 
     # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
     qn_dist, _ = compute_qn(
-        ids,
-        types,
-        coords,
-        box_size,
+        atoms,
         cutoff_map["O"],
         former_types,
         [O_type_multi],

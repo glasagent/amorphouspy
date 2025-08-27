@@ -20,7 +20,6 @@ from pyiron_glass.structure import (
     get_glass_density_from_model,
     get_structure_dict,
 )
-
 from pyiron_glass.workflows.md import md_simulation
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
 from pyiron_glass.workflows.viscosity import viscosity_simulation
