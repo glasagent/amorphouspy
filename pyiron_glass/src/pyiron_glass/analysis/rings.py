@@ -79,9 +79,7 @@ def write_xyz(
 
 
 def compute_guttmann_rings(
-    types: np.ndarray,
-    coords: np.ndarray,
-    box_size: np.ndarray,
+    structure: Atoms,
     bond_lengths: dict[tuple[str, str], float],
     max_size: int = 24,
     n_cpus: int = 1,
@@ -96,12 +94,8 @@ def compute_guttmann_rings(
 
     Parameters
     ----------
-    types : np.ndarray of shape (N,)
-        Array of integer atomic types.
-    coords : np.ndarray of shape (N, 3)
-        Array of atomic coordinates in Cartesian space.
-    box_size : np.ndarray or array-like of shape (3,)
-        Simulation box dimensions along x, y, z directions.
+    structure : ase.Atoms
+        ASE Atoms object containing atomic coordinates and types.
     bond_lengths : dict[(str, str), float]
         Dictionary specifying maximum bond lengths for each element pair.
     max_size : int, optional
@@ -117,6 +111,7 @@ def compute_guttmann_rings(
         Mean ring size computed as sum over (s / 2) * p(s), where s is ring size and p(s) is its probability.
 
     """
+    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
     type_dict = type_to_dict(types)
     with tempfile.NamedTemporaryFile("w+", suffix=".xyz", delete=True) as tmp:
         write_xyz(filename=tmp.name, coords=coords, types=types, box_size=box_size, type_dict=type_dict)

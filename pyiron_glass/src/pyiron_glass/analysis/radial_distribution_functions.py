@@ -5,16 +5,16 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 import numpy as np
+from ase import Atoms
+from numba import jit
 
+from pyiron_glass.io_utils import get_properties_for_structure_analysis
 from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.shared import count_distribution
 
 
 def compute_coordination(
-    ids: np.ndarray,
-    types: np.ndarray,
-    coords: np.ndarray,
-    box_size: np.ndarray,
+    structure: Atoms,
     target_type: int,
     cutoff: float,
     neighbor_types: list[int] | None = None,
@@ -22,10 +22,7 @@ def compute_coordination(
     """Compute coordination number for atoms of a target type.
 
     Args:
-        ids (np.ndarray): Atom IDs.
-        types (np.ndarray): Atom types.
-        coords (np.ndarray): Atom coordinates.
-        box_size (np.ndarray): Simulation box dimensions.
+        structure (Atoms): The atomic structure as ASE object.
         target_type (int): Atom type for which to compute coordination.
         cutoff (float): Cutoff radius.
         neighbor_types (List[int] or None): Valid neighbor types.
@@ -36,6 +33,7 @@ def compute_coordination(
             - per-atom coordination numbers (dict): atom ID → coordination number
 
     """
+    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
     neighbors = get_neighbors(
         coords,
         types,
@@ -49,14 +47,40 @@ def compute_coordination(
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
 
 
+@jit(nopython=True)
+def compute_distances(coords: np.ndarray, box_size: np.ndarray, r_max: float) -> tuple:
+    """Simplified Numba-accelerated distance computation with PBC."""
+    n = len(coords)
+    distances = []
+    i_indices = []
+    j_indices = []
+
+    for i in range(n):
+        for j in range(i + 1, n):  # Avoid double-counting and self-pairs
+            # Compute minimum image distance
+            dx = coords[i, 0] - coords[j, 0]
+            dy = coords[i, 1] - coords[j, 1]
+            dz = coords[i, 2] - coords[j, 2]
+
+            dx -= box_size[0] * np.round(dx / box_size[0])
+            dy -= box_size[1] * np.round(dy / box_size[1])
+            dz -= box_size[2] * np.round(dz / box_size[2])
+
+            dist = np.sqrt(dx * dx + dy * dy + dz * dz)
+            if dist <= r_max:
+                distances.append(dist)
+                i_indices.append(i)
+                j_indices.append(j)
+
+    return np.array(distances), np.array(i_indices), np.array(j_indices)
+
+
 def compute_rdf(
-    coords: np.ndarray,
-    types: np.ndarray,
-    box_size: np.ndarray,
+    structure: Atoms,
     r_max: float = 10.0,
     n_bins: int = 500,
     type_pairs: list[tuple[int, int]] | None = None,
-) -> tuple[np.ndarray, dict[tuple[int, int], np.ndarray], dict[tuple[int, int], np.ndarray]]:
+) -> tuple[np.ndarray, dict, dict]:
     """Compute radial distribution functions (RDFs) and cumulative coordination numbers.
 
     Calculates the pair-wise radial distribution function g(r) for specified
@@ -66,12 +90,8 @@ def compute_rdf(
 
     Parameters
     ----------
-    coords : np.ndarray, shape (N, 3)
-        Cartesian coordinates of N particles (in Å).
-    types : np.ndarray, shape (N,)
-        Integer type identifier for each particle.
-    box_size : np.ndarray, shape (3,)
-        Simulation box dimensions along x, y, z (Å).
+    structure : ase.Atoms
+        ASE Atoms object containing atomic coordinates and types.
     r_max : float, optional
         Maximum distance to evaluate RDF (default is 10.0 Å).
     n_bins : int, optional
@@ -98,50 +118,59 @@ def compute_rdf(
     - If t1 == t2, self-correlation is corrected via density and count.
 
     """
-    # set bins
-    bin_width = float(r_max / n_bins)
+    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    # Input validation and type conversion
+    coords = np.asarray(coords, dtype=np.float64)
+    types = np.asarray(types, dtype=np.int64)
+    box_size = np.asarray(box_size, dtype=np.float64)
+
+    assert len(coords) == len(types), "coords and types must match!"
+    assert box_size.shape == (3,), "box_size must be (3,) array"
+
+    # Set up bins
     bin_edges = np.linspace(0, r_max, n_bins + 1)
     r = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-    dr = bin_width
+    dr = bin_edges[1] - bin_edges[0]
 
-    # init storage and setup of pairs of unique types
+    # Get unique types and determine type pairs
     unique_types = np.unique(types)
     if type_pairs is None:
-        type_pairs = [(t1, t2) for t1 in unique_types for t2 in unique_types]
+        type_pairs = [(int(t1), int(t2)) for t1 in unique_types for t2 in unique_types]
+
+    # Compute distances (Numba-accelerated)
+    distances, i_indices, j_indices = compute_distances(coords, box_size, float(r_max))
+
+    # Get types for each pair
+    type_i = types[i_indices]
+    type_j = types[j_indices]
+
+    # Initialize results
     rdfs = {pair: np.zeros(n_bins) for pair in type_pairs}
     cn_cumulative = {pair: np.zeros(n_bins) for pair in type_pairs}
 
-    # distance calculation
-    rij = coords[:, None, :] - coords[None, :, :]
-    rij -= box_size * np.round(rij / box_size)
-    distances = np.linalg.norm(rij, axis=-1)
-
-    # take only valid distances
-    mask = (distances > 0) & (distances <= r_max)
-    i, j = np.where(mask)
-    type_i, type_j = types[i], types[j]
-
-    # compute counts per type pair
+    # Compute histograms for each type pair
     for t1, t2 in type_pairs:
-        pair_mask = ((type_i == t1) & (type_j == t2)) | ((t1 == t2) & (type_i == t1) & (type_j == t2))
-        hist, _ = np.histogram(distances[mask][pair_mask], bins=bin_edges)
+        if t1 == t2:
+            pair_mask = (type_i == t1) & (type_j == t2)
+        else:
+            pair_mask = ((type_i == t1) & (type_j == t2)) | ((type_i == t2) & (type_j == t1))
+
+        pair_dists = distances[pair_mask]
+        hist, _ = np.histogram(pair_dists, bins=bin_edges)
         rdfs[(t1, t2)] = hist
         cn_cumulative[(t1, t2)] = np.cumsum(hist)
 
-    # norm
+    # Normalization
     volume = np.prod(box_size)
+    type_counts = {t: np.sum(types == t) for t in unique_types}
+
     for (t1, t2), hist in rdfs.items():
-        n1 = np.sum(types == t1)
-        n2 = np.sum(types == t2) if t1 != t2 else n1
+        n1 = type_counts[t1]
+        n2 = type_counts[t2] if t1 != t2 else (n1 - 1)  # Exclude self for same type
 
-        # ideal pair density
         rho_pair = n2 / volume
-
-        # shell volume and normalization
         shell_volumes = 4 * np.pi * (r**2) * dr
-        rdfs[(t1, t2)] = hist / (n1 * rho_pair * shell_volumes)
-
-        # coordination number normalization
+        rdfs[(t1, t2)] = hist / (n1 * rho_pair * shell_volumes + 1e-10)
         cn_cumulative[(t1, t2)] = cn_cumulative[(t1, t2)] / n1
 
     return r, rdfs, cn_cumulative
