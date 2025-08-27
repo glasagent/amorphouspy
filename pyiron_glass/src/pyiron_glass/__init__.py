@@ -2,10 +2,7 @@
 
 from pyiron_glass.analysis.bond_angle_distribution import compute_angles
 from pyiron_glass.analysis.cavities import compute_cavities
-from pyiron_glass.analysis.qn_network_connectivity import (
-    compute_network_connectivity,
-    compute_qn,
-)
+from pyiron_glass.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from pyiron_glass.io_utils import (
