@@ -75,7 +75,7 @@ def get_neighbors(
     types: np.ndarray,
     box_size: np.ndarray,
     cutoff: float,
-    target_type: int,
+    target_types: list[int] | None = None,
     neighbor_types: list[int] | None = None,
 ) -> list[list[int]]:
     """Find neighbors of specified type(s) using a cell list.
@@ -85,7 +85,7 @@ def get_neighbors(
         types (np.ndarray): Atom types.
         box_size (np.ndarray): Simulation box dimensions.
         cutoff (float): Cutoff distance for neighbor searching.
-        target_type (int): Type of atom to find neighbors for.
+        target_types (List[int]): Types of atoms to find neighbors for.
         neighbor_types (List[int] or None): Acceptable neighbor types (None for all).
 
     Returns:
@@ -94,10 +94,12 @@ def get_neighbors(
     """
     number_of_atoms = len(coords)
     cells, n_cells, inv_cell_size = compute_cell_list(coords, box_size, cutoff)
+
     neighbors = [[] for _ in range(number_of_atoms)]
     for i in range(number_of_atoms):
-        if types[i] not in target_type:
+        if target_types is not None and types[i] not in target_types:
             continue
+
         ci = np.floor(coords[i] * inv_cell_size).astype(int) % n_cells
         for cj in get_neighbor_cells(ci, n_cells):
             for j in cells[tuple(cj)]:

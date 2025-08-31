@@ -15,6 +15,7 @@ dependencies:
 - pyiron-data =0.0.30
 - scipy =1.15.2
 - structuretoolkit =0.0.32
+- numba
 - pip
 - pip:
   - sovapy==0.8.3

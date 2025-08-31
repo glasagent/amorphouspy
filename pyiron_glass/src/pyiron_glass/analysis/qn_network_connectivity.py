@@ -10,19 +10,17 @@ distribution.
 
 from collections import defaultdict
 
-import numpy as np
+from ase import Atoms
 
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination
+from pyiron_glass.io_utils import get_properties_for_structure_analysis
 from pyiron_glass.neighbors import get_neighbors
 
 MIN_COORDINATION_FOR_BRIDGING = 2
 
 
 def compute_qn(
-    ids: np.ndarray,
-    types: np.ndarray,
-    coords: np.ndarray,
-    box_size: np.ndarray,
+    structure: Atoms,
     cutoff: float,
     former_types: list[int],
     o_type: int,
@@ -33,10 +31,7 @@ def compute_qn(
     network-forming units based on bridging oxygens (BOs) count.
 
     Args:
-        ids (np.ndarray): Atom IDs.
-        types (np.ndarray): Atom types.
-        coords (np.ndarray): Atom coordinates.
-        box_size (np.ndarray): Simulation box dimensions.
+        structure (Atoms): The atomic structure as ASE object.
         cutoff (float): Cutoff radius for former-O neighbor search.
         former_types (list[int]): Atom types considered as formers.
         o_type (int): Atom type considered as oxygen.
@@ -48,13 +43,12 @@ def compute_qn(
         ]
 
     """
+    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+
     neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, former_types, [o_type])))
 
     _, coord_numbers_o = compute_coordination(
-        ids,
-        types,
-        coords,
-        box_size,
+        structure,
         o_type,
         cutoff,
         neighbor_types=former_types,

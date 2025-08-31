@@ -15,16 +15,16 @@ Currently implemented:
 """
 
 import numpy as np
+from ase import Atoms
 
+from pyiron_glass.io_utils import get_properties_for_structure_analysis
 from pyiron_glass.neighbors import get_neighbors
 
 MIN_NEIGHBORS_FOR_ANGLE = 2
 
 
 def compute_angles(
-    types: np.ndarray,
-    coords: np.ndarray,
-    box_size: np.ndarray,
+    structure: Atoms,
     center_type: int,
     neighbor_type: int,
     cutoff: float,
@@ -33,9 +33,7 @@ def compute_angles(
     """Compute bond angle distribution between triplets of neighbor_type-center-neighbor_type.
 
     Args:
-        types (np.ndarray): Atom types.
-        coords (np.ndarray): Atom coordinates.
-        box_size (np.ndarray): Simulation box size.
+        structure (Atoms): Atomic structure.
         center_type (int): Atom type at the angle center.
         neighbor_type (int): Atom type forming the angle with center.
         cutoff (float): Neighbor search cutoff.
@@ -45,6 +43,8 @@ def compute_angles(
         tuple[np.ndarray, np.ndarray]: Bin centers (degrees), normalized angle histogram.
 
     """
+    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+
     neighbors = get_neighbors(
         coords,
         types,
