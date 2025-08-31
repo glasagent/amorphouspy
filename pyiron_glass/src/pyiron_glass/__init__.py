@@ -9,6 +9,7 @@ from pyiron_glass.io_utils import (
     get_properties_for_structure_analysis,
     write_angle_distribution,
     write_distribution_to_file,
+    structure_from_parsed_output,
 )
 from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.potentials import potential
@@ -44,6 +45,7 @@ __all__ = [
     "md_simulation",
     "melt_quench_simulation",
     "potential",
+    "structure_from_parsed_output",
     "type_to_dict",
     "viscosity_simulation",
     "write_angle_distribution",
