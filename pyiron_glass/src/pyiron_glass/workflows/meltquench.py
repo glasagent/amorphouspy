@@ -10,9 +10,6 @@ from pyiron_base import job
 from pyiron_glass.io_utils import structure_from_parsed_output
 
 
-
-
-
 def _run_lammps_md(
     structure: Atoms,
     potential: str,

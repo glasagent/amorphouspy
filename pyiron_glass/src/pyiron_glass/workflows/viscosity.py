@@ -6,8 +6,8 @@ from pathlib import Path
 from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
-from pyiron_glass.io_utils import structure_from_parsed_output
 
+from pyiron_glass.io_utils import structure_from_parsed_output
 
 
 def _run_lammps_md(

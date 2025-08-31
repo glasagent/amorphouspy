@@ -7,9 +7,9 @@ from pyiron_glass.analysis.radial_distribution_functions import compute_coordina
 from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from pyiron_glass.io_utils import (
     get_properties_for_structure_analysis,
+    structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
-    structure_from_parsed_output,
 )
 from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.potentials import potential
