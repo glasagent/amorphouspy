@@ -7,38 +7,7 @@ from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
 
-
-def _structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict, *, wrap: bool = False) -> Atoms:
-    """Construct an `Atoms` object from parsed output data.
-
-    Parameters
-    ----------
-    initial_structure : Atoms
-        The initial atomic structure to use as a template.
-    parsed_output : dict
-        Parsed output containing atomic positions, cell, and indices.
-    wrap : bool, optional
-        Whether to wrap the atomic positions to the simulation cell (default is False).
-        Keeping the unwrapped positions is more beneficial if structures are passed between
-        different LAMMPS simulations in one workflow to ensure continuity.
-
-    Returns
-    -------
-    Atoms
-        An `Atoms` object with updated positions and cell.
-
-    """
-    # Take a copy of the initial structure as template and update the relevant properties
-    atoms_copy = initial_structure.copy()
-    atoms_copy.set_array("indices", parsed_output["generic"]["indices"][-1])
-    atoms_copy.set_positions(parsed_output["generic"]["positions"][-1])
-    atoms_copy.set_velocities(parsed_output["generic"]["velocities"][-1])
-    atoms_copy.set_cell(parsed_output["generic"]["cells"][-1])
-    atoms_copy.set_pbc(True)
-    if wrap:
-        atoms_copy.wrap()
-
-    return atoms_copy
+from pyiron_glass.io_utils import structure_from_parsed_output
 
 
 def _run_lammps_md(
@@ -139,7 +108,7 @@ def _run_lammps_md(
         )
 
         # Retrives the final structure from the parsed output
-        new_structure = _structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
+        new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
 
     return new_structure, parsed_output
 

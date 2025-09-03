@@ -7,6 +7,7 @@ from pyiron_glass.analysis.radial_distribution_functions import compute_coordina
 from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from pyiron_glass.io_utils import (
     get_properties_for_structure_analysis,
+    structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "md_simulation",
     "melt_quench_simulation",
     "potential",
+    "structure_from_parsed_output",
     "type_to_dict",
     "viscosity_simulation",
     "write_angle_distribution",
