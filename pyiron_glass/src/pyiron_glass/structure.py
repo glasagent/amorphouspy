@@ -5,12 +5,12 @@ import re
 from io import StringIO
 
 import numpy as np
-import scipy
 from ase.atoms import Atoms
 from ase.data import chemical_symbols
 from ase.io import read
 from pyiron_base import job
 from pymatgen.core import Composition
+from scipy.constants import Avogadro
 
 from pyiron_glass.mass import get_atomic_mass
 from pyiron_glass.shared import get_element_types_dict
@@ -52,6 +52,215 @@ TRACE_OXIDES = {
     "WO3",
     "Y2O3",
 }
+
+
+def parse_formula(formula: str) -> dict[str, int]:
+    """Parse a chemical formula (e.g. "Al2O3") and return a dict of element counts.
+
+    Example: {"Al": 2, "O": 3}.
+    """
+    counts: dict[str, int] = {}
+    for elem, cnt_str in ELEMENT.findall(formula):
+        # Default to 1 if no digits were captured
+        cnt = int(cnt_str) if cnt_str else 1
+        counts[elem] = counts.get(elem, 0) + cnt
+    return counts
+
+
+def formula_mass_g_per_mol(formula: str) -> float:
+    """Molar mass using ASE masses."""
+    return sum(get_atomic_mass(el) * cnt for el, cnt in parse_formula(formula).items())
+
+
+def normalize(d: dict[str, float]) -> dict[str, float]:
+    """Normalize a dictionary of fractions so that they sum to 1.0."""
+    s = float(sum(d.values()))
+    if s <= 0:
+        error_msg = "Sum of fractions is non-positive."
+        raise ValueError(error_msg)
+    return {k: v / s for k, v in d.items()}
+
+
+def weight_percent_to_mol_fraction(comp_wt_raw: dict[str, float]) -> dict[str, float]:
+    """Convert weight fractions to mol fractions.
+
+    Convert weight fractions (any scale: %, or normalized) to mol fractions.
+    x_i = (w_i/M_i) / Σ_j (w_j/M_j)
+
+    Args:
+        comp_wt_raw: dict[str, float], The raw weight composition to convert.
+    return:
+        dict[str, float]: The molar composition as a dictionary.
+
+    """
+    n_i = {ox: comp_wt_raw[ox] / formula_mass_g_per_mol(ox) for ox in comp_wt_raw}
+    return normalize(n_i)
+
+
+def get_composition(comp_str: str, mode: str = "molar") -> dict[str, float]:
+    """Get the composition of a chemical formula.
+
+    Args:
+        comp_str: Composition string to parse (e.g., "0.25CaO-0.25Al2O3-0.5SiO2")
+        mode: Interpretation mode - 'molar' for molar proportions, 'weight' for weight proportions
+
+    Returns:
+        dict[str, float]: oxide molar fractions
+
+    """
+    if mode.lower() not in ("molar", "weight"):
+        error_msg = f"Invalid mode: {mode}. Supported modes are 'molar' and 'weight'."
+        raise ValueError(error_msg)
+    raw = extract_composition(comp_str)
+    if mode.lower() == "weight":
+        return weight_percent_to_mol_fraction(raw)
+    return normalize(raw)
+
+
+def _atoms_per_fu_map(mol_frac: dict[str, float]) -> dict[str, int]:
+    return {ox: sum(parse_formula(ox).values()) for ox in mol_frac}
+
+
+def _integer_fu_from_total(Nfu_target: int, mol_frac: dict[str, float]) -> dict[str, int]:
+    """Allocate integer formula units to oxides using largest-remainder rounding.
+
+    Given a total number of formula units, produce integer N_i that exactly sum
+    to Nfu_target and best match the mol fractions via largest-remainder method.
+
+    Args:
+        Nfu_target: int, target number of formula units
+        mol_frac: dict[str, float], molar fractions of each oxide
+
+    Returns:
+        dict[str, int]: integer formula units {oxide: N_i}
+
+    """
+    x = mol_frac
+    w = {ox: x[ox] * Nfu_target for ox in x}
+    n = {ox: int(np.floor(w[ox])) for ox in x}
+    rem = Nfu_target - sum(n.values())
+    if rem > 0:
+        order = sorted(x.keys(), key=lambda k: (w[k] - n[k]), reverse=True)
+        for i in range(rem):
+            n[order[i % len(order)]] += 1
+    return n
+
+
+def allocate_formula_units_to_target_atoms(
+    mol_frac: dict[str, float],
+    target_atoms: int,
+    search_half_width: int = 1000,
+) -> tuple[dict[str, int], int]:
+    """Allocate formula units to target atoms.
+
+    Choose integer formula-unit counts {oxide: N_i} so that
+    total atoms = Σ_i N_i * a_i is as close as possible to target_atoms.
+    Composition across oxides is enforced via integer FUs (exact stoichiometries),
+    with N_i chosen by rounding + remainder distribution.
+
+    Args:
+      mol_frac: dict[str, float], molar fractions of each oxide
+      target_atoms: int, target number of atoms
+      search_half_width: int, half-width of the search range for Nfu
+
+    return: tuple[dict[str, int], int]
+      - dict[str, int]: allocated formula units {oxide: N_i}
+      - int: total number of atoms represented by the formula units
+
+    """
+    a = _atoms_per_fu_map(mol_frac)
+    avg_atoms_per_fu = sum(mol_frac[ox] * a[ox] for ox in mol_frac)
+    Nfu_est = max(1, round(target_atoms / avg_atoms_per_fu))
+
+    best = (None, None, None)  # (abs_diff, N_total_atoms, N_i)
+    lo = max(1, Nfu_est - search_half_width)
+    hi = Nfu_est + search_half_width + 1
+
+    for Nfu in range(lo, hi):
+        Ni = _integer_fu_from_total(Nfu, mol_frac)
+        Natoms = sum(Ni[ox] * a[ox] for ox in Ni)
+        diff = abs(Natoms - target_atoms)
+        if best[0] is None or diff < best[0] or (diff == best[0] and Natoms < best[1]):
+            best = (diff, Natoms, Ni)
+            if diff == 0:
+                break
+
+    return best[2], best[1]
+
+
+def element_counts_from_formula_units(Ni: dict[str, int]) -> dict[str, int]:
+    """Given formula units {oxide: N_i}, return total element counts {element: count}.
+
+    Args:
+        Ni: dict[str, int], formula units for each oxide
+
+    Returns:
+        dict[str, int]: total element counts.
+
+    """
+    counts: dict[str, int] = {}
+    for ox, nfu in Ni.items():
+        sto = parse_formula(ox)
+        for el, c in sto.items():
+            counts[el] = counts.get(el, 0) + c * nfu
+    return counts
+
+
+def plan_system(comp_str: str, target: int, mode: str = "molar", target_type: str = "atoms") -> dict:
+    """Unified planning for both atoms and molecules target.
+
+    Args:
+        comp_str: composition string
+        target: desired atom or molecule count
+        mode: 'molar' or 'weight' (weight% accepted; ASE masses used)
+        target_type: 'atoms' or 'molecules'
+
+    Returns:
+        dict: {
+            'mol_fraction': {oxide: x_i},
+            'formula_units': {oxide: N_i},
+            'total_atoms': int,
+            'element_counts': {element: count}
+        }.
+
+    """
+    mol_frac = get_composition(comp_str, mode=mode)
+
+    if target_type == "atoms":
+        target_atoms = target
+    elif target_type == "molecules":
+        # Calculate average atoms per formula unit in the composition
+        total_atoms_per_mol = 0
+        for oxide, fraction in mol_frac.items():
+            # Use parse_formula to get element counts, then sum them
+            element_counts = parse_formula(oxide)
+            atoms_in_oxide = sum(element_counts.values())
+            total_atoms_per_mol += fraction * atoms_in_oxide
+
+        # Convert molecule target to equivalent atom target
+        target_atoms = target * total_atoms_per_mol
+    else:
+        error_msg = f"Invalid target_type: {target_type}. Supported types are 'atoms' and 'molecules'."
+        raise ValueError(error_msg)
+
+    Ni, Natoms = allocate_formula_units_to_target_atoms(mol_frac, target_atoms)
+    elem_counts = element_counts_from_formula_units(Ni)
+    return {
+        "mol_fraction": mol_frac,
+        "formula_units": Ni,
+        "total_atoms": Natoms,
+        "element_counts": elem_counts,
+    }
+
+
+def validate_target_mode(n_molecules: int, target_atoms: int) -> None:
+    """Validate that exactly one target mode is specified."""
+    if n_molecules is None and target_atoms is None:
+        error_msg = "Either n_molecules or target_atoms must be specified"
+        raise ValueError(error_msg)
+    if n_molecules is not None and target_atoms is not None:
+        error_msg = "Only one of n_molecules or target_atoms can be specified"
+        raise ValueError(error_msg)
 
 
 def check_neutral_oxide(oxide: str) -> None:
@@ -161,17 +370,25 @@ def extract_composition(composition: str) -> dict[str, float]:
     return comp_dict
 
 
-def parse_formula(formula: str) -> dict[str, int]:
-    """Parse a chemical formula (e.g. "Al2O3") and return a dict of element counts.
+def minimum_image_distance(
+    pos1: np.ndarray,
+    pos2: np.ndarray,
+    box_length: float,
+) -> float:
+    """Calculate the minimum image distance between two positions in a periodic box.
 
-    Example: {"Al": 2, "O": 3}.
+    Args:
+        pos1: The first position as a NumPy array.
+        pos2: The second position as a NumPy array.
+        box_length: The length of the periodic box.
+
+    Returns:
+        The minimum image distance as a float.
+
     """
-    counts: dict[str, int] = {}
-    for elem, cnt_str in ELEMENT.findall(formula):
-        # Default to 1 if no digits were captured
-        cnt = int(cnt_str) if cnt_str else 1
-        counts[elem] = counts.get(elem, 0) + cnt
-    return counts
+    delta = np.abs(pos1 - pos2)
+    delta = np.where(delta > 0.5 * box_length, box_length - delta, delta)
+    return np.sqrt((delta**2).sum())
 
 
 def extract_stoichiometry(composition: str) -> dict[str, dict[str, int]]:
@@ -181,16 +398,15 @@ def extract_stoichiometry(composition: str) -> dict[str, dict[str, int]]:
     Uses extract_composition() to isolate formulas first.
     """
     comp_dict = extract_composition(composition)
-    stoichiometry: dict[str, dict[str, int]] = {}
-    for oxide in comp_dict:
-        stoichiometry[oxide] = parse_formula(oxide)
-    return stoichiometry
+    return {oxide: parse_formula(oxide) for oxide in comp_dict}
 
 
 def create_random_atoms(
     composition: str,
-    n_molecules: int,
-    stoichiometry: dict[str, dict[str, int]],
+    n_molecules: int | None = None,
+    target_atoms: int | None = None,
+    mode: str = "molar",
+    stoichiometry: dict[str, dict[str, int]] | None = None,
     box_length: float = 50.0,
     min_distance: float = 1.6,
     seed: int = 42,
@@ -198,50 +414,65 @@ def create_random_atoms(
 ) -> tuple[list[dict[str, str | list[float]]], dict[str, int]]:
     """Generate random atom positions in a periodic cubic box, according to a given composition.
 
-    - composition: e.g. "0.25CaO-0.25Al2O3-0.5SiO2"
-    - n_molecules: total number of molecules to define atom counts
-    - box_length: size of cubic box (calculate automatically from density or provide manually)
-    - min_distance: minimum distance between any two atoms
-    - seed: random seed for reproducibility
-    - max_attempts_per_atom: max attempts to place an atom before giving up
+    Now supports both n_molecules and target_atoms input modes.
+
+    Args:
+        composition: e.g. "0.25CaO-0.25Al2O3-0.5SiO2"
+        n_molecules: total number of molecules (traditional mode)
+        target_atoms: target number of atoms (new mode)
+        mode: composition mode ("molar" or "weight")
+        stoichiometry: dictionary of stoichiometric coefficients
+        box_length: size of cubic box
+        min_distance: minimum distance between any two atoms
+        seed: random seed for reproducibility
+        max_attempts_per_atom: max attempts to place an atom before giving up
 
     Returns:
         atoms: list of {"element": str, "position": [x, y, z]}
+        atom_counts: dictionary of element counts
 
     """
-
-    def minimum_image_distance(
-        pos1: np.ndarray,
-        pos2: np.ndarray,
-        box_length: float,
-    ) -> float:
-        delta = np.abs(pos1 - pos2)
-        delta = np.where(delta > 0.5 * box_length, box_length - delta, delta)
-        return np.sqrt((delta**2).sum())
-
     rng = np.random.default_rng(seed)
 
-    # 1. Determine total atom counts
-    comp_dict = extract_composition(composition)
-    # In create_random_atoms()
-    total_molecules = sum(comp_dict.values())
-    if abs(total_molecules - 1.0) > DENSITY_TOLERANCE:
-        error_msg = f"Composition sum error: {total_molecules:.10f} != 1.0"
-        raise ValueError(error_msg)
-    molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
-    diff = n_molecules - sum(molecule_counts.values())
-    if diff:
-        main = max(comp_dict, key=comp_dict.get)
-        molecule_counts[main] += diff
+    # 1. Determine total atom counts based on input mode
+    validate_target_mode(n_molecules, target_atoms)
 
-    atom_counts = {}
-    for ox, mol_cnt in molecule_counts.items():
-        stoich = stoichiometry.get(ox)
-        if stoich is None:
-            msg = f"Unknown oxide formula: {ox}"
-            raise KeyError(msg)
-        for elem, num in stoich.items():
-            atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
+    if stoichiometry is None:
+        stoichiometry = extract_stoichiometry(composition)
+
+    if target_atoms is not None:
+        # Use target atoms mode
+        system_plan = plan_system(composition, target_atoms, mode=mode, target_type="atoms")
+        molecule_counts = system_plan["formula_units"]
+        atom_counts = system_plan["element_counts"]
+    else:
+        # Use traditional n_molecules mode
+        if mode.lower() == "weight":
+            # Convert weight% to mol% first, then calculate molecule counts
+            mol_frac = get_composition(composition, mode="weight")
+            comp_dict = {ox: mol_frac[ox] for ox in mol_frac}
+        else:
+            # Use molar composition directly
+            comp_dict = extract_composition(composition)
+
+        total_molecules = sum(comp_dict.values())
+        if abs(total_molecules - 1.0) > DENSITY_TOLERANCE:
+            error_msg = f"Composition sum error: {total_molecules:.10f} != 1.0"
+            raise ValueError(error_msg)
+        molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
+        diff = n_molecules - sum(molecule_counts.values())
+        if diff:
+            main = max(comp_dict, key=comp_dict.get)
+            molecule_counts[main] += diff
+
+        atom_counts = {}
+        for ox, mol_cnt in molecule_counts.items():
+            stoich = stoichiometry.get(ox)
+            if stoich is None:
+                error_msg = f"Unknown oxide formula: {ox}"
+                raise KeyError(error_msg)
+            for elem, num in stoich.items():
+                atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
 
     # 2. Place atoms with min distance using periodic boundary conditions
     atoms = []
@@ -252,8 +483,8 @@ def create_random_atoms(
         attempts = 0
         while placed < count:
             if attempts >= max_attempts_per_atom:
-                msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
-                raise RuntimeError(msg)
+                error_msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
+                raise RuntimeError(error_msg)
             pos = rng.uniform(0, box_length, size=3)
             if all(minimum_image_distance(pos, p, box_length) >= min_distance for p in positions):
                 atoms.append({"element": elem, "position": pos.tolist()})
@@ -263,7 +494,7 @@ def create_random_atoms(
             else:
                 attempts += 1
 
-    return atoms
+    return atoms, atom_counts
 
 
 def get_glass_density_from_model(composition_string: str) -> float:
@@ -479,51 +710,62 @@ def get_glass_density_from_model(composition_string: str) -> float:
 
 def get_box_from_density(
     composition: str,
-    n_molecules: int,
-    stoichiometry: dict[str, dict[str, int]],
+    n_molecules: int | None,
+    target_atoms: int | None,
+    mode: str = "molar",
     density: float | None = None,
+    stoichiometry: dict[str, dict[str, int]] | None = None,
 ) -> float:
     """Calculate the cubic box length in angstroms needed for a given composition.
 
-    Very straightforward function that calculates the box length from the density
-    and the number of molecules.
-
-    Steps:
-      1. Parse composition into oxide fractions.
-      2. Compute molecule counts and adjust rounding discrepancies.
-      3. Tally per-element atom counts via stoichiometry.
-      4. Compute total mass (g) using get_atomic_mass and AVOGADRO.
-      5. Derive volume (cm3) from mass/density, convert to angstrom3,
-         and return cube root for box length.
+    Now supports both n_molecules and target_atoms input modes.
     """
+    validate_target_mode(n_molecules, target_atoms)
+
+    if stoichiometry is None:
+        stoichiometry = extract_stoichiometry(composition)
+
     if density is None:
         density = get_glass_density_from_model(composition)
 
-    # 1. Determine molecule counts
-    comp_dict = extract_composition(composition)
-    molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
-    # Adjust rounding error
-    diff = n_molecules - sum(molecule_counts.values())
-    if diff:
-        main = max(comp_dict, key=comp_dict.get)
-        molecule_counts[main] += diff
+    # Determine molecule counts based on input mode
+    if target_atoms is not None:
+        # Use target atoms mode
+        system_plan = plan_system(composition, target_atoms, mode=mode, target_type="atoms")
+        molecule_counts = system_plan["formula_units"]
+        atom_counts = system_plan["element_counts"]
+    else:
+        # Use traditional n_molecules mode
+        if mode.lower() == "weight":
+            # Convert weight% to mol% first, then calculate molecule counts
+            mol_frac = get_composition(composition, mode="weight")
+            comp_dict = {ox: mol_frac[ox] for ox in mol_frac}
+        else:
+            # Use molar composition directly
+            comp_dict = extract_composition(composition)
 
-    # 2. Compute per-element atom counts
-    atom_counts: dict[str, int] = {}
-    for oxide, mol_cnt in molecule_counts.items():
-        stoich = stoichiometry[oxide]
-        for elem, num in stoich.items():
-            atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
+        molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
+        # Adjust rounding error
+        diff = n_molecules - sum(molecule_counts.values())
+        if diff:
+            main = max(comp_dict, key=comp_dict.get)
+            molecule_counts[main] += diff
 
-    # 3. Total mass in grams
-    #    (sum of atom_counts * atomic_mass) / Avogadro
-    total_mass_g = sum(count * get_atomic_mass(elem) for elem, count in atom_counts.items()) / scipy.constants.Avogadro
+        # Compute per-element atom counts
+        atom_counts: dict[str, int] = {}
+        for oxide, mol_cnt in molecule_counts.items():
+            stoich = stoichiometry[oxide]
+            for elem, num in stoich.items():
+                atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
 
-    # 4. Compute volume (cm3) and convert to \AA3 (1 cm3 = 1e24 \AA3)
+    # Total mass in grams
+    total_mass_g = sum(count * get_atomic_mass(elem) for elem, count in atom_counts.items()) / Avogadro
+
+    # Compute volume (cm3) and convert to \AA3 (1 cm3 = 1e24 \AA3)
     volume_cm3 = total_mass_g / density
     volume_ang3 = volume_cm3 * 1e24
 
-    # 5. Box length in \AA
+    # Box length in \AA
     return volume_ang3 ** (1 / 3)
 
 
@@ -611,51 +853,112 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
 
 @job
 def get_structure_dict(
-    comp: str,
-    n_molecules: int = 100,
+    composition: str,
+    n_molecules: int | None = None,
+    target_atoms: int | None = None,
+    mode: str = "molar",
     density: float | None = None,
     min_distance: float = 1.6,
     max_attempts_per_atom: int = 10000,
 ) -> dict:
-    """Generate a structure dictionary for a given composition, number of molecules, and density.
+    """Generate a structure dictionary for a given composition.
 
-    This function creates a cubic box of atoms based on the specified composition and density.
-    It uses the `create_random_atoms` function to generate atom positions and returns a dictionary
-    containing the atoms and box length.
+    Now supports both n_molecules and target_atoms input modes,
+    and both molar and weight composition modes.
 
     Parameters
     ----------
-    comp : str
+    composition : str
         Composition string, e.g. "0.25CaO-0.25Al2O3-0.5SiO2" or "79SiO2-13B2O3-3Al2O3-4Na2O-1K2O"
-    n_molecules : int
-        Total number of molecules (actually atoms) to define atom counts.
-    density : float
-        Density in g/cm^3, default is 2.96 g/cm^3.
+    n_molecules : int, optional
+        Total number of molecules (traditional mode)
+    target_atoms : int, optional
+        Target number of atoms (new mode)
+    mode : str, default "molar"
+        Composition mode: "molar" for mol%, "weight" for weight%
+    density : float, optional
+        Density in g/cm^3, default is calculated from model
     min_distance : float
-        Minimum distance between any two atoms in angstroms, default is 1.6 Å.
+        Minimum distance between any two atoms in angstroms, default is 1.6 Å
     max_attempts_per_atom : int
-        Maximum attempts to place an atom before giving up, default is 10000.
+        Maximum attempts to place an atom before giving up, default is 10000
 
     Returns
     -------
     dict: A dictionary containing:
-        - "atoms": A list of atom dictionaries with keys "element" and "position".
-        - "box": The length of the cubic box in angstroms.
+        - "atoms": A list of atom dictionaries with keys "element" and "position"
+        - "box": The length of the cubic box in angstroms
+        - "formula_units": Dictionary of oxide formula units
+        - "total_atoms": Total number of atoms
+        - "element_counts": Dictionary of element counts (if target_atoms mode)
+        - "mol_fraction": Dictionary of molar fractions (if target_atoms mode)
 
     """
-    stoichiometry = extract_stoichiometry(comp)
+    validate_target_mode(n_molecules, target_atoms)
+
+    stoichiometry = extract_stoichiometry(composition)
+
+    # Calculate box length
     box_length = get_box_from_density(
-        comp,
+        composition,
         n_molecules=n_molecules,
+        target_atoms=target_atoms,
+        mode=mode,
         density=density,
         stoichiometry=stoichiometry,
     )
-    atoms_dict = create_random_atoms(
-        comp,
+
+    # Generate atom positions - NOTE: create_random_atoms now returns (atoms_list, atom_counts)
+    atoms_list, _ = create_random_atoms(
+        composition,
         n_molecules=n_molecules,
+        target_atoms=target_atoms,
+        mode=mode,
         box_length=box_length,
         min_distance=min_distance,
         max_attempts_per_atom=max_attempts_per_atom,
         stoichiometry=stoichiometry,
     )
-    return {"atoms": atoms_dict, "box": box_length}
+
+    # Get comprehensive system information for both modes
+    if target_atoms is not None:
+        # Use target atoms mode - get full system plan
+        system_plan = plan_system(composition, target_atoms, mode=mode, target_type="atoms")
+        molecule_counts = system_plan["formula_units"]
+        total_atoms = system_plan["total_atoms"]
+        element_counts = system_plan["element_counts"]
+        mol_fraction = system_plan["mol_fraction"]
+    else:
+        # Use traditional n_molecules mode - compute missing info
+        composition_dict = extract_composition(composition)
+        molecule_counts = {oxide: round(frac * n_molecules) for oxide, frac in composition_dict.items()}
+        # Adjust rounding error
+        diff = n_molecules - sum(molecule_counts.values())
+        if diff:
+            main = max(composition_dict, key=composition_dict.get)
+            molecule_counts[main] += diff
+
+        # Compute additional information for consistency
+        total_atoms = 0
+        element_counts = {}
+        for ox, mol_cnt in molecule_counts.items():
+            stoich = stoichiometry.get(ox)
+            if stoich is None:
+                error_msg = f"Unknown oxide formula: {ox}"
+                raise KeyError(error_msg)
+            # Calculate element counts
+            for elem, num in stoich.items():
+                element_counts[elem] = element_counts.get(elem, 0) + num * mol_cnt
+            total_atoms += sum(stoich.values()) * mol_cnt
+
+        # Calculate mol fractions for consistency
+        mol_fraction = get_composition(composition, mode=mode)
+
+    return {
+        "atoms": atoms_list,
+        "box": box_length,
+        "formula_units": molecule_counts,
+        "total_atoms": total_atoms,
+        "element_counts": element_counts,
+        "mol_fraction": mol_fraction,
+    }
