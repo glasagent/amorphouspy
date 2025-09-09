@@ -1,0 +1,6 @@
+pre-commit
+ruff
+pytest
+pytest-cov
+nbval
+# papermill
