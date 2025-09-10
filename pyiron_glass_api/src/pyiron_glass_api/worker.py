@@ -9,6 +9,7 @@ conflicts with signal handling.
 import os
 import logging
 from typing import Dict, Any
+from pathlib import Path
 
 from .models import MeltquenchRequest
 
@@ -27,7 +28,7 @@ def setup_worker_logging(task_id: str) -> logging.Logger:
     return logger
 
 
-def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store) -> None:
+def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, shared_project_dir: str) -> None:
     """
     Synchronous worker function for meltquench simulation.
     This runs in a separate process to avoid blocking the event loop and handle pyiron's signal handling.
@@ -36,6 +37,7 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store) ->
         task_id (str): Unique identifier for the task
         request_dict (dict): Serialized meltquench parameters
         task_store: Shared multiprocessing dict for task state tracking
+        shared_project_dir (str): Path to the shared project directory
     """
     logger = setup_worker_logging(task_id)
     logger.info(f"Starting meltquench simulation for task {task_id}")
@@ -72,8 +74,12 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store) ->
         task_store[task_id] = task_dict
         logger.info(f"Task {task_id}: Creating structure")
 
-        # Create pyiron project and generate structure
-        pr = Project(f"meltquench_{task_id}")
+        # Use the shared project directory passed from the main process
+        project_path = Path(shared_project_dir)
+        logger.info(f"Task {task_id}: Using shared project directory: {project_path}")
+        
+        # Create shared pyiron project
+        pr = Project(str(project_path))
 
         atoms_dict = get_structure_dict(
             comp=composition,
@@ -95,28 +101,22 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store) ->
         task_store[task_id] = task_dict
         logger.info(f"Task {task_id}: Starting meltquench simulation")
 
-        # Prepare a dedicated temporary working directory base (must exist beforehand)
-        tmp_dir_base = os.path.abspath(f"lmp_tmp_directory_{task_id}")
-        os.makedirs(tmp_dir_base, exist_ok=True)
-
         # Use simulation parameters from the request
         logger.info(f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}")
 
         # Run meltquench simulation
-        delayed = melt_quench_simulation(
+        logger.info(f"Task {task_id}: Executing simulation workflow")
+        result = melt_quench_simulation(
             structure=structure,
             potential=potential,
             n_print=request.n_print,
-            tmp_working_directory=tmp_dir_base,
+            pyiron_project=pr,
+            # tmp_working_directory=str(tmp_dir_base), # note: if provided needs to be static - or prevents caching at pyiron level
             heating_rate=request.heating_rate,
             cooling_rate=request.cooling_rate,
             langevin=False,
             server_kwargs={},
-        )
-
-        # Execute the simulation
-        logger.info(f"Task {task_id}: Executing simulation workflow")
-        result = delayed.pull()
+        ).pull()
         logger.info(f"Task {task_id}: Simulation completed successfully")
 
         # Extract generic results from simulation output
