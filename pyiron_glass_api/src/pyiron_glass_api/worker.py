@@ -1,5 +1,4 @@
-"""
-Worker module for pyiron glass simulations.
+"""Worker module for pyiron glass simulations.
 
 This module contains the actual simulation logic that runs in separate processes,
 isolated from the FastAPI server code to avoid unnecessary imports and potential
@@ -7,13 +6,13 @@ conflicts with signal handling.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any
 
 from .models import MeltquenchRequest
 
 
 def setup_worker_logging(task_id: str) -> logging.Logger:
-    """Setup logging for worker process."""
+    """Set up logging for worker process."""
     logger = logging.getLogger(f"worker.{task_id}")
     if not logger.handlers:
         handler = logging.StreamHandler()
@@ -24,9 +23,9 @@ def setup_worker_logging(task_id: str) -> logging.Logger:
     return logger
 
 
-def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, shared_project_dir: str) -> None:
-    """
-    Synchronous worker function for meltquench simulation.
+def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, shared_project_dir: str) -> None:
+    """Run synchronous meltquench simulation.
+
     This runs in a separate process to avoid blocking the event loop and handle pyiron's signal handling.
 
     Args:
@@ -34,8 +33,10 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
         request_dict (dict): Serialized meltquench parameters
         db_path (str): Path to SQLite database for task store
         shared_project_dir (str): Path to the shared project directory
+
     """
     from pathlib import Path
+
     from .database import TaskStore
 
     logger = setup_worker_logging(task_id)
@@ -51,18 +52,18 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
     try:
         # Import pyiron_glass modules (import here to avoid startup dependencies)
         import numpy as np
+        from ase import units
         from pyiron_base import Project
         from pyiron_glass import (
-            melt_quench_simulation,
             generate_potential,
             get_ase_structure,
             get_structure_dict,
+            melt_quench_simulation,
         )
-        from ase import units
 
         # Create composition string from request
         comp_parts = []
-        for component, value in zip(request.components, request.values):
+        for component, value in zip(request.components, request.values, strict=False):
             # Convert to fractions if percentages were provided
             fraction = value / 100.0 if sum(request.values) > 1.1 else value
             comp_parts.append(f"{fraction}{component}")
@@ -126,11 +127,13 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
 
         # Extract generic results from simulation output
         if not isinstance(result, dict):
-            raise KeyError("Workflow output is not a dictionary")
+            msg = "Workflow output is not a dictionary"
+            raise KeyError(msg)
 
         generic = result.get("result") or result.get("generic")
         if generic is None:
-            raise KeyError("Missing simulation results ('result'/'generic') in workflow output")
+            msg = "Missing simulation results ('result'/'generic') in workflow output"
+            raise KeyError(msg)
 
         # Calculate final density
         V = np.mean(generic["volume"]) * 1e-24  # volume in cm³
@@ -158,7 +161,7 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Results stored, simulation complete")
 
     except Exception as exc:
-        logger.error(f"Task {task_id}: Simulation failed with error: {str(exc)}", exc_info=True)
+        logger.error(f"Task {task_id}: Simulation failed with error: {exc!s}", exc_info=True)
         current_task = task_store.get(task_id) or {}
         current_task.update({"state": "error", "status": "Failed", "error": str(exc)})
         task_store.set(task_id, current_task)

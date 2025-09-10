@@ -1,6 +1,10 @@
+"""Unit tests for meltquench API functionality."""
+
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
+
 from pyiron_glass_api.app import app
 
 client = TestClient(app)
@@ -13,9 +17,8 @@ client = TestClient(app)
 @patch("pyiron_base.Project")
 def test_submit_meltquench_and_check(
     mock_project, mock_get_structure_dict, mock_get_ase_structure, mock_generate_potential, mock_melt_quench_simulation
-):
+) -> None:
     """Test the complete meltquench workflow with mocked pyiron dependencies."""
-
     # Mock the pyiron components
     mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
     mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
@@ -55,7 +58,6 @@ def test_submit_meltquench_and_check(
         result = data["result"]
         assert "composition" in result
         assert "final_density" in result
-        print("✓ Got cached result, skipping task polling")
         return  # Exit early since we got the cached result
 
     # If not cached, should be "started"
@@ -75,7 +77,7 @@ def test_submit_meltquench_and_check(
 
         if check_data["state"] == "complete":
             break
-        elif check_data["state"] == "error":
+        if check_data["state"] == "error":
             pytest.fail(f"Simulation failed: {check_data.get('error')}")
 
         time.sleep(0.5)
@@ -107,14 +109,14 @@ def test_submit_meltquench_and_check(
     assert isinstance(result["simulation_steps"], int)
 
 
-def test_check_nonexistent_task():
+def test_check_nonexistent_task() -> None:
     """Test checking a task that doesn't exist."""
     response = client.get("/check/nonexistent-task-id")
     assert response.status_code == 404
     assert "Task not found" in response.json()["detail"]
 
 
-def test_invalid_payload():
+def test_invalid_payload() -> None:
     """Test submitting an invalid payload."""
     payload = {
         "components": ["SiO2"],
@@ -125,7 +127,7 @@ def test_invalid_payload():
     assert response.status_code == 422  # Validation error
 
 
-def test_root_redirect():
+def test_root_redirect() -> None:
     """Test that root redirects to docs."""
     # FastAPI TestClient follows redirects by default, so we need to check differently
     # We can verify that accessing "/" eventually serves docs content
@@ -135,7 +137,7 @@ def test_root_redirect():
     assert "swagger" in response.text.lower() or "openapi" in response.text.lower()
 
 
-def test_check_cached_result():
+def test_check_cached_result() -> None:
     """Test checking for cached results with unique composition."""
     # Use a unique composition to avoid cache hits from other tests
     payload = {
@@ -159,7 +161,7 @@ def test_check_cached_result():
         assert "simulation_steps" in data
 
 
-def test_check_cached_result_not_found():
+def test_check_cached_result_not_found() -> None:
     """Test checking for cached results with another unique composition."""
     # Use yet another unique composition
     payload = {
@@ -183,7 +185,7 @@ def test_check_cached_result_not_found():
         assert "simulation_steps" in data
 
 
-def test_caching_behavior():
+def test_caching_behavior() -> None:
     """Test that caching actually works by submitting and then checking cache."""
     # Use a unique composition for this test
     unique_payload = {
@@ -198,7 +200,7 @@ def test_caching_behavior():
     # First check - should not be cached initially (unless run before)
     cache_response = client.post("/check_cached_result", json=unique_payload)
     assert cache_response.status_code == 200
-    initial_cache = cache_response.json()
+    cache_response.json()
 
     # Submit the simulation (will be mocked)
     submit_response = client.post("/submit_meltquench", json=unique_payload)
