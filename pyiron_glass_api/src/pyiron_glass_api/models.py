@@ -17,10 +17,6 @@ class MeltquenchRequest(BaseModel):
         components: List of component names (e.g., ["CaO", "Al2O3", "SiO2"])
         values: List of composition values corresponding to components
         unit: Unit type - either "wt" (weight percent) or "mol" (molar percent)
-        n_molecules: Number of molecules for the simulation (default: 200)
-        density: Target density in g/cm³ (default: 2.69)
-        temperature_high: High temperature for melting in K (default: 5000)
-        temperature_low: Low temperature for quenching in K (default: 300)
     """
 
     components: List[str] = Field(
@@ -31,16 +27,6 @@ class MeltquenchRequest(BaseModel):
     )
     unit: Literal["wt", "mol"] = Field(
         ..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent"
-    )
-    n_molecules: int = Field(
-        200, description="Number of molecules for simulation", gt=0
-    )
-    density: float = Field(2.69, description="Target density in g/cm³", gt=0)
-    temperature_high: int = Field(
-        5000, description="High temperature for melting in K", gt=0
-    )
-    temperature_low: int = Field(
-        300, description="Low temperature for quenching in K", gt=0
     )
 
     @field_validator("values")
