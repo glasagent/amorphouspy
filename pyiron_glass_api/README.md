@@ -33,7 +33,7 @@ pytest
 integration tests (requires a working pyiron-glass installation)
 ```
 # start API
-PYIRON_GLASS_INTEGRATION=1 uvicorn pyiron_glass_api.app:app --port 8002 --reload
+uvicorn pyiron_glass_api.app:app --port 8002 --reload
 # run tests
 pytest -m integration -s
 ```

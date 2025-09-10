@@ -53,11 +53,25 @@ def test_submit_meltquench_and_check(mock_project, mock_get_structure_dict,
     assert data["status"] == "started"
     task_id = data["task_id"]
 
-    # Since we're using asyncio.create_task, we need to give it a moment to complete
+    # Since we're now using thread executor, we need to wait longer for completion
     import time
-    time.sleep(0.1)
+    max_wait = 10  # seconds
+    waited = 0
     
-    # Check the task result
+    while waited < max_wait:
+        check_response = client.get(f"/check/{task_id}")
+        assert check_response.status_code == 200
+        check_data = check_response.json()
+        
+        if check_data["state"] == "complete":
+            break
+        elif check_data["state"] == "error":
+            pytest.fail(f"Simulation failed: {check_data.get('error')}")
+        
+        time.sleep(0.5)
+        waited += 0.5
+    
+    # Final check
     check_response = client.get(f"/check/{task_id}")
     assert check_response.status_code == 200
     check_data = check_response.json()
