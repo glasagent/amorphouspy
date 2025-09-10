@@ -19,6 +19,7 @@ import asyncio
 import concurrent.futures
 import hashlib
 import logging
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -39,11 +40,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Setup shared project directory - assume scratch directory exists
-SHARED_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "scratch" / "meltquench"
+# Setup shared project directory - check for environment variable first
+SCRATCH_FOLDER = Path(__file__).resolve().parent.parent.parent / "scratch"
+if "PYIRON_SCRATCH_FOLDER" in os.environ:
+    SCRATCH_FOLDER = Path(os.environ["PYIRON_SCRATCH_FOLDER"])
+    logger.info("Using custom scratch directory from PYIRON_SCRATCH_FOLDER: %s", SCRATCH_FOLDER)
+
+SHARED_PROJECT_DIR = SCRATCH_FOLDER / "meltquench"
 
 # Initialize persistent task store
-init_task_store(Path(__file__).resolve().parent.parent.parent / "tasks.db")
+DB_PATH = SCRATCH_FOLDER / "tasks.db"
+init_task_store(DB_PATH)
 _task_store = get_task_store()
 
 
@@ -78,12 +85,9 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
     # Convert request to dict for serialization across processes
     request_dict = request.model_dump()
 
-    # Pass database path to worker so it can create its own TaskStore instance
-    db_path = str(Path(__file__).resolve().parent.parent.parent / "tasks.db")
-
     # Run the synchronous worker in a process executor to handle pyiron's signal handling
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, db_path, str(SHARED_PROJECT_DIR))
+        await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR))
 
 
 # Create FastAPI app
