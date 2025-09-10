@@ -28,7 +28,7 @@ def setup_worker_logging(task_id: str) -> logging.Logger:
     return logger
 
 
-def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, shared_project_dir: str) -> None:
+def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, shared_project_dir: str) -> None:
     """
     Synchronous worker function for meltquench simulation.
     This runs in a separate process to avoid blocking the event loop and handle pyiron's signal handling.
@@ -36,11 +36,17 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, sh
     Args:
         task_id (str): Unique identifier for the task
         request_dict (dict): Serialized meltquench parameters
-        task_store: Shared multiprocessing dict for task state tracking
+        db_path (str): Path to SQLite database for task store
         shared_project_dir (str): Path to the shared project directory
     """
+    from pathlib import Path
+    from .database import TaskStore
+    
     logger = setup_worker_logging(task_id)
     logger.info(f"Starting meltquench simulation for task {task_id}")
+    
+    # Create task store instance for this worker process
+    task_store = TaskStore(Path(db_path))
     
     # Reconstruct the request object from the dict
     request = MeltquenchRequest(**request_dict)
@@ -69,9 +75,9 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, sh
         logger.info(f"Task {task_id}: Generated composition string: {composition}")
 
         # Update task status
-        task_dict = dict(task_store[task_id]) if task_id in task_store else {"state": "processing"}
-        task_dict["status"] = "Creating structure"
-        task_store[task_id] = task_dict
+        current_task = task_store.get(task_id) or {"state": "processing"}
+        current_task["status"] = "Creating structure"
+        task_store.set(task_id, current_task)
         logger.info(f"Task {task_id}: Creating structure")
 
         # Use the shared project directory passed from the main process
@@ -82,7 +88,8 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, sh
         pr = Project(str(project_path))
 
         atoms_dict = get_structure_dict(
-            comp=composition,
+            composition=composition,
+            n_molecules=100,  # Default number of molecules
             min_distance=1.8,
             max_attempts_per_atom=10000,
             pyiron_project=pr,
@@ -96,9 +103,9 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, sh
         logger.info(f"Task {task_id}: Potential generated")
 
         # Update task status
-        task_dict = dict(task_store[task_id])
-        task_dict["status"] = "Running meltquench simulation"
-        task_store[task_id] = task_dict
+        current_task = task_store.get(task_id) or {"state": "processing"}
+        current_task["status"] = "Running meltquench simulation"
+        task_store.set(task_id, current_task)
         logger.info(f"Task {task_id}: Starting meltquench simulation")
 
         # Use simulation parameters from the request
@@ -136,7 +143,8 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, sh
         )
 
         # Store results
-        task_store[task_id] = {
+        current_task = task_store.get(task_id) or {}
+        current_task.update({
             "state": "complete",
             "status": "Completed",
             "result": {
@@ -146,7 +154,8 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, sh
                 "final_density": float(final_density),
                 "simulation_steps": len(generic["steps"]),
             }
-        }
+        })
+        task_store.set(task_id, current_task)
         
         logger.info(f"Task {task_id}: Results stored, simulation complete")
 
@@ -154,8 +163,10 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store, sh
         logger.error(
             f"Task {task_id}: Simulation failed with error: {str(exc)}", exc_info=True
         )
-        task_store[task_id] = {
+        current_task = task_store.get(task_id) or {}
+        current_task.update({
             "state": "error",
             "status": "Failed",
             "error": str(exc)
-        }
+        })
+        task_store.set(task_id, current_task)

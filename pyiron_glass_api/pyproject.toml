@@ -15,6 +15,7 @@ dependencies = [
   "fastmcp",
   "uvicorn",
   "fastapi-mcp",
+  "sqlalchemy",
 ]
 
 [tool.hatch.build.targets.wheel]
