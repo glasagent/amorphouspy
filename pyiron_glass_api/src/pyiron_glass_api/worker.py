@@ -99,14 +99,17 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], task_store) ->
         tmp_dir_base = os.path.abspath(f"lmp_tmp_directory_{task_id}")
         os.makedirs(tmp_dir_base, exist_ok=True)
 
+        # Use simulation parameters from the request
+        logger.info(f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}")
+
         # Run meltquench simulation
         delayed = melt_quench_simulation(
             structure=structure,
             potential=potential,
-            n_print=1000,
+            n_print=request.n_print,
             tmp_working_directory=tmp_dir_base,
-            heating_rate=int(1e14),
-            cooling_rate=int(1e14),
+            heating_rate=request.heating_rate,
+            cooling_rate=request.cooling_rate,
             langevin=False,
             server_kwargs={},
         )
