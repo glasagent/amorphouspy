@@ -17,6 +17,9 @@ class MeltquenchRequest(BaseModel):
         components: List of component names (e.g., ["CaO", "Al2O3", "SiO2"])
         values: List of composition values corresponding to components
         unit: Unit type - either "wt" (weight percent) or "mol" (molar percent)
+        heating_rate: Heating rate in K/s (optional, default: 1e14)
+        cooling_rate: Cooling rate in K/s (optional, default: 1e14)
+        n_print: Print interval for simulation output (optional, default: 1000)
     """
 
     components: List[str] = Field(
@@ -27,6 +30,15 @@ class MeltquenchRequest(BaseModel):
     )
     unit: Literal["wt", "mol"] = Field(
         ..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent"
+    )
+    heating_rate: int = Field(
+        default=int(1e14), description="Heating rate in K/s (default: 1e14)"
+    )
+    cooling_rate: int = Field(
+        default=int(1e14), description="Cooling rate in K/s (default: 1e14)"
+    )
+    n_print: int = Field(
+        default=1000, description="Print interval for simulation output (default: 1000)"
     )
 
     @field_validator("values")

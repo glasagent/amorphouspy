@@ -24,12 +24,16 @@ def test_meltquench_api_integration():
     if not is_api_server_running(root_url):
         pytest.skip("API server not running at http://127.0.0.1:8002/")
 
+    # Use faster rates for integration testing
     payload = {
         "components": ["SiO2", "CaO", "Al2O3"],
         "values": [60.0, 25.0, 15.0],
-        "unit": "wt"
+        "unit": "wt",
+        "heating_rate": int(1e15),  # 10x faster than default
+        "cooling_rate": int(1e15),  # 10x faster than default
+        "n_print": 1000
     }
-    print("Submitting meltquench task...")
+    print(f"Submitting meltquench task with faster rates: {payload['heating_rate']}")
     r = requests.post(f"{API_URL}/submit_meltquench", json=payload)
     r.raise_for_status()
     data = r.json()
@@ -97,4 +101,4 @@ def test_meltquench_api_integration():
     print(f"✓ Temperature: {temp:.1f} K")
     print(f"✓ Density: {density:.2f} g/cm³")
     print(f"✓ Steps: {steps}")
-    
+
