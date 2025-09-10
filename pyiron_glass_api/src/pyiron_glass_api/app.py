@@ -22,7 +22,9 @@ import logging
 import asyncio
 import concurrent.futures
 import multiprocessing
+import hashlib
 from pathlib import Path
+import cloudpickle
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi_mcp import FastApiMCP
@@ -45,6 +47,26 @@ _task_store = manager.dict()
 
 # Setup shared project directory - assume scratch directory exists
 SHARED_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "scratch" / "meltquench"
+
+
+def get_meltquench_hash(request: MeltquenchRequest) -> str:
+    """
+    Compute hash for a meltquench request to enable caching.
+    """
+    # Create sorted component-value pairs for consistent hashing
+    comp_value_pairs = sorted(zip(request.components, request.values))
+    
+    hash_params = {
+        "composition": comp_value_pairs,
+        "unit": request.unit,
+        "heating_rate": request.heating_rate,
+        "cooling_rate": request.cooling_rate,
+        "n_print": request.n_print
+    }
+    
+    # Use cloudpickle for consistent serialization, then hash with sha256
+    binary_data = cloudpickle.dumps(hash_params)
+    return hashlib.sha256(binary_data).hexdigest()[:16]  # First 16 chars for brevity
 
 
 async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
@@ -77,23 +99,21 @@ app = FastAPI(
 async def check_cached_result(request: MeltquenchRequest) -> Optional[MeltquenchResult]:
     """
     Check if a result for the given meltquench request is already available in cache.
-    
-    Args:
-        request (MeltquenchRequest): The meltquench parameters to check
-        
-    Returns:
-        MeltquenchResult or None: The cached result if available, otherwise None
-        
-    Note:
-        This is a placeholder implementation. The actual caching logic should be 
-        implemented at the pyiron level, not at the API level.
     """
     try:
-        logger.info(f"Checking for cached result with components: {request.components}")
+        request_hash = get_meltquench_hash(request)
+        logger.info(f"Checking for cached result with hash: {request_hash}")
         
-        # TODO: Implement actual cache checking at pyiron level
-        # For now, always return None (no cached results)
-        logger.info("No cached result found (placeholder implementation)")
+        # Look through all completed tasks for matching hash
+        for task_id, task_data in _task_store.items():
+            if (task_data.get("state") == "complete" and 
+                task_data.get("request_hash") == request_hash and
+                "result" in task_data):
+                
+                logger.info(f"Found cached result in task {task_id}")
+                return MeltquenchResult(**task_data["result"])
+        
+        logger.info("No cached result found")
         return None
             
     except Exception as e:
@@ -101,15 +121,29 @@ async def check_cached_result(request: MeltquenchRequest) -> Optional[Meltquench
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# FastAPI endpoints
 @app.post("/submit_meltquench", tags=["tool"])
 async def submit_meltquench(request: MeltquenchRequest):
     """Start a new meltquench simulation task"""
     try:
-        task_id = str(uuid4())
-        logger.info(f"Creating new meltquench task with ID: {task_id}")
+        # Check if we already have a cached result
+        cached_result = await check_cached_result(request)
+        if cached_result:
+            logger.info("Returning cached result instead of starting new task")
+            return {
+                "task_id": "cached", 
+                "status": "completed_from_cache",
+                "result": cached_result.model_dump()
+            }
 
-        _task_store[task_id] = {"state": "processing", "status": "Initializing"}
+        task_id = str(uuid4())
+        request_hash = get_meltquench_hash(request)
+        logger.info(f"Creating new meltquench task with ID: {task_id}, hash: {request_hash}")
+
+        _task_store[task_id] = {
+            "state": "processing", 
+            "status": "Initializing",
+            "request_hash": request_hash
+        }
 
         # Always run as background task using process executor
         asyncio.create_task(_meltquench_worker(task_id, request))
