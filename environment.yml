@@ -16,6 +16,9 @@ dependencies:
 - scipy =1.15.2
 - structuretoolkit =0.0.32
 - numba
+- uvicorn
 - pip
 - pip:
   - sovapy==0.8.3
+  - fastapi-mcp
+
