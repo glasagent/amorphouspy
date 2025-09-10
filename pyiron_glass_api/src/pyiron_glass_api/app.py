@@ -19,6 +19,7 @@ import asyncio
 import concurrent.futures
 import hashlib
 import logging
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -39,11 +40,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Setup shared project directory - assume scratch directory exists
-SHARED_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "scratch" / "meltquench"
+# Setup shared project directory - check for environment variable first
+SCRATCH_FOLDER = Path(__file__).resolve().parent.parent.parent / "scratch"
+if "PYIRON_SCRATCH_FOLDER" in os.environ:
+    SCRATCH_FOLDER = Path(os.environ["PYIRON_SCRATCH_FOLDER"])
+    logger.info("Using custom scratch directory from PYIRON_SCRATCH_FOLDER: %s", SCRATCH_FOLDER)
+
+SHARED_PROJECT_DIR = SCRATCH_FOLDER / "meltquench"
 
 # Initialize persistent task store
-init_task_store(Path(__file__).resolve().parent.parent.parent / "tasks.db")
+init_task_store(SCRATCH_FOLDER / "tasks.db")
 _task_store = get_task_store()
 
 
