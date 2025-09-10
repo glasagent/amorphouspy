@@ -27,56 +27,57 @@ Base = declarative_base()
 class Task(Base):
     """
     SQLAlchemy model for task metadata and results.
-    
+
     Stores both active task state and completed results for caching purposes.
     """
+
     __tablename__ = "tasks"
-    
+
     task_id = Column(String(36), primary_key=True)  # UUID4 string
     request_hash = Column(String(16), nullable=False, index=True)  # For cache lookups
     state = Column(String(20), nullable=False, default="processing")  # processing, complete, error
     status = Column(String(100), nullable=True)  # Human-readable status message
-    
+
     # Store the original request for reference
     request_data = Column(JSON, nullable=True)
-    
+
     # Store results as JSON when completed
     result_data = Column(JSON, nullable=True)
-    
+
     # Store error information if failed
     error_message = Column(Text, nullable=True)
-    
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    
-    # Index for efficient cache lookups
-    __table_args__ = (
-        Index('ix_request_hash_state', 'request_hash', 'state'),
+    updated_at = Column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
+
+    # Index for efficient cache lookups
+    __table_args__ = (Index("ix_request_hash_state", "request_hash", "state"),)
 
 
 class TaskStore:
     """
     SQLAlchemy-based task store that provides the same interface as the multiprocessing manager dict.
-    
+
     This class handles all database operations for task storage and retrieval,
     with special focus on efficient cache lookups by request hash.
     """
-    
+
     def __init__(self, db_path: Optional[Path] = None):
         """
         Initialize the task store with SQLite database.
-        
+
         Args:
             db_path: Path to SQLite database file. If None, uses 'tasks.db' in current directory.
         """
         if db_path is None:
             db_path = Path("tasks.db")
-        
+
         # Create database URL
         self.db_url = f"sqlite:///{db_path}"
-        
+
         # Create engine with SQLite-specific settings
         self.engine = create_engine(
             self.db_url,
@@ -84,18 +85,18 @@ class TaskStore:
             pool_pre_ping=True,  # Verify connections before use
             connect_args={
                 "check_same_thread": False,  # Allow use from multiple threads
-                "timeout": 30  # 30 second timeout for busy database
-            }
+                "timeout": 30,  # 30 second timeout for busy database
+            },
         )
-        
+
         # Create session factory
         self.SessionLocal = sessionmaker(bind=self.engine)
-        
+
         # Create tables
         self._create_tables()
-        
+
         logger.info(f"Initialized task store with database: {db_path}")
-    
+
     def _create_tables(self):
         """Create database tables if they don't exist."""
         try:
@@ -104,18 +105,18 @@ class TaskStore:
         except SQLAlchemyError as e:
             logger.error(f"Error creating database tables: {e}")
             raise
-    
+
     def get_session(self) -> Session:
         """Get a new database session."""
         return self.SessionLocal()
-    
+
     def get(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
         Get task data by task ID.
-        
+
         Args:
             task_id: Task identifier
-            
+
         Returns:
             Task data dict or None if not found
         """
@@ -128,11 +129,11 @@ class TaskStore:
         except SQLAlchemyError as e:
             logger.error(f"Error getting task {task_id}: {e}")
             return None
-    
+
     def set(self, task_id: str, task_data: Dict[str, Any]) -> None:
         """
         Set/update task data.
-        
+
         Args:
             task_id: Task identifier
             task_data: Task data dictionary
@@ -140,7 +141,7 @@ class TaskStore:
         try:
             with self.get_session() as session:
                 task = session.get(Task, task_id)
-                
+
                 if task:
                     # Update existing task
                     self._update_task_from_dict(task, task_data)
@@ -149,18 +150,18 @@ class TaskStore:
                     task = Task(task_id=task_id)
                     self._update_task_from_dict(task, task_data)
                     session.add(task)
-                
+
                 session.commit()
                 logger.debug(f"Updated task {task_id}")
-                
+
         except SQLAlchemyError as e:
             logger.error(f"Error setting task {task_id}: {e}")
             raise
-    
+
     def items(self) -> List[tuple]:
         """
         Get all tasks as (task_id, task_data) tuples.
-        
+
         Returns:
             List of (task_id, task_data) tuples
         """
@@ -171,65 +172,66 @@ class TaskStore:
         except SQLAlchemyError as e:
             logger.error(f"Error getting all tasks: {e}")
             return []
-    
+
     def find_cached_result(self, request_hash: str) -> Optional[MeltquenchResult]:
         """
         Find a completed task with matching request hash for cache lookup.
-        
+
         Args:
             request_hash: Hash of the request parameters
-            
+
         Returns:
             MeltquenchResult if cached result found, None otherwise
         """
         try:
             with self.get_session() as session:
-                task = session.query(Task).filter(
-                    Task.request_hash == request_hash,
-                    Task.state == "complete",
-                    Task.result_data.isnot(None)
-                ).first()
-                
+                task = (
+                    session.query(Task)
+                    .filter(Task.request_hash == request_hash, Task.state == "complete", Task.result_data.isnot(None))
+                    .first()
+                )
+
                 if task and task.result_data:
                     logger.info(f"Found cached result for hash {request_hash} in task {task.task_id}")
                     return MeltquenchResult(**task.result_data)
-                
+
                 return None
-                
+
         except SQLAlchemyError as e:
             logger.error(f"Error finding cached result for hash {request_hash}: {e}")
             return None
-    
+
     def cleanup_old_tasks(self, days: int = 30) -> int:
         """
         Clean up old completed/error tasks older than specified days.
-        
+
         Args:
             days: Number of days to keep tasks
-            
+
         Returns:
             Number of tasks deleted
         """
         try:
             cutoff_date = datetime.now(timezone.utc).replace(day=datetime.now().day - days)
-            
+
             with self.get_session() as session:
-                deleted_count = session.query(Task).filter(
-                    Task.state.in_(["complete", "error"]),
-                    Task.updated_at < cutoff_date
-                ).delete()
-                
+                deleted_count = (
+                    session.query(Task)
+                    .filter(Task.state.in_(["complete", "error"]), Task.updated_at < cutoff_date)
+                    .delete()
+                )
+
                 session.commit()
-                
+
                 if deleted_count > 0:
                     logger.info(f"Cleaned up {deleted_count} old tasks")
-                
+
                 return deleted_count
-                
+
         except SQLAlchemyError as e:
             logger.error(f"Error cleaning up old tasks: {e}")
             return 0
-    
+
     def _task_to_dict(self, task: Task) -> Dict[str, Any]:
         """Convert Task model to dictionary format expected by the API."""
         task_dict = {
@@ -237,35 +239,35 @@ class TaskStore:
             "status": task.status,
             "request_hash": task.request_hash,
         }
-        
+
         if task.result_data:
             task_dict["result"] = task.result_data
-        
+
         if task.error_message:
             task_dict["error"] = task.error_message
-            
+
         return task_dict
-    
+
     def _update_task_from_dict(self, task: Task, task_data: Dict[str, Any]) -> None:
         """Update Task model from dictionary data."""
         if "state" in task_data:
             task.state = task_data["state"]
-        
+
         if "status" in task_data:
             task.status = task_data["status"]
-        
+
         if "request_hash" in task_data:
             task.request_hash = task_data["request_hash"]
-        
+
         if "result" in task_data:
             task.result_data = task_data["result"]
-        
+
         if "error" in task_data:
             task.error_message = task_data["error"]
-        
+
         if "request_data" in task_data:
             task.request_data = task_data["request_data"]
-        
+
         # Always update the timestamp
         task.updated_at = datetime.now(timezone.utc)
 
@@ -287,10 +289,10 @@ def get_task_store() -> TaskStore:
 def init_task_store(db_path: Optional[Path] = None) -> TaskStore:
     """
     Initialize the global task store with custom database path.
-    
+
     Args:
         db_path: Path to SQLite database file
-        
+
     Returns:
         TaskStore instance
     """

@@ -21,7 +21,6 @@ from typing import Optional
 import logging
 import asyncio
 import concurrent.futures
-import multiprocessing
 import hashlib
 from pathlib import Path
 import cloudpickle
@@ -56,15 +55,15 @@ def get_meltquench_hash(request: MeltquenchRequest) -> str:
     """
     # Create sorted component-value pairs for consistent hashing
     comp_value_pairs = sorted(zip(request.components, request.values))
-    
+
     hash_params = {
         "composition": comp_value_pairs,
         "unit": request.unit,
         "heating_rate": request.heating_rate,
         "cooling_rate": request.cooling_rate,
-        "n_print": request.n_print
+        "n_print": request.n_print,
     }
-    
+
     # Use cloudpickle for consistent serialization, then hash with sha256
     binary_data = cloudpickle.dumps(hash_params)
     return hashlib.sha256(binary_data).hexdigest()[:16]  # First 16 chars for brevity
@@ -79,13 +78,13 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
         request (MeltquenchRequest): Validated meltquench parameters
     """
     loop = asyncio.get_event_loop()
-    
+
     # Convert request to dict for serialization across processes
     request_dict = request.model_dump()
-    
+
     # Pass database path to worker so it can create its own TaskStore instance
     db_path = str(Path(__file__).resolve().parent.parent.parent / "tasks.db")
-    
+
     # Run the synchronous worker in a process executor to handle pyiron's signal handling
     with concurrent.futures.ProcessPoolExecutor() as executor:
         await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, db_path, str(SHARED_PROJECT_DIR))
@@ -107,17 +106,17 @@ async def check_cached_result(request: MeltquenchRequest) -> Optional[Meltquench
     try:
         request_hash = get_meltquench_hash(request)
         logger.info(f"Checking for cached result with hash: {request_hash}")
-        
+
         # Use database's efficient hash-based lookup
         cached_result = _task_store.find_cached_result(request_hash)
-        
+
         if cached_result:
             logger.info("Found cached result")
         else:
             logger.info("No cached result found")
-            
+
         return cached_result
-            
+
     except Exception as e:
         logger.error(f"Error checking cached result: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -131,23 +130,22 @@ async def submit_meltquench(request: MeltquenchRequest):
         cached_result = await check_cached_result(request)
         if cached_result:
             logger.info("Returning cached result instead of starting new task")
-            return {
-                "task_id": "cached", 
-                "status": "completed_from_cache",
-                "result": cached_result.model_dump()
-            }
+            return {"task_id": "cached", "status": "completed_from_cache", "result": cached_result.model_dump()}
 
         task_id = str(uuid4())
         request_hash = get_meltquench_hash(request)
         logger.info(f"Creating new meltquench task with ID: {task_id}, hash: {request_hash}")
 
         # Store task in database
-        _task_store.set(task_id, {
-            "state": "processing", 
-            "status": "Initializing",
-            "request_hash": request_hash,
-            "request_data": request.model_dump()  # Store original request for reference
-        })
+        _task_store.set(
+            task_id,
+            {
+                "state": "processing",
+                "status": "Initializing",
+                "request_hash": request_hash,
+                "request_data": request.model_dump(),  # Store original request for reference
+            },
+        )
 
         # Always run as background task using process executor
         asyncio.create_task(_meltquench_worker(task_id, request))
@@ -175,7 +173,7 @@ async def check(task_id: str):
 
 
 mcp = FastApiMCP(app, include_tags=["tool"])
-mcp.mount_sse(mount_path='/mcp')
+mcp.mount_sse(mount_path="/mcp")
 
 
 @app.get("/")

@@ -6,10 +6,8 @@ isolated from the FastAPI server code to avoid unnecessary imports and potential
 conflicts with signal handling.
 """
 
-import os
 import logging
 from typing import Dict, Any
-from pathlib import Path
 
 from .models import MeltquenchRequest
 
@@ -19,9 +17,7 @@ def setup_worker_logging(task_id: str) -> logging.Logger:
     logger = logging.getLogger(f"worker.{task_id}")
     if not logger.handlers:
         handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            f"%(asctime)s - WORKER-{task_id} - %(levelname)s - %(message)s"
-        )
+        formatter = logging.Formatter(f"%(asctime)s - WORKER-{task_id} - %(levelname)s - %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
@@ -41,13 +37,13 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
     """
     from pathlib import Path
     from .database import TaskStore
-    
+
     logger = setup_worker_logging(task_id)
     logger.info(f"Starting meltquench simulation for task {task_id}")
-    
+
     # Create task store instance for this worker process
     task_store = TaskStore(Path(db_path))
-    
+
     # Reconstruct the request object from the dict
     request = MeltquenchRequest(**request_dict)
     logger.info(f"Request parameters: {request.model_dump()}")
@@ -83,7 +79,7 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
         # Use the shared project directory passed from the main process
         project_path = Path(shared_project_dir)
         logger.info(f"Task {task_id}: Using shared project directory: {project_path}")
-        
+
         # Create shared pyiron project
         pr = Project(str(project_path))
 
@@ -109,7 +105,9 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Starting meltquench simulation")
 
         # Use simulation parameters from the request
-        logger.info(f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}")
+        logger.info(
+            f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}"
+        )
 
         # Run meltquench simulation
         logger.info(f"Task {task_id}: Executing simulation workflow")
@@ -129,7 +127,7 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
         # Extract generic results from simulation output
         if not isinstance(result, dict):
             raise KeyError("Workflow output is not a dictionary")
-        
+
         generic = result.get("result") or result.get("generic")
         if generic is None:
             raise KeyError("Missing simulation results ('result'/'generic') in workflow output")
@@ -138,35 +136,29 @@ def meltquench_worker(task_id: str, request_dict: Dict[str, Any], db_path: str, 
         V = np.mean(generic["volume"]) * 1e-24  # volume in cm³
         massTot = result["structure"].get_masses().sum() / units._Nav
         final_density = massTot / V
-        logger.info(
-            f"Task {task_id}: Final density calculated: {final_density:.3f} g/cm³"
-        )
+        logger.info(f"Task {task_id}: Final density calculated: {final_density:.3f} g/cm³")
 
         # Store results
         current_task = task_store.get(task_id) or {}
-        current_task.update({
-            "state": "complete",
-            "status": "Completed",
-            "result": {
-                "composition": composition,
-                "final_structure": str(result["structure"]),
-                "mean_temperature": float(np.mean(generic["temperature"])),
-                "final_density": float(final_density),
-                "simulation_steps": len(generic["steps"]),
+        current_task.update(
+            {
+                "state": "complete",
+                "status": "Completed",
+                "result": {
+                    "composition": composition,
+                    "final_structure": str(result["structure"]),
+                    "mean_temperature": float(np.mean(generic["temperature"])),
+                    "final_density": float(final_density),
+                    "simulation_steps": len(generic["steps"]),
+                },
             }
-        })
+        )
         task_store.set(task_id, current_task)
-        
+
         logger.info(f"Task {task_id}: Results stored, simulation complete")
 
     except Exception as exc:
-        logger.error(
-            f"Task {task_id}: Simulation failed with error: {str(exc)}", exc_info=True
-        )
+        logger.error(f"Task {task_id}: Simulation failed with error: {str(exc)}", exc_info=True)
         current_task = task_store.get(task_id) or {}
-        current_task.update({
-            "state": "error",
-            "status": "Failed",
-            "error": str(exc)
-        })
+        current_task.update({"state": "error", "status": "Failed", "error": str(exc)})
         task_store.set(task_id, current_task)

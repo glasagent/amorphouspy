@@ -22,24 +22,12 @@ class MeltquenchRequest(BaseModel):
         n_print: Print interval for simulation output (optional, default: 1000)
     """
 
-    components: List[str] = Field(
-        ..., description="List of oxide components (e.g., ['CaO', 'Al2O3', 'SiO2'])"
-    )
-    values: List[float] = Field(
-        ..., description="List of composition values corresponding to components"
-    )
-    unit: Literal["wt", "mol"] = Field(
-        ..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent"
-    )
-    heating_rate: int = Field(
-        default=int(1e14), description="Heating rate in K/s (default: 1e14)"
-    )
-    cooling_rate: int = Field(
-        default=int(1e14), description="Cooling rate in K/s (default: 1e14)"
-    )
-    n_print: int = Field(
-        default=1000, description="Print interval for simulation output (default: 1000)"
-    )
+    components: List[str] = Field(..., description="List of oxide components (e.g., ['CaO', 'Al2O3', 'SiO2'])")
+    values: List[float] = Field(..., description="List of composition values corresponding to components")
+    unit: Literal["wt", "mol"] = Field(..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent")
+    heating_rate: int = Field(default=int(1e14), description="Heating rate in K/s (default: 1e14)")
+    cooling_rate: int = Field(default=int(1e14), description="Cooling rate in K/s (default: 1e14)")
+    n_print: int = Field(default=1000, description="Print interval for simulation output (default: 1000)")
 
     @field_validator("values")
     @classmethod
@@ -48,14 +36,10 @@ class MeltquenchRequest(BaseModel):
         total = sum(v)
         if total > 1.1:  # Likely percentages
             if not (95 <= total <= 105):
-                raise ValueError(
-                    f"Composition values sum to {total}, expected around 100 for percentages"
-                )
+                raise ValueError(f"Composition values sum to {total}, expected around 100 for percentages")
         else:  # Likely fractions
             if not (0.95 <= total <= 1.05):
-                raise ValueError(
-                    f"Composition values sum to {total}, expected around 1.0 for fractions"
-                )
+                raise ValueError(f"Composition values sum to {total}, expected around 1.0 for fractions")
         return v
 
     @field_validator("components")
@@ -80,11 +64,7 @@ class MeltquenchResult(BaseModel):
     """
 
     composition: str = Field(..., description="Composition string used in simulation")
-    final_structure: str = Field(
-        ..., description="String representation of final structure"
-    )
-    mean_temperature: float = Field(
-        ..., description="Mean temperature during final phase (K)"
-    )
+    final_structure: str = Field(..., description="String representation of final structure")
+    mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
     final_density: float = Field(..., description="Final calculated density (g/cm³)")
     simulation_steps: int = Field(..., description="Total simulation steps completed")
