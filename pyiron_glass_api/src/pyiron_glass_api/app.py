@@ -18,14 +18,14 @@ Example usage:
 
 import os
 from uuid import uuid4
-from typing import Dict
+from typing import Dict, Optional
 import logging
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi_mcp import FastApiMCP
 
-from .models import MeltquenchRequest
+from .models import MeltquenchRequest, MeltquenchResult
 
 
 # Configure logging
@@ -144,6 +144,7 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
             "final_density": float(final_density),
             "simulation_steps": len(generic["steps"]),
         }
+        
         logger.info(f"Task {task_id}: Results stored, simulation complete")
 
     except Exception as exc:
@@ -160,6 +161,34 @@ app = FastAPI(
     description="API for managing long-running glass simulation tasks using pyiron-glass",
     version="0.1.0",
 )
+
+
+@app.post("/check_cached_result", tags=["tool"])
+async def check_cached_result(request: MeltquenchRequest) -> Optional[MeltquenchResult]:
+    """
+    Check if a result for the given meltquench request is already available in cache.
+    
+    Args:
+        request (MeltquenchRequest): The meltquench parameters to check
+        
+    Returns:
+        MeltquenchResult or None: The cached result if available, otherwise None
+        
+    Note:
+        This is a placeholder implementation. The actual caching logic should be 
+        implemented at the pyiron level, not at the API level.
+    """
+    try:
+        logger.info(f"Checking for cached result with components: {request.components}")
+        
+        # TODO: Implement actual cache checking at pyiron level
+        # For now, always return None (no cached results)
+        logger.info("No cached result found (placeholder implementation)")
+        return None
+            
+    except Exception as e:
+        logger.error(f"Error checking cached result: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # FastAPI endpoints

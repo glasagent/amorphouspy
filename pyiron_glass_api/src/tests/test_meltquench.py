@@ -109,3 +109,35 @@ def test_root_redirect():
     assert response.status_code == 200
     # The response should contain swagger/docs content when redirected
     assert "swagger" in response.text.lower() or "openapi" in response.text.lower()
+
+
+def test_check_cached_result():
+    """Test checking for cached results (placeholder implementation)."""
+    payload = {
+        "components": ["SiO2", "CaO", "Al2O3"],
+        "values": [60.0, 25.0, 15.0],
+        "unit": "wt"
+    }
+    
+    response = client.post("/check_cached_result", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Should return None since this is a placeholder implementation
+    assert data is None
+
+
+def test_check_cached_result_not_found():
+    """Test checking for cached results when none exist (same as above for now)."""
+    payload = {
+        "components": ["SiO2", "CaO", "Al2O3"],
+        "values": [60.0, 25.0, 15.0],
+        "unit": "wt"
+    }
+    
+    response = client.post("/check_cached_result", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Should return None since this is a placeholder implementation
+    assert data is None
