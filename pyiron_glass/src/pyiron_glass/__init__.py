@@ -17,6 +17,7 @@ from pyiron_glass.potentials.potential import generate_potential
 from pyiron_glass.shared import count_distribution, type_to_dict
 from pyiron_glass.structure import (
     check_neutral_oxide,
+    create_random_atoms,
     get_ase_structure,
     get_glass_density_from_model,
     get_structure_dict,
@@ -35,6 +36,7 @@ __all__ = [
     "compute_qn",
     "compute_rdf",
     "count_distribution",
+    "create_random_atoms",
     "generate_bond_length_dict",
     "generate_potential",
     "get_ase_structure",
