@@ -31,6 +31,7 @@ from fastapi_mcp import FastApiMCP
 
 from .models import MeltquenchRequest, MeltquenchResult
 from .worker import meltquench_worker
+from .database import get_task_store, init_task_store
 
 
 # Configure logging
@@ -41,12 +42,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create a multiprocessing manager for shared data between processes
-manager = multiprocessing.Manager()
-_task_store = manager.dict()
-
 # Setup shared project directory - assume scratch directory exists
 SHARED_PROJECT_DIR = Path(__file__).resolve().parent.parent.parent / "scratch" / "meltquench"
+
+# Initialize persistent task store
+init_task_store(Path(__file__).resolve().parent.parent.parent / "tasks.db")
+_task_store = get_task_store()
 
 
 def get_meltquench_hash(request: MeltquenchRequest) -> str:
@@ -82,9 +83,12 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
     # Convert request to dict for serialization across processes
     request_dict = request.model_dump()
     
+    # Pass database path to worker so it can create its own TaskStore instance
+    db_path = str(Path(__file__).resolve().parent.parent.parent / "tasks.db")
+    
     # Run the synchronous worker in a process executor to handle pyiron's signal handling
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, _task_store, str(SHARED_PROJECT_DIR))
+        await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, db_path, str(SHARED_PROJECT_DIR))
 
 
 # Create FastAPI app
@@ -104,17 +108,15 @@ async def check_cached_result(request: MeltquenchRequest) -> Optional[Meltquench
         request_hash = get_meltquench_hash(request)
         logger.info(f"Checking for cached result with hash: {request_hash}")
         
-        # Look through all completed tasks for matching hash
-        for task_id, task_data in _task_store.items():
-            if (task_data.get("state") == "complete" and 
-                task_data.get("request_hash") == request_hash and
-                "result" in task_data):
-                
-                logger.info(f"Found cached result in task {task_id}")
-                return MeltquenchResult(**task_data["result"])
+        # Use database's efficient hash-based lookup
+        cached_result = _task_store.find_cached_result(request_hash)
         
-        logger.info("No cached result found")
-        return None
+        if cached_result:
+            logger.info("Found cached result")
+        else:
+            logger.info("No cached result found")
+            
+        return cached_result
             
     except Exception as e:
         logger.error(f"Error checking cached result: {str(e)}", exc_info=True)
@@ -139,11 +141,13 @@ async def submit_meltquench(request: MeltquenchRequest):
         request_hash = get_meltquench_hash(request)
         logger.info(f"Creating new meltquench task with ID: {task_id}, hash: {request_hash}")
 
-        _task_store[task_id] = {
+        # Store task in database
+        _task_store.set(task_id, {
             "state": "processing", 
             "status": "Initializing",
-            "request_hash": request_hash
-        }
+            "request_hash": request_hash,
+            "request_data": request.model_dump()  # Store original request for reference
+        })
 
         # Always run as background task using process executor
         asyncio.create_task(_meltquench_worker(task_id, request))
