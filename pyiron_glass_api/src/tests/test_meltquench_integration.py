@@ -1,28 +1,42 @@
+"""Integration tests for meltquench API with live server."""
+
+import logging
 import time
-import requests
+
 import pytest
+import requests
+
+logger = logging.getLogger(__name__)
 
 
-def is_api_server_running(url):
+def is_api_server_running(url: str) -> bool:
+    """Check if the API server is running at the given URL.
+
+    Args:
+        url: The URL to check
+
+    Returns:
+        True if server is running, False otherwise
+
+    """
     try:
-        r = requests.get(url)
+        r = requests.get(url, timeout=5)
         return r.status_code == 200
-    except Exception:
+    except requests.RequestException:
         return False
 
 
 @pytest.mark.integration
-def test_meltquench_api_integration():
-    """
-    Full integration test for the meltquench API using a running server.
+def test_meltquench_api_integration() -> None:
+    """Full integration test for the meltquench API using a running server.
     Requires: API server running in main thread with PYIRON_GLASS_INTEGRATION=1
     Example:
         PYIRON_GLASS_INTEGRATION=1 uvicorn pyiron_glass_api.src.pyiron_glass_api.app:app --port 8002
-        pytest -m integration
+        pytest -m integration.
     """
     API_URL = "http://127.0.0.1:8002"
     root_url = f"{API_URL}/"
-    print("Checking API server status...")
+    logger.info("Checking API server status...")
     if not is_api_server_running(root_url):
         pytest.skip("API server not running at http://127.0.0.1:8002/")
 
@@ -35,35 +49,43 @@ def test_meltquench_api_integration():
         "cooling_rate": int(1e15),  # 10x faster than default
         "n_print": 1000,
     }
-    print(f"Submitting meltquench task with faster rates: {payload['heating_rate']}")
-    r = requests.post(f"{API_URL}/submit_meltquench", json=payload)
+    logger.info("Submitting meltquench task with faster rates: %s", payload["heating_rate"])
+    r = requests.post(f"{API_URL}/submit_meltquench", json=payload, timeout=30)
     r.raise_for_status()
     data = r.json()
     assert "task_id" in data
     task_id = data["task_id"]
-    print(f"Task ID: {task_id}")
+    logger.info("Task ID: %s", task_id)
 
-    timeout = 300  # seconds
-    poll_interval = 5  # seconds
-    start = time.time()
-    while True:
-        r = requests.get(f"{API_URL}/check/{task_id}")
-        r.raise_for_status()
-        check_data = r.json()
-        state = check_data["state"]
-        print(f"Polling: state={state}")
-        if state == "complete":
-            print(f"Result: {check_data['result']}")
-            break
-        if state == "error":
-            print(f"Meltquench task errored: {check_data.get('error')}")
-            pytest.fail(f"Meltquench task errored: {check_data.get('error')}")
-        if time.time() - start > timeout:
-            print(f"Timeout: Meltquench task did not complete within {timeout} seconds. Last state: {state}")
-            pytest.fail(f"Meltquench task did not complete within {timeout} seconds. Last state: {state}")
-        time.sleep(poll_interval)
+    # Handle cached result case
+    if task_id == "cached" and "result" in data:
+        logger.info("Found cached result, skipping polling")
+        result = data["result"]
+    else:
+        # Poll for completion
+        timeout = 300  # seconds
+        poll_interval = 5  # seconds
+        start = time.time()
+        while True:
+            r = requests.get(f"{API_URL}/check/{task_id}", timeout=30)
+            r.raise_for_status()
+            check_data = r.json()
+            state = check_data["state"]
+            logger.info("Polling: state=%s", state)
+            if state == "complete":
+                logger.info("Result: %s", check_data["result"])
+                result = check_data["result"]
+                break
+            if state == "error":
+                logger.error("Meltquench task errored: %s", check_data.get("error"))
+                pytest.fail(f"Meltquench task errored: {check_data.get('error')}")
+            if time.time() - start > timeout:
+                logger.error(
+                    "Timeout: Meltquench task did not complete within %s seconds. Last state: %s", timeout, state
+                )
+                pytest.fail(f"Meltquench task did not complete within {timeout} seconds. Last state: {state}")
+            time.sleep(poll_interval)
 
-    result = check_data["result"]
     assert result is not None
 
     # Validate result structure
@@ -99,7 +121,7 @@ def test_meltquench_api_integration():
     # Should have completed some simulation steps
     assert steps > 0, f"No simulation steps completed: {steps}"
 
-    print(f"✓ Composition: {composition}")
-    print(f"✓ Temperature: {temp:.1f} K")
-    print(f"✓ Density: {density:.2f} g/cm³")
-    print(f"✓ Steps: {steps}")
+    logger.info("✓ Composition: %s", composition)
+    logger.info("✓ Temperature: %.1f K", temp)
+    logger.info("✓ Density: %.2f g/cm³", density)
+    logger.info("✓ Steps: %s", steps)

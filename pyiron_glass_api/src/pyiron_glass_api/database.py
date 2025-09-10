@@ -1,23 +1,20 @@
-"""
-Database models and utilities for pyiron-glass API.
+"""Database models and utilities for pyiron-glass API.
 
 This module provides SQLAlchemy models for persisting task metadata and cached results,
 replacing the ephemeral in-memory task store with persistent SQLite storage.
 """
 
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
-import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-from sqlalchemy import create_engine, Column, String, Text, DateTime, JSON, Index
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import JSON, Column, DateTime, Index, String, Text, create_engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import Session, sessionmaker
 
 from .models import MeltquenchResult
-
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +22,7 @@ Base = declarative_base()
 
 
 class Task(Base):
-    """
-    SQLAlchemy model for task metadata and results.
+    """SQLAlchemy model for task metadata and results.
 
     Stores both active task state and completed results for caching purposes.
     """
@@ -48,29 +44,26 @@ class Task(Base):
     error_message = Column(Text, nullable=True)
 
     # Timestamps
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
-    )
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
     # Index for efficient cache lookups
     __table_args__ = (Index("ix_request_hash_state", "request_hash", "state"),)
 
 
 class TaskStore:
-    """
-    SQLAlchemy-based task store that provides the same interface as the multiprocessing manager dict.
+    """SQLAlchemy-based task store that provides the same interface as the multiprocessing manager dict.
 
     This class handles all database operations for task storage and retrieval,
     with special focus on efficient cache lookups by request hash.
     """
 
-    def __init__(self, db_path: Optional[Path] = None):
-        """
-        Initialize the task store with SQLite database.
+    def __init__(self, db_path: Path | None = None) -> None:
+        """Initialize the task store with SQLite database.
 
         Args:
             db_path: Path to SQLite database file. If None, uses 'tasks.db' in current directory.
+
         """
         if db_path is None:
             db_path = Path("tasks.db")
@@ -95,30 +88,30 @@ class TaskStore:
         # Create tables
         self._create_tables()
 
-        logger.info(f"Initialized task store with database: {db_path}")
+        logger.info("Initialized task store with database: %s", db_path)
 
-    def _create_tables(self):
+    def _create_tables(self) -> None:
         """Create database tables if they don't exist."""
         try:
             Base.metadata.create_all(bind=self.engine)
             logger.info("Database tables created/verified")
-        except SQLAlchemyError as e:
-            logger.error(f"Error creating database tables: {e}")
+        except SQLAlchemyError:
+            logger.exception("Error creating database tables")
             raise
 
     def get_session(self) -> Session:
         """Get a new database session."""
         return self.SessionLocal()
 
-    def get(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get task data by task ID.
+    def get(self, task_id: str) -> dict[str, Any] | None:
+        """Get task data by task ID.
 
         Args:
             task_id: Task identifier
 
         Returns:
             Task data dict or None if not found
+
         """
         try:
             with self.get_session() as session:
@@ -126,17 +119,17 @@ class TaskStore:
                 if task:
                     return self._task_to_dict(task)
                 return None
-        except SQLAlchemyError as e:
-            logger.error(f"Error getting task {task_id}: {e}")
+        except SQLAlchemyError:
+            logger.exception("Error getting task %s", task_id)
             return None
 
-    def set(self, task_id: str, task_data: Dict[str, Any]) -> None:
-        """
-        Set/update task data.
+    def set(self, task_id: str, task_data: dict[str, Any]) -> None:
+        """Set/update task data.
 
         Args:
             task_id: Task identifier
             task_data: Task data dictionary
+
         """
         try:
             with self.get_session() as session:
@@ -152,36 +145,36 @@ class TaskStore:
                     session.add(task)
 
                 session.commit()
-                logger.debug(f"Updated task {task_id}")
+                logger.debug("Updated task %s", task_id)
 
-        except SQLAlchemyError as e:
-            logger.error(f"Error setting task {task_id}: {e}")
+        except SQLAlchemyError:
+            logger.exception("Error setting task %s", task_id)
             raise
 
-    def items(self) -> List[tuple]:
-        """
-        Get all tasks as (task_id, task_data) tuples.
+    def items(self) -> list[tuple]:
+        """Get all tasks as (task_id, task_data) tuples.
 
         Returns:
             List of (task_id, task_data) tuples
+
         """
         try:
             with self.get_session() as session:
                 tasks = session.query(Task).all()
                 return [(task.task_id, self._task_to_dict(task)) for task in tasks]
-        except SQLAlchemyError as e:
-            logger.error(f"Error getting all tasks: {e}")
+        except SQLAlchemyError:
+            logger.exception("Error getting all tasks")
             return []
 
-    def find_cached_result(self, request_hash: str) -> Optional[MeltquenchResult]:
-        """
-        Find a completed task with matching request hash for cache lookup.
+    def find_cached_result(self, request_hash: str) -> MeltquenchResult | None:
+        """Find a completed task with matching request hash for cache lookup.
 
         Args:
             request_hash: Hash of the request parameters
 
         Returns:
             MeltquenchResult if cached result found, None otherwise
+
         """
         try:
             with self.get_session() as session:
@@ -192,27 +185,27 @@ class TaskStore:
                 )
 
                 if task and task.result_data:
-                    logger.info(f"Found cached result for hash {request_hash} in task {task.task_id}")
+                    logger.info("Found cached result for hash %s in task %s", request_hash, task.task_id)
                     return MeltquenchResult(**task.result_data)
 
                 return None
 
-        except SQLAlchemyError as e:
-            logger.error(f"Error finding cached result for hash {request_hash}: {e}")
+        except SQLAlchemyError:
+            logger.exception("Error finding cached result for hash %s", request_hash)
             return None
 
     def cleanup_old_tasks(self, days: int = 30) -> int:
-        """
-        Clean up old completed/error tasks older than specified days.
+        """Clean up old completed/error tasks older than specified days.
 
         Args:
             days: Number of days to keep tasks
 
         Returns:
             Number of tasks deleted
+
         """
         try:
-            cutoff_date = datetime.now(timezone.utc).replace(day=datetime.now().day - days)
+            cutoff_date = datetime.now(UTC).replace(day=datetime.now(UTC).day - days)
 
             with self.get_session() as session:
                 deleted_count = (
@@ -224,15 +217,15 @@ class TaskStore:
                 session.commit()
 
                 if deleted_count > 0:
-                    logger.info(f"Cleaned up {deleted_count} old tasks")
+                    logger.info("Cleaned up %s old tasks", deleted_count)
 
                 return deleted_count
 
-        except SQLAlchemyError as e:
-            logger.error(f"Error cleaning up old tasks: {e}")
+        except SQLAlchemyError:
+            logger.exception("Error cleaning up old tasks")
             return 0
 
-    def _task_to_dict(self, task: Task) -> Dict[str, Any]:
+    def _task_to_dict(self, task: Task) -> dict[str, Any]:
         """Convert Task model to dictionary format expected by the API."""
         task_dict = {
             "state": task.state,
@@ -248,7 +241,7 @@ class TaskStore:
 
         return task_dict
 
-    def _update_task_from_dict(self, task: Task, task_data: Dict[str, Any]) -> None:
+    def _update_task_from_dict(self, task: Task, task_data: dict[str, Any]) -> None:
         """Update Task model from dictionary data."""
         if "state" in task_data:
             task.state = task_data["state"]
@@ -269,11 +262,11 @@ class TaskStore:
             task.request_data = task_data["request_data"]
 
         # Always update the timestamp
-        task.updated_at = datetime.now(timezone.utc)
+        task.updated_at = datetime.now(UTC)
 
 
 # Global task store instance
-_task_store_instance: Optional[TaskStore] = None
+_task_store_instance: TaskStore | None = None
 
 
 def get_task_store() -> TaskStore:
@@ -286,15 +279,15 @@ def get_task_store() -> TaskStore:
     return _task_store_instance
 
 
-def init_task_store(db_path: Optional[Path] = None) -> TaskStore:
-    """
-    Initialize the global task store with custom database path.
+def init_task_store(db_path: Path | None = None) -> TaskStore:
+    """Initialize the global task store with custom database path.
 
     Args:
         db_path: Path to SQLite database file
 
     Returns:
         TaskStore instance
+
     """
     global _task_store_instance
     _task_store_instance = TaskStore(db_path)

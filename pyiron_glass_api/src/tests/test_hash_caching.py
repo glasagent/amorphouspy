@@ -1,5 +1,4 @@
-"""
-Test hash-based caching functionality for meltquench simulations.
+"""Test hash-based caching functionality for meltquench simulations.
 
 This module tests that:
 1. Identical requests produce identical hashes
@@ -7,11 +6,11 @@ This module tests that:
 3. The caching logic can be imported and executed without errors
 """
 
-from pyiron_glass_api.models import MeltquenchRequest
 from pyiron_glass_api.app import get_meltquench_hash
+from pyiron_glass_api.models import MeltquenchRequest
 
 
-def test_hash_consistency():
+def test_hash_consistency() -> None:
     """Test that identical requests produce identical hashes."""
     # Create two identical requests
     request1 = MeltquenchRequest(
@@ -39,7 +38,7 @@ def test_hash_consistency():
     assert len(hash1) == 16, f"Hash should be 16 characters long, got {len(hash1)}"
 
 
-def test_hash_differentiation():
+def test_hash_differentiation() -> None:
     """Test that different requests produce different hashes."""
     # Create requests with different parameters
     request1 = MeltquenchRequest(components=["SiO2", "Na2O"], values=[75.0, 25.0], unit="wt")
@@ -73,7 +72,7 @@ def test_hash_differentiation():
     assert hash1 != hash4, "Different heating rates should have different hashes"
 
 
-def test_component_order_independence():
+def test_component_order_independence() -> None:
     """Test that different compositions produce different hashes."""
     request1 = MeltquenchRequest(
         components=["SiO2", "Na2O", "CaO"],
@@ -94,7 +93,7 @@ def test_component_order_independence():
     assert hash1 != hash2, "Different component proportions should have different hashes"
 
 
-def test_component_order_with_same_composition():
+def test_component_order_with_same_composition() -> None:
     """Test that truly identical compositions produce the same hash regardless of order."""
     request1 = MeltquenchRequest(components=["SiO2", "Na2O"], values=[75.0, 25.0], unit="wt")
 

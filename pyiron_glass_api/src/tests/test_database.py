@@ -1,15 +1,12 @@
-"""
-Test database functionality for the task store.
-"""
+"""Test database functionality for the task store."""
 
-import pytest
 import tempfile
 from pathlib import Path
+
 from pyiron_glass_api.database import TaskStore
-from pyiron_glass_api.models import MeltquenchRequest, MeltquenchResult
 
 
-def test_task_store_basic_operations():
+def test_task_store_basic_operations() -> None:
     """Test basic task store operations."""
     # Use temporary database
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -28,7 +25,7 @@ def test_task_store_basic_operations():
         assert retrieved["request_hash"] == "abc123def456"
 
 
-def test_task_store_cached_result_lookup():
+def test_task_store_cached_result_lookup() -> None:
     """Test efficient cached result lookup by hash."""
     with tempfile.TemporaryDirectory() as temp_dir:
         db_path = Path(temp_dir) / "test_tasks.db"
@@ -63,7 +60,7 @@ def test_task_store_cached_result_lookup():
         assert no_result is None
 
 
-def test_task_store_items():
+def test_task_store_items() -> None:
     """Test getting all tasks."""
     with tempfile.TemporaryDirectory() as temp_dir:
         db_path = Path(temp_dir) / "test_tasks.db"
@@ -82,7 +79,7 @@ def test_task_store_items():
         assert "task2" in task_ids
 
 
-def test_task_store_persistence():
+def test_task_store_persistence() -> None:
     """Test that data persists across TaskStore instances."""
     with tempfile.TemporaryDirectory() as temp_dir:
         db_path = Path(temp_dir) / "test_tasks.db"

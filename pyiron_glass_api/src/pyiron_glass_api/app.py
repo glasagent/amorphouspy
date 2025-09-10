@@ -1,5 +1,4 @@
-"""
-Pyiron Glass Simulation API
+"""Pyiron Glass Simulation API.
 
 This module provides a FastAPI server for managing long-running glass simulation tasks.
 It supports meltquench simulations for multi-component oxide glasses using the PMMCS
@@ -16,22 +15,21 @@ Example usage:
     2. Check status: GET /check/{task_id} -> returns current status or results
 """
 
-from uuid import uuid4
-from typing import Optional
-import logging
 import asyncio
 import concurrent.futures
 import hashlib
+import logging
 from pathlib import Path
+from uuid import uuid4
+
 import cloudpickle
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi_mcp import FastApiMCP
 
+from .database import get_task_store, init_task_store
 from .models import MeltquenchRequest, MeltquenchResult
 from .worker import meltquench_worker
-from .database import get_task_store, init_task_store
-
 
 # Configure logging
 logging.basicConfig(
@@ -50,11 +48,9 @@ _task_store = get_task_store()
 
 
 def get_meltquench_hash(request: MeltquenchRequest) -> str:
-    """
-    Compute hash for a meltquench request to enable caching.
-    """
+    """Compute hash for a meltquench request to enable caching."""
     # Create sorted component-value pairs for consistent hashing
-    comp_value_pairs = sorted(zip(request.components, request.values))
+    comp_value_pairs = sorted(zip(request.components, request.values, strict=True))
 
     hash_params = {
         "composition": comp_value_pairs,
@@ -70,12 +66,12 @@ def get_meltquench_hash(request: MeltquenchRequest) -> str:
 
 
 async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
-    """
-    Async wrapper for meltquench simulation that runs the synchronous worker in a process executor.
+    """Async wrapper for meltquench simulation that runs the synchronous worker in a process executor.
 
     Args:
         task_id (str): Unique identifier for the task
         request (MeltquenchRequest): Validated meltquench parameters
+
     """
     loop = asyncio.get_event_loop()
 
@@ -99,32 +95,30 @@ app = FastAPI(
 
 
 @app.post("/check_cached_result", tags=["tool"])
-async def check_cached_result(request: MeltquenchRequest) -> Optional[MeltquenchResult]:
-    """
-    Check if a result for the given meltquench request is already available in cache.
-    """
+async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | None:
+    """Check if a result for the given meltquench request is already available in cache."""
     try:
         request_hash = get_meltquench_hash(request)
-        logger.info(f"Checking for cached result with hash: {request_hash}")
+        logger.info("Checking for cached result with hash: %s", request_hash)
 
         # Use database's efficient hash-based lookup
         cached_result = _task_store.find_cached_result(request_hash)
 
         if cached_result:
             logger.info("Found cached result")
-        else:
-            logger.info("No cached result found")
+            return cached_result
 
-        return cached_result
+        logger.info("No cached result found")
+        return None
 
-    except Exception as e:
-        logger.error(f"Error checking cached result: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error checking cached result")
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
 @app.post("/submit_meltquench", tags=["tool"])
-async def submit_meltquench(request: MeltquenchRequest):
-    """Start a new meltquench simulation task"""
+async def submit_meltquench(request: MeltquenchRequest) -> dict:
+    """Start a new meltquench simulation task."""
     try:
         # Check if we already have a cached result
         cached_result = await check_cached_result(request)
@@ -134,7 +128,7 @@ async def submit_meltquench(request: MeltquenchRequest):
 
         task_id = str(uuid4())
         request_hash = get_meltquench_hash(request)
-        logger.info(f"Creating new meltquench task with ID: {task_id}, hash: {request_hash}")
+        logger.info("Creating new meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
         # Store task in database
         _task_store.set(
@@ -148,17 +142,19 @@ async def submit_meltquench(request: MeltquenchRequest):
         )
 
         # Always run as background task using process executor
-        asyncio.create_task(_meltquench_worker(task_id, request))
+        task = asyncio.create_task(_meltquench_worker(task_id, request))
+        # Store task reference to prevent garbage collection
+        task.add_done_callback(lambda _: None)
 
         return {"task_id": task_id, "status": "started"}
-    except Exception as e:
-        logger.error(f"Error starting meltquench task: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Error starting meltquench task")
+        raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
 @app.get("/check/{task_id}", tags=["tool"])
-async def check(task_id: str):
-    """Check the current status of a simulation task by its ID"""
+async def check(task_id: str) -> dict:
+    """Check the current status of a simulation task by its ID."""
     meta = _task_store.get(task_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -177,6 +173,6 @@ mcp.mount_sse(mount_path="/mcp")
 
 
 @app.get("/")
-async def root():
-    """Root endpoint redirects to API documentation"""
+async def root() -> RedirectResponse:
+    """Root endpoint redirects to API documentation."""
     return RedirectResponse(url="/docs")
