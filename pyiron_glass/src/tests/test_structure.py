@@ -1,9 +1,5 @@
 """Testing structure generation."""
 
-import re
-
-import pytest
-
 import pyiron_glass.structure as ps
 
 
@@ -38,99 +34,27 @@ def test_reproducibility() -> None:
     assert atoms1 != atoms3, "Random structures should differ with different seeds."
 
 
-def mol_to_weight(composition: str) -> dict[str, float]:
-    """Convert a molar composition string into weight percent composition.
-
-    Example:
-        "0.25CaO-0.25Al2O3-0.50SiO2" → {"CaO": 21.92, "Al2O3": 30.89, "SiO2": 47.19}
-
-    Args:
-        composition (str): Molar fraction composition string.
-
-    Returns:
-        dict[str, float]: Weight percent composition normalized to 100.
-
-    """
-    # Atomic weights (g/mol)
-    atomic_weights = {
-        "O": 15.999,
-        "Si": 28.085,
-        "Al": 26.982,
-        "Ca": 40.078,
-    }
-
-    # Parse composition
-    components = composition.split("-")
-    mole_fractions = []
-    formulas = []
-
-    for comp in components:
-        match = re.match(r"([0-9.]+)?([A-Za-z0-9]+)", comp)
-        if not match:
-            error_msg = f"Invalid component: {comp}"
-            raise ValueError(error_msg)
-        frac_str, formula = match.groups()
-        frac = float(frac_str) if frac_str else 1.0
-        mole_fractions.append(frac)
-        formulas.append(formula)
-
-    # Compute molar mass of a formula
-    def molar_mass(formula: str) -> float:
-        mass = 0.0
-        for elem, i in re.findall(r"([A-Z][a-z]*)(\d*)", formula):
-            n = int(i) if i else 1
-            if elem not in atomic_weights:
-                error_msg = f"Unknown element: {elem}"
-                raise KeyError(error_msg)
-            mass += atomic_weights[elem] * n
-        return mass
-
-    # Compute weight fractions
-    masses = [x * molar_mass(f) for x, f in zip(mole_fractions, formulas, strict=False)]
-    total_mass = sum(masses)
-
-    return {f: (100 * m / total_mass) for f, m in zip(formulas, masses, strict=False)}
-
-
 # Constants for tests
 EXPECTED_COUNTS = {"Ca": 25, "Al": 50, "Si": 50, "O": 200}
 
 
-@pytest.mark.parametrize(
-    ("mode", "n_molecules", "target_atoms"),
-    [
-        ("molar", 100, None),
-        ("molar", None, 325),
-        ("weight", 100, None),
-        ("weight", None, 325),
-    ],
-)
-def test_structure_atom_counts(mode: str, n_molecules: int | None, target_atoms: int | None) -> None:
-    """Verify that atom counts are preserved for all input modes.
-
-    Expected counts:
-        Ca = 25
-        Al = 50
-        Si = 50
-        O  = 200
-    """
+def test_structure_atom_counts_molar() -> None:
+    """Verify that atom counts are preserved for molar input mode."""
     composition = "0.25CaO-0.25Al2O3-0.50SiO2"
-    box_length = 100  # any value, irrelevant for counting
-    min_distance = 2  # any value, irrelevant for counting
+    box_length = 100
+    min_distance = 2
     seed = 42
-    max_attempts_per_atom = 10000  # any value, irrelevant for counting
-
+    n_molecules = 100
+    target_atoms = 325
+    max_attempts_per_atom = 10000
     stoichiometry = ps.extract_stoichiometry(composition)
 
-    if mode == "weight":
-        comp = mol_to_weight(composition)
-        composition = f"{comp['CaO']}CaO-{comp['Al2O3']}Al2O3-{comp['SiO2']}SiO2"
-
+    # Test with n_molecules
     atoms, atom_counts = ps.create_random_atoms(
         composition=composition,
         n_molecules=n_molecules,
-        target_atoms=target_atoms,
-        mode=mode,
+        target_atoms=None,
+        mode="molar",
         stoichiometry=stoichiometry,
         box_length=box_length,
         min_distance=min_distance,
@@ -138,6 +62,65 @@ def test_structure_atom_counts(mode: str, n_molecules: int | None, target_atoms:
         max_attempts_per_atom=max_attempts_per_atom,
     )
 
-    # Verify counts directly from returned dictionary
     for elem, expected in EXPECTED_COUNTS.items():
-        assert atom_counts[elem] == expected, f"{elem} atoms should be {expected}."
+        assert atom_counts[elem] == expected, f"{elem} atoms should be {expected} for {n_molecules} mode."
+
+    # Test with target_atoms
+    atoms, atom_counts = ps.create_random_atoms(
+        composition=composition,
+        n_molecules=None,
+        target_atoms=target_atoms,
+        mode="molar",
+        stoichiometry=stoichiometry,
+        box_length=box_length,
+        min_distance=min_distance,
+        seed=seed,
+        max_attempts_per_atom=max_attempts_per_atom,
+    )
+
+    for elem, expected in EXPECTED_COUNTS.items():
+        assert atom_counts[elem] == expected, f"{elem} atoms should be {expected} for {target_atoms} mode."
+
+
+def test_structure_atom_counts_weight() -> None:
+    """Verify that atom counts are preserved for weight input mode."""
+    weight_composition = "20.2CaO-36.6Al2O3-43.2SiO2"
+    box_length = 100
+    min_distance = 2
+    seed = 42
+    max_attempts_per_atom = 10000
+    n_molecules = 100
+    target_atoms = 325
+    stoichiometry = ps.extract_stoichiometry(weight_composition)
+
+    # Test with n_molecules
+    atoms, atom_counts = ps.create_random_atoms(
+        composition=weight_composition,
+        n_molecules=n_molecules,
+        target_atoms=None,
+        mode="weight",
+        stoichiometry=stoichiometry,
+        box_length=box_length,
+        min_distance=min_distance,
+        seed=seed,
+        max_attempts_per_atom=max_attempts_per_atom,
+    )
+
+    for elem, expected in EXPECTED_COUNTS.items():
+        assert atom_counts[elem] == expected, f"{elem} atoms should be {expected} for {n_molecules} mode."
+
+    # Test with target_atoms
+    atoms, atom_counts = ps.create_random_atoms(
+        composition=weight_composition,
+        n_molecules=None,
+        target_atoms=target_atoms,
+        mode="weight",
+        stoichiometry=stoichiometry,
+        box_length=box_length,
+        min_distance=min_distance,
+        seed=seed,
+        max_attempts_per_atom=max_attempts_per_atom,
+    )
+
+    for elem, expected in EXPECTED_COUNTS.items():
+        assert atom_counts[elem] == expected, f"{elem} atoms should be {expected} for {target_atoms} mode."
