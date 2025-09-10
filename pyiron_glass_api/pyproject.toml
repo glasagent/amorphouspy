@@ -30,6 +30,7 @@ python_functions = "test_*"
 markers = [
     "integration: mark a test as an integration test."
 ]
+addopts = "-m 'not integration'"
 
 [tool.ruff]
 # Target Python version
