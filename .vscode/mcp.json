@@ -2,7 +2,7 @@
 	"servers": {
 		"pyiron-glass-api": {
 			"url": "http://127.0.0.1:8002/mcp",
-			"type": "sse"
+			"type": "http"
 		}
 	},
 	"inputs": []

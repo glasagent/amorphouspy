@@ -173,7 +173,7 @@ async def check(task_id: str) -> dict:
 
 
 mcp = FastApiMCP(app, include_tags=["tool"])
-mcp.mount_sse(mount_path="/mcp")
+mcp.mount_http(mount_path="/mcp")
 
 
 @app.get("/")
