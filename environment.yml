@@ -18,7 +18,7 @@ dependencies:
 - sqlalchemy
 - numba
 - uvicorn
-- fastapi-mcp
+- fastapi-mcp==0.4.0
 - pip
 - pip:
   - sovapy==0.8.3
