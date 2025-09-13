@@ -1,5 +1,8 @@
 # ruff: noqa: C901, PLR0912
-"""Structure generation and analysis for oxide glass systems."""
+"""Structure generation and analysis for oxide glass systems.
+
+Author: Achraf Atila (achraf.atila@bam.de).
+"""
 
 import re
 from io import StringIO

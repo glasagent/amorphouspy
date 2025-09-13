@@ -24,9 +24,11 @@ from pyiron_glass.structure import (
 )
 from pyiron_glass.workflows.md import md_simulation
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
+from pyiron_glass.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results
 from pyiron_glass.workflows.viscosity import viscosity_simulation
 
 __all__ = [
+    "analyze_structure",
     "check_neutral_oxide",
     "compute_angles",
     "compute_cavities",
@@ -37,6 +39,7 @@ __all__ = [
     "compute_rdf",
     "count_distribution",
     "create_random_atoms",
+    "find_rdf_minimum",
     "generate_bond_length_dict",
     "generate_potential",
     "get_ase_structure",
@@ -46,6 +49,7 @@ __all__ = [
     "get_structure_dict",
     "md_simulation",
     "melt_quench_simulation",
+    "plot_analysis_results",
     "potential",
     "structure_from_parsed_output",
     "type_to_dict",
