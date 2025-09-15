@@ -3,6 +3,8 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from dataclasses import dataclass
+
 import matplotlib.pyplot as plt
 import numpy as np
 from ase.atoms import Atoms
@@ -14,6 +16,54 @@ from pyiron_glass.analysis.bond_angle_distribution import compute_angles
 from pyiron_glass.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
+
+
+@dataclass
+class StructureData:
+    """Structured results of structural analysis."""
+
+    O_coordination: dict
+    former_coordination: dict[str, dict]
+    modifier_coordination: dict[str, dict]
+    Qn_distribution: dict[str, float]
+    Qn_distribution_partial: dict[str, dict]
+    network_connectivity: float
+    bond_angle_distributions: dict[str, tuple[np.ndarray, np.ndarray]]
+    ring_statistics: dict
+    type_map: dict[int, str]
+    network_formers: list[str]
+    modifiers: list[str]
+    cutoff_map: dict[str, float]
+
+
+@dataclass
+class PlottingData:
+    """Pre-processed data suitable for visualization."""
+
+    r: np.ndarray
+    rdfs: dict[tuple[int, int], np.ndarray]
+    cumcn: dict
+    bond_angle_distributions: dict[str, tuple[np.ndarray, np.ndarray]]
+    ring_statistics: dict
+    network_formers: list[str]
+    modifiers: list[str]
+    type_map: dict[int, str]
+    O_type: list[int]
+    former_types: list[int]
+    modifier_types: list[int]
+    O_coordination: dict
+    former_coordination: dict[str, dict]
+    modifier_coordination: dict[str, dict]
+    Qn_distribution: dict[str, float]
+    Qn_distribution_partial: dict[str, dict]
+
+
+@dataclass
+class MeltQuenchResult:
+    """Final return object containing analysis results and plotting data."""
+
+    results: StructureData
+    plotting_data: PlottingData
 
 
 def find_rdf_minimum(
@@ -104,16 +154,14 @@ def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], 
     return type_map, network_formers, modifiers, oxygen_present
 
 
-def analyze_structure(atoms: Atoms) -> tuple[dict, dict]:  # noqa: C901, PLR0912, PLR0915
+def analyze_structure(atoms: Atoms) -> MeltQuenchResult:  # noqa: C901, PLR0912, PLR0915
     """Perform a comprehensive structural analysis of an atomic configuration.
 
     Args:
         atoms (ase.Atoms): Atomic configuration to analyze.
 
     Returns:
-        tuple[dict, dict]:
-            - results: Dictionary containing structural metrics and classifications.
-            - plotting_data: Dictionary with pre-processed data suitable for plotting.
+        MeltQuenchResult: Object containing structured analysis results and plotting data.
 
     """
     atomic_numbers = atoms.get_atomic_numbers()
@@ -161,11 +209,10 @@ def analyze_structure(atoms: Atoms) -> tuple[dict, dict]:  # noqa: C901, PLR0912
                     }
                     cutoff_map[symbol] = element_fallbacks.get(symbol, 3.0)
 
-    results: dict = {}
+    O_coord = {}
     if O_type:
         O_cutoff = cutoff_map.get("O", 2.0)
         O_coord, _ = compute_coordination(atoms, O_type, O_cutoff, former_types + modifier_types)
-        results["O_coordination"] = O_coord
 
     former_coords: dict[str, dict] = {}
     for former in network_formers:
@@ -173,7 +220,6 @@ def analyze_structure(atoms: Atoms) -> tuple[dict, dict]:  # noqa: C901, PLR0912
         if O_type:
             coord, _ = compute_coordination(atoms, [z], cutoff_map[former], O_type)
             former_coords[former] = coord
-    results["former_coordination"] = former_coords
 
     modifier_coords: dict[str, dict] = {}
     for mod in modifiers:
@@ -181,15 +227,14 @@ def analyze_structure(atoms: Atoms) -> tuple[dict, dict]:  # noqa: C901, PLR0912
         if O_type:
             coord, _ = compute_coordination(atoms, [z], cutoff_map[mod], O_type)
             modifier_coords[mod] = coord
-    results["modifier_coordination"] = modifier_coords
 
+    Qn_dist = {}
+    Qn_dist_partial = {}
+    network_connectivity = 0.0
     if network_formers and O_type:
         Qn_dist, Qn_dist_partial = compute_qn(atoms, cutoff_map["O"], former_types, O_type)
-        results["Qn_distribution"] = Qn_dist
-        results["Qn_distribution_partial"] = Qn_dist_partial
-        results["network_connectivity"] = (
-            compute_network_connectivity(Qn_dist) if Qn_dist and sum(Qn_dist.values()) > 0 else 0.0
-        )
+        if Qn_dist and sum(Qn_dist.values()) > 0:
+            network_connectivity = compute_network_connectivity(Qn_dist)
 
     bond_angle_distributions: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for former in network_formers:
@@ -198,7 +243,6 @@ def analyze_structure(atoms: Atoms) -> tuple[dict, dict]:  # noqa: C901, PLR0912
             bond_angle_distributions[former] = compute_angles(
                 atoms, center_type=[z], neighbor_type=O_type, cutoff=cutoff_map[former], bins=180
             )
-    results["bond_angle_distributions"] = bond_angle_distributions
 
     ring_statistics_data: dict = {}
     if network_formers and O_type:
@@ -207,36 +251,45 @@ def analyze_structure(atoms: Atoms) -> tuple[dict, dict]:  # noqa: C901, PLR0912
         rings_dist, mean_ring_size = compute_guttmann_rings(atoms, bond_lengths=bond_lengths, max_size=40, n_cpus=1)
         ring_statistics_data["distribution"] = rings_dist
         ring_statistics_data["mean_size"] = mean_ring_size
-        results["ring_statistics"] = ring_statistics_data
 
-    results["type_map"] = type_map
-    results["network_formers"] = network_formers
-    results["modifiers"] = modifiers
-    results["cutoff_map"] = cutoff_map
+    results = StructureData(
+        O_coordination=O_coord,
+        former_coordination=former_coords,
+        modifier_coordination=modifier_coords,
+        Qn_distribution=Qn_dist,
+        Qn_distribution_partial=Qn_dist_partial,
+        network_connectivity=network_connectivity,
+        bond_angle_distributions=bond_angle_distributions,
+        ring_statistics=ring_statistics_data,
+        type_map=type_map,
+        network_formers=network_formers,
+        modifiers=modifiers,
+        cutoff_map=cutoff_map,
+    )
 
-    plotting_data = {
-        "r": r,
-        "rdfs": rdfs,
-        "cumcn": cumcn,
-        "bond_angle_distributions": bond_angle_distributions,
-        "ring_statistics": ring_statistics_data,
-        "network_formers": network_formers,
-        "modifiers": modifiers,
-        "type_map": type_map,
-        "O_type": O_type,
-        "former_types": former_types,
-        "modifier_types": modifier_types,
-        "O_coordination": results.get("O_coordination", {}),
-        "former_coordination": results.get("former_coordination", {}),
-        "modifier_coordination": results.get("modifier_coordination", {}),
-        "Qn_distribution": results.get("Qn_distribution", {}),
-        "Qn_distribution_partial": results.get("Qn_distribution_partial", {}),
-    }
+    plotting_data = PlottingData(
+        r=r,
+        rdfs=rdfs,
+        cumcn=cumcn,
+        bond_angle_distributions=bond_angle_distributions,
+        ring_statistics=ring_statistics_data,
+        network_formers=network_formers,
+        modifiers=modifiers,
+        type_map=type_map,
+        O_type=O_type,
+        former_types=former_types,
+        modifier_types=modifier_types,
+        O_coordination=O_coord,
+        former_coordination=former_coords,
+        modifier_coordination=modifier_coords,
+        Qn_distribution=Qn_dist,
+        Qn_distribution_partial=Qn_dist_partial,
+    )
 
-    return results, plotting_data
+    return MeltQuenchResult(results=results, plotting_data=plotting_data)
 
 
-def plot_analysis_results(plotting_data: dict) -> plt.Figure:  # noqa: C901, PLR0912, PLR0915
+def plot_analysis_results(plotting_data: PlottingData) -> plt.Figure:  # noqa: C901, PLR0912, PLR0915
     """Generate a set of plots summarizing the structural analysis of an atomic system.
 
     The figure includes:
@@ -249,8 +302,8 @@ def plot_analysis_results(plotting_data: dict) -> plt.Figure:  # noqa: C901, PLR
         for O-O, former-O, and modifier-O pairs.
 
     Args:
-        plotting_data (dict): Dictionary containing analysis data
-            produced by `analyze()`.
+        plotting_data (PlottingData): Pre-processed plotting data
+        returned by `analyze_structure`.
 
     Returns:
         matplotlib.figure.Figure: The generated figure object with subplots.
@@ -259,23 +312,22 @@ def plot_analysis_results(plotting_data: dict) -> plt.Figure:  # noqa: C901, PLR
     # Create a larger figure with multiple subplots
     fig, ax = plt.subplots(3, 3, figsize=(18, 15), dpi=300)
     colors = ["C1", "C2", "C3", "C4"]
-    # Extract data for plotting
-    bond_angle_distributions = plotting_data["bond_angle_distributions"]
-    r = plotting_data["r"]
-    rdfs = plotting_data["rdfs"]
-    cumcn = plotting_data["cumcn"]
-    ring_statistics = plotting_data["ring_statistics"]
-    network_formers = plotting_data["network_formers"]
-    modifiers = plotting_data["modifiers"]
-    type_map = plotting_data["type_map"]
-    O_type = plotting_data["O_type"]
-    plotting_data["former_types"]
-    plotting_data["modifier_types"]
-    O_coord = plotting_data["O_coordination"]
-    former_coords = plotting_data["former_coordination"]
-    modifier_coords = plotting_data["modifier_coordination"]
-    Qn_dist = plotting_data["Qn_distribution"]
-    Qn_dist_partial = plotting_data["Qn_distribution_partial"]
+
+    # Extract data from dataclass
+    bond_angle_distributions = plotting_data.bond_angle_distributions
+    r = plotting_data.r
+    rdfs = plotting_data.rdfs
+    cumcn = plotting_data.cumcn
+    ring_statistics = plotting_data.ring_statistics
+    network_formers = plotting_data.network_formers
+    modifiers = plotting_data.modifiers
+    type_map = plotting_data.type_map
+    O_type = plotting_data.O_type
+    O_coord = plotting_data.O_coordination
+    former_coords = plotting_data.former_coordination
+    modifier_coords = plotting_data.modifier_coordination
+    Qn_dist = plotting_data.Qn_distribution
+    Qn_dist_partial = plotting_data.Qn_distribution_partial
 
     offset = 0.25
 
