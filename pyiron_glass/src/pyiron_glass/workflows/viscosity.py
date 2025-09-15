@@ -1,4 +1,7 @@
-"""Viscosity simulation workflows for glass systems using LAMMPS and Green-Kubo method."""
+"""Viscosity simulation workflows for glass systems using LAMMPS and Green-Kubo method.
+
+Author: Achraf Atila (achraf.atila@bam.de).
+"""
 
 import tempfile
 from pathlib import Path
