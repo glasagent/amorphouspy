@@ -1,4 +1,7 @@
-"""Single MD simulation at constant temperature and pressure workflow for glass systems using LAMMPS."""
+"""Single MD simulation at constant temperature and pressure workflow for glass systems using LAMMPS.
+
+Author: Achraf Atila (achraf.atila@bam.de).
+"""
 
 import tempfile
 from pathlib import Path
