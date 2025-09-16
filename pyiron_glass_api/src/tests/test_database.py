@@ -31,13 +31,20 @@ def test_task_store_cached_result_lookup() -> None:
         db_path = Path(temp_dir) / "test_tasks.db"
         store = TaskStore(db_path)
 
-        # Create a completed task with results
+        # Create a completed task with results (matching current API format)
         result_data = {
             "composition": "0.75SiO2-0.25Na2O",
             "final_structure": "test structure",
             "mean_temperature": 300.0,
-            "final_density": 2.5,
             "simulation_steps": 1000,
+            "structural_analysis": {
+                "density": 2.5,
+                "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
+                "network": {"connectivity": 3.0, "Qn_distribution": {}, "Qn_distribution_partial": {}},
+                "distributions": {"bond_angles": {}, "rings": {}},
+                "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
+                "elements": {"formers": ["Si"], "modifiers": ["Na"], "cutoffs": {}},
+            },
         }
 
         completed_task = {
@@ -53,7 +60,12 @@ def test_task_store_cached_result_lookup() -> None:
         cached_result = store.find_cached_result("test_hash_123")
         assert cached_result is not None
         assert cached_result.composition == "0.75SiO2-0.25Na2O"
-        assert cached_result.final_density == 2.5
+        assert cached_result.structural_analysis is not None
+        # Handle both dict and StructureData object cases
+        if isinstance(cached_result.structural_analysis, dict):
+            assert cached_result.structural_analysis["density"] == 2.5
+        else:
+            assert cached_result.structural_analysis.density == 2.5
 
         # Test cache miss
         no_result = store.find_cached_result("nonexistent_hash")

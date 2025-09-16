@@ -57,7 +57,8 @@ def test_submit_meltquench_and_check(
         assert "result" in data
         result = data["result"]
         assert "composition" in result
-        assert "final_density" in result
+        assert "structural_analysis" in result
+        assert result["structural_analysis"]["density"] > 0
         return  # Exit early since we got the cached result
 
     # If not cached, should be "started"
@@ -97,7 +98,7 @@ def test_submit_meltquench_and_check(
     assert "composition" in result
     assert "final_structure" in result
     assert "mean_temperature" in result
-    assert "final_density" in result
+    assert "structural_analysis" in result
     assert "simulation_steps" in result
 
     # Validate composition format
@@ -105,7 +106,11 @@ def test_submit_meltquench_and_check(
 
     # Validate numerical values
     assert isinstance(result["mean_temperature"], float)
-    assert isinstance(result["final_density"], float)
+    # Handle both dict and StructureData object cases
+    if isinstance(result["structural_analysis"], dict):
+        assert isinstance(result["structural_analysis"]["density"], float)
+    else:
+        assert isinstance(result["structural_analysis"].density, float)
     assert isinstance(result["simulation_steps"], int)
 
 
@@ -137,9 +142,9 @@ def test_root_redirect() -> None:
     assert "swagger" in response.text.lower() or "openapi" in response.text.lower()
 
 
-def test_check_cached_result() -> None:
-    """Test checking for cached results with unique composition."""
-    # Use a unique composition to avoid cache hits from other tests
+def test_check_cached_result_found() -> None:
+    """Test checking for cached results with a specific composition."""
+    # Use a unique composition
     payload = {
         "components": ["SiO2", "K2O"],  # Different from other tests
         "values": [85.0, 15.0],
@@ -155,7 +160,12 @@ def test_check_cached_result() -> None:
     if data is not None:
         # If cached result exists, verify it has the right structure
         assert "composition" in data
-        assert "final_density" in data
+        assert "structural_analysis" in data
+        # Handle both dict and StructureData object cases
+        if isinstance(data["structural_analysis"], dict):
+            assert "density" in data["structural_analysis"]
+        else:
+            assert hasattr(data["structural_analysis"], "density")
         assert "final_structure" in data
         assert "mean_temperature" in data
         assert "simulation_steps" in data
@@ -179,7 +189,8 @@ def test_check_cached_result_not_found() -> None:
     if data is not None:
         # If cached result exists, verify it has the right structure
         assert "composition" in data
-        assert "final_density" in data
+        assert "structural_analysis" in data
+        assert data["structural_analysis"]["density"] > 0
         assert "final_structure" in data
         assert "mean_temperature" in data
         assert "simulation_steps" in data
