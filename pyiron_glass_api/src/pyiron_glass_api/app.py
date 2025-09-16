@@ -31,6 +31,7 @@ from fastapi_mcp import FastApiMCP
 from .database import get_task_store, init_task_store
 from .models import MeltquenchRequest, MeltquenchResult
 from .worker import meltquench_worker
+from .visualization import router as visualization_router
 
 # Configure logging
 logging.basicConfig(
@@ -109,6 +110,9 @@ app = FastAPI(
     description="API for managing long-running glass simulation tasks using pyiron-glass",
     version="0.1.0",
 )
+
+# Include visualization router
+app.include_router(visualization_router, tags=["visualization"])
 
 
 @app.post("/check_cached_result", tags=["tool"])
