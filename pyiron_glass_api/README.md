@@ -80,7 +80,7 @@ pre-commit install
 pytest
 ```
 
-**Integration tests** (requires working pyiron-glass installation):
+**Integration tests**:
 ```bash
 # Start API server
 uvicorn pyiron_glass_api.app:app --port 8002 --reload

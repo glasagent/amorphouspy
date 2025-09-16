@@ -125,16 +125,6 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         ).pull()
         logger.info(f"Task {task_id}: Simulation completed successfully")
 
-        # Extract generic results from simulation output
-        if not isinstance(result, dict):
-            msg = "Workflow output is not a dictionary"
-            raise KeyError(msg)
-
-        generic = result.get("result") or result.get("generic")
-        if generic is None:
-            msg = "Missing simulation results ('result'/'generic') in workflow output"
-            raise KeyError(msg)
-
         # Update task status for structural analysis
         current_task = task_store.get(task_id) or {"state": "processing"}
         current_task["status"] = "Running structural analysis"
@@ -142,28 +132,18 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Starting structural analysis")
 
         # Perform structural analysis on the final structure (includes density calculation)
-        structural_summary = None
-        try:
-            final_structure = result["structure"]
-            logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
+        final_structure = result["structure"]
+        logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
-            # Run structural analysis (now includes density calculation)
-            structural_data = analyze_structure(final_structure, pyiron_project=pr).pull()
-            logger.info(f"Task {task_id}: Structural analysis completed successfully")
+        # Run structural analysis (decorated with @job, needs pyiron_project and .pull())
+        structural_data = analyze_structure(atoms=final_structure, pyiron_project=pr).pull()
+        logger.info(f"Task {task_id}: Structural analysis completed successfully")
 
-            # Extract density and prepare serializable data
-            final_density = structural_data.density
-            logger.info(f"Task {task_id}: Final density from structural analysis: {final_density:.3f} g/cm³")
-
-            # Use the structural data directly (it's now a Pydantic model with proper serialization)
-            structural_summary = (
-                structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
-            )
-            logger.info(f"Task {task_id}: Structural analysis data prepared")
-
-        except Exception as analysis_exc:
-            logger.warning(f"Task {task_id}: Structural analysis failed: {analysis_exc!s}", exc_info=True)
-            # Fallback: calculate density manually if structural analysis fails
+        # Use the structural data directly (it's now a Pydantic model with proper serialization)
+        structural_summary = (
+            structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
+        )
+        logger.info(f"Task {task_id}: Structural analysis data prepared")
 
         # Store results including structural analysis
         current_task = task_store.get(task_id) or {}
@@ -174,8 +154,8 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
                 "result": {
                     "composition": composition,
                     "final_structure": str(result["structure"]),
-                    "mean_temperature": float(np.mean(generic["temperature"])),
-                    "simulation_steps": len(generic["steps"]),
+                    "mean_temperature": float(np.mean(result["result"]["temperature"])),
+                    "simulation_steps": len(result["result"]["steps"]),
                     "structural_analysis": structural_summary,
                 },
             }

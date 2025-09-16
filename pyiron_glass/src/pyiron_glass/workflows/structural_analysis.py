@@ -36,10 +36,10 @@ class CoordinationData(BaseModel):
 class NetworkData(BaseModel):
     """Network connectivity and Q^n distribution data."""
 
-    Qn_distribution: dict[str, float] = Field(
+    Qn_distribution: dict[int, float] = Field(
         default_factory=dict, description="Q^n distribution for network connectivity"
     )
-    Qn_distribution_partial: dict[str, dict[str, float]] = Field(
+    Qn_distribution_partial: dict[int, dict[int, float]] = Field(
         default_factory=dict, description="Partial Q^n distributions by former type"
     )
     connectivity: float = Field(default=0.0, description="Overall network connectivity (0-1)")
@@ -267,9 +267,18 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     Qn_dist_partial = {}
     network_connectivity = 0.0
     if network_formers and O_type:
-        Qn_dist, Qn_dist_partial = compute_qn(atoms, cutoff_map["O"], former_types, O_type)
-        if Qn_dist and sum(Qn_dist.values()) > 0:
-            network_connectivity = compute_network_connectivity(Qn_dist)
+        Qn_dist_raw, Qn_dist_partial_raw = compute_qn(atoms, cutoff_map["O"], former_types, O_type)
+        
+        # Convert integer keys to strings for Pydantic compatibility
+        Qn_dist = {str(k): v for k, v in Qn_dist_raw.items()} if Qn_dist_raw else {}
+        Qn_dist_partial = {}
+        if Qn_dist_partial_raw:
+            for element_key, qn_dict in Qn_dist_partial_raw.items():
+                # Convert both outer and inner keys to strings
+                Qn_dist_partial[str(element_key)] = {str(k): v for k, v in qn_dict.items()}
+        
+        if Qn_dist_raw and sum(Qn_dist_raw.values()) > 0:
+            network_connectivity = compute_network_connectivity(Qn_dist_raw)
 
     # Bond angles and rings
     bond_angle_distributions = {}
