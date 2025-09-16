@@ -35,7 +35,16 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         shared_project_dir (str): Path to the shared project directory
 
     """
+    import os
     from pathlib import Path
+
+    # Initialize coverage in subprocess if running under coverage
+    if "COVERAGE_PROCESS_START" in os.environ:
+        try:
+            import coverage
+            coverage.process_startup()
+        except ImportError:
+            pass  # coverage not installed
 
     from .database import TaskStore
 
