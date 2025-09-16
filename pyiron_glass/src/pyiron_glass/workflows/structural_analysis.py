@@ -21,47 +21,85 @@ from pyiron_glass.analysis.radial_distribution_functions import compute_coordina
 from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 
 
+class CoordinationData(BaseModel):
+    """Coordination number distributions for different element types."""
+    
+    oxygen: dict[int, int] = Field(default_factory=dict, description="Oxygen coordination number distribution")
+    formers: dict[str, dict[int, int]] = Field(default_factory=dict, description="Network former coordination distributions")
+    modifiers: dict[str, dict[int, int]] = Field(default_factory=dict, description="Modifier coordination distributions")
+
+    class Config:
+        """Pydantic configuration."""
+        arbitrary_types_allowed = True
+
+
+class NetworkData(BaseModel):
+    """Network connectivity and Q^n distribution data."""
+    
+    Qn_distribution: dict[str, float] = Field(default_factory=dict, description="Q^n distribution for network connectivity")
+    Qn_distribution_partial: dict[str, dict[str, float]] = Field(default_factory=dict, description="Partial Q^n distributions by former type")
+    connectivity: float = Field(default=0.0, description="Overall network connectivity (0-1)")
+
+    class Config:
+        """Pydantic configuration."""
+        arbitrary_types_allowed = True
+
+
+class StructuralDistributions(BaseModel):
+    """Structural distributions including bond angles and ring statistics."""
+    
+    bond_angles: dict[str, tuple[list[float], list[float]]] = Field(default_factory=dict, description="Bond angle distributions for each former type")
+    rings: dict[str, Any] = Field(default_factory=dict, description="Ring size distribution and statistics")
+
+    class Config:
+        """Pydantic configuration."""
+        arbitrary_types_allowed = True
+
+
+class RadialDistributionData(BaseModel):
+    """Radial distribution function and cumulative coordination data."""
+    
+    r: list[float] = Field(default_factory=list, description="Radial distance array for RDFs (Å)")
+    rdfs: dict[str, list[float]] = Field(default_factory=dict, description="Radial distribution functions for atom pairs")
+    cumulative_coordination: dict[str, list[float]] = Field(default_factory=dict, description="Cumulative coordination numbers")
+
+    class Config:
+        """Pydantic configuration."""
+        arbitrary_types_allowed = True
+
+
+class ElementInfo(BaseModel):
+    """Element classification and type information."""
+    
+    formers: list[str] = Field(default_factory=list, description="List of network forming elements")
+    modifiers: list[str] = Field(default_factory=list, description="List of modifier elements")
+    cutoffs: dict[str, float] = Field(default_factory=dict, description="Coordination cutoff distances for each element")
+
+    class Config:
+        """Pydantic configuration."""
+        arbitrary_types_allowed = True
+
+
 class StructureData(BaseModel):
     """Structured results of structural analysis.
 
     This model contains all the computed structural properties from glass analysis,
-    including density, coordination numbers, network connectivity, and various
-    structural distributions. This is the complete raw data that can be used
-    both for analysis and for generating plots.
+    organized into logical groups for better accessibility and maintainability.
     """
 
+    # Basic properties
     density: float = Field(..., description="Calculated density of the structure (g/cm³)")
-    O_coordination: dict[int, int] = Field(..., description="Oxygen coordination number distribution")
-    former_coordination: dict[str, dict[int, int]] = Field(..., description="Network former coordination distributions")
-    modifier_coordination: dict[str, dict[int, int]] = Field(..., description="Modifier coordination distributions")
-    Qn_distribution: dict[str, float] = Field(..., description="Q^n distribution for network connectivity")
-    Qn_distribution_partial: dict[str, dict[str, float]] = Field(
-        ..., description="Partial Q^n distributions by former type"
-    )
-    network_connectivity: float = Field(..., description="Overall network connectivity (0-1)")
-    bond_angle_distributions: dict[str, tuple[list[float], list[float]]] = Field(
-        ..., description="Bond angle distributions for each former type"
-    )
-    ring_statistics: dict[str, Any] = Field(..., description="Ring size distribution and statistics")
-    type_map: dict[int, str] = Field(..., description="Mapping from atomic number to element symbol")
-    network_formers: list[str] = Field(..., description="List of network forming elements")
-    modifiers: list[str] = Field(..., description="List of modifier elements")
-    cutoff_map: dict[str, float] = Field(..., description="Coordination cutoff distances for each element")
-
-    # Raw RDF and analysis data
-    r: list[float] = Field(..., description="Radial distance array for RDFs (Å)")
-    rdfs: dict[str, list[float]] = Field(..., description="Radial distribution functions for atom pairs")
-    cumcn: dict[str, list[float]] = Field(..., description="Cumulative coordination numbers")
-    O_type: list[int] = Field(..., description="Atomic numbers of oxygen atoms")
-    former_types: list[int] = Field(..., description="Atomic numbers of network former atoms")
-    modifier_types: list[int] = Field(..., description="Atomic numbers of modifier atoms")
+    
+    # Grouped structural data
+    coordination: CoordinationData = Field(default_factory=CoordinationData, description="Coordination number distributions")
+    network: NetworkData = Field(default_factory=NetworkData, description="Network connectivity data")
+    distributions: StructuralDistributions = Field(default_factory=StructuralDistributions, description="Structural distributions")
+    rdfs: RadialDistributionData = Field(default_factory=RadialDistributionData, description="Radial distribution function data")
+    elements: ElementInfo = Field(default_factory=ElementInfo, description="Element classification and properties")
 
     class Config:
         """Pydantic configuration."""
-
         arbitrary_types_allowed = True  # Allow numpy arrays and complex types
-
-
 def find_rdf_minimum(
     r: np.ndarray, rdf_data: np.ndarray, sigma: float = 2.0, window_length: int = 21, polyorder: int = 3
 ) -> float | None:
@@ -264,36 +302,44 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
             counts.tolist() if hasattr(counts, "tolist") else list(counts),
         )
 
-    # Convert RDF data for serialization (convert tuple keys to strings and arrays to lists)
+    # Convert RDF data for serialization (use element symbols directly in keys)
     rdfs_serializable = {}
     cumcn_serializable = {}
     for pair, rdf_data in rdfs.items():
-        key = f"{pair[0]}-{pair[1]}"  # Convert tuple to string
+        # Convert atomic numbers to element symbols for keys
+        elem1 = type_map[pair[0]]
+        elem2 = type_map[pair[1]]
+        key = f"{elem1}-{elem2}"
         rdfs_serializable[key] = rdf_data.tolist() if hasattr(rdf_data, "tolist") else list(rdf_data)
         if pair in cumcn:
             cumcn_serializable[key] = cumcn[pair].tolist() if hasattr(cumcn[pair], "tolist") else list(cumcn[pair])
 
     return StructureData(
         density=density,
-        O_coordination=O_coord,
-        former_coordination=former_coords,
-        modifier_coordination=modifier_coords,
-        Qn_distribution=Qn_dist,
-        Qn_distribution_partial=Qn_dist_partial,
-        network_connectivity=network_connectivity,
-        bond_angle_distributions=bond_angle_distributions_serializable,
-        ring_statistics=ring_statistics_data,
-        type_map=type_map,
-        network_formers=list(network_formers),
-        modifiers=list(modifiers),
-        cutoff_map=cutoff_map,
-        # Raw RDF and analysis data
-        r=r.tolist() if hasattr(r, "tolist") else list(r),
-        rdfs=rdfs_serializable,
-        cumcn=cumcn_serializable,
-        O_type=O_type,
-        former_types=former_types,
-        modifier_types=modifier_types,
+        coordination=CoordinationData(
+            oxygen=O_coord,
+            formers=former_coords,
+            modifiers=modifier_coords,
+        ),
+        network=NetworkData(
+            Qn_distribution=Qn_dist,
+            Qn_distribution_partial=Qn_dist_partial,
+            connectivity=network_connectivity,
+        ),
+        distributions=StructuralDistributions(
+            bond_angles=bond_angle_distributions_serializable,
+            rings=ring_statistics_data,
+        ),
+        rdfs=RadialDistributionData(
+            r=r.tolist() if hasattr(r, "tolist") else list(r),
+            rdfs=rdfs_serializable,
+            cumulative_coordination=cumcn_serializable,
+        ),
+        elements=ElementInfo(
+            formers=list(network_formers),
+            modifiers=list(modifiers),
+            cutoffs=cutoff_map,
+        ),
     )
 
 
@@ -323,12 +369,12 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
     offset = 0.25
 
     # Plot 1: Oxygen coordination distribution
-    if structure_data.O_coordination:
+    if structure_data.coordination.oxygen:
         ax[0, 0].bar(
-            np.array(list(structure_data.O_coordination.keys())),
-            np.array(list(structure_data.O_coordination.values()))
+            np.array(list(structure_data.coordination.oxygen.keys())),
+            np.array(list(structure_data.coordination.oxygen.values()))
             * 100
-            / (np.array(list(structure_data.O_coordination.values()), dtype=float).sum()),
+            / (np.array(list(structure_data.coordination.oxygen.values()), dtype=float).sum()),
             width=0.2,
             align="center",
             linewidth=0.5,
@@ -346,8 +392,8 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
         ax[0, 0].set_ylabel("Percentage")
 
     # Plot 2: Former coordination distributions
-    if structure_data.former_coordination:
-        for i, (former, coord_data) in enumerate(structure_data.former_coordination.items()):
+    if structure_data.coordination.formers:
+        for i, (former, coord_data) in enumerate(structure_data.coordination.formers.items()):
             if coord_data:  # Check if coordination data exists
                 keys = np.array(list(coord_data.keys()))
                 values = np.array(list(coord_data.values()))
@@ -374,8 +420,8 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
         ax[0, 1].set_ylabel("Percentage")
 
     # Plot 3: Modifier coordination distributions
-    if structure_data.modifier_coordination:
-        for i, (modifier, coord_data) in enumerate(structure_data.modifier_coordination.items()):
+    if structure_data.coordination.modifiers:
+        for i, (modifier, coord_data) in enumerate(structure_data.coordination.modifiers.items()):
             if coord_data:  # Check if coordination data exists
                 keys = np.array(list(coord_data.keys()))
                 values = np.array(list(coord_data.values()))
@@ -402,10 +448,10 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
         ax[1, 0].set_ylabel("Percentage")
 
     # Plot 4: Qn distributions
-    if structure_data.Qn_distribution and structure_data.Qn_distribution_partial:
+    if structure_data.network.Qn_distribution and structure_data.network.Qn_distribution_partial:
         # Plot total Qn distribution
-        qn_keys = np.array(list(structure_data.Qn_distribution.keys()))
-        qn_values = np.array(list(structure_data.Qn_distribution.values()))
+        qn_keys = np.array(list(structure_data.network.Qn_distribution.keys()))
+        qn_values = np.array(list(structure_data.network.Qn_distribution.values()))
         total_qn = qn_values.sum()
         if total_qn > 0:
             ax[1, 1].bar(
@@ -420,10 +466,9 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
             )
 
         # Plot partial Qn distributions for each former
-        for i, former in enumerate(structure_data.network_formers):
-            former_z = next(k for k, v in structure_data.type_map.items() if v == former)
-            if former_z in structure_data.Qn_distribution_partial:
-                qn_partial = structure_data.Qn_distribution_partial[former_z]
+        for i, former in enumerate(structure_data.elements.formers):
+            if former in structure_data.network.Qn_distribution_partial:
+                qn_partial = structure_data.network.Qn_distribution_partial[former]
                 if qn_partial:
                     qn_p_keys = np.array(list(qn_partial.keys()))
                     qn_p_values = np.array(list(qn_partial.values()))
@@ -450,8 +495,8 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
         ax[1, 1].set_ylabel("Percentage")
 
     # Plot 5: Bond angles
-    if structure_data.bond_angle_distributions:
-        for i, (former, (angles, counts)) in enumerate(structure_data.bond_angle_distributions.items()):
+    if structure_data.distributions.bond_angles:
+        for i, (former, (angles, counts)) in enumerate(structure_data.distributions.bond_angles.items()):
             ax[0, 2].plot(angles, counts, label=f"O-{former}-O angles", color=colors[i])
         ax[0, 2].set_xlabel("Angle (degrees)")
         ax[0, 2].set_ylabel("Frequency")
@@ -463,11 +508,11 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
 
     # Plot 6: Ring statistics
     if (
-        structure_data.ring_statistics
-        and "distribution" in structure_data.ring_statistics
-        and structure_data.ring_statistics["distribution"]
+        structure_data.distributions.rings
+        and "distribution" in structure_data.distributions.rings
+        and structure_data.distributions.rings["distribution"]
     ):
-        rings_dist = structure_data.ring_statistics["distribution"]
+        rings_dist = structure_data.distributions.rings["distribution"]
         sizes = np.array(sorted(rings_dist.keys()))
         counts = np.array([rings_dist[s] for s in sizes])
 
@@ -485,57 +530,57 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
         ax[1, 2].set_ylabel(r"Normalized count")
 
     # Plot 7-9: RDF plots (spanning the bottom row)
-    if structure_data.rdfs:
+    if structure_data.rdfs.rdfs:
         # Plot O-O RDF
-        o_atomic_number = 8
-        oo_pair = (8, 8) if o_atomic_number in list(structure_data.type_map.keys()) else None
-        if oo_pair and oo_pair in structure_data.rdfs:
+        oo_key = "O-O"
+        if oo_key in structure_data.rdfs.rdfs:
             ax[2, 0].plot(
-                structure_data.r[::4], structure_data.rdfs[oo_pair][::4], "-", color="C0", label=r"$g_{O-O}(r)$"
+                structure_data.rdfs.r[::4], structure_data.rdfs.rdfs[oo_key][::4], "-", color="C0", label=r"$g_{O-O}(r)$"
             )
-            ax[2, 0].plot(structure_data.r, structure_data.cumcn[oo_pair], "--", color="C0", label=r"$CN_{O-O}(r)$")
+            if oo_key in structure_data.rdfs.cumulative_coordination:
+                ax[2, 0].plot(structure_data.rdfs.r, structure_data.rdfs.cumulative_coordination[oo_key], "--", color="C0", label=r"$CN_{O-O}(r)$")
             ax[2, 0].set_title("O-O RDF")
 
         # Plot former-oxygen RDFs
-        for i, former in enumerate(structure_data.network_formers):
-            z = next(k for k, v in structure_data.type_map.items() if v == former)
-            pair = (z, structure_data.O_type[0]) if structure_data.O_type else None
-            if pair and pair in structure_data.rdfs:
+        for i, former in enumerate(structure_data.elements.formers):
+            former_o_key = f"{former}-O"
+            if former_o_key in structure_data.rdfs.rdfs:
                 ax[2, 1].plot(
-                    structure_data.r[::4],
-                    structure_data.rdfs[pair][::4],
+                    structure_data.rdfs.r[::4],
+                    structure_data.rdfs.rdfs[former_o_key][::4],
                     "-",
                     color=f"C{i + 1}",
                     label=rf"$g_{{{former}-O}}(r)$",
                 )
-                ax[2, 1].plot(
-                    structure_data.r,
-                    structure_data.cumcn[pair],
-                    "--",
-                    color=f"C{i + 1}",
-                    label=rf"$CN_{{{former}-O}}(r)$",
-                )
+                if former_o_key in structure_data.rdfs.cumulative_coordination:
+                    ax[2, 1].plot(
+                        structure_data.rdfs.r,
+                        structure_data.rdfs.cumulative_coordination[former_o_key],
+                        "--",
+                        color=f"C{i + 1}",
+                        label=rf"$CN_{{{former}-O}}(r)$",
+                    )
                 ax[2, 1].set_title("Former-O RDFs")
 
         # Plot modifier-oxygen RDFs
-        for i, mod in enumerate(structure_data.modifiers):
-            z = next(k for k, v in structure_data.type_map.items() if v == mod)
-            pair = (z, structure_data.O_type[0]) if structure_data.O_type else None
-            if pair and pair in structure_data.rdfs:
+        for i, mod in enumerate(structure_data.elements.modifiers):
+            mod_o_key = f"{mod}-O"
+            if mod_o_key in structure_data.rdfs.rdfs:
                 ax[2, 2].plot(
-                    structure_data.r[::4],
-                    structure_data.rdfs[pair][::4],
+                    structure_data.rdfs.r[::4],
+                    structure_data.rdfs.rdfs[mod_o_key][::4],
                     "-",
-                    color=f"C{i + len(structure_data.network_formers) + 1}",
+                    color=f"C{i + len(structure_data.elements.formers) + 1}",
                     label=rf"$g_{{{mod}-O}}(r)$",
                 )
-                ax[2, 2].plot(
-                    structure_data.r,
-                    structure_data.cumcn[pair],
-                    "--",
-                    color=f"C{i + len(structure_data.network_formers) + 1}",
-                    label=rf"$CN_{{{mod}-O}}(r)$",
-                )
+                if mod_o_key in structure_data.rdfs.cumulative_coordination:
+                    ax[2, 2].plot(
+                        structure_data.rdfs.r,
+                        structure_data.rdfs.cumulative_coordination[mod_o_key],
+                        "--",
+                        color=f"C{i + len(structure_data.elements.formers) + 1}",
+                        label=rf"$CN_{{{mod}-O}}(r)$",
+                    )
                 ax[2, 2].set_title("Modifier-O RDFs")
 
         # Set common properties for RDF plots
