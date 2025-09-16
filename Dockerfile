@@ -30,6 +30,4 @@ COPY LICENSE .
 RUN micromamba run pip install /app/pyiron_glass
 RUN micromamba run pip install /app/pyiron_glass_api
 
-WORKDIR /app
-
-CMD ["uvicorn","pyiron_glass_api.app:app","--host", "0.0.0.0","--port", "8000","--reload","--log-level","trace","--backlog","1","--timeout-keep-alive","60"]
+CMD ["uvicorn","pyiron_glass_api.app:app","--host", "0.0.0.0","--port", "8000","--log-level","trace","--backlog","1","--timeout-keep-alive","60"]
