@@ -151,59 +151,20 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             analysis_result = analyze_structure(final_structure, pyiron_project=pr).pull()
             logger.info(f"Task {task_id}: Structural analysis completed successfully")
 
-            # Extract key structural metrics and density
+            # Extract the complete structural data (now a Pydantic model)
             structural_data = analysis_result.results
             final_density = structural_data.density
             logger.info(f"Task {task_id}: Final density from structural analysis: {final_density:.3f} g/cm³")
 
-            structural_summary = {
-                "density": final_density,
-                "network_connectivity": structural_data.network_connectivity,
-                "mean_coordination": {},
-                "qn_distribution": structural_data.Qn_distribution,
-                "network_formers": list(structural_data.network_formers),
-                "modifiers": list(structural_data.modifiers),
-            }
-
-            # Add coordination number summaries
-            if structural_data.O_coordination:
-                total_o = sum(structural_data.O_coordination.values())
-                mean_o_coord = (
-                    sum(k * v for k, v in structural_data.O_coordination.items()) / total_o if total_o > 0 else 0
-                )
-                structural_summary["mean_coordination"]["oxygen"] = mean_o_coord
-
-            for former, coord_data in structural_data.former_coordination.items():
-                if coord_data:
-                    total = sum(coord_data.values())
-                    mean_coord = sum(k * v for k, v in coord_data.items()) / total if total > 0 else 0
-                    structural_summary["mean_coordination"][f"{former}_former"] = mean_coord
-
-            for modifier, coord_data in structural_data.modifier_coordination.items():
-                if coord_data:
-                    total = sum(coord_data.values())
-                    mean_coord = sum(k * v for k, v in coord_data.items()) / total if total > 0 else 0
-                    structural_summary["mean_coordination"][f"{modifier}_modifier"] = mean_coord
-
-            logger.info(f"Task {task_id}: Structural analysis summary prepared")
+            # Use the structural data directly (it's now a Pydantic model with proper serialization)
+            structural_summary = (
+                structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
+            )
+            logger.info(f"Task {task_id}: Structural analysis data prepared")
 
         except Exception as analysis_exc:
             logger.warning(f"Task {task_id}: Structural analysis failed: {analysis_exc!s}", exc_info=True)
             # Fallback: calculate density manually if structural analysis fails
-            try:
-                V = np.mean(generic["volume"]) * 1e-24  # volume in cm³
-                massTot = result["structure"].get_masses().sum() / units._Nav
-                fallback_density = massTot / V
-                structural_summary = {
-                    "density": fallback_density,
-                    "error": f"Structural analysis failed: {analysis_exc!s}",
-                }
-                logger.info(f"Task {task_id}: Fallback density calculated: {fallback_density:.3f} g/cm³")
-            except Exception as density_exc:
-                logger.exception(f"Task {task_id}: Fallback density calculation also failed: {density_exc!s}")
-                structural_summary = {
-                    "error": f"Structural analysis failed: {analysis_exc!s}. Density calculation failed: {density_exc!s}"
-                }
 
         # Store results including structural analysis
         current_task = task_store.get(task_id) or {}

@@ -7,18 +7,12 @@ including meltquench simulations and other glass modeling workflows.
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pyiron_glass.workflows.structural_analysis import StructureData
 
 # Constants for composition validation
 PERCENTAGE_THRESHOLD = 1.1
 PERCENTAGE_MIN = 95
 PERCENTAGE_MAX = 105
-FRACTION_MIN = 0.95
-FRACTION_MAX = 1.05
-
-# Error messages
-PERCENTAGE_ERROR_MSG = "Composition values sum to {total}, expected around 100 for percentages"
-FRACTION_ERROR_MSG = "Composition values sum to {total}, expected around 1.0 for fractions"
-LENGTH_ERROR_MSG = "Components and values lists must have the same length"
 FRACTION_MIN = 0.95
 FRACTION_MAX = 1.05
 
@@ -71,28 +65,6 @@ class MeltquenchRequest(BaseModel):
         return v
 
 
-class StructuralAnalysis(BaseModel):
-    """Structural analysis results from glass structure analysis.
-
-    Attributes:
-        density: Calculated density of the structure (g/cm³)
-        network_connectivity: Network connectivity value (0-1)
-        mean_coordination: Dictionary of mean coordination numbers for different atom types
-        qn_distribution: Q^n distribution for network formers
-        network_formers: List of network forming elements
-        modifiers: List of modifier elements
-        error: Error message if analysis failed (optional)
-    """
-
-    density: float | None = Field(None, description="Calculated density (g/cm³)")
-    network_connectivity: float | None = Field(None, description="Network connectivity (0-1)")
-    mean_coordination: dict[str, float] = Field(default_factory=dict, description="Mean coordination numbers")
-    qn_distribution: dict[str, float] = Field(default_factory=dict, description="Q^n distribution")
-    network_formers: list[str] = Field(default_factory=list, description="Network forming elements")
-    modifiers: list[str] = Field(default_factory=list, description="Modifier elements")
-    error: str | None = Field(None, description="Error message if analysis failed")
-
-
 class MeltquenchResult(BaseModel):
     """Result model for completed meltquench simulation.
 
@@ -109,4 +81,4 @@ class MeltquenchResult(BaseModel):
     final_structure: str = Field(..., description="String representation of final structure")
     mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
     simulation_steps: int = Field(..., description="Total simulation steps completed")
-    structural_analysis: StructuralAnalysis = Field(..., description="Structural analysis results")
+    structural_analysis: StructureData | dict = Field(..., description="Structural analysis results")
