@@ -224,3 +224,116 @@ def test_caching_behavior() -> None:
 
     # The status should indicate either "started" (new task) or "completed_from_cache" (cached)
     assert submit_data["status"] in ["started", "completed_from_cache"]
+
+
+@patch("pyiron_glass.workflows.structural_analysis.plot_analysis_results")
+@patch("pyiron_glass.melt_quench_simulation")
+@patch("pyiron_glass.generate_potential")
+@patch("pyiron_glass.get_ase_structure")
+@patch("pyiron_glass.get_structure_dict")
+@patch("pyiron_base.Project")
+def test_visualization_endpoint(
+    mock_project,
+    mock_get_structure_dict,
+    mock_get_ase_structure,
+    mock_generate_potential,
+    mock_melt_quench_simulation,
+    mock_plot_analysis_results,
+) -> None:
+    """Test the visualization endpoint with mocked plot generation."""
+    from unittest.mock import MagicMock
+
+    # Mock the pyiron components (same as other tests)
+    mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
+    mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
+
+    mock_structure = MagicMock()
+    mock_structure.get_masses.return_value.sum.return_value = 1000
+    mock_get_ase_structure.return_value = mock_structure
+
+    mock_potential = "mock_potential_content"
+    mock_generate_potential.return_value = mock_potential
+
+    # Mock the simulation result
+    mock_result = {
+        "structure": mock_structure,
+        "result": {
+            "volume": [1000, 1000, 1000],
+            "temperature": [300, 305, 302],
+            "steps": [1, 2, 3],
+        },
+    }
+    mock_melt_quench_simulation.return_value.pull.return_value = mock_result
+
+    # Create a mock figure for the plot
+    mock_fig = MagicMock()
+    mock_plot_analysis_results.return_value = mock_fig
+
+    # Mock the figure's savefig method to simulate saving
+    mock_fig.savefig = MagicMock()
+
+    # Submit task and get it completed
+    payload = {"components": ["SiO2", "Na2O"], "values": [75.0, 25.0], "unit": "wt"}
+
+    submit_response = client.post("/submit_meltquench", json=payload)
+    assert submit_response.status_code == 200
+    submit_data = submit_response.json()
+
+    if submit_data["status"] == "completed_from_cache":
+        task_id = submit_data["task_id"]
+    else:
+        task_id = submit_data["task_id"]
+        # Wait for mocked completion
+        import time
+
+        max_wait = 5  # Reduced wait time since it's mocked
+        waited = 0
+
+        while waited < max_wait:
+            check_response = client.get(f"/check/{task_id}")
+            check_data = check_response.json()
+            if check_data["state"] == "complete":
+                break
+            time.sleep(0.1)  # Shorter sleep
+            waited += 0.1
+
+    # Now test the visualization endpoint
+    viz_response = client.get(f"/viz/results/{task_id}")
+    assert viz_response.status_code == 200
+
+    # Check that we get HTML content
+    assert viz_response.headers["content-type"] == "text/html; charset=utf-8"
+    html_content = viz_response.text
+
+    # Verify HTML contains expected elements
+    assert "Glass Simulation Results" in html_content
+    assert task_id in html_content
+    assert "Structural Analysis Plot" in html_content
+    assert "data:image/png;base64," in html_content
+
+    # Verify the plot function was called
+    mock_plot_analysis_results.assert_called_once()
+
+
+def test_visualization_endpoint_task_not_found() -> None:
+    """Test visualization endpoint with non-existent task."""
+    response = client.get("/viz/results/nonexistent-task")
+    assert response.status_code == 404
+    assert "Task not found" in response.json()["detail"]
+
+
+def test_visualization_endpoint_incomplete_task() -> None:
+    """Test visualization endpoint with incomplete task."""
+    # Create a task manually in the database with 'running' state
+    from pyiron_glass_api.database import get_task_store
+
+    task_store = get_task_store()
+    fake_task_id = "test-incomplete-task-123"
+
+    # Add incomplete task to database
+    task_store.add(fake_task_id, "running", {"components": ["SiO2"], "values": [100.0], "unit": "wt"})
+
+    # Try to visualize incomplete task
+    viz_response = client.get(f"/viz/results/{fake_task_id}")
+    assert viz_response.status_code == 400
+    assert "not completed yet" in viz_response.json()["detail"]
