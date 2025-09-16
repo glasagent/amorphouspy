@@ -7,8 +7,10 @@ from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
+from ase import units
 from ase.atoms import Atoms
 from ase.data import chemical_symbols
+from pyiron_base import job
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 
@@ -22,6 +24,7 @@ from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_le
 class StructureData:
     """Structured results of structural analysis."""
 
+    density: float
     O_coordination: dict
     former_coordination: dict[str, dict]
     modifier_coordination: dict[str, dict]
@@ -154,6 +157,7 @@ def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], 
     return type_map, network_formers, modifiers, oxygen_present
 
 
+@job
 def analyze_structure(atoms: Atoms) -> MeltQuenchResult:  # noqa: C901, PLR0912, PLR0915
     """Perform a comprehensive structural analysis of an atomic configuration.
 
@@ -166,6 +170,13 @@ def analyze_structure(atoms: Atoms) -> MeltQuenchResult:  # noqa: C901, PLR0912,
     """
     atomic_numbers = atoms.get_atomic_numbers()
     unique_z = np.unique(atomic_numbers)
+
+    # Calculate density
+    volume_angstrom3 = atoms.get_volume()  # Volume in Å³
+    volume_cm3 = volume_angstrom3 * 1e-24  # Convert to cm³
+    total_mass_amu = atoms.get_masses().sum()  # Total mass in amu
+    total_mass_g = total_mass_amu / units._Nav  # Convert to grams using Avogadro's number
+    density = total_mass_g / volume_cm3  # Density in g/cm³
 
     type_map, network_formers, modifiers, oxygen_present = _classify_elements(unique_z)
     oxygen_symbol = "O"
@@ -253,6 +264,7 @@ def analyze_structure(atoms: Atoms) -> MeltQuenchResult:  # noqa: C901, PLR0912,
         ring_statistics_data["mean_size"] = mean_ring_size
 
     results = StructureData(
+        density=density,
         O_coordination=O_coord,
         former_coordination=former_coords,
         modifier_coordination=modifier_coords,

@@ -60,6 +60,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             get_structure_dict,
             melt_quench_simulation,
         )
+        from pyiron_glass.workflows.structural_analysis import analyze_structure
 
         # Create composition string from request
         comp_parts = []
@@ -135,13 +136,76 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             msg = "Missing simulation results ('result'/'generic') in workflow output"
             raise KeyError(msg)
 
-        # Calculate final density
-        V = np.mean(generic["volume"]) * 1e-24  # volume in cm³
-        massTot = result["structure"].get_masses().sum() / units._Nav
-        final_density = massTot / V
-        logger.info(f"Task {task_id}: Final density calculated: {final_density:.3f} g/cm³")
+        # Update task status for structural analysis
+        current_task = task_store.get(task_id) or {"state": "processing"}
+        current_task["status"] = "Running structural analysis"
+        task_store.set(task_id, current_task)
+        logger.info(f"Task {task_id}: Starting structural analysis")
 
-        # Store results
+        # Perform structural analysis on the final structure (includes density calculation)
+        try:
+            final_structure = result["structure"]
+            logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
+
+            # Run structural analysis (now includes density calculation)
+            analysis_result = analyze_structure(final_structure, pyiron_project=pr).pull()
+            logger.info(f"Task {task_id}: Structural analysis completed successfully")
+
+            # Extract key structural metrics and density
+            structural_data = analysis_result.results
+            final_density = structural_data.density
+            logger.info(f"Task {task_id}: Final density from structural analysis: {final_density:.3f} g/cm³")
+
+            structural_summary = {
+                "density": final_density,
+                "network_connectivity": structural_data.network_connectivity,
+                "mean_coordination": {},
+                "qn_distribution": structural_data.Qn_distribution,
+                "network_formers": list(structural_data.network_formers),
+                "modifiers": list(structural_data.modifiers),
+            }
+
+            # Add coordination number summaries
+            if structural_data.O_coordination:
+                total_o = sum(structural_data.O_coordination.values())
+                mean_o_coord = (
+                    sum(k * v for k, v in structural_data.O_coordination.items()) / total_o if total_o > 0 else 0
+                )
+                structural_summary["mean_coordination"]["oxygen"] = mean_o_coord
+
+            for former, coord_data in structural_data.former_coordination.items():
+                if coord_data:
+                    total = sum(coord_data.values())
+                    mean_coord = sum(k * v for k, v in coord_data.items()) / total if total > 0 else 0
+                    structural_summary["mean_coordination"][f"{former}_former"] = mean_coord
+
+            for modifier, coord_data in structural_data.modifier_coordination.items():
+                if coord_data:
+                    total = sum(coord_data.values())
+                    mean_coord = sum(k * v for k, v in coord_data.items()) / total if total > 0 else 0
+                    structural_summary["mean_coordination"][f"{modifier}_modifier"] = mean_coord
+
+            logger.info(f"Task {task_id}: Structural analysis summary prepared")
+
+        except Exception as analysis_exc:
+            logger.warning(f"Task {task_id}: Structural analysis failed: {analysis_exc!s}", exc_info=True)
+            # Fallback: calculate density manually if structural analysis fails
+            try:
+                V = np.mean(generic["volume"]) * 1e-24  # volume in cm³
+                massTot = result["structure"].get_masses().sum() / units._Nav
+                fallback_density = massTot / V
+                structural_summary = {
+                    "density": fallback_density,
+                    "error": f"Structural analysis failed: {analysis_exc!s}",
+                }
+                logger.info(f"Task {task_id}: Fallback density calculated: {fallback_density:.3f} g/cm³")
+            except Exception as density_exc:
+                logger.exception(f"Task {task_id}: Fallback density calculation also failed: {density_exc!s}")
+                structural_summary = {
+                    "error": f"Structural analysis failed: {analysis_exc!s}. Density calculation failed: {density_exc!s}"
+                }
+
+        # Store results including structural analysis
         current_task = task_store.get(task_id) or {}
         current_task.update(
             {
@@ -151,8 +215,8 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
                     "composition": composition,
                     "final_structure": str(result["structure"]),
                     "mean_temperature": float(np.mean(generic["temperature"])),
-                    "final_density": float(final_density),
                     "simulation_steps": len(generic["steps"]),
+                    "structural_analysis": structural_summary,
                 },
             }
         )

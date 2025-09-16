@@ -48,6 +48,7 @@ line-ending = "auto"
 select   = ["ALL"]           # enable every rule Ruff knows
 ignore   = [
   "D203", 
+  "D213",
   "PLR0913",
   "PLR0915",
   "S101",

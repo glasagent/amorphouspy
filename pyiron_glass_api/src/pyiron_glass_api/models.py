@@ -71,6 +71,28 @@ class MeltquenchRequest(BaseModel):
         return v
 
 
+class StructuralAnalysis(BaseModel):
+    """Structural analysis results from glass structure analysis.
+
+    Attributes:
+        density: Calculated density of the structure (g/cm³)
+        network_connectivity: Network connectivity value (0-1)
+        mean_coordination: Dictionary of mean coordination numbers for different atom types
+        qn_distribution: Q^n distribution for network formers
+        network_formers: List of network forming elements
+        modifiers: List of modifier elements
+        error: Error message if analysis failed (optional)
+    """
+
+    density: float | None = Field(None, description="Calculated density (g/cm³)")
+    network_connectivity: float | None = Field(None, description="Network connectivity (0-1)")
+    mean_coordination: dict[str, float] = Field(default_factory=dict, description="Mean coordination numbers")
+    qn_distribution: dict[str, float] = Field(default_factory=dict, description="Q^n distribution")
+    network_formers: list[str] = Field(default_factory=list, description="Network forming elements")
+    modifiers: list[str] = Field(default_factory=list, description="Modifier elements")
+    error: str | None = Field(None, description="Error message if analysis failed")
+
+
 class MeltquenchResult(BaseModel):
     """Result model for completed meltquench simulation.
 
@@ -78,13 +100,13 @@ class MeltquenchResult(BaseModel):
         composition: Final composition string used in simulation
         final_structure: String representation of the final atomic structure
         mean_temperature: Average temperature during final equilibration
-        final_density: Calculated density of the final structure (g/cm³)
         simulation_steps: Total number of simulation steps completed
+        structural_analysis: Structural analysis results from glass structure analysis
 
     """
 
     composition: str = Field(..., description="Composition string used in simulation")
     final_structure: str = Field(..., description="String representation of final structure")
     mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
-    final_density: float = Field(..., description="Final calculated density (g/cm³)")
     simulation_steps: int = Field(..., description="Total simulation steps completed")
+    structural_analysis: StructuralAnalysis = Field(..., description="Structural analysis results")
