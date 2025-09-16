@@ -52,7 +52,6 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
     try:
         # Import pyiron_glass modules (import here to avoid startup dependencies)
         import numpy as np
-        from ase import units
         from pyiron_base import Project
         from pyiron_glass import (
             generate_potential,
@@ -143,16 +142,16 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Starting structural analysis")
 
         # Perform structural analysis on the final structure (includes density calculation)
+        structural_summary = None
         try:
             final_structure = result["structure"]
             logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
             # Run structural analysis (now includes density calculation)
-            analysis_result = analyze_structure(final_structure, pyiron_project=pr).pull()
+            structural_data = analyze_structure(final_structure, pyiron_project=pr).pull()
             logger.info(f"Task {task_id}: Structural analysis completed successfully")
 
-            # Extract the complete structural data (now a Pydantic model)
-            structural_data = analysis_result.results
+            # Extract density and prepare serializable data
             final_density = structural_data.density
             logger.info(f"Task {task_id}: Final density from structural analysis: {final_density:.3f} g/cm³")
 

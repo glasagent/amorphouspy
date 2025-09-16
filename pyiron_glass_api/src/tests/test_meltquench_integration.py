@@ -112,10 +112,12 @@ def test_meltquench_api_integration() -> None:
     assert "density" in structural_analysis
     density = structural_analysis["density"]
 
-    # Validate additional structural properties
-    assert "network_connectivity" in structural_analysis
-    assert "network_formers" in structural_analysis
-    assert "modifiers" in structural_analysis
+    # Validate additional structural properties (now nested)
+    assert "network" in structural_analysis
+    assert "elements" in structural_analysis
+    assert "connectivity" in structural_analysis["network"]
+    assert "formers" in structural_analysis["elements"]
+    assert "modifiers" in structural_analysis["elements"]
 
     assert isinstance(temp, (int, float))
     assert isinstance(density, (int, float))
