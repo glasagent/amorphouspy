@@ -30,8 +30,8 @@ from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
 from .models import MeltquenchRequest, MeltquenchResult
-from .worker import meltquench_worker
 from .visualization import router as visualization_router
+from .worker import meltquench_worker
 
 # Configure logging
 logging.basicConfig(

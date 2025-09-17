@@ -196,7 +196,8 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
 
     # Calculate density
     volume_cm3 = atoms.get_volume() * 1e-24  # Convert Å³ to cm³
-    total_mass_g = atoms.get_masses().sum() / units._Nav  # Convert amu to g
+    avogadro_number = 6.022140857e23  # Avogadro's number (mol⁻¹)
+    total_mass_g = atoms.get_masses().sum() / avogadro_number  # Convert amu to g
     density = total_mass_g / volume_cm3
 
     type_map, network_formers, modifiers, oxygen_present = _classify_elements(unique_z)
@@ -294,7 +295,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
         ring_statistics_data = {"distribution": rings_dist, "mean_size": mean_ring_size}
 
     # Convert data for serialization
-    def to_list(data):
+    def to_list(data: np.ndarray | list) -> list:
         return data.tolist() if hasattr(data, "tolist") else list(data)
 
     bond_angle_distributions_serializable = {

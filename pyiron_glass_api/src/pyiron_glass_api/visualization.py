@@ -292,4 +292,4 @@ async def visualize_results(task_id: str) -> HTMLResponse:
         raise
     except Exception as e:
         logger.exception("Error generating visualization for task %s", task_id)
-        raise HTTPException(status_code=500, detail=f"Error generating visualization: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error generating visualization: {e!s}") from e
