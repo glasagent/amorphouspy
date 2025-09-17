@@ -127,7 +127,8 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
 
         if cached_result:
             logger.info("Found cached result")
-            return cached_result
+            # Return just the result, not the task_id (for API compatibility)
+            return cached_result[1]
 
         logger.info("No cached result found")
         return None
@@ -142,13 +143,19 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
     """Start a new meltquench simulation task."""
     try:
         # Check if we already have a cached result
-        cached_result = await check_cached_result(request)
+        request_hash = get_meltquench_hash(request)
+        cached_result = _task_store.find_cached_result(request_hash)
+
         if cached_result:
-            logger.info("Returning cached result instead of starting new task")
-            return {"task_id": "cached", "status": "completed_from_cache", "result": cached_result.model_dump()}
+            cached_task_id, cached_meltquench_result = cached_result
+            logger.info("Returning cached result from task %s instead of starting new task", cached_task_id)
+            return {
+                "task_id": cached_task_id,
+                "status": "completed_from_cache",
+                "result": cached_meltquench_result.model_dump(),
+            }
 
         task_id = str(uuid4())
-        request_hash = get_meltquench_hash(request)
         logger.info("Creating new meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
         # Store task in database

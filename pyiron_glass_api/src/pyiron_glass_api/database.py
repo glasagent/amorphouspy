@@ -166,14 +166,14 @@ class TaskStore:
             logger.exception("Error getting all tasks")
             return []
 
-    def find_cached_result(self, request_hash: str) -> MeltquenchResult | None:
+    def find_cached_result(self, request_hash: str) -> tuple[str, MeltquenchResult] | None:
         """Find a completed task with matching request hash for cache lookup.
 
         Args:
             request_hash: Hash of the request parameters
 
         Returns:
-            MeltquenchResult if cached result found, None otherwise
+            Tuple of (task_id, MeltquenchResult) if cached result found, None otherwise
 
         """
         try:
@@ -186,7 +186,7 @@ class TaskStore:
 
                 if task and task.result_data:
                     logger.info("Found cached result for hash %s in task %s", request_hash, task.task_id)
-                    return MeltquenchResult(**task.result_data)
+                    return (task.task_id, MeltquenchResult(**task.result_data))
 
                 return None
 

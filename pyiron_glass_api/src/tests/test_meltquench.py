@@ -301,28 +301,28 @@ def test_visualization_endpoint(
 
     # Mock the analyze_structure function - return dict directly instead of MagicMock
     mock_structural_analysis_data = {
-        "coordination_analysis": {
-            "si_coordination": [4.0, 4.1, 4.0],
-            "o_coordination": [2.0, 2.1, 2.0],
-            "na_coordination": [6.0, 6.1, 6.0],
-        },
-        "ring_statistics": {
-            "ring_size_distribution": {"3": 10, "4": 15, "5": 20, "6": 25},
-            "average_ring_size": 4.5,
-        },
-        "density": {"bulk_density": 2.65, "atomic_density": 0.09},
-        "structure_factor": {
-            "q_vector": [0.5, 1.0, 1.5, 2.0],
-            "intensity": [0.8, 1.2, 0.9, 0.6],
-        },
+        "density": 2.65,
+        "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
+        "network": {"Qn_distribution": {}, "Qn_distribution_partial": {}, "connectivity": 0.0},
+        "distributions": {"bond_angles": {}, "rings": {}},
+        "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
+        "elements": {"formers": [], "modifiers": [], "cutoffs": {}},
     }
     mock_analyze_structure.return_value.pull.return_value = mock_structural_analysis_data
 
     # Mock the figure's savefig method to simulate saving
     mock_fig.savefig = MagicMock()
 
-    # Submit task and get it completed
-    payload = {"components": ["SiO2", "Na2O"], "values": [75.0, 25.0], "unit": "wt"}
+    # Submit task and get it completed - use unique payload to avoid caching
+    import time
+
+    unique_suffix = str(int(time.time() * 1000))  # millisecond timestamp
+    payload = {
+        "components": ["SiO2", "Na2O"],
+        "values": [75.0, 25.0],
+        "unit": "wt",
+        "heating_rate": int(unique_suffix[-6:]),
+    }  # Use last 6 digits
 
     submit_response = client.post("/submit_meltquench", json=payload)
     assert submit_response.status_code == 200
@@ -347,6 +347,10 @@ def test_visualization_endpoint(
             waited += 0.1
 
     # Now test the visualization endpoint
+
+    # First check what the task state looks like
+    check_response = client.get(f"/check/{task_id}")
+
     viz_response = client.get(f"/viz/results/{task_id}")
     assert viz_response.status_code == 200
 
