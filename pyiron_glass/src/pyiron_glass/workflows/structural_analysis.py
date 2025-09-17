@@ -10,14 +10,6 @@ from ase.atoms import Atoms
 from ase.data import chemical_symbols
 from pydantic import BaseModel, Field
 from pyiron_base import job
-from scipy.ndimage import gaussian_filter1d
-from scipy.signal import savgol_filter
-
-from pyiron_glass.analysis.bond_angle_distribution import compute_angles
-from pyiron_glass.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
-from pyiron_glass.analysis.radial_distribution_functions import compute_coordination, compute_rdf
-from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
-
 
 class CoordinationData(BaseModel):
     """Coordination number distributions for different element types."""
@@ -573,6 +565,7 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
                         color=f"C{i + len(structure_data.elements.formers) + 1}",
                         label=rf"$CN_{{{mod}-O}}(r)$",
                     )
+
                 ax[2, 2].set_title("Modifier-O RDFs")
 
         # Set common properties for RDF plots
