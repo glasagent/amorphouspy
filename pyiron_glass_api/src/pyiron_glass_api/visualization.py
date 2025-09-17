@@ -20,9 +20,6 @@ logger = logging.getLogger(__name__)
 # Create visualization router
 router = APIRouter(prefix="/viz", tags=["visualization"])
 
-# Get task store instance
-_task_store = get_task_store()
-
 
 def generate_plot_from_structural_data(structural_data: StructureData) -> str:
     """Generate a base64-encoded plot from structural analysis data.
@@ -252,7 +249,7 @@ async def visualize_results(task_id: str) -> HTMLResponse:
     """
     try:
         # Get task data
-        task_data = _task_store.get(task_id)
+        task_data = get_task_store().get(task_id)
         if not task_data:
             raise HTTPException(status_code=404, detail="Task not found")
 

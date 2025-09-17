@@ -34,10 +34,10 @@ class NetworkData(BaseModel):
     """Network connectivity and Q^n distribution data."""
 
     Qn_distribution: dict[str, float] = Field(
-        default_factory=dict, description="Q^n distribution for network connectivity"
+        ..., description="Q^n distribution for network connectivity"
     )
     Qn_distribution_partial: dict[str, dict[str, float]] = Field(
-        default_factory=dict, description="Partial Q^n distributions by former type"
+        ..., description="Partial Q^n distributions by former type"
     )
     connectivity: float = Field(default=0.0, description="Overall network connectivity (0-1)")
 
@@ -46,7 +46,7 @@ class StructuralDistributions(BaseModel):
     """Structural distributions including bond angles and ring statistics."""
 
     bond_angles: dict[str, tuple[list[float], list[float]]] = Field(
-        default_factory=dict, description="Bond angle distributions for each former type"
+        ..., description="Bond angle distributions for each former type"
     )
     rings: dict[str, dict[int, int] | float] = Field(
         default_factory=dict, description="Ring statistics with 'distribution' (dict[int, int]) and 'mean_size' (float)"
@@ -56,12 +56,12 @@ class StructuralDistributions(BaseModel):
 class RadialDistributionData(BaseModel):
     """Radial distribution function and cumulative coordination data."""
 
-    r: list[float] = Field(default_factory=list, description="Radial distance array for RDFs (Å)")
+    r: list[float] = Field(..., description="Radial distance array for RDFs (Å)")
     rdfs: dict[str, list[float]] = Field(
-        default_factory=dict, description="Radial distribution functions for atom pairs"
+        ..., description="Radial distribution functions for atom pairs"
     )
     cumulative_coordination: dict[str, list[float]] = Field(
-        default_factory=dict, description="Cumulative coordination numbers"
+        ..., description="Cumulative coordination numbers"
     )
 
 
@@ -82,14 +82,14 @@ class StructureData(BaseModel):
     coordination: CoordinationData = Field(
         default_factory=CoordinationData, description="Coordination number distributions"
     )
-    network: NetworkData = Field(default_factory=NetworkData, description="Network connectivity data")
+    network: NetworkData = Field(..., description="Network connectivity data")
     distributions: StructuralDistributions = Field(
         default_factory=StructuralDistributions, description="Structural distributions"
     )
     rdfs: RadialDistributionData = Field(
-        default_factory=RadialDistributionData, description="Radial distribution function data"
+        ..., description="Radial distribution function data"
     )
-    elements: ElementInfo = Field(default_factory=ElementInfo, description="Element classification and properties")
+    elements: ElementInfo = Field(..., description="Element classification and properties")
 
 
 def find_rdf_minimum(
