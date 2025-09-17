@@ -139,11 +139,22 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         structural_data = analyze_structure(atoms=final_structure, pyiron_project=pr).pull()
         logger.info(f"Task {task_id}: Structural analysis completed successfully")
 
+        # Debug: Check what fields are present in the structural_data object
+        logger.info(f"Task {task_id}: StructureData type: {type(structural_data)}")
+        if hasattr(structural_data, "model_fields"):
+            logger.info(f"Task {task_id}: StructureData model fields: {list(structural_data.model_fields.keys())}")
+        if hasattr(structural_data, "__dict__"):
+            logger.info(f"Task {task_id}: StructureData attributes: {list(structural_data.__dict__.keys())}")
+
         # Use the structural data directly (it's now a Pydantic model with proper serialization)
-        structural_summary = (
-            structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
-        )
+        # structural_summary = (
+        #     structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
+        # )
+        structural_summary = structural_data
         logger.info(f"Task {task_id}: Structural analysis data prepared")
+        logger.info(
+            f"Task {task_id}: Structural summary keys: {list(structural_summary.keys()) if isinstance(structural_summary, dict) else 'Not a dict'}"
+        )
 
         # Store results including structural analysis
         current_task = task_store.get(task_id) or {}

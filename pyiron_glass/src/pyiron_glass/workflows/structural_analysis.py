@@ -3,8 +3,6 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
-from typing import Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 from ase import units
@@ -36,10 +34,10 @@ class CoordinationData(BaseModel):
 class NetworkData(BaseModel):
     """Network connectivity and Q^n distribution data."""
 
-    Qn_distribution: dict[int, float] = Field(
+    Qn_distribution: dict[str, float] = Field(
         default_factory=dict, description="Q^n distribution for network connectivity"
     )
-    Qn_distribution_partial: dict[int, dict[int, float]] = Field(
+    Qn_distribution_partial: dict[str, dict[str, float]] = Field(
         default_factory=dict, description="Partial Q^n distributions by former type"
     )
     connectivity: float = Field(default=0.0, description="Overall network connectivity (0-1)")
@@ -51,7 +49,9 @@ class StructuralDistributions(BaseModel):
     bond_angles: dict[str, tuple[list[float], list[float]]] = Field(
         default_factory=dict, description="Bond angle distributions for each former type"
     )
-    rings: dict[str, Any] = Field(default_factory=dict, description="Ring size distribution and statistics")
+    rings: dict[str, dict[int, int] | float] = Field(
+        default_factory=dict, description="Ring statistics with 'distribution' (dict[int, int]) and 'mean_size' (float)"
+    )
 
 
 class RadialDistributionData(BaseModel):
@@ -91,9 +91,6 @@ class StructureData(BaseModel):
         default_factory=RadialDistributionData, description="Radial distribution function data"
     )
     elements: ElementInfo = Field(default_factory=ElementInfo, description="Element classification and properties")
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 def find_rdf_minimum(
@@ -268,7 +265,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     network_connectivity = 0.0
     if network_formers and O_type:
         Qn_dist_raw, Qn_dist_partial_raw = compute_qn(atoms, cutoff_map["O"], former_types, O_type)
-        
+
         # Convert integer keys to strings for Pydantic compatibility
         Qn_dist = {str(k): v for k, v in Qn_dist_raw.items()} if Qn_dist_raw else {}
         Qn_dist_partial = {}
@@ -276,7 +273,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
             for element_key, qn_dict in Qn_dist_partial_raw.items():
                 # Convert both outer and inner keys to strings
                 Qn_dist_partial[str(element_key)] = {str(k): v for k, v in qn_dict.items()}
-        
+
         if Qn_dist_raw and sum(Qn_dist_raw.values()) > 0:
             network_connectivity = compute_network_connectivity(Qn_dist_raw)
 
