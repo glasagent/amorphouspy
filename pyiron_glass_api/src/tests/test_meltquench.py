@@ -378,15 +378,20 @@ def test_visualization_endpoint_task_not_found() -> None:
 def test_visualization_endpoint_incomplete_task() -> None:
     """Test visualization endpoint with incomplete task."""
     # Create a task manually in the database with 'running' state
+    from pyiron_glass_api.app import get_meltquench_hash
     from pyiron_glass_api.database import get_task_store
+    from pyiron_glass_api.models import MeltquenchRequest
 
     task_store = get_task_store()
     fake_task_id = "test-incomplete-task-123"
 
+    # Create a proper request to generate hash
+    request_data = {"components": ["SiO2"], "values": [100.0], "unit": "wt"}
+    request = MeltquenchRequest(**request_data)
+    request_hash = get_meltquench_hash(request)
+
     # Add incomplete task to database
-    task_store.set(
-        fake_task_id, {"state": "running", "request_data": {"components": ["SiO2"], "values": [100.0], "unit": "wt"}}
-    )
+    task_store.set(fake_task_id, {"state": "running", "request_data": request_data, "request_hash": request_hash})
 
     # Try to visualize incomplete task
     viz_response = client.get(f"/viz/results/{fake_task_id}")
