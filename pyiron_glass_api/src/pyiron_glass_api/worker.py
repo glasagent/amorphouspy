@@ -147,9 +147,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             logger.info(f"Task {task_id}: StructureData attributes: {list(structural_data.__dict__.keys())}")
 
         # Use the structural data directly (it's now a Pydantic model with proper serialization)
-        structural_summary = (
-            structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
-        )
+        structural_summary = structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
         logger.info(f"Task {task_id}: Structural analysis data prepared")
         logger.info(
             f"Task {task_id}: Structural summary keys: {list(structural_summary.keys()) if isinstance(structural_summary, dict) else 'Not a dict'}"

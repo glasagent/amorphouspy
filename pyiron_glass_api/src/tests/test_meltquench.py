@@ -31,7 +31,7 @@ def test_submit_meltquench_and_check(
 
     mock_structure = MagicMock()
     mock_structure.get_masses.return_value.sum.return_value = 1000  # mock mass
-    mock_structure.__str__ = lambda self: "Mock ASE structure with 100 atoms"
+    mock_structure.__str__ = lambda _: "Mock ASE structure with 100 atoms"
     mock_get_ase_structure.return_value = mock_structure
 
     mock_potential = "mock_potential_content"
@@ -51,8 +51,8 @@ def test_submit_meltquench_and_check(
 
     # Mock the simulation result - create a separate structure mock for the result
     mock_result_structure = MagicMock()
-    mock_result_structure.__str__ = lambda self: "Mock final structure with 100 atoms"
-    mock_result_structure.__len__ = lambda self: 100
+    mock_result_structure.__str__ = lambda _: "Mock final structure with 100 atoms"
+    mock_result_structure.__len__ = lambda _: 100
 
     mock_result = {
         "structure": mock_result_structure,
@@ -274,7 +274,7 @@ def test_visualization_endpoint(
 
     mock_structure = MagicMock()
     mock_structure.get_masses.return_value.sum.return_value = 1000
-    mock_structure.__str__ = lambda self: "Mock ASE structure with 100 atoms"
+    mock_structure.__str__ = lambda _: "Mock ASE structure with 100 atoms"
     mock_get_ase_structure.return_value = mock_structure
 
     mock_potential = "mock_potential_content"
@@ -282,8 +282,8 @@ def test_visualization_endpoint(
 
     # Mock the simulation result - create a separate structure mock for the result
     mock_result_structure = MagicMock()
-    mock_result_structure.__str__ = lambda self: "Mock final structure with 100 atoms"
-    mock_result_structure.__len__ = lambda self: 100
+    mock_result_structure.__str__ = lambda _: "Mock final structure with 100 atoms"
+    mock_result_structure.__len__ = lambda _: 100
 
     mock_result = {
         "structure": mock_result_structure,

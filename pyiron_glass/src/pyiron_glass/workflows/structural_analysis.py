@@ -33,9 +33,7 @@ class CoordinationData(BaseModel):
 class NetworkData(BaseModel):
     """Network connectivity and Q^n distribution data."""
 
-    Qn_distribution: dict[str, float] = Field(
-        ..., description="Q^n distribution for network connectivity"
-    )
+    Qn_distribution: dict[str, float] = Field(..., description="Q^n distribution for network connectivity")
     Qn_distribution_partial: dict[str, dict[str, float]] = Field(
         ..., description="Partial Q^n distributions by former type"
     )
@@ -57,12 +55,8 @@ class RadialDistributionData(BaseModel):
     """Radial distribution function and cumulative coordination data."""
 
     r: list[float] = Field(..., description="Radial distance array for RDFs (Å)")
-    rdfs: dict[str, list[float]] = Field(
-        ..., description="Radial distribution functions for atom pairs"
-    )
-    cumulative_coordination: dict[str, list[float]] = Field(
-        ..., description="Cumulative coordination numbers"
-    )
+    rdfs: dict[str, list[float]] = Field(..., description="Radial distribution functions for atom pairs")
+    cumulative_coordination: dict[str, list[float]] = Field(..., description="Cumulative coordination numbers")
 
 
 class ElementInfo(BaseModel):
@@ -86,9 +80,7 @@ class StructureData(BaseModel):
     distributions: StructuralDistributions = Field(
         default_factory=StructuralDistributions, description="Structural distributions"
     )
-    rdfs: RadialDistributionData = Field(
-        ..., description="Radial distribution function data"
-    )
+    rdfs: RadialDistributionData = Field(..., description="Radial distribution function data")
     elements: ElementInfo = Field(..., description="Element classification and properties")
 
 
