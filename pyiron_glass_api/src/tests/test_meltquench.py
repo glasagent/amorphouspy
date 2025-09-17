@@ -10,13 +10,19 @@ from pyiron_glass_api.app import app
 client = TestClient(app)
 
 
+@patch("pyiron_glass.workflows.structural_analysis.analyze_structure")
 @patch("pyiron_glass.melt_quench_simulation")
 @patch("pyiron_glass.generate_potential")
 @patch("pyiron_glass.get_ase_structure")
 @patch("pyiron_glass.get_structure_dict")
 @patch("pyiron_base.Project")
 def test_submit_meltquench_and_check(
-    mock_project, mock_get_structure_dict, mock_get_ase_structure, mock_generate_potential, mock_melt_quench_simulation
+    mock_project,
+    mock_get_structure_dict,
+    mock_get_ase_structure,
+    mock_generate_potential,
+    mock_melt_quench_simulation,
+    mock_analyze_structure,
 ) -> None:
     """Test the complete meltquench workflow with mocked pyiron dependencies."""
     # Mock the pyiron components
@@ -25,14 +31,31 @@ def test_submit_meltquench_and_check(
 
     mock_structure = MagicMock()
     mock_structure.get_masses.return_value.sum.return_value = 1000  # mock mass
+    mock_structure.__str__ = lambda self: "Mock ASE structure with 100 atoms"
     mock_get_ase_structure.return_value = mock_structure
 
     mock_potential = "mock_potential_content"
     mock_generate_potential.return_value = mock_potential
 
-    # Mock the simulation result
+    # Mock structural analysis result - return the dict directly instead of a MagicMock
+    mock_structural_analysis_data = {
+        "density": 2.5,
+        "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
+        "network": {"Qn_distribution": {}, "Qn_distribution_partial": {}, "connectivity": 0.0},
+        "distributions": {"bond_angles": {}, "rings": {}},
+        "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
+        "elements": {"formers": [], "modifiers": [], "cutoffs": {}},
+    }
+    mock_analyze_structure.return_value.pull.return_value = mock_structural_analysis_data
+    mock_generate_potential.return_value = mock_potential
+
+    # Mock the simulation result - create a separate structure mock for the result
+    mock_result_structure = MagicMock()
+    mock_result_structure.__str__ = lambda self: "Mock final structure with 100 atoms"
+    mock_result_structure.__len__ = lambda self: 100
+
     mock_result = {
-        "structure": mock_structure,
+        "structure": mock_result_structure,
         "result": {
             "volume": [1000, 1000, 1000],  # cm³
             "temperature": [300, 305, 302],  # K
@@ -226,6 +249,7 @@ def test_caching_behavior() -> None:
     assert submit_data["status"] in ["started", "completed_from_cache"]
 
 
+@patch("pyiron_glass.workflows.structural_analysis.analyze_structure")
 @patch("pyiron_glass.workflows.structural_analysis.plot_analysis_results")
 @patch("pyiron_glass.melt_quench_simulation")
 @patch("pyiron_glass.generate_potential")
@@ -239,6 +263,7 @@ def test_visualization_endpoint(
     mock_generate_potential,
     mock_melt_quench_simulation,
     mock_plot_analysis_results,
+    mock_analyze_structure,
 ) -> None:
     """Test the visualization endpoint with mocked plot generation."""
     from unittest.mock import MagicMock
@@ -249,14 +274,19 @@ def test_visualization_endpoint(
 
     mock_structure = MagicMock()
     mock_structure.get_masses.return_value.sum.return_value = 1000
+    mock_structure.__str__ = lambda self: "Mock ASE structure with 100 atoms"
     mock_get_ase_structure.return_value = mock_structure
 
     mock_potential = "mock_potential_content"
     mock_generate_potential.return_value = mock_potential
 
-    # Mock the simulation result
+    # Mock the simulation result - create a separate structure mock for the result
+    mock_result_structure = MagicMock()
+    mock_result_structure.__str__ = lambda self: "Mock final structure with 100 atoms"
+    mock_result_structure.__len__ = lambda self: 100
+
     mock_result = {
-        "structure": mock_structure,
+        "structure": mock_result_structure,
         "result": {
             "volume": [1000, 1000, 1000],
             "temperature": [300, 305, 302],
@@ -268,6 +298,25 @@ def test_visualization_endpoint(
     # Create a mock figure for the plot
     mock_fig = MagicMock()
     mock_plot_analysis_results.return_value = mock_fig
+
+    # Mock the analyze_structure function - return dict directly instead of MagicMock
+    mock_structural_analysis_data = {
+        "coordination_analysis": {
+            "si_coordination": [4.0, 4.1, 4.0],
+            "o_coordination": [2.0, 2.1, 2.0],
+            "na_coordination": [6.0, 6.1, 6.0],
+        },
+        "ring_statistics": {
+            "ring_size_distribution": {"3": 10, "4": 15, "5": 20, "6": 25},
+            "average_ring_size": 4.5,
+        },
+        "density": {"bulk_density": 2.65, "atomic_density": 0.09},
+        "structure_factor": {
+            "q_vector": [0.5, 1.0, 1.5, 2.0],
+            "intensity": [0.8, 1.2, 0.9, 0.6],
+        },
+    }
+    mock_analyze_structure.return_value.pull.return_value = mock_structural_analysis_data
 
     # Mock the figure's savefig method to simulate saving
     mock_fig.savefig = MagicMock()
@@ -331,7 +380,9 @@ def test_visualization_endpoint_incomplete_task() -> None:
     fake_task_id = "test-incomplete-task-123"
 
     # Add incomplete task to database
-    task_store.add(fake_task_id, "running", {"components": ["SiO2"], "values": [100.0], "unit": "wt"})
+    task_store.set(
+        fake_task_id, {"state": "running", "request_data": {"components": ["SiO2"], "values": [100.0], "unit": "wt"}}
+    )
 
     # Try to visualize incomplete task
     viz_response = client.get(f"/viz/results/{fake_task_id}")
