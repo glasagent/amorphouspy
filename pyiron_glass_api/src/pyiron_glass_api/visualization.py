@@ -9,7 +9,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from pyiron_glass.workflows.structural_analysis import StructureData
 
 from .database import get_task_store
@@ -18,22 +18,6 @@ logger = logging.getLogger(__name__)
 
 # Create visualization router
 router = APIRouter(prefix="/viz", tags=["visualization"])
-
-
-def generate_plotly_from_structural_data(structural_data: StructureData) -> dict:
-    """Generate interactive Plotly figure from structural analysis data.
-
-    Args:
-        structural_data: StructureData object containing structural analysis results
-
-    Returns:
-        Dictionary containing Plotly figure JSON
-    """
-    from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
-
-    # Generate the interactive plot
-    plotly_fig = plot_analysis_results_plotly(structural_data)
-    return plotly_fig.to_dict()
 
 
 def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: dict) -> str:
@@ -314,7 +298,8 @@ async def visualize_results(task_id: str) -> HTMLResponse:
             structural_data = structural_analysis
 
         # Generate interactive plot
-        plotly_fig = generate_plotly_from_structural_data(structural_data)
+        from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
+        plotly_fig = plot_analysis_results_plotly(structural_data).to_dict()
 
         # Create HTML response
         html_content = create_results_html(task_id, result_data, plotly_fig)
@@ -328,126 +313,3 @@ async def visualize_results(task_id: str) -> HTMLResponse:
     except Exception as e:
         logger.exception("Error generating visualization for task %s", task_id)
         raise HTTPException(status_code=500, detail=f"Error generating visualization: {e!s}") from e
-
-
-@router.get("/plot/{task_id}")
-async def get_plot_json(task_id: str) -> JSONResponse:
-    """Get the Plotly figure as JSON for a given task ID.
-
-    This endpoint returns just the Plotly figure data as JSON, useful for embedding
-    in other applications or for programmatic access.
-
-    Args:
-        task_id: The simulation task identifier
-
-    Returns:
-        JSON response containing Plotly figure data
-
-    Raises:
-        HTTPException: If task not found, not completed, or missing structural analysis
-    """
-    try:
-        # Get task data
-        task_data = get_task_store().get(task_id)
-        if not task_data:
-            raise HTTPException(status_code=404, detail="Task not found")
-
-        # Check if task is completed
-        if task_data["state"] != "complete":
-            raise HTTPException(
-                status_code=400, detail=f"Task is not completed yet. Current state: {task_data['state']}"
-            )
-
-        # Get result data
-        result_data = task_data.get("result")
-        if not result_data:
-            raise HTTPException(status_code=404, detail="No results found for this task")
-
-        # Check if structural analysis is available
-        structural_analysis = result_data.get("structural_analysis")
-        if not structural_analysis:
-            raise HTTPException(status_code=404, detail="No structural analysis data found")
-
-        # Convert to StructureData if it's a dict
-        if isinstance(structural_analysis, dict):
-            structural_data = StructureData(**structural_analysis)
-        else:
-            structural_data = structural_analysis
-
-        # Generate interactive plot
-        plotly_fig = generate_plotly_from_structural_data(structural_data)
-
-        logger.info("Generated plot JSON for task %s", task_id)
-        return JSONResponse(content=plotly_fig)
-
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        logger.exception("Error generating plot JSON for task %s", task_id)
-        raise HTTPException(status_code=500, detail=f"Error generating plot: {e!s}") from e
-
-
-@router.get("/plot/{task_id}/standalone", response_class=HTMLResponse)
-async def plot_standalone(task_id: str) -> HTMLResponse:
-    """Get a standalone HTML page with just the interactive plot.
-
-    This endpoint returns a minimal HTML page containing only the Plotly visualization,
-    useful for embedding in iframes or viewing the plot in isolation.
-
-    Args:
-        task_id: The simulation task identifier
-
-    Returns:
-        HTML page with standalone plot
-
-    Raises:
-        HTTPException: If task not found, not completed, or missing structural analysis
-    """
-    try:
-        # Get the plot JSON
-        plot_response = await get_plot_json(task_id)
-        plotly_fig = json.loads(plot_response.body)
-
-        # Create minimal HTML with just the plot
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Structural Analysis - Task {task_id}</title>
-            <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-            <style>
-                body {{
-                    margin: 0;
-                    padding: 20px;
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                }}
-                #plotly-div {{
-                    width: 100%;
-                    height: calc(100vh - 40px);
-                }}
-            </style>
-        </head>
-        <body>
-            <div id="plotly-div"></div>
-            <script>
-                const plotlyData = {json.dumps(plotly_fig)};
-                Plotly.newPlot('plotly-div', plotlyData.data, plotlyData.layout, {{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                }});
-            </script>
-        </body>
-        </html>
-        """
-
-        logger.info("Generated standalone plot for task %s", task_id)
-        return HTMLResponse(content=html_content)
-
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        logger.exception("Error generating standalone plot for task %s", task_id)
-        raise HTTPException(status_code=500, detail=f"Error generating standalone plot: {e!s}") from e
