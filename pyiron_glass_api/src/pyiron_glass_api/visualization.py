@@ -30,7 +30,7 @@ def generate_plotly_from_structural_data(structural_data: StructureData) -> dict
         Dictionary containing Plotly figure JSON
     """
     from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
-    
+
     # Generate the interactive plot
     plotly_fig = plot_analysis_results_plotly(structural_data)
     return plotly_fig.to_dict()
@@ -217,7 +217,6 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
                 <div class="download-buttons">
                     <button class="download-btn" onclick="downloadPlot('png')">Download PNG</button>
                     <button class="download-btn" onclick="downloadPlot('svg')">Download SVG</button>
-                    <a href="/viz/plot/{task_id}" class="download-btn">View Plot Only</a>
                 </div>
             </div>
 
