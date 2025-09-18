@@ -38,7 +38,8 @@ function init3DViewer() {
     containerDiv.innerHTML = '';
 
     viewer = $3Dmol.createViewer(containerDiv, {
-        defaultcolors: $3Dmol.rasmolElementColors
+        defaultcolors: $3Dmol.rasmolElementColors,
+        hoverDuration: 250  // Try to reduce hover delay (if supported)
     });
 
     // Add model using extended XYZ format which includes cell information
@@ -50,11 +51,15 @@ function init3DViewer() {
         stick: { radius: 0.2 }
     });
 
-    // Add hover labels to show atom information
+    // Enable hover detection for all atoms
     viewer.setHoverable({}, true, function (atom, viewer, event, container) {
         if (!atom.label) {
+            // Get element symbol and atom index
+            const element = atom.elem || atom.element || 'Unknown';
+            const atomIndex = atom.serial || (atom.index !== undefined ? atom.index + 1 : 'N/A');
+            
             atom.label = viewer.addLabel(
-                `${atom.elem} (${atom.index + 1})`,
+                `${element} (${atomIndex})`,
                 {
                     position: atom,
                     backgroundColor: 'black',
@@ -189,8 +194,12 @@ function updateStyle() {
     // Re-add hover functionality
     viewer.setHoverable({}, true, function (atom, viewer, event, container) {
         if (!atom.label) {
+            // Get element symbol and atom index
+            const element = atom.elem || atom.element || 'Unknown';
+            const atomIndex = atom.serial || (atom.index !== undefined ? atom.index + 1 : 'N/A');
+            
             atom.label = viewer.addLabel(
-                `${atom.elem} (${atom.index + 1})`,
+                `${element} (${atomIndex})`,
                 {
                     position: atom,
                     backgroundColor: 'black',
