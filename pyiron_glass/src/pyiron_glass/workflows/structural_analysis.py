@@ -21,11 +21,11 @@ from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_le
 class CoordinationData(BaseModel):
     """Coordination number distributions for different element types."""
 
-    oxygen: dict[int, int] = Field(default_factory=dict, description="Oxygen coordination number distribution")
-    formers: dict[str, dict[int, int]] = Field(
+    oxygen: dict[str, int] = Field(default_factory=dict, description="Oxygen coordination number distribution")
+    formers: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="Network former coordination distributions"
     )
-    modifiers: dict[str, dict[int, int]] = Field(
+    modifiers: dict[str, dict[str, int]] = Field(
         default_factory=dict, description="Modifier coordination distributions"
     )
 
@@ -46,8 +46,8 @@ class StructuralDistributions(BaseModel):
     bond_angles: dict[str, tuple[list[float], list[float]]] = Field(
         ..., description="Bond angle distributions for each former type"
     )
-    rings: dict[str, dict[int, int] | float] = Field(
-        default_factory=dict, description="Ring statistics with 'distribution' (dict[int, int]) and 'mean_size' (float)"
+    rings: dict[str, dict[str, int] | float] = Field(
+        default_factory=dict, description="Ring statistics with 'distribution' (dict[str, int]) and 'mean_size' (float)"
     )
 
 
@@ -236,21 +236,25 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     O_coord = {}
     if O_type:
         O_cutoff = cutoff_map.get("O", 2.0)
-        O_coord, _ = compute_coordination(atoms, O_type, O_cutoff, former_types + modifier_types)
+        O_coord_raw, _ = compute_coordination(atoms, O_type, O_cutoff, former_types + modifier_types)
+        # Convert integer keys to strings for HDF5 compatibility
+        O_coord = {str(k): v for k, v in O_coord_raw.items()}
 
     former_coords = {}
     for former in network_formers:
         z = next(k for k, v in type_map.items() if v == former)
         if O_type:
-            coord, _ = compute_coordination(atoms, [z], cutoff_map[former], O_type)
-            former_coords[former] = coord
+            coord_raw, _ = compute_coordination(atoms, [z], cutoff_map[former], O_type)
+            # Convert integer keys to strings for HDF5 compatibility
+            former_coords[former] = {str(k): v for k, v in coord_raw.items()}
 
     modifier_coords = {}
     for mod in modifiers:
         z = next(k for k, v in type_map.items() if v == mod)
         if O_type:
-            coord, _ = compute_coordination(atoms, [z], cutoff_map[mod], O_type)
-            modifier_coords[mod] = coord
+            coord_raw, _ = compute_coordination(atoms, [z], cutoff_map[mod], O_type)
+            # Convert integer keys to strings for HDF5 compatibility
+            modifier_coords[mod] = {str(k): v for k, v in coord_raw.items()}
 
     Qn_dist = {}
     Qn_dist_partial = {}
@@ -283,7 +287,9 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
         specific_cutoffs = {(former, "O"): cutoff_map[former] for former in network_formers}
         bond_lengths = generate_bond_length_dict(atoms, specific_cutoffs=specific_cutoffs)
         rings_dist, mean_ring_size = compute_guttmann_rings(atoms, bond_lengths=bond_lengths, max_size=40, n_cpus=1)
-        ring_statistics_data = {"distribution": rings_dist, "mean_size": mean_ring_size}
+        # Convert integer keys to strings for HDF5 compatibility
+        rings_dist_str = {str(k): v for k, v in rings_dist.items()}
+        ring_statistics_data = {"distribution": rings_dist_str, "mean_size": mean_ring_size}
 
     # Convert data for serialization
     def to_list(data: np.ndarray | list) -> list:
@@ -343,11 +349,11 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
 
     # Plot 1: Oxygen coordination distribution
     if structure_data.coordination.oxygen:
+        coord_keys = [int(k) for k in structure_data.coordination.oxygen]
+        coord_values = list(structure_data.coordination.oxygen.values())
         ax[0, 0].bar(
-            np.array(list(structure_data.coordination.oxygen.keys())),
-            np.array(list(structure_data.coordination.oxygen.values()))
-            * 100
-            / (np.array(list(structure_data.coordination.oxygen.values()), dtype=float).sum()),
+            np.array(coord_keys),
+            np.array(coord_values) * 100 / np.array(coord_values, dtype=float).sum(),
             width=0.2,
             align="center",
             linewidth=0.5,
@@ -368,7 +374,7 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
     if structure_data.coordination.formers:
         for i, (former, coord_data) in enumerate(structure_data.coordination.formers.items()):
             if coord_data:  # Check if coordination data exists
-                keys = np.array(list(coord_data.keys()))
+                keys = np.array([int(k) for k in coord_data])
                 values = np.array(list(coord_data.values()))
                 total = values.sum()
                 if total > 0:
@@ -396,7 +402,7 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
     if structure_data.coordination.modifiers:
         for i, (modifier, coord_data) in enumerate(structure_data.coordination.modifiers.items()):
             if coord_data:  # Check if coordination data exists
-                keys = np.array(list(coord_data.keys()))
+                keys = np.array([int(k) for k in coord_data])
                 values = np.array(list(coord_data.values()))
                 total = values.sum()
                 if total > 0:
@@ -423,7 +429,7 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
     # Plot 4: Qn distributions
     if structure_data.network.Qn_distribution and structure_data.network.Qn_distribution_partial:
         # Plot total Qn distribution
-        qn_keys = np.array(list(structure_data.network.Qn_distribution.keys()))
+        qn_keys = np.array([int(k) for k in structure_data.network.Qn_distribution])
         qn_values = np.array(list(structure_data.network.Qn_distribution.values()))
         total_qn = qn_values.sum()
         if total_qn > 0:
@@ -443,7 +449,7 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
             if former in structure_data.network.Qn_distribution_partial:
                 qn_partial = structure_data.network.Qn_distribution_partial[former]
                 if qn_partial:
-                    qn_p_keys = np.array(list(qn_partial.keys()))
+                    qn_p_keys = np.array([int(k) for k in qn_partial])
                     qn_p_values = np.array(list(qn_partial.values()))
                     total_qn_p = qn_p_values.sum()
                     if total_qn_p > 0:
@@ -486,8 +492,8 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
         and structure_data.distributions.rings["distribution"]
     ):
         rings_dist = structure_data.distributions.rings["distribution"]
-        sizes = np.array(sorted(rings_dist.keys()))
-        counts = np.array([rings_dist[s] for s in sizes])
+        sizes = np.array([int(k) for k in sorted(rings_dist.keys())])
+        counts = np.array([rings_dist[str(s)] for s in sizes])
 
         ax[1, 2].bar(
             sizes / 2, counts / counts.sum(), width=0.4, align="center", linewidth=1, edgecolor="black", facecolor="C1"
