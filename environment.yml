@@ -4,6 +4,7 @@ channels:
 dependencies:
 - python =3.12
 - ase >=3.25.0
+- cryptography =45.0.7
 - hatchling
 - jupyter
 - lammps =2024.06.27=*_openmpi_*
