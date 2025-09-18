@@ -33,7 +33,7 @@ def generate_plotly_from_structural_data(structural_data: StructureData) -> dict
     
     # Generate the interactive plot
     plotly_fig = plot_analysis_results_plotly(structural_data)
-    return plotly_fig
+    return plotly_fig.to_dict()
 
 
 def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: dict) -> str:
