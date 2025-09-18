@@ -27,13 +27,13 @@ templates = Jinja2Templates(directory=str(template_dir))
 
 
 def atoms_to_xyz_string(atoms) -> str:
-    """Convert ASE Atoms object to XYZ format string for 3Dmol.js.
+    """Convert ASE Atoms object to extended XYZ format string for 3Dmol.js.
 
     Args:
         atoms: ASE Atoms object or serialized structure data
 
     Returns:
-        XYZ format string
+        Extended XYZ format string with cell information
     """
     if atoms is None:
         return ""
@@ -48,13 +48,13 @@ def atoms_to_xyz_string(atoms) -> str:
         # Use our custom validator to handle any input format
         atoms_obj = validate_atoms(atoms)
 
-        # Convert to XYZ format using ASE's built-in writer
+        # Use extended XYZ format which naturally includes cell information
         xyz_buffer = StringIO()
-        write(xyz_buffer, atoms_obj, format="xyz")
+        write(xyz_buffer, atoms_obj, format="extxyz")
         return xyz_buffer.getvalue()
 
     except Exception as e:
-        logger.exception("Error converting atoms to XYZ: %s", e)
+        logger.exception("Error converting atoms to extended XYZ: %s", e)
         logger.exception("Atoms type: %s", type(atoms))
         return ""
 

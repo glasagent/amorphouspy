@@ -13,7 +13,7 @@ body {
     border-radius: 10px;
     text-align: center;
     margin-bottom: 30px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .results-container {
@@ -28,7 +28,7 @@ body {
     background: white;
     padding: 25px;
     border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     margin-bottom: 20px;
     position: relative;
     z-index: 1;
@@ -38,21 +38,21 @@ body {
     background: white;
     padding: 25px;
     border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .plot-panel {
     background: white;
     padding: 25px;
     border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .structure-panel {
     background: white;
     padding: 25px;
     border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 #plotly-div {
@@ -161,7 +161,8 @@ body {
     color: #555;
 }
 
-select, button {
+select,
+button {
     padding: 5px 10px;
     border: 1px solid #ddd;
     border-radius: 3px;

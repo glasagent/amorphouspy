@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Glass Simulation Results - Task {{ task_id }}</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script src="https://3dmol.csb.pitt.edu/build/3Dmol-min.js"></script>
     <link rel="stylesheet" href="/static/css/results.css">
 </head>
+
 <body>
     <div class="header">
         <h1>🧪 Glass Simulation Results</h1>
@@ -27,7 +29,6 @@
             </div>
             <div class="control-group">
                 <button onclick="resetView()">Reset View</button>
-                <button onclick="toggleSpin()">Toggle Spin</button>
             </div>
         </div>
         <div id="structure-div"></div>
@@ -110,4 +111,5 @@
     </script>
     <script src="/static/js/results.js"></script>
 </body>
+
 </html>
