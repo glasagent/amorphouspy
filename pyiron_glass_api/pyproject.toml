@@ -15,6 +15,7 @@ dependencies = [
   "uvicorn",
   "fastapi-mcp",
   "sqlalchemy",
+  "jinja2",
 ]
 
 [tool.hatch.build.targets.wheel]

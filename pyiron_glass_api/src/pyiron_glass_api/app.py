@@ -26,6 +26,7 @@ from uuid import uuid4
 import cloudpickle
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
@@ -110,6 +111,10 @@ app = FastAPI(
     description="API for managing long-running glass simulation tasks using pyiron-glass",
     version="0.1.0",
 )
+
+# Mount static files
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 # Include visualization router
 app.include_router(visualization_router, tags=["visualization"])
