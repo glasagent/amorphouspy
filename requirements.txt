@@ -173,7 +173,7 @@ sphinx_parser==0.0.1
 SQLAlchemy==2.0.40
 sshtunnel==0.4.0
 stack-data==0.6.3
-structuretoolkit==0.0.32
+structuretoolkit==0.0.34
 symfc==1.3.4
 sympy==1.14.0
 tables==3.10.2
