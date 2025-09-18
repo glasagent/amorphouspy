@@ -4,13 +4,12 @@ This module provides endpoints for visualizing simulation results,
 including structural analysis plots and data summaries.
 """
 
-import base64
-import io
+import json
 import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pyiron_glass.workflows.structural_analysis import StructureData
 
 from .database import get_task_store
@@ -21,47 +20,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/viz", tags=["visualization"])
 
 
-def generate_plot_from_structural_data(structural_data: StructureData) -> str:
-    """Generate a base64-encoded plot from structural analysis data.
+def generate_plotly_from_structural_data(structural_data: StructureData) -> dict:
+    """Generate interactive Plotly figure from structural analysis data.
 
     Args:
         structural_data: StructureData object containing structural analysis results
 
     Returns:
-        Base64-encoded PNG image of the plot
+        Dictionary containing Plotly figure JSON
     """
-    # Import plotting dependencies locally to avoid startup overhead
-    import matplotlib as mpl
-
-    mpl.use("Agg")  # Use non-interactive backend
-    import matplotlib.pyplot as plt
-    from pyiron_glass.workflows.structural_analysis import plot_analysis_results
-
-    # Generate the plot
-    fig = plot_analysis_results(structural_data)
-
-    # Convert plot to base64 string
-    img_buffer = io.BytesIO()
-    fig.savefig(img_buffer, format="png", dpi=150, bbox_inches="tight")
-    img_buffer.seek(0)
-
-    # Encode as base64
-    img_base64 = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
-
-    # Clean up
-    plt.close(fig)
-    img_buffer.close()
-
-    return img_base64
+    from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
+    
+    # Generate the interactive plot
+    plotly_fig = plot_analysis_results_plotly(structural_data)
+    return plotly_fig
 
 
-def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str) -> str:
-    """Create HTML page displaying simulation results and plot.
+def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: dict) -> str:
+    """Create HTML page displaying simulation results with interactive Plotly plot.
 
     Args:
         task_id: Task identifier
         result_data: Dictionary containing simulation results
-        plot_img: Base64-encoded plot image
+        plotly_fig: Plotly figure as dictionary
 
     Returns:
         HTML string for the results page
@@ -74,15 +55,19 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str
     network_formers = structural_analysis.get("elements", {}).get("formers", [])
     modifiers = structural_analysis.get("elements", {}).get("modifiers", [])
 
+    # Convert Plotly figure to JSON string
+    plotly_json = json.dumps(plotly_fig)
+
     return f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Glass Simulation Results - Task {task_id}</title>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
         <style>
             body {{
                 font-family: 'Segoe UI', Arial, sans-serif;
-                max-width: 1200px;
+                max-width: 1400px;
                 margin: 0 auto;
                 padding: 20px;
                 background-color: #f5f5f5;
@@ -98,7 +83,7 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str
             }}
             .results-container {{
                 display: grid;
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: 1fr 2fr;
                 gap: 30px;
                 margin-bottom: 30px;
             }}
@@ -112,13 +97,11 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str
                 background: white;
                 padding: 25px;
                 border-radius: 10px;
-                text-align: center;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }}
-            .plot-panel img {{
-                max-width: 100%;
-                height: auto;
-                border-radius: 5px;
+            #plotly-div {{
+                width: 100%;
+                height: 1000px;
             }}
             .property {{
                 display: flex;
@@ -163,6 +146,24 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str
                 padding: 20px;
                 color: #666;
                 font-size: 0.9em;
+            }}
+            .download-buttons {{
+                margin-top: 15px;
+                text-align: center;
+            }}
+            .download-btn {{
+                background: #667eea;
+                color: white;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 5px;
+                margin: 0 5px;
+                cursor: pointer;
+                text-decoration: none;
+                display: inline-block;
+            }}
+            .download-btn:hover {{
+                background: #556cd6;
             }}
         </style>
     </head>
@@ -212,12 +213,19 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str
                         {" ".join(f'<span class="element-tag">{elem}</span>' for elem in modifiers)}
                     </div>
                 </div>
+
+                <div class="download-buttons">
+                    <button class="download-btn" onclick="downloadPlot('png')">Download PNG</button>
+                    <button class="download-btn" onclick="downloadPlot('svg')">Download SVG</button>
+                    <a href="/viz/plot/{task_id}" class="download-btn">View Plot Only</a>
+                </div>
             </div>
 
             <div class="plot-panel">
-                <div class="section-title">Structural Analysis Plot</div>
-                <img src="data:image/png;base64,{plot_img}" alt="Structural Analysis Plot">
+                <div class="section-title">Interactive Structural Analysis</div>
+                <div id="plotly-div"></div>
                 <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                    Interactive plot with zoom, pan, and hover capabilities. Click legend items to show/hide traces.
                     Comprehensive structural analysis including coordination distributions,
                     network connectivity, bond angles, ring statistics, and radial distribution functions.
                 </p>
@@ -227,6 +235,37 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str
         <div class="footer">
             <p>Generated by pyiron-glass API | Structural analysis using PMMCS potential</p>
         </div>
+
+        <script>
+            // Render the Plotly plot
+            const plotlyData = {plotly_json};
+            Plotly.newPlot('plotly-div', plotlyData.data, plotlyData.layout, {{
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d'],
+                displaylogo: false
+            }});
+
+            // Download functionality
+            function downloadPlot(format) {{
+                const filename = `glass_analysis_{task_id}`;
+                if (format === 'png') {{
+                    Plotly.downloadImage('plotly-div', {{
+                        format: 'png',
+                        width: 1400,
+                        height: 1200,
+                        filename: filename
+                    }});
+                }} else if (format === 'svg') {{
+                    Plotly.downloadImage('plotly-div', {{
+                        format: 'svg',
+                        width: 1400,
+                        height: 1200,
+                        filename: filename
+                    }});
+                }}
+            }}
+        </script>
     </body>
     </html>
     """
@@ -234,15 +273,15 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plot_img: str
 
 @router.get("/results/{task_id}", response_class=HTMLResponse)
 async def visualize_results(task_id: str) -> HTMLResponse:
-    """Visualize simulation results for a given task ID.
+    """Visualize simulation results for a given task ID with interactive Plotly plots.
 
-    This endpoint returns an HTML page with structural analysis plots and key results.
+    This endpoint returns an HTML page with interactive structural analysis plots and key results.
 
     Args:
         task_id: The simulation task identifier
 
     Returns:
-        HTML page with results visualization
+        HTML page with interactive results visualization
 
     Raises:
         HTTPException: If task not found, not completed, or missing structural analysis
@@ -275,13 +314,13 @@ async def visualize_results(task_id: str) -> HTMLResponse:
         else:
             structural_data = structural_analysis
 
-        # Generate plot
-        plot_img = generate_plot_from_structural_data(structural_data)
+        # Generate interactive plot
+        plotly_fig = generate_plotly_from_structural_data(structural_data)
 
         # Create HTML response
-        html_content = create_results_html(task_id, result_data, plot_img)
+        html_content = create_results_html(task_id, result_data, plotly_fig)
 
-        logger.info("Generated visualization for task %s", task_id)
+        logger.info("Generated interactive visualization for task %s", task_id)
         return HTMLResponse(content=html_content)
 
     except HTTPException:
@@ -290,3 +329,126 @@ async def visualize_results(task_id: str) -> HTMLResponse:
     except Exception as e:
         logger.exception("Error generating visualization for task %s", task_id)
         raise HTTPException(status_code=500, detail=f"Error generating visualization: {e!s}") from e
+
+
+@router.get("/plot/{task_id}")
+async def get_plot_json(task_id: str) -> JSONResponse:
+    """Get the Plotly figure as JSON for a given task ID.
+
+    This endpoint returns just the Plotly figure data as JSON, useful for embedding
+    in other applications or for programmatic access.
+
+    Args:
+        task_id: The simulation task identifier
+
+    Returns:
+        JSON response containing Plotly figure data
+
+    Raises:
+        HTTPException: If task not found, not completed, or missing structural analysis
+    """
+    try:
+        # Get task data
+        task_data = get_task_store().get(task_id)
+        if not task_data:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        # Check if task is completed
+        if task_data["state"] != "complete":
+            raise HTTPException(
+                status_code=400, detail=f"Task is not completed yet. Current state: {task_data['state']}"
+            )
+
+        # Get result data
+        result_data = task_data.get("result")
+        if not result_data:
+            raise HTTPException(status_code=404, detail="No results found for this task")
+
+        # Check if structural analysis is available
+        structural_analysis = result_data.get("structural_analysis")
+        if not structural_analysis:
+            raise HTTPException(status_code=404, detail="No structural analysis data found")
+
+        # Convert to StructureData if it's a dict
+        if isinstance(structural_analysis, dict):
+            structural_data = StructureData(**structural_analysis)
+        else:
+            structural_data = structural_analysis
+
+        # Generate interactive plot
+        plotly_fig = generate_plotly_from_structural_data(structural_data)
+
+        logger.info("Generated plot JSON for task %s", task_id)
+        return JSONResponse(content=plotly_fig)
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.exception("Error generating plot JSON for task %s", task_id)
+        raise HTTPException(status_code=500, detail=f"Error generating plot: {e!s}") from e
+
+
+@router.get("/plot/{task_id}/standalone", response_class=HTMLResponse)
+async def plot_standalone(task_id: str) -> HTMLResponse:
+    """Get a standalone HTML page with just the interactive plot.
+
+    This endpoint returns a minimal HTML page containing only the Plotly visualization,
+    useful for embedding in iframes or viewing the plot in isolation.
+
+    Args:
+        task_id: The simulation task identifier
+
+    Returns:
+        HTML page with standalone plot
+
+    Raises:
+        HTTPException: If task not found, not completed, or missing structural analysis
+    """
+    try:
+        # Get the plot JSON
+        plot_response = await get_plot_json(task_id)
+        plotly_fig = json.loads(plot_response.body)
+
+        # Create minimal HTML with just the plot
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Structural Analysis - Task {task_id}</title>
+            <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+            <style>
+                body {{
+                    margin: 0;
+                    padding: 20px;
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                }}
+                #plotly-div {{
+                    width: 100%;
+                    height: calc(100vh - 40px);
+                }}
+            </style>
+        </head>
+        <body>
+            <div id="plotly-div"></div>
+            <script>
+                const plotlyData = {json.dumps(plotly_fig)};
+                Plotly.newPlot('plotly-div', plotlyData.data, plotlyData.layout, {{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                }});
+            </script>
+        </body>
+        </html>
+        """
+
+        logger.info("Generated standalone plot for task %s", task_id)
+        return HTMLResponse(content=html_content)
+
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.exception("Error generating standalone plot for task %s", task_id)
+        raise HTTPException(status_code=500, detail=f"Error generating standalone plot: {e!s}") from e

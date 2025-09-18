@@ -205,12 +205,12 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
             if former_types:
                 pair = (O_type[0], former_types[0])
                 if pair in rdfs:
-                    r_min = find_rdf_minimum(r, rdfs[pair])
+                    r_min = find_rdf_minimum(r, rfs[pair])
                     cutoff_map[symbol] = r_min if r_min is not None else 2.0
         else:
             pair = (z, O_type[0]) if O_type else None
             if pair and pair in rdfs:
-                r_min = find_rdf_minimum(r, rdfs[pair])
+                r_min = find_rdf_minimum(r, rfs[pair])
                 if r_min is not None:
                     cutoff_map[symbol] = r_min
                 else:
@@ -589,3 +589,276 @@ def plot_analysis_results(structure_data: StructureData) -> plt.Figure:  # noqa:
 
     plt.tight_layout()
     return fig
+
+
+def plot_analysis_results_plotly(structure_data: StructureData) -> dict:
+    """Generate interactive Plotly plots for structural analysis results.
+
+    Args:
+        structure_data (StructureData): Structural analysis results
+
+    Returns:
+        dict: Plotly figure as JSON-serializable dictionary
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    # Create subplot layout (5x2 grid)
+    fig = make_subplots(
+        rows=5, cols=2,
+        subplot_titles=[
+            "Oxygen Coordination", "Former Coordination",
+            "Modifier Coordination", "Q^n Distribution", 
+            "Bond Angles", "Ring Statistics",
+            "O-O RDF", "Former-O RDFs",
+            "Modifier-O RDFs", ""
+        ],
+        specs=[
+            [{"type": "bar"}, {"type": "bar"}],
+            [{"type": "bar"}, {"type": "bar"}],
+            [{"type": "scatter"}, {"type": "bar"}],
+            [{"type": "scatter"}, {"type": "scatter"}],
+            [{"type": "scatter"}, None]
+        ],
+        vertical_spacing=0.08,
+        horizontal_spacing=0.12
+    )
+
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+
+    # Plot 1: Oxygen coordination distribution
+    if structure_data.coordination.oxygen:
+        coord_keys = [int(k) for k in structure_data.coordination.oxygen.keys()]
+        coord_values = list(structure_data.coordination.oxygen.values())
+        total = sum(coord_values)
+        percentages = [v * 100 / total for v in coord_values] if total > 0 else coord_values
+        
+        fig.add_trace(go.Bar(
+            x=coord_keys,
+            y=percentages,
+            name="O_n",
+            marker_color="#1f77b4",
+            showlegend=False
+        ), row=1, col=1)
+
+    # Plot 2: Former coordination distributions  
+    if structure_data.coordination.formers:
+        for i, (former, coord_data) in enumerate(structure_data.coordination.formers.items()):
+            if coord_data:
+                keys = [int(k) for k in coord_data.keys()]
+                values = list(coord_data.values())
+                total = sum(values)
+                percentages = [v * 100 / total for v in values] if total > 0 else values
+                
+                fig.add_trace(go.Bar(
+                    x=keys,
+                    y=percentages,
+                    name=f"CN_{former}",
+                    marker_color=colors[i % len(colors)],
+                    offsetgroup=i,
+                    showlegend=True
+                ), row=1, col=2)
+
+    # Plot 3: Modifier coordination distributions
+    if structure_data.coordination.modifiers:
+        for i, (modifier, coord_data) in enumerate(structure_data.coordination.modifiers.items()):
+            if coord_data:
+                keys = [int(k) for k in coord_data.keys()]
+                values = list(coord_data.values())
+                total = sum(values)
+                percentages = [v * 100 / total for v in values] if total > 0 else values
+                
+                fig.add_trace(go.Bar(
+                    x=keys,
+                    y=percentages,
+                    name=f"CN_{modifier}",
+                    marker_color=colors[i % len(colors)],
+                    offsetgroup=i,
+                    showlegend=True
+                ), row=2, col=1)
+
+    # Plot 4: Q^n distributions
+    if structure_data.network.Qn_distribution:
+        # Total Q^n distribution
+        qn_keys = [int(k) for k in structure_data.network.Qn_distribution.keys()]
+        qn_values = list(structure_data.network.Qn_distribution.values())
+        total_qn = sum(qn_values)
+        qn_percentages = [v * 100 / total_qn for v in qn_values] if total_qn > 0 else qn_values
+        
+        fig.add_trace(go.Bar(
+            x=qn_keys,
+            y=qn_percentages,
+            name="Total Q^n",
+            marker_color="#1f77b4",
+            offsetgroup=0,
+            showlegend=True
+        ), row=2, col=2)
+
+        # Partial Q^n distributions
+        if structure_data.network.Qn_distribution_partial:
+            for i, former in enumerate(structure_data.elements.formers):
+                if former in structure_data.network.Qn_distribution_partial:
+                    qn_partial = structure_data.network.Qn_distribution_partial[former]
+                    if qn_partial:
+                        qn_p_keys = [int(k) for k in qn_partial.keys()]
+                        qn_p_values = list(qn_partial.values())
+                        total_qn_p = sum(qn_p_values)
+                        qn_p_percentages = [v * 100 / total_qn_p for v in qn_p_values] if total_qn_p > 0 else qn_p_values
+                        
+                        fig.add_trace(go.Bar(
+                            x=qn_p_keys,
+                            y=qn_p_percentages,
+                            name=f"Q^n_{former}",
+                            marker_color=colors[(i + 1) % len(colors)],
+                            offsetgroup=i + 1,
+                            showlegend=True
+                        ), row=2, col=2)
+
+    # Plot 5: Bond angles
+    if structure_data.distributions.bond_angles:
+        for i, (former, (angles, counts)) in enumerate(structure_data.distributions.bond_angles.items()):
+            fig.add_trace(go.Scatter(
+                x=angles,
+                y=counts,
+                mode='lines',
+                name=f"O-{former}-O angles",
+                line_color=colors[i % len(colors)]
+            ), row=3, col=1)
+
+    # Plot 6: Ring statistics
+    if (structure_data.distributions.rings and 
+        "distribution" in structure_data.distributions.rings and 
+        structure_data.distributions.rings["distribution"]):
+        
+        rings_dist = structure_data.distributions.rings["distribution"]
+        sizes = [int(k) for k in sorted(rings_dist.keys())]
+        counts = [rings_dist[str(s)] for s in sizes]
+        total_rings = sum(counts)
+        normalized_counts = [c / total_rings for c in counts] if total_rings > 0 else counts
+        
+        fig.add_trace(go.Bar(
+            x=[s // 2 for s in sizes],  # Convert to number of former atoms
+            y=normalized_counts,
+            name="Ring distribution",
+            marker_color="#2ca02c",
+            showlegend=False
+        ), row=3, col=2)
+
+    # Plots 7-9: RDF plots
+    if structure_data.rdfs.rdfs:
+        r_data = structure_data.rdfs.r
+        
+        # Plot 7: O-O RDF
+        oo_key = "O-O"
+        if oo_key in structure_data.rdfs.rdfs:
+            fig.add_trace(go.Scatter(
+                x=r_data[::4],
+                y=structure_data.rdfs.rdfs[oo_key][::4],
+                mode='lines',
+                name="g_O-O(r)",
+                line_color="#1f77b4",
+                showlegend=True
+            ), row=4, col=1)
+            
+            if oo_key in structure_data.rdfs.cumulative_coordination:
+                fig.add_trace(go.Scatter(
+                    x=r_data,
+                    y=structure_data.rdfs.cumulative_coordination[oo_key],
+                    mode='lines',
+                    name="CN_O-O(r)",
+                    line=dict(dash='dash', color="#1f77b4"),
+                    showlegend=True
+                ), row=4, col=1)
+
+        # Plot 8: Former-oxygen RDFs
+        for i, former in enumerate(structure_data.elements.formers):
+            former_o_key = f"{former}-O"
+            if former_o_key in structure_data.rdfs.rdfs:
+                color = colors[(i + 1) % len(colors)]
+                fig.add_trace(go.Scatter(
+                    x=r_data[::4],
+                    y=structure_data.rdfs.rdfs[former_o_key][::4],
+                    mode='lines',
+                    name=f"g_{former}-O(r)",
+                    line_color=color,
+                    showlegend=True
+                ), row=4, col=2)
+                
+                if former_o_key in structure_data.rdfs.cumulative_coordination:
+                    fig.add_trace(go.Scatter(
+                        x=r_data,
+                        y=structure_data.rdfs.cumulative_coordination[former_o_key],
+                        mode='lines',
+                        name=f"CN_{former}-O(r)",
+                        line=dict(dash='dash', color=color),
+                        showlegend=True
+                    ), row=4, col=2)
+
+        # Plot 9: Modifier-oxygen RDFs
+        for i, mod in enumerate(structure_data.elements.modifiers):
+            mod_o_key = f"{mod}-O"
+            if mod_o_key in structure_data.rdfs.rdfs:
+                color = colors[(i + len(structure_data.elements.formers) + 1) % len(colors)]
+                fig.add_trace(go.Scatter(
+                    x=r_data[::4],
+                    y=structure_data.rdfs.rdfs[mod_o_key][::4],
+                    mode='lines',
+                    name=f"g_{mod}-O(r)",
+                    line_color=color,
+                    showlegend=True
+                ), row=5, col=1)
+                
+                if mod_o_key in structure_data.rdfs.cumulative_coordination:
+                    fig.add_trace(go.Scatter(
+                        x=r_data,
+                        y=structure_data.rdfs.cumulative_coordination[mod_o_key],
+                        mode='lines',
+                        name=f"CN_{mod}-O(r)",
+                        line=dict(dash='dash', color=color),
+                        showlegend=True
+                    ), row=5, col=1)
+
+    # Update layout and axes
+    fig.update_layout(
+        height=1500,  # Increased height for 5 rows
+        width=1000,   # Reduced width for 2 columns
+        title_text="Comprehensive Structural Analysis",
+        title_x=0.5,
+        title_font_size=16,
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02
+        )
+    )
+
+    # Update individual subplot axes
+    # Row 1: Coordination plots
+    fig.update_xaxes(title_text="O_n", row=1, col=1)
+    fig.update_yaxes(title_text="Percentage", row=1, col=1)
+    fig.update_xaxes(title_text="T_n", row=1, col=2)
+    fig.update_yaxes(title_text="Percentage", row=1, col=2)
+
+    # Row 2: Modifier and Q^n distributions
+    fig.update_xaxes(title_text="Modifier_n", row=2, col=1)
+    fig.update_yaxes(title_text="Percentage", row=2, col=1)
+    fig.update_xaxes(title_text="Q^n", row=2, col=2)
+    fig.update_yaxes(title_text="Percentage", row=2, col=2)
+
+    # Row 3: Bond angles and rings
+    fig.update_xaxes(title_text="Angle (degrees)", row=3, col=1)
+    fig.update_yaxes(title_text="Frequency", row=3, col=1)
+    fig.update_xaxes(title_text="Former atoms in ring", row=3, col=2)
+    fig.update_yaxes(title_text="Normalized count", row=3, col=2)
+
+    # Row 4-5: RDF plots
+    for row in [4, 5]:
+        for col in [1, 2]:
+            if not (row == 5 and col == 2):  # Skip the empty subplot
+                fig.update_xaxes(title_text="r (Å)", range=[0, 10], row=row, col=col)
+                fig.update_yaxes(title_text="g(r), CN(r)", range=[0, 25], row=row, col=col)
+
+    return fig.to_dict()
