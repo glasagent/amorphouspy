@@ -10,11 +10,11 @@ dependencies:
 - networkx ~=3.4
 - pandas =2.2.3
 - pygraphviz =1.14
-- pyiron_atomistics =0.7.7
-- pyiron_base =0.12.0
+- pyiron_atomistics =0.7.18
+- pyiron_base =0.14.3
 - pyiron-data =0.0.30
 - scipy =1.15.2
-- structuretoolkit =0.0.32
+- structuretoolkit =0.0.34
 - sqlalchemy
 - numba
 - uvicorn
