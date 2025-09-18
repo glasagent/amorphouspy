@@ -34,7 +34,7 @@ Deprecated==1.2.18
 dnspython==2.7.0
 emmet-core==0.84.7rc1
 executing==2.2.0
-executorlib==1.1.1
+executorlib==1.7.1
 fastjsonschema==2.21.1
 flexcache==0.3
 flexparser==0.4
@@ -127,7 +127,7 @@ pydantic-settings==2.9.1
 pydantic_core==2.33.2
 pydash==8.0.5
 pyfiglet==0.8.post1
-pyfileindex==0.0.35
+pyfileindex==0.0.40
 Pygments==2.19.1
 pyiron==0.5.2
 pyiron_atomistics==0.7.18
