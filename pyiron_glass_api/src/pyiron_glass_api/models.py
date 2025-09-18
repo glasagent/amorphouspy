@@ -4,10 +4,14 @@ This module contains data validation models for various simulation types
 including meltquench simulations and other glass modeling workflows.
 """
 
-from typing import Literal
+from io import StringIO
+from typing import Any, Literal, Annotated
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, PlainSerializer, PlainValidator
 from pyiron_glass.workflows.structural_analysis import StructureData
+
+from ase import Atoms
+from ase.io import write, read
 
 # Constants for composition validation
 PERCENTAGE_THRESHOLD = 1.1
@@ -20,6 +24,49 @@ FRACTION_MAX = 1.05
 PERCENTAGE_ERROR_MSG = "Composition values sum to {total}, expected around 100 for percentages"
 FRACTION_ERROR_MSG = "Composition values sum to {total}, expected around 1.0 for fractions"
 LENGTH_ERROR_MSG = "Components and values lists must have the same length"
+
+
+def serialize_atoms(atoms: Atoms) -> str:
+    """Serialize ASE Atoms to JSON string."""
+    json_buffer = StringIO()
+    write(json_buffer, atoms, format='json')
+    return json_buffer.getvalue()
+
+
+def validate_atoms(v: Any) -> Atoms:
+    """Validate and convert input to ASE Atoms object."""
+    if isinstance(v, Atoms):
+        return v
+    elif isinstance(v, dict):
+        # Try to reconstruct from dict
+        try:
+            return Atoms(**v)
+        except Exception as e:
+            raise ValueError(f"Could not reconstruct Atoms from dict: {e}")
+    elif isinstance(v, str):
+        # Try to parse from string format (e.g., XYZ or JSON)
+        try:
+            # First try JSON format, then XYZ
+            try:
+                return read(StringIO(v), format='json')
+            except:
+                return read(StringIO(v), format='xyz')
+        except Exception as e:
+            raise ValueError(f"Could not parse Atoms from string: {e}")
+    else:
+        raise ValueError(f"final_structure must be ASE Atoms object, dict, or string, got {type(v)}")
+
+
+# Custom type for ASE Atoms with serialization
+AtomsType = Annotated[
+    Atoms,
+    PlainValidator(validate_atoms),
+    PlainSerializer(serialize_atoms, return_type=str)
+]
+
+
+# Export the serialization functions for use in other modules
+__all__ = ["MeltquenchRequest", "MeltquenchResult", "serialize_atoms", "validate_atoms", "AtomsType"]
 
 
 class MeltquenchRequest(BaseModel):
@@ -70,7 +117,7 @@ class MeltquenchResult(BaseModel):
 
     Attributes:
         composition: Final composition string used in simulation
-        final_structure: String representation of the final atomic structure
+        final_structure: ASE Atoms object representing the final atomic structure
         mean_temperature: Average temperature during final equilibration
         simulation_steps: Total number of simulation steps completed
         structural_analysis: Structural analysis results from glass structure analysis
@@ -78,7 +125,7 @@ class MeltquenchResult(BaseModel):
     """
 
     composition: str = Field(..., description="Composition string used in simulation")
-    final_structure: str = Field(..., description="String representation of final structure")
+    final_structure: AtomsType = Field(..., description="ASE Atoms object of final structure")
     mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
     simulation_steps: int = Field(..., description="Total simulation steps completed")
     structural_analysis: StructureData | dict = Field(..., description="Structural analysis results")

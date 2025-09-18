@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
-from .models import MeltquenchResult
+from .models import MeltquenchResult, serialize_atoms
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +253,14 @@ class TaskStore:
             task.request_hash = task_data["request_hash"]
 
         if "result" in task_data:
-            task.result_data = task_data["result"]
+            # Handle ASE Atoms serialization in final_structure
+            result_data = task_data["result"].copy()
+            if "final_structure" in result_data:
+                from ase import Atoms
+                if isinstance(result_data["final_structure"], Atoms):
+                    # Serialize ASE Atoms to JSON string for storage
+                    result_data["final_structure"] = serialize_atoms(result_data["final_structure"])
+            task.result_data = result_data
 
         if "error" in task_data:
             task.error_message = task_data["error"]

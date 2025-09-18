@@ -20,7 +20,38 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/viz", tags=["visualization"])
 
 
-def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: dict) -> str:
+def atoms_to_xyz_string(atoms) -> str:
+    """Convert ASE Atoms object to XYZ format string for 3Dmol.js.
+    
+    Args:
+        atoms: ASE Atoms object or serialized structure data
+        
+    Returns:
+        XYZ format string
+    """
+    if atoms is None:
+        return ""
+    
+    try:
+        from io import StringIO
+        from ase.io import write
+        from .models import validate_atoms
+        
+        # Use our custom validator to handle any input format
+        atoms_obj = validate_atoms(atoms)
+        
+        # Convert to XYZ format using ASE's built-in writer
+        xyz_buffer = StringIO()
+        write(xyz_buffer, atoms_obj, format='xyz')
+        return xyz_buffer.getvalue()
+        
+    except Exception as e:
+        logger.error("Error converting atoms to XYZ: %s", e)
+        logger.error("Atoms type: %s", type(atoms))
+        return ""
+
+
+def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: dict, structure_xyz: str = "") -> str:
     """Create HTML page displaying simulation results with interactive Plotly plot.
 
     Args:
@@ -48,10 +79,11 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
     <head>
         <title>Glass Simulation Results - Task {task_id}</title>
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script src="https://3dmol.csb.pitt.edu/build/3Dmol-min.js"></script>
         <style>
             body {{
                 font-family: 'Segoe UI', Arial, sans-serif;
-                max-width: 1400px;
+                max-width: 1600px;
                 margin: 0 auto;
                 padding: 20px;
                 background-color: #f5f5f5;
@@ -68,8 +100,16 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
             .results-container {{
                 display: grid;
                 grid-template-columns: 1fr 2fr;
-                gap: 30px;
+                gap: 20px;
                 margin-bottom: 30px;
+            }}
+            .structure-container {{
+                grid-column: 1 / -1;
+                background: white;
+                padding: 25px;
+                border-radius: 10px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                margin-bottom: 20px;
             }}
             .info-panel {{
                 background: white;
@@ -83,9 +123,21 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
                 border-radius: 10px;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }}
+            .structure-panel {{
+                background: white;
+                padding: 25px;
+                border-radius: 10px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }}
             #plotly-div {{
                 width: 100%;
-                height: 1000px;
+                height: 800px;
+            }}
+            #structure-div {{
+                width: 100%;
+                height: 500px;
+                border: 1px solid #ddd;
+                border-radius: 5px;
             }}
             .property {{
                 display: flex;
@@ -149,6 +201,37 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
             .download-btn:hover {{
                 background: #556cd6;
             }}
+            .controls {{
+                margin-bottom: 15px;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                align-items: center;
+            }}
+            .control-group {{
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            }}
+            .control-label {{
+                font-size: 0.9em;
+                color: #555;
+            }}
+            select, button {{
+                padding: 5px 10px;
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                background: white;
+                cursor: pointer;
+            }}
+            button {{
+                background: #667eea;
+                color: white;
+                border: none;
+            }}
+            button:hover {{
+                background: #556cd6;
+            }}
         </style>
     </head>
     <body>
@@ -156,6 +239,30 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
             <h1>🧪 Glass Simulation Results</h1>
             <p>Task ID: {task_id}</p>
             <p>Composition: {result_data.get("composition", "N/A")}</p>
+        </div>
+
+        <div class="structure-container">
+            <div class="section-title">3D Atomic Structure</div>
+            <div class="controls">
+                <div class="control-group">
+                    <span class="control-label">Style:</span>
+                    <select id="style-select" onchange="updateStyle()">
+                        <option value="sphere">Ball & Stick</option>
+                        <option value="stick">Stick</option>
+                        <option value="line">Wireframe</option>
+                        <option value="cross">Cross</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <button onclick="resetView()">Reset View</button>
+                    <button onclick="toggleSpin()">Toggle Spin</button>
+                </div>
+            </div>
+            <div id="structure-div"></div>
+            <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                Interactive 3D structure. Use mouse to rotate, zoom, and pan. 
+                Colors represent different elements in the glass structure.
+            </p>
         </div>
 
         <div class="results-container">
@@ -220,6 +327,10 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
         </div>
 
         <script>
+            // Global variables for 3D visualization
+            let viewer;
+            let isSpinning = false;
+
             // Render the Plotly plot
             const plotlyData = {plotly_json};
             Plotly.newPlot('plotly-div', plotlyData.data, plotlyData.layout, {{
@@ -229,7 +340,90 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
                 displaylogo: false
             }});
 
-            // Download functionality
+            // Initialize 3D structure viewer
+            function init3DViewer() {{
+                const structureData = `{structure_xyz}`;
+                console.log('Structure data length:', structureData.length);
+                console.log('Structure data preview:', structureData.substring(0, 200));
+                
+                if (!structureData.trim()) {{
+                    document.getElementById('structure-div').innerHTML = 
+                        '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #666;">No structure data available</div>';
+                    return;
+                }}
+
+                viewer = $3Dmol.createViewer('structure-div', {{
+                    defaultcolors: $3Dmol.rasmolElementColors
+                }});
+                
+                viewer.addModel(structureData, 'xyz');
+                viewer.setStyle({{}}, {{
+                    sphere: {{radius: 0.5}},
+                    stick: {{radius: 0.2}}
+                }});
+                
+                viewer.setBackgroundColor('white');
+                viewer.zoomTo();
+                viewer.render();
+                console.log('3D viewer initialized successfully');
+            }}
+
+            // Update visualization style
+            function updateStyle() {{
+                if (!viewer) return;
+                
+                const style = document.getElementById('style-select').value;
+                viewer.removeAllModels();
+                viewer.addModel(`{structure_xyz}`, 'xyz');
+                
+                switch(style) {{
+                    case 'sphere':
+                        viewer.setStyle({{}}, {{
+                            sphere: {{radius: 0.5}},
+                            stick: {{radius: 0.2}}
+                        }});
+                        break;
+                    case 'stick':
+                        viewer.setStyle({{}}, {{
+                            stick: {{radius: 0.3}}
+                        }});
+                        break;
+                    case 'line':
+                        viewer.setStyle({{}}, {{
+                            line: {{linewidth: 2}}
+                        }});
+                        break;
+                    case 'cross':
+                        viewer.setStyle({{}}, {{
+                            cross: {{radius: 0.5}}
+                        }});
+                        break;
+                }}
+                viewer.render();
+            }}
+
+            // Reset camera view
+            function resetView() {{
+                if (viewer) {{
+                    viewer.zoomTo();
+                    viewer.render();
+                }}
+            }}
+
+            // Toggle spinning animation
+            function toggleSpin() {{
+                if (!viewer) return;
+                
+                if (isSpinning) {{
+                    viewer.spin(false);
+                    isSpinning = false;
+                }} else {{
+                    viewer.spin('y', 1);
+                    isSpinning = true;
+                }}
+            }}
+
+            // Download functionality for plots
             function downloadPlot(format) {{
                 const filename = `glass_analysis_{task_id}`;
                 if (format === 'png') {{
@@ -248,6 +442,11 @@ def create_results_html(task_id: str, result_data: dict[str, Any], plotly_fig: d
                     }});
                 }}
             }}
+
+            // Initialize everything when page loads
+            window.onload = function() {{
+                init3DViewer();
+            }};
         </script>
     </body>
     </html>
@@ -301,8 +500,35 @@ async def visualize_results(task_id: str) -> HTMLResponse:
         from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
         plotly_fig = plot_analysis_results_plotly(structural_data).to_dict()
 
+        # Get atomic structure for 3D visualization
+        structure_xyz = ""
+        if "final_structure" in result_data:
+            try:
+                atoms = result_data["final_structure"]
+                logger.info("Found final_structure data with type: %s", type(atoms))
+                if hasattr(atoms, '__len__'):
+                    logger.info("Structure data length/size: %s", len(atoms))
+                if hasattr(atoms, '__dict__'):
+                    logger.info("Structure data attributes: %s", list(atoms.__dict__.keys()) if hasattr(atoms, '__dict__') else 'No __dict__')
+                
+                # Print the actual structure data to see what we're working with
+                if isinstance(atoms, str):
+                    logger.info("Structure string preview (first 500 chars): %s", atoms[:500])
+                else:
+                    logger.info("Structure data preview: %s", str(atoms)[:500])
+                
+                structure_xyz = atoms_to_xyz_string(atoms)
+                if structure_xyz:
+                    logger.info("Successfully converted structure to XYZ format (%d chars)", len(structure_xyz))
+                else:
+                    logger.warning("XYZ conversion resulted in empty string")
+            except Exception as e:
+                logger.error("Could not convert structure to XYZ format: %s", e)
+        else:
+            logger.warning("No 'final_structure' key found in result_data. Available keys: %s", list(result_data.keys()))
+
         # Create HTML response
-        html_content = create_results_html(task_id, result_data, plotly_fig)
+        html_content = create_results_html(task_id, result_data, plotly_fig, structure_xyz)
 
         logger.info("Generated interactive visualization for task %s", task_id)
         return HTMLResponse(content=html_content)

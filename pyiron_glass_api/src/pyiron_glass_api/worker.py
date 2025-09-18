@@ -161,7 +161,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
                 "status": "Completed",
                 "result": {
                     "composition": composition,
-                    "final_structure": str(result["structure"]),
+                    "final_structure": result["structure"],  # Store ASE Atoms object directly
                     "mean_temperature": float(np.mean(result["result"]["temperature"])),
                     "simulation_steps": len(result["result"]["steps"]),
                     "structural_analysis": structural_summary,
