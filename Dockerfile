@@ -30,7 +30,7 @@ COPY LICENSE .
 RUN micromamba run pip install /app/pyiron_glass
 RUN micromamba run pip install /app/pyiron_glass_api
 
-ENV PYIRONRESOURCEPATH="/app/pyiron_glass_api/scratch"
-ENV PYIRONSQLCONNECTIONSTRING="sqlite:////app/pyiron_glass_api/scratch/pyiron.db"
+ENV PYIRONPROJECTPATHS="/app/pyiron_glass_api/projects"
+ENV PYIRONSQLCONNECTIONSTRING="sqlite:////app/pyiron_glass_api/projects/pyiron.db"
 
 CMD ["uvicorn","pyiron_glass_api.app:app","--host", "0.0.0.0","--port", "8000","--log-level","trace","--backlog","1","--timeout-keep-alive","60"]
