@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 class Base(DeclarativeBase):
     """SQLAlchemy declarative base class."""
-    pass
+
 
 
 class Task(Base):

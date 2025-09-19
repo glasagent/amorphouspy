@@ -59,7 +59,9 @@ def validate_atoms(v: Atoms | dict | str | None) -> Atoms | None:
 
 # Custom type for ASE Atoms with serialization (allowing None)
 AtomsType = Annotated[
-    Atoms | None, PlainValidator(validate_atoms), PlainSerializer(serialize_atoms, return_type=str, when_used="unless-none")
+    Atoms | None,
+    PlainValidator(validate_atoms),
+    PlainSerializer(serialize_atoms, return_type=str, when_used="unless-none"),
 ]
 
 

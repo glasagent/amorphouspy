@@ -21,9 +21,11 @@ class MockAtoms:
 
     def get_masses(self) -> object:
         """Return a mock that has a sum method."""
+
         class MockMasses:
             def sum(self) -> int:
                 return 1000  # mock mass
+
         return MockMasses()
 
     def __str__(self) -> str:
@@ -36,7 +38,7 @@ class MockAtoms:
             "numbers": self._dict["numbers"],
             "positions": self._dict["positions"],
             "cell": self._dict["cell"],  # Keep as nested list, not Cell object
-            "pbc": self._dict["pbc"]
+            "pbc": self._dict["pbc"],
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -161,8 +163,12 @@ def test_submit_meltquench_and_check(
     """Test the complete meltquench workflow with mocked pyiron dependencies."""
     # Setup all mocks
     setup_common_mocks(
-        mock_project, mock_get_structure_dict, mock_get_ase_structure,
-        mock_generate_potential, mock_melt_quench_simulation, mock_analyze_structure
+        mock_project,
+        mock_get_structure_dict,
+        mock_get_ase_structure,
+        mock_generate_potential,
+        mock_melt_quench_simulation,
+        mock_analyze_structure,
     )
 
     # Submit meltquench task
@@ -308,8 +314,12 @@ def test_visualization_endpoint(
     """Test the visualization endpoint with mocked plot generation."""
     # Setup all mocks
     setup_common_mocks(
-        mock_project, mock_get_structure_dict, mock_get_ase_structure,
-        mock_generate_potential, mock_melt_quench_simulation, mock_analyze_structure
+        mock_project,
+        mock_get_structure_dict,
+        mock_get_ase_structure,
+        mock_generate_potential,
+        mock_melt_quench_simulation,
+        mock_analyze_structure,
     )
 
     # Create a mock figure for the plot
@@ -383,11 +393,7 @@ def test_visualization_endpoint_incomplete_task() -> None:
     request_hash = get_meltquench_hash(request)
 
     # Add incomplete task to database
-    task_store.set(fake_task_id, {
-        "state": "running",
-        "request_data": request_data,
-        "request_hash": request_hash
-    })
+    task_store.set(fake_task_id, {"state": "running", "request_data": request_data, "request_hash": request_hash})
 
     # Try to visualize incomplete task
     viz_response = client.get(f"/viz/results/{fake_task_id}")

@@ -37,7 +37,7 @@ def test_task_store_cached_result_lookup() -> None:
             "numbers": [14, 8, 8],  # Si, O, O
             "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
             "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
-            "pbc": [True, True, True]
+            "pbc": [True, True, True],
         }
 
         result_data = {

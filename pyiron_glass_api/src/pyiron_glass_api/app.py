@@ -89,9 +89,7 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
 
     # Run the synchronous worker in a process executor to handle pyiron's signal handling
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        await loop.run_in_executor(
-            executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR)
-        )
+        await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR))
 
 
 # Create FastAPI app
