@@ -87,22 +87,11 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
     # Convert request to dict for serialization across processes
     request_dict = request.model_dump()
 
-    # Use ThreadPoolExecutor for testing to get better coverage
-    # Use ProcessPoolExecutor in production to handle pyiron's signal handling
-    use_threads = os.environ.get("PYIRON_GLASS_USE_THREADS", "false").lower() == "true"
-
-    if use_threads:
-        logger.info("Using ThreadPoolExecutor for testing/coverage")
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            await loop.run_in_executor(
-                executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR)
-            )
-    else:
-        # Run the synchronous worker in a process executor to handle pyiron's signal handling
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            await loop.run_in_executor(
-                executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR)
-            )
+    # Run the synchronous worker in a process executor to handle pyiron's signal handling
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        await loop.run_in_executor(
+            executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR)
+        )
 
 
 # Create FastAPI app

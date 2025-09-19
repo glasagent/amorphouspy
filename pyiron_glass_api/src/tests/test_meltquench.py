@@ -54,7 +54,13 @@ def test_submit_meltquench_and_check(
             
         # Make it serializable by providing dict representation
         def __getstate__(self):
-            return self._dict
+            # Return a fully serializable dictionary - avoid any ASE objects
+            return {
+                "numbers": self._dict["numbers"],
+                "positions": self._dict["positions"], 
+                "cell": self._dict["cell"],  # Keep as nested list, not Cell object
+                "pbc": self._dict["pbc"]
+            }
             
         def __setstate__(self, state):
             self._dict = state
@@ -77,8 +83,7 @@ def test_submit_meltquench_and_check(
     mock_analyze_structure.return_value.pull.return_value = mock_structural_analysis_data
     mock_generate_potential.return_value = mock_potential
 
-    # Mock the simulation result - use a simple dict instead of MagicMock for serialization
-    # This mimics the basic structure of an ASE Atoms object as a dict
+    # Mock the simulation result - use a simple dict that can be converted to ASE Atoms
     mock_result_structure_dict = {
         "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
         "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
@@ -87,7 +92,7 @@ def test_submit_meltquench_and_check(
     }
 
     mock_result = {
-        "structure": mock_result_structure_dict,  # Use dict instead of MagicMock
+        "structure": mock_result_structure_dict,  # Use dict instead of MockAtoms
         "result": {
             "volume": [1000, 1000, 1000],  # cm³
             "temperature": [300, 305, 302],  # K
@@ -329,9 +334,16 @@ def test_visualization_endpoint(
             
         # Make it serializable by providing dict representation
         def __getstate__(self):
-            return self._dict
+            # Return a fully serializable dictionary - avoid any ASE objects
+            return {
+                "numbers": self._dict["numbers"],
+                "positions": self._dict["positions"], 
+                "cell": self._dict["cell"],  # Keep as nested list, not Cell object
+                "pbc": self._dict["pbc"]
+            }
             
         def __setstate__(self, state):
+            self._dict = state
             self._dict = state
 
     mock_structure = MockAtoms(mock_structure_dict)
@@ -426,7 +438,7 @@ def test_visualization_endpoint(
     assert "Glass Simulation Results" in html_content
     assert task_id in html_content
     # Update assertions for new HTML template structure
-    assert "plotly_json" in html_content or "Plotly.newPlot" in html_content
+    assert "plotlyData" in html_content or "plotly-div" in html_content
 
     # Verify the plot function was called
     mock_plot_analysis_results_plotly.assert_called_once()

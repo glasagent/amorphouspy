@@ -28,11 +28,6 @@ LENGTH_ERROR_MSG = "Components and values lists must have the same length"
 
 def serialize_atoms(atoms: Atoms) -> str:
     """Serialize ASE Atoms to JSON string."""
-    # Handle mock objects by converting to dict
-    if hasattr(atoms, '__getstate__'):
-        mock_data = atoms.__getstate__()
-        return json.dumps(mock_data)
-    
     json_buffer = StringIO()
     write(json_buffer, atoms, format="json")
     return json_buffer.getvalue()
@@ -52,22 +47,11 @@ def validate_atoms(v: Atoms | dict | str | None) -> Atoms | None:
             msg = f"Could not reconstruct Atoms from dict: {e}"
             raise ValueError(msg) from e
     elif isinstance(v, str):
-        # Try to parse from string format (e.g., XYZ or JSON)
+        # Try to parse from JSON string format
         try:
-            # First try JSON format, then XYZ
-            try:
-                return read(StringIO(v), format="json")
-            except Exception:
-                return read(StringIO(v), format="xyz")
+            return read(StringIO(v), format="json")
         except Exception as e:
             msg = f"Could not parse Atoms from string: {e}"
-            raise ValueError(msg) from e
-    elif hasattr(v, '__getstate__') and hasattr(v, '_dict'):
-        # Handle test mock objects that have serializable dict representation
-        try:
-            return Atoms(**v._dict)
-        except Exception as e:
-            msg = f"Could not reconstruct Atoms from mock object: {e}"
             raise ValueError(msg) from e
     else:
         msg = f"final_structure must be ASE Atoms object, dict, string, or None, got {type(v)}"
