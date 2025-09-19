@@ -31,13 +31,28 @@ def test_task_store_cached_result_lookup() -> None:
         db_path = Path(temp_dir) / "test_tasks.db"
         store = TaskStore(db_path)
 
-        # Create a completed task with results
+        # Create a completed task with results (matching current API format)
+        # Create a simple mock structure that can be validated as ASE Atoms
+        mock_structure = {
+            "numbers": [14, 8, 8],  # Si, O, O
+            "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+            "pbc": [True, True, True],
+        }
+
         result_data = {
             "composition": "0.75SiO2-0.25Na2O",
-            "final_structure": "test structure",
+            "final_structure": mock_structure,
             "mean_temperature": 300.0,
-            "final_density": 2.5,
             "simulation_steps": 1000,
+            "structural_analysis": {
+                "density": 2.5,
+                "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
+                "network": {"connectivity": 3.0, "Qn_distribution": {}, "Qn_distribution_partial": {}},
+                "distributions": {"bond_angles": {}, "rings": {}},
+                "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
+                "elements": {"formers": ["Si"], "modifiers": ["Na"], "cutoffs": {}},
+            },
         }
 
         completed_task = {
@@ -52,8 +67,16 @@ def test_task_store_cached_result_lookup() -> None:
         # Test cache lookup
         cached_result = store.find_cached_result("test_hash_123")
         assert cached_result is not None
-        assert cached_result.composition == "0.75SiO2-0.25Na2O"
-        assert cached_result.final_density == 2.5
+        # find_cached_result now returns tuple[str, MeltquenchResult]
+        task_id, result = cached_result
+        assert task_id == "completed_task"
+        assert result.composition == "0.75SiO2-0.25Na2O"
+        assert result.structural_analysis is not None
+        # Handle both dict and StructureData object cases
+        if isinstance(result.structural_analysis, dict):
+            assert result.structural_analysis["density"] == 2.5
+        else:
+            assert result.structural_analysis.density == 2.5
 
         # Test cache miss
         no_result = store.find_cached_result("nonexistent_hash")

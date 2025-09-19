@@ -26,10 +26,12 @@ from uuid import uuid4
 import cloudpickle
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
 from .models import MeltquenchRequest, MeltquenchResult
+from .visualization import router as visualization_router
 from .worker import meltquench_worker
 
 # Configure logging
@@ -97,8 +99,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Mount static files
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-@app.post("/check_cached_result", tags=["tool"])
+# Include visualization router
+app.include_router(visualization_router, tags=["visualization"])
+
+
+@app.post("/cache/meltquench", tags=["tool"])
 async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | None:
     """Check if a result for the given meltquench request is already available in cache."""
     try:
@@ -110,7 +119,8 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
 
         if cached_result:
             logger.info("Found cached result")
-            return cached_result
+            # Return just the result, not the task_id (for API compatibility)
+            return cached_result[1]
 
         logger.info("No cached result found")
         return None
@@ -120,18 +130,28 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
         raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.post("/submit_meltquench", tags=["tool"])
+@app.post("/submit/meltquench", tags=["tool"])
 async def submit_meltquench(request: MeltquenchRequest) -> dict:
-    """Start a new meltquench simulation task."""
+    """Start a new meltquench simulation task.
+
+    Note: Results can be visualized at /visualize/meltquench/{task_id}
+    """
     try:
         # Check if we already have a cached result
-        cached_result = await check_cached_result(request)
+        request_hash = get_meltquench_hash(request)
+        cached_result = _task_store.find_cached_result(request_hash)
+
         if cached_result:
-            logger.info("Returning cached result instead of starting new task")
-            return {"task_id": "cached", "status": "completed_from_cache", "result": cached_result.model_dump()}
+            cached_task_id, cached_meltquench_result = cached_result
+            logger.info("Returning cached result from task %s instead of starting new task", cached_task_id)
+            return {
+                "task_id": cached_task_id,
+                "status": "completed_from_cache",
+                "result": cached_meltquench_result.model_dump(),
+                "visualization_url": f"/visualize/meltquench/{cached_task_id}",
+            }
 
         task_id = str(uuid4())
-        request_hash = get_meltquench_hash(request)
         logger.info("Creating new meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
         # Store task in database
@@ -150,7 +170,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         # Store task reference to prevent garbage collection
         task.add_done_callback(lambda _: None)
 
-        return {"task_id": task_id, "status": "started"}
+        return {"task_id": task_id, "status": "started", "visualization_url": f"/visualize/meltquench/{task_id}"}
     except Exception:
         logger.exception("Error starting meltquench task")
         raise HTTPException(status_code=500, detail="Internal server error") from None
@@ -158,7 +178,10 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
 
 @app.get("/check/{task_id}", tags=["tool"])
 async def check(task_id: str) -> dict:
-    """Check the current status of a simulation task by its ID."""
+    """Check the current status of a simulation task by its ID.
+
+    Note: When ready, visualize results at /visualize/meltquench/{task_id}
+    """
     meta = _task_store.get(task_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -169,6 +192,7 @@ async def check(task_id: str) -> dict:
         "status": meta.get("status", "processing"),
         "result": meta.get("result"),
         "error": meta.get("error"),
+        "visualization_url": f"/visualize/meltquench/{task_id}",
     }
 
 

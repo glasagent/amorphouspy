@@ -52,7 +52,6 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
     try:
         # Import pyiron_glass modules (import here to avoid startup dependencies)
         import numpy as np
-        from ase import units
         from pyiron_base import Project
         from pyiron_glass import (
             generate_potential,
@@ -60,6 +59,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             get_structure_dict,
             melt_quench_simulation,
         )
+        from pyiron_glass.workflows.structural_analysis import analyze_structure
 
         # Create composition string from request
         comp_parts = []
@@ -125,23 +125,35 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         ).pull()
         logger.info(f"Task {task_id}: Simulation completed successfully")
 
-        # Extract generic results from simulation output
-        if not isinstance(result, dict):
-            msg = "Workflow output is not a dictionary"
-            raise KeyError(msg)
+        # Update task status for structural analysis
+        current_task = task_store.get(task_id) or {"state": "processing"}
+        current_task["status"] = "Running structural analysis"
+        task_store.set(task_id, current_task)
+        logger.info(f"Task {task_id}: Starting structural analysis")
 
-        generic = result.get("result") or result.get("generic")
-        if generic is None:
-            msg = "Missing simulation results ('result'/'generic') in workflow output"
-            raise KeyError(msg)
+        # Perform structural analysis on the final structure (includes density calculation)
+        final_structure = result["structure"]
+        logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
-        # Calculate final density
-        V = np.mean(generic["volume"]) * 1e-24  # volume in cm³
-        massTot = result["structure"].get_masses().sum() / units._Nav
-        final_density = massTot / V
-        logger.info(f"Task {task_id}: Final density calculated: {final_density:.3f} g/cm³")
+        # Run structural analysis (decorated with @job, needs pyiron_project and .pull())
+        structural_data = analyze_structure(atoms=final_structure, pyiron_project=pr).pull()
+        logger.info(f"Task {task_id}: Structural analysis completed successfully")
 
-        # Store results
+        # Debug: Check what fields are present in the structural_data object
+        logger.info(f"Task {task_id}: StructureData type: {type(structural_data)}")
+        if hasattr(structural_data, "model_fields"):
+            logger.info(f"Task {task_id}: StructureData model fields: {list(structural_data.model_fields.keys())}")
+        if hasattr(structural_data, "__dict__"):
+            logger.info(f"Task {task_id}: StructureData attributes: {list(structural_data.__dict__.keys())}")
+
+        # Use the structural data directly (it's now a Pydantic model with proper serialization)
+        structural_summary = structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
+        logger.info(f"Task {task_id}: Structural analysis data prepared")
+        logger.info(
+            f"Task {task_id}: Structural summary keys: {list(structural_summary.keys()) if isinstance(structural_summary, dict) else 'Not a dict'}"
+        )
+
+        # Store results including structural analysis
         current_task = task_store.get(task_id) or {}
         current_task.update(
             {
@@ -149,10 +161,10 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
                 "status": "Completed",
                 "result": {
                     "composition": composition,
-                    "final_structure": str(result["structure"]),
-                    "mean_temperature": float(np.mean(generic["temperature"])),
-                    "final_density": float(final_density),
-                    "simulation_steps": len(generic["steps"]),
+                    "final_structure": result["structure"],  # Store ASE Atoms object directly
+                    "mean_temperature": float(np.mean(result["result"]["temperature"])),
+                    "simulation_steps": len(result["result"]["steps"]),
+                    "structural_analysis": structural_summary,
                 },
             }
         )

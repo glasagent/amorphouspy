@@ -24,7 +24,7 @@ from pyiron_glass.structure import (
 )
 from pyiron_glass.workflows.md import md_simulation
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
-from pyiron_glass.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results
+from pyiron_glass.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results_plotly
 from pyiron_glass.workflows.viscosity import viscosity_simulation
 
 __all__ = [
@@ -49,7 +49,7 @@ __all__ = [
     "get_structure_dict",
     "md_simulation",
     "melt_quench_simulation",
-    "plot_analysis_results",
+    "plot_analysis_results_plotly",
     "potential",
     "structure_from_parsed_output",
     "type_to_dict",
