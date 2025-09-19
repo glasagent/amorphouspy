@@ -39,7 +39,7 @@ def test_task_store_cached_result_lookup() -> None:
             "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
             "pbc": [True, True, True]
         }
-        
+
         result_data = {
             "composition": "0.75SiO2-0.25Na2O",
             "final_structure": mock_structure,

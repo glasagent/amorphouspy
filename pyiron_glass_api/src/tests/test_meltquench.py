@@ -1,5 +1,7 @@
 """Unit tests for meltquench API functionality."""
 
+import time
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,69 +12,51 @@ from pyiron_glass_api.app import app
 client = TestClient(app)
 
 
-@patch("pyiron_glass.workflows.structural_analysis.analyze_structure")
-@patch("pyiron_glass.melt_quench_simulation")
-@patch("pyiron_glass.generate_potential")
-@patch("pyiron_glass.get_ase_structure")
-@patch("pyiron_glass.get_structure_dict")
-@patch("pyiron_base.Project")
-def test_submit_meltquench_and_check(
-    mock_project,
-    mock_get_structure_dict,
-    mock_get_ase_structure,
-    mock_generate_potential,
-    mock_melt_quench_simulation,
-    mock_analyze_structure,
-) -> None:
-    """Test the complete meltquench workflow with mocked pyiron dependencies."""
-    # Mock the pyiron components
-    mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
-    mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
+class MockAtoms:
+    """Mock ASE Atoms-like object that can be serialized."""
 
-    # Create a proper mock ASE Atoms-like object that can be serialized
-    mock_structure_dict = {
+    def __init__(self, atoms_dict: dict[str, Any]) -> None:
+        """Initialize mock atoms with dictionary data."""
+        self._dict = atoms_dict
+
+    def get_masses(self) -> object:
+        """Return a mock that has a sum method."""
+        class MockMasses:
+            def sum(self) -> int:
+                return 1000  # mock mass
+        return MockMasses()
+
+    def __str__(self) -> str:
+        """Return string representation of mock atoms."""
+        return "Mock ASE structure with 100 atoms"
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Return a fully serializable dictionary - avoid any ASE objects."""
+        return {
+            "numbers": self._dict["numbers"],
+            "positions": self._dict["positions"],
+            "cell": self._dict["cell"],  # Keep as nested list, not Cell object
+            "pbc": self._dict["pbc"]
+        }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore state from serialized dictionary."""
+        self._dict = state
+
+
+def create_mock_structure_dict() -> dict[str, Any]:
+    """Create a mock structure dictionary."""
+    return {
         "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
         "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
         "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],  # 10x10x10 box
         "pbc": [True, True, True],
     }
-    
-    # Create a mock that has the required methods but is serializable
-    class MockAtoms:
-        def __init__(self, atoms_dict):
-            self._dict = atoms_dict
-            
-        def get_masses(self):
-            # Return a mock that has a sum method
-            class MockMasses:
-                def sum(self):
-                    return 1000  # mock mass
-            return MockMasses()
-            
-        def __str__(self):
-            return "Mock ASE structure with 100 atoms"
-            
-        # Make it serializable by providing dict representation
-        def __getstate__(self):
-            # Return a fully serializable dictionary - avoid any ASE objects
-            return {
-                "numbers": self._dict["numbers"],
-                "positions": self._dict["positions"], 
-                "cell": self._dict["cell"],  # Keep as nested list, not Cell object
-                "pbc": self._dict["pbc"]
-            }
-            
-        def __setstate__(self, state):
-            self._dict = state
 
-    mock_structure = MockAtoms(mock_structure_dict)
-    mock_get_ase_structure.return_value = mock_structure
 
-    mock_potential = "mock_potential_content"
-    mock_generate_potential.return_value = mock_potential
-
-    # Mock structural analysis result - return the dict directly instead of a MagicMock
-    mock_structural_analysis_data = {
+def create_mock_structural_analysis_data() -> dict[str, Any]:
+    """Create mock structural analysis data."""
+    return {
         "density": 2.5,
         "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
         "network": {"Qn_distribution": {}, "Qn_distribution_partial": {}, "connectivity": 0.0},
@@ -80,89 +64,75 @@ def test_submit_meltquench_and_check(
         "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
         "elements": {"formers": [], "modifiers": [], "cutoffs": {}},
     }
-    mock_analyze_structure.return_value.pull.return_value = mock_structural_analysis_data
-    mock_generate_potential.return_value = mock_potential
 
-    # Mock the simulation result - use a simple dict that can be converted to ASE Atoms
-    mock_result_structure_dict = {
-        "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
-        "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
-        "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],  # 10x10x10 box
-        "pbc": [True, True, True],
-    }
 
-    mock_result = {
-        "structure": mock_result_structure_dict,  # Use dict instead of MockAtoms
+def create_mock_result_data() -> dict[str, Any]:
+    """Create mock simulation result data."""
+    return {
+        "structure": create_mock_structure_dict(),
         "result": {
             "volume": [1000, 1000, 1000],  # cm³
             "temperature": [300, 305, 302],  # K
             "steps": [1, 2, 3],
         },
     }
-    mock_melt_quench_simulation.return_value.pull.return_value = mock_result
 
-    # Updated payload to match simplified API
-    payload = {"components": ["SiO2", "CaO", "Al2O3"], "values": [60.0, 25.0, 15.0], "unit": "wt"}
 
-    # Submit meltquench task
-    response = client.post("/submit_meltquench", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert "task_id" in data
-    assert "status" in data
+def setup_common_mocks(
+    mock_project: MagicMock,
+    mock_get_structure_dict: MagicMock,
+    mock_get_ase_structure: MagicMock,
+    mock_generate_potential: MagicMock,
+    mock_melt_quench_simulation: MagicMock,
+    mock_analyze_structure: MagicMock,
+) -> None:
+    """Set up common mock objects for meltquench tests."""
+    # Mock the pyiron components
+    mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
+    mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
 
-    # With caching, we might get either a new task or cached result
-    if data["status"] == "completed_from_cache":
-        # If cached, verify the result structure
-        assert "result" in data
-        result = data["result"]
-        assert "composition" in result
-        assert "structural_analysis" in result
-        assert result["structural_analysis"]["density"] > 0
-        return  # Exit early since we got the cached result
+    # Create mock structure
+    mock_structure_dict = create_mock_structure_dict()
+    mock_structure = MockAtoms(mock_structure_dict)
+    mock_get_ase_structure.return_value = mock_structure
 
-    # If not cached, should be "started"
-    assert data["status"] == "started"
-    task_id = data["task_id"]
+    # Mock potential
+    mock_potential = "mock_potential_content"
+    mock_generate_potential.return_value = mock_potential
 
-    # Since we're now using thread executor, we need to wait longer for completion
-    import time
+    # Mock structural analysis
+    mock_analyze_structure.return_value.pull.return_value = create_mock_structural_analysis_data()
 
-    max_wait = 10  # seconds
-    waited = 0
+    # Mock simulation result
+    mock_melt_quench_simulation.return_value.pull.return_value = create_mock_result_data()
 
+
+def wait_for_task_completion(task_id: str, max_wait: float = 10.0) -> dict[str, Any]:
+    """Wait for a task to complete and return the final check data."""
+    waited = 0.0
     while waited < max_wait:
         check_response = client.get(f"/check/{task_id}")
         assert check_response.status_code == 200
         check_data = check_response.json()
 
         if check_data["state"] == "complete":
-            break
+            return check_data
         if check_data["state"] == "error":
             pytest.fail(f"Simulation failed: {check_data.get('error')}")
 
         time.sleep(0.5)
         waited += 0.5
 
-    # Final check
-    check_response = client.get(f"/check/{task_id}")
-    assert check_response.status_code == 200
-    check_data = check_response.json()
+    pytest.fail(f"Task {task_id} did not complete within {max_wait} seconds")
 
-    assert check_data["task_id"] == task_id
-    assert check_data["state"] == "complete"
-    assert check_data["result"] is not None
 
-    # Validate the result structure
-    result = check_data["result"]
+def validate_result_structure(result: dict[str, Any]) -> None:
+    """Validate the structure of a meltquench result."""
     assert "composition" in result
     assert "final_structure" in result
     assert "mean_temperature" in result
     assert "structural_analysis" in result
     assert "simulation_steps" in result
-
-    # Validate composition format
-    assert result["composition"] == "0.6SiO2-0.25CaO-0.15Al2O3"
 
     # Validate numerical values
     assert isinstance(result["mean_temperature"], float)
@@ -172,6 +142,56 @@ def test_submit_meltquench_and_check(
     else:
         assert isinstance(result["structural_analysis"].density, float)
     assert isinstance(result["simulation_steps"], int)
+
+
+@patch("pyiron_glass.workflows.structural_analysis.analyze_structure")
+@patch("pyiron_glass.melt_quench_simulation")
+@patch("pyiron_glass.generate_potential")
+@patch("pyiron_glass.get_ase_structure")
+@patch("pyiron_glass.get_structure_dict")
+@patch("pyiron_base.Project")
+def test_submit_meltquench_and_check(
+    mock_project: MagicMock,
+    mock_get_structure_dict: MagicMock,
+    mock_get_ase_structure: MagicMock,
+    mock_generate_potential: MagicMock,
+    mock_melt_quench_simulation: MagicMock,
+    mock_analyze_structure: MagicMock,
+) -> None:
+    """Test the complete meltquench workflow with mocked pyiron dependencies."""
+    # Setup all mocks
+    setup_common_mocks(
+        mock_project, mock_get_structure_dict, mock_get_ase_structure,
+        mock_generate_potential, mock_melt_quench_simulation, mock_analyze_structure
+    )
+
+    # Submit meltquench task
+    payload = {"components": ["SiO2", "CaO", "Al2O3"], "values": [60.0, 25.0, 15.0], "unit": "wt"}
+    response = client.post("/submit_meltquench", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "task_id" in data
+    assert "status" in data
+
+    # Handle cached results
+    if data["status"] == "completed_from_cache":
+        assert "result" in data
+        validate_result_structure(data["result"])
+        return
+
+    # Wait for completion and validate
+    assert data["status"] == "started"
+    check_data = wait_for_task_completion(data["task_id"])
+
+    assert check_data["task_id"] == data["task_id"]
+    assert check_data["state"] == "complete"
+    assert check_data["result"] is not None
+
+    # Validate the result structure
+    validate_result_structure(check_data["result"])
+
+    # Validate composition format
+    assert check_data["result"]["composition"] == "0.6SiO2-0.25CaO-0.15Al2O3"
 
 
 def test_check_nonexistent_task() -> None:
@@ -202,23 +222,9 @@ def test_root_redirect() -> None:
     assert "swagger" in response.text.lower() or "openapi" in response.text.lower()
 
 
-def test_check_cached_result_found() -> None:
-    """Test checking for cached results with a specific composition."""
-    # Use a unique composition
-    payload = {
-        "components": ["SiO2", "K2O"],  # Different from other tests
-        "values": [85.0, 15.0],
-        "unit": "wt",
-    }
-
-    response = client.post("/check_cached_result", json=payload)
-    assert response.status_code == 200
-    data = response.json()
-
-    # With working cache, this could be None (no cache) or a result (if cached)
-    # Both are valid responses
+def validate_cached_result(data: dict[str, Any] | None) -> None:
+    """Validate cached result structure if it exists."""
     if data is not None:
-        # If cached result exists, verify it has the right structure
         assert "composition" in data
         assert "structural_analysis" in data
         # Handle both dict and StructureData object cases
@@ -231,9 +237,21 @@ def test_check_cached_result_found() -> None:
         assert "simulation_steps" in data
 
 
+def test_check_cached_result_found() -> None:
+    """Test checking for cached results with a specific composition."""
+    payload = {
+        "components": ["SiO2", "K2O"],  # Different from other tests
+        "values": [85.0, 15.0],
+        "unit": "wt",
+    }
+
+    response = client.post("/check_cached_result", json=payload)
+    assert response.status_code == 200
+    validate_cached_result(response.json())
+
+
 def test_check_cached_result_not_found() -> None:
     """Test checking for cached results with another unique composition."""
-    # Use yet another unique composition
     payload = {
         "components": ["SiO2", "Li2O"],  # Different from other tests
         "values": [90.0, 10.0],
@@ -242,23 +260,11 @@ def test_check_cached_result_not_found() -> None:
 
     response = client.post("/check_cached_result", json=payload)
     assert response.status_code == 200
-    data = response.json()
-
-    # With working cache, this could be None (no cache) or a result (if cached)
-    # Both are valid responses
-    if data is not None:
-        # If cached result exists, verify it has the right structure
-        assert "composition" in data
-        assert "structural_analysis" in data
-        assert data["structural_analysis"]["density"] > 0
-        assert "final_structure" in data
-        assert "mean_temperature" in data
-        assert "simulation_steps" in data
+    validate_cached_result(response.json())
 
 
 def test_caching_behavior() -> None:
     """Test that caching actually works by submitting and then checking cache."""
-    # Use a unique composition for this test
     unique_payload = {
         "components": ["SiO2", "MgO"],
         "values": [70.0, 30.0],
@@ -268,10 +274,9 @@ def test_caching_behavior() -> None:
         "n_print": 100,
     }
 
-    # First check - should not be cached initially (unless run before)
+    # Check cache first
     cache_response = client.post("/check_cached_result", json=unique_payload)
     assert cache_response.status_code == 200
-    cache_response.json()
 
     # Submit the simulation (will be mocked)
     submit_response = client.post("/submit_meltquench", json=unique_payload)
@@ -281,8 +286,6 @@ def test_caching_behavior() -> None:
     # Should either start a new task or return cached result
     assert "task_id" in submit_data
     assert "status" in submit_data
-
-    # The status should indicate either "started" (new task) or "completed_from_cache" (cached)
     assert submit_data["status"] in ["started", "completed_from_cache"]
 
 
@@ -294,111 +297,40 @@ def test_caching_behavior() -> None:
 @patch("pyiron_glass.get_structure_dict")
 @patch("pyiron_base.Project")
 def test_visualization_endpoint(
-    mock_project,
-    mock_get_structure_dict,
-    mock_get_ase_structure,
-    mock_generate_potential,
-    mock_melt_quench_simulation,
-    mock_plot_analysis_results_plotly,
-    mock_analyze_structure,
+    mock_project: MagicMock,
+    mock_get_structure_dict: MagicMock,
+    mock_get_ase_structure: MagicMock,
+    mock_generate_potential: MagicMock,
+    mock_melt_quench_simulation: MagicMock,
+    mock_plot_analysis_results_plotly: MagicMock,
+    mock_analyze_structure: MagicMock,
 ) -> None:
     """Test the visualization endpoint with mocked plot generation."""
-    from unittest.mock import MagicMock
-
-    # Mock the pyiron components (same as other tests)
-    mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
-    mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
-
-    # Create a proper mock ASE Atoms-like object that can be serialized
-    mock_structure_dict = {
-        "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
-        "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
-        "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],  # 10x10x10 box
-        "pbc": [True, True, True],
-    }
-    
-    # Create a mock that has the required methods but is serializable
-    class MockAtoms:
-        def __init__(self, atoms_dict):
-            self._dict = atoms_dict
-            
-        def get_masses(self):
-            # Return a mock that has a sum method
-            class MockMasses:
-                def sum(self):
-                    return 1000  # mock mass
-            return MockMasses()
-            
-        def __str__(self):
-            return "Mock ASE structure with 100 atoms"
-            
-        # Make it serializable by providing dict representation
-        def __getstate__(self):
-            # Return a fully serializable dictionary - avoid any ASE objects
-            return {
-                "numbers": self._dict["numbers"],
-                "positions": self._dict["positions"], 
-                "cell": self._dict["cell"],  # Keep as nested list, not Cell object
-                "pbc": self._dict["pbc"]
-            }
-            
-        def __setstate__(self, state):
-            self._dict = state
-            self._dict = state
-
-    mock_structure = MockAtoms(mock_structure_dict)
-    mock_get_ase_structure.return_value = mock_structure
-
-    mock_potential = "mock_potential_content"
-    mock_generate_potential.return_value = mock_potential
-
-    # Mock the simulation result - use a simple dict instead of MagicMock for serialization
-    mock_result_structure_dict = {
-        "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
-        "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
-        "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
-        "pbc": [True, True, True],
-    }
-
-    mock_result = {
-        "structure": mock_result_structure_dict,
-        "result": {
-            "volume": [1000, 1000, 1000],
-            "temperature": [300, 305, 302],
-            "steps": [1, 2, 3],
-        },
-    }
-    mock_melt_quench_simulation.return_value.pull.return_value = mock_result
+    # Setup all mocks
+    setup_common_mocks(
+        mock_project, mock_get_structure_dict, mock_get_ase_structure,
+        mock_generate_potential, mock_melt_quench_simulation, mock_analyze_structure
+    )
 
     # Create a mock figure for the plot
     mock_fig = MagicMock()
     mock_fig.to_dict.return_value = {"data": [], "layout": {}}  # Mock Plotly figure dict
     mock_plot_analysis_results_plotly.return_value = mock_fig
 
-    # Mock the analyze_structure function - return dict directly instead of MagicMock
-    mock_structural_analysis_data = {
-        "density": 2.65,
-        "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
-        "network": {"Qn_distribution": {}, "Qn_distribution_partial": {}, "connectivity": 0.0},
-        "distributions": {"bond_angles": {}, "rings": {}},
-        "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
-        "elements": {"formers": [], "modifiers": [], "cutoffs": {}},
+    # Update the structural analysis data for visualization test
+    mock_analyze_structure.return_value.pull.return_value = {
+        **create_mock_structural_analysis_data(),
+        "density": 2.65,  # Override density for visualization
     }
-    mock_analyze_structure.return_value.pull.return_value = mock_structural_analysis_data
 
-    # Mock the figure's savefig method to simulate saving
-    mock_fig.savefig = MagicMock()
-
-    # Submit task and get it completed - use unique payload to avoid caching
-    import time
-
+    # Submit task with unique payload to avoid caching
     unique_suffix = str(int(time.time() * 1000))  # millisecond timestamp
     payload = {
         "components": ["SiO2", "Na2O"],
         "values": [75.0, 25.0],
         "unit": "wt",
-        "heating_rate": int(unique_suffix[-6:]),
-    }  # Use last 6 digits
+        "heating_rate": int(unique_suffix[-6:]),  # Use last 6 digits
+    }
 
     submit_response = client.post("/submit_meltquench", json=payload)
     assert submit_response.status_code == 200
@@ -409,24 +341,9 @@ def test_visualization_endpoint(
     else:
         task_id = submit_data["task_id"]
         # Wait for mocked completion
-        import time
+        wait_for_task_completion(task_id, max_wait=5.0)
 
-        max_wait = 5  # Reduced wait time since it's mocked
-        waited = 0
-
-        while waited < max_wait:
-            check_response = client.get(f"/check/{task_id}")
-            check_data = check_response.json()
-            if check_data["state"] == "complete":
-                break
-            time.sleep(0.1)  # Shorter sleep
-            waited += 0.1
-
-    # Now test the visualization endpoint
-
-    # First check what the task state looks like
-    check_response = client.get(f"/check/{task_id}")
-
+    # Test the visualization endpoint
     viz_response = client.get(f"/viz/results/{task_id}")
     assert viz_response.status_code == 200
 
@@ -437,7 +354,6 @@ def test_visualization_endpoint(
     # Verify HTML contains expected elements
     assert "Glass Simulation Results" in html_content
     assert task_id in html_content
-    # Update assertions for new HTML template structure
     assert "plotlyData" in html_content or "plotly-div" in html_content
 
     # Verify the plot function was called
@@ -467,7 +383,11 @@ def test_visualization_endpoint_incomplete_task() -> None:
     request_hash = get_meltquench_hash(request)
 
     # Add incomplete task to database
-    task_store.set(fake_task_id, {"state": "running", "request_data": request_data, "request_hash": request_hash})
+    task_store.set(fake_task_id, {
+        "state": "running",
+        "request_data": request_data,
+        "request_hash": request_hash
+    })
 
     # Try to visualize incomplete task
     viz_response = client.get(f"/viz/results/{fake_task_id}")

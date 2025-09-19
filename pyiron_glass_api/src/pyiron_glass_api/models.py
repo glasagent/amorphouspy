@@ -4,7 +4,6 @@ This module contains data validation models for various simulation types
 including meltquench simulations and other glass modeling workflows.
 """
 
-import json
 from io import StringIO
 from typing import Annotated, Literal
 
