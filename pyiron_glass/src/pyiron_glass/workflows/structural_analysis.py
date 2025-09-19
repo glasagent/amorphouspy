@@ -566,7 +566,7 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     # Row 1: Coordination plots
     fig.update_xaxes(title_text="O_n", row=1, col=1)
     fig.update_yaxes(title_text="Percentage", row=1, col=1)
-    fig.update_xaxes(title_text="T_n", row=1, col=2)
+    fig.update_xaxes(title_text="Former_n", row=1, col=2)
     fig.update_yaxes(title_text="Percentage", row=1, col=2)
 
     # Row 2: Modifier and Q^n distributions
