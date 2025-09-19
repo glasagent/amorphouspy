@@ -132,7 +132,10 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
 
 @app.post("/submit/meltquench", tags=["tool"])
 async def submit_meltquench(request: MeltquenchRequest) -> dict:
-    """Start a new meltquench simulation task."""
+    """Start a new meltquench simulation task.
+
+    Note: Results can be visualized at /visualize/meltquench/{task_id}
+    """
     try:
         # Check if we already have a cached result
         request_hash = get_meltquench_hash(request)
@@ -145,6 +148,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
                 "task_id": cached_task_id,
                 "status": "completed_from_cache",
                 "result": cached_meltquench_result.model_dump(),
+                "visualization_url": f"/visualize/meltquench/{cached_task_id}",
             }
 
         task_id = str(uuid4())
@@ -166,7 +170,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         # Store task reference to prevent garbage collection
         task.add_done_callback(lambda _: None)
 
-        return {"task_id": task_id, "status": "started"}
+        return {"task_id": task_id, "status": "started", "visualization_url": f"/visualize/meltquench/{task_id}"}
     except Exception:
         logger.exception("Error starting meltquench task")
         raise HTTPException(status_code=500, detail="Internal server error") from None
@@ -174,7 +178,10 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
 
 @app.get("/check/{task_id}", tags=["tool"])
 async def check(task_id: str) -> dict:
-    """Check the current status of a simulation task by its ID."""
+    """Check the current status of a simulation task by its ID.
+
+    Note: When ready, visualize results at /visualize/meltquench/{task_id}
+    """
     meta = _task_store.get(task_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -185,6 +192,7 @@ async def check(task_id: str) -> dict:
         "status": meta.get("status", "processing"),
         "result": meta.get("result"),
         "error": meta.get("error"),
+        "visualization_url": f"/visualize/meltquench/{task_id}",
     }
 
 
