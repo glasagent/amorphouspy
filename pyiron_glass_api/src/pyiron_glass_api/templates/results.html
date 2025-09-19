@@ -2,7 +2,7 @@
 <html>
 
 <head>
-    <title>Glass Simulation Results - Task {{ task_id }}</title>
+    <title>Melt-Quench Simulation Results - Task {{ task_id }}</title>
     <script src="/static/js/vendor/plotly.min.js"></script>
     <script src="/static/js/vendor/3dmol.min.js"></script>
     <link rel="stylesheet" href="/static/css/results.css">
@@ -10,13 +10,13 @@
 
 <body>
     <div class="header">
-        <h1>🧪 Glass Simulation Results</h1>
+        <h1>Melt-Quench Simulation Results</h1>
         <p>Task ID: {{ task_id }}</p>
         <p>Composition: {{ composition }}</p>
     </div>
 
     <div class="structure-container">
-        <div class="section-title">3D Atomic Structure</div>
+        <div class="section-title">Atomic Structure</div>
         <div class="controls">
             <div class="control-group">
                 <span class="control-label">Style:</span>
@@ -34,7 +34,7 @@
         <div id="structure-div"></div>
         <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
             Interactive 3D structure. Use mouse to rotate, zoom, and pan.
-            Colors represent different elements in the glass structure.
+            Hover over atoms for element info.
         </p>
     </div>
 
@@ -89,12 +89,10 @@
         </div>
 
         <div class="plot-panel">
-            <div class="section-title">Interactive Structural Analysis</div>
+            <div class="section-title">Structural Analysis</div>
             <div id="plotly-div"></div>
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
                 Interactive plot with zoom, pan, and hover capabilities. Click legend items to show/hide traces.
-                Comprehensive structural analysis including coordination distributions,
-                network connectivity, bond angles, ring statistics, and radial distribution functions.
             </p>
         </div>
     </div>

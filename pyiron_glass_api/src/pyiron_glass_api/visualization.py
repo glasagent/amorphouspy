@@ -154,22 +154,6 @@ def _get_and_validate_results(task_data: dict) -> dict:
     return result_data
 
 
-def _prepare_structural_data(result_data: dict) -> StructureData:
-    """Convert structural analysis to StructureData object.
-
-    Args:
-        result_data: Result data containing structural analysis
-
-    Returns:
-        StructureData object
-    """
-    structural_analysis = result_data["structural_analysis"]
-
-    if isinstance(structural_analysis, dict):
-        return StructureData(**structural_analysis)
-    else:
-        return structural_analysis
-
 
 def _process_structure_for_3d(result_data: dict) -> str:
     """Process atomic structure data for 3D visualization.
@@ -182,27 +166,10 @@ def _process_structure_for_3d(result_data: dict) -> str:
     """
     structure_xyz = ""
 
-    if "final_structure" not in result_data:
-        logger.warning("No 'final_structure' key found in result_data. Available keys: %s", list(result_data.keys()))
-        return structure_xyz
-
     try:
         atoms = result_data["final_structure"]
         logger.info("Found final_structure data with type: %s", type(atoms))
-
-        if hasattr(atoms, "__len__"):
-            logger.info("Structure data length/size: %s", len(atoms))
-        if hasattr(atoms, "__dict__"):
-            logger.info(
-                "Structure data attributes: %s",
-                list(atoms.__dict__.keys()) if hasattr(atoms, "__dict__") else "No __dict__",
-            )
-
-        # Print the actual structure data to see what we're working with
-        if isinstance(atoms, str):
-            logger.info("Structure string preview (first 500 chars): %s", atoms[:500])
-        else:
-            logger.info("Structure data preview: %s", str(atoms)[:500])
+        logger.info("Structure data preview: %s", str(atoms)[:500])
 
         structure_xyz = atoms_to_xyz_string(atoms)
         if structure_xyz:
@@ -242,7 +209,10 @@ async def visualize_results(task_id: str) -> HTMLResponse:
         # Generate interactive plot
         from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
 
-        structural_data = _prepare_structural_data(result_data)
+        structural_data = result_data["structural_analysis"]
+        if isinstance(structural_data, dict):
+            structural_data = StructureData(**structural_data)
+
         plotly_fig = plot_analysis_results_plotly(structural_data).to_dict()
 
         # Get atomic structure for 3D visualization
