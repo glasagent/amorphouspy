@@ -50,7 +50,7 @@ def test_meltquench_api_integration() -> None:
         "n_print": 1000,
     }
     logger.info("Submitting meltquench task with faster rates: %s", payload["heating_rate"])
-    r = requests.post(f"{API_URL}/submit_meltquench", json=payload, timeout=30)
+    r = requests.post(f"{API_URL}/submit/meltquench", json=payload, timeout=30)
     r.raise_for_status()
     data = r.json()
     assert "task_id" in data
