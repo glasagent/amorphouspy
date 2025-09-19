@@ -64,8 +64,16 @@ if "PYIRONSQLCONNECTIONSTRING" not in os.environ:
     os.environ["PYIRONSQLCONNECTIONSTRING"] = f"sqlite:///{pyiron_db_path}"
     logger.info("Set PYIRONSQLCONNECTIONSTRING to: sqlite:///%s", pyiron_db_path)
 
+# Ensure the projects directory exists
+PROJECTS_FOLDER.mkdir(parents=True, exist_ok=True)
+logger.info("Ensured projects directory exists: %s", PROJECTS_FOLDER)
+
 # Initialize persistent task store
 DB_PATH = PROJECTS_FOLDER / "tasks.db"
+logger.info("Task store database path: %s", DB_PATH)
+logger.info("Directory exists: %s, Directory writable: %s", 
+           PROJECTS_FOLDER.exists(), 
+           os.access(PROJECTS_FOLDER, os.W_OK) if PROJECTS_FOLDER.exists() else "N/A")
 init_task_store(DB_PATH)
 _task_store = get_task_store()
 
