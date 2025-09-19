@@ -42,16 +42,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Setup shared project directory - check for environment variable first
-SCRATCH_FOLDER = Path(__file__).resolve().parent.parent.parent / "scratch"
-if "PYIRON_SCRATCH_FOLDER" in os.environ:
-    SCRATCH_FOLDER = Path(os.environ["PYIRON_SCRATCH_FOLDER"])
-    logger.info("Using custom scratch directory from PYIRON_SCRATCH_FOLDER: %s", SCRATCH_FOLDER)
+# Setup shared project directory using canonical pyiron environment variables
+PROJECTS_FOLDER = Path(__file__).resolve().parent.parent.parent / "projects"
 
-SHARED_PROJECT_DIR = SCRATCH_FOLDER / "meltquench"
+# Check for PYIRONPROJECTPATHS environment variables
+if "PYIRONPROJECTPATHS" in os.environ:
+    PROJECTS_FOLDER = Path(os.environ["PYIRONPROJECTPATHS"])
+    logger.info("Using project directory from PYIRONPROJECTPATHS: %s", PROJECTS_FOLDER)
+else:
+    logger.info("Using default project directory: %s", PROJECTS_FOLDER)
+
+MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / "meltquench"
+
+# Configure pyiron environment variables if not already set
+if "PYIRONPROJECTPATHS" not in os.environ:
+    os.environ["PYIRONPROJECTPATHS"] = str(PROJECTS_FOLDER)
+    logger.info("Set PYIRONPROJECTPATHS to: %s", PROJECTS_FOLDER)
+
+if "PYIRONSQLCONNECTIONSTRING" not in os.environ:
+    pyiron_db_path = PROJECTS_FOLDER / "pyiron.db"
+    os.environ["PYIRONSQLCONNECTIONSTRING"] = f"sqlite:///{pyiron_db_path}"
+    logger.info("Set PYIRONSQLCONNECTIONSTRING to: sqlite:///%s", pyiron_db_path)
 
 # Initialize persistent task store
-DB_PATH = SCRATCH_FOLDER / "tasks.db"
+DB_PATH = PROJECTS_FOLDER / "tasks.db"
 init_task_store(DB_PATH)
 _task_store = get_task_store()
 
@@ -89,7 +103,9 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
 
     # Run the synchronous worker in a process executor to handle pyiron's signal handling
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR))
+        await loop.run_in_executor(
+            executor, meltquench_worker, task_id, request_dict, DB_PATH, str(MELTQUENCH_PROJECT_DIR)
+        )
 
 
 # Create FastAPI app
