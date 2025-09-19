@@ -32,6 +32,11 @@ markers = [
     "integration: mark a test as an integration test."
 ]
 addopts = "-m 'not integration'"
+filterwarnings = [
+    "ignore::DeprecationWarning:pyiron_vasp",
+    "ignore::DeprecationWarning:pyiron_vasp.*",
+    "ignore::DeprecationWarning:defusedxml.*",
+]
 
 [tool.ruff]
 # Target Python version

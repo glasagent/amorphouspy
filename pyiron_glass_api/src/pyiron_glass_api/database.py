@@ -11,14 +11,16 @@ from typing import Any
 
 from sqlalchemy import JSON, Column, DateTime, Index, String, Text, create_engine
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .models import MeltquenchResult, serialize_atoms
 
 logger = logging.getLogger(__name__)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """SQLAlchemy declarative base class."""
+    pass
 
 
 class Task(Base):
