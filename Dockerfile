@@ -24,10 +24,12 @@ RUN micromamba install -y -n base -f environment.yml && \
 EXPOSE 8000
 
 WORKDIR /app
-COPY pyiron_glass pyiron_glass/
-COPY pyiron_glass_api/ pyiron_glass_api/
 COPY LICENSE .
+
+COPY pyiron_glass pyiron_glass/
 RUN micromamba run pip install /app/pyiron_glass
+
+COPY pyiron_glass_api/ pyiron_glass_api/
 RUN micromamba run pip install /app/pyiron_glass_api
 
 ENV PYIRONPROJECTPATHS="/app/pyiron_glass_api/projects"

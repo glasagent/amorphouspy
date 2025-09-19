@@ -64,6 +64,13 @@ if "PYIRONSQLCONNECTIONSTRING" not in os.environ:
     os.environ["PYIRONSQLCONNECTIONSTRING"] = f"sqlite:///{pyiron_db_path}"
     logger.info("Set PYIRONSQLCONNECTIONSTRING to: sqlite:///%s", pyiron_db_path)
 
+# Configure API base URL for visualization links
+API_BASE_URL = os.environ.get("API_BASE_URL", "")
+if API_BASE_URL:
+    logger.info("Using API base URL for visualization links: %s", API_BASE_URL)
+else:
+    logger.info("No API base URL configured, using relative paths")
+
 # Ensure the projects directory exists
 PROJECTS_FOLDER.mkdir(parents=True, exist_ok=True)
 logger.info("Ensured projects directory exists: %s", PROJECTS_FOLDER)
@@ -71,9 +78,11 @@ logger.info("Ensured projects directory exists: %s", PROJECTS_FOLDER)
 # Initialize persistent task store
 DB_PATH = PROJECTS_FOLDER / "tasks.db"
 logger.info("Task store database path: %s", DB_PATH)
-logger.info("Directory exists: %s, Directory writable: %s", 
-           PROJECTS_FOLDER.exists(), 
-           os.access(PROJECTS_FOLDER, os.W_OK) if PROJECTS_FOLDER.exists() else "N/A")
+logger.info(
+    "Directory exists: %s, Directory writable: %s",
+    PROJECTS_FOLDER.exists(),
+    os.access(PROJECTS_FOLDER, os.W_OK) if PROJECTS_FOLDER.exists() else "N/A",
+)
 init_task_store(DB_PATH)
 _task_store = get_task_store()
 
@@ -94,6 +103,16 @@ def get_meltquench_hash(request: MeltquenchRequest) -> str:
     # Use cloudpickle for consistent serialization, then hash with sha256
     binary_data = cloudpickle.dumps(hash_params)
     return hashlib.sha256(binary_data).hexdigest()[:16]  # First 16 chars for brevity
+
+
+def get_visualization_url(task_id: str) -> str:
+    """Construct the full visualization URL for a given task ID."""
+    relative_path = f"/visualize/meltquench/{task_id}"
+    if API_BASE_URL:
+        # Remove trailing slash from base URL if present, then combine
+        base_url = API_BASE_URL.rstrip("/")
+        return f"{base_url}{relative_path}"
+    return relative_path
 
 
 async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
@@ -172,7 +191,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
                 "task_id": cached_task_id,
                 "status": "completed_from_cache",
                 "result": cached_meltquench_result.model_dump(),
-                "visualization_url": f"/visualize/meltquench/{cached_task_id}",
+                "visualization_url": get_visualization_url(cached_task_id),
             }
 
         task_id = str(uuid4())
@@ -194,7 +213,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         # Store task reference to prevent garbage collection
         task.add_done_callback(lambda _: None)
 
-        return {"task_id": task_id, "status": "started", "visualization_url": f"/visualize/meltquench/{task_id}"}
+        return {"task_id": task_id, "status": "started", "visualization_url": get_visualization_url(task_id)}
     except Exception:
         logger.exception("Error starting meltquench task")
         raise HTTPException(status_code=500, detail="Internal server error") from None
@@ -216,7 +235,7 @@ async def check(task_id: str) -> dict:
         "status": meta.get("status", "processing"),
         "result": meta.get("result"),
         "error": meta.get("error"),
-        "visualization_url": f"/visualize/meltquench/{task_id}",
+        "visualization_url": get_visualization_url(task_id),
     }
 
 
