@@ -36,6 +36,8 @@ filterwarnings = [
     "ignore::DeprecationWarning:pyiron_vasp",
     "ignore::DeprecationWarning:pyiron_vasp.*",
     "ignore::DeprecationWarning:defusedxml.*",
+    "ignore:.*__get_pydantic_core_schema__.*",
+    "ignore:.*multi-threaded.*fork.*",
 ]
 
 [tool.ruff]
