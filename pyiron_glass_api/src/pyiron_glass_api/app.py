@@ -190,8 +190,8 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
             return {
                 "task_id": cached_task_id,
                 "status": "completed_from_cache",
-                "result": cached_meltquench_result.model_dump(),
                 "visualization_url": get_visualization_url(cached_task_id),
+                "result": cached_meltquench_result.model_dump(),
             }
 
         task_id = str(uuid4())
@@ -233,9 +233,9 @@ async def check(task_id: str) -> dict:
         "task_id": task_id,
         "state": meta["state"],
         "status": meta.get("status", "processing"),
-        "result": meta.get("result"),
-        "error": meta.get("error"),
         "visualization_url": get_visualization_url(task_id),
+        "error": meta.get("error"),
+        "result": meta.get("result"),
     }
 
 
