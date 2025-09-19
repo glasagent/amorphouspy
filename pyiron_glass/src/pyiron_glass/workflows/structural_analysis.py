@@ -555,9 +555,6 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     fig.update_layout(
         height=1500,  # Increased height for 5 rows
         width=1000,  # Reduced width for 2 columns
-        #title_text="Comprehensive Structural Analysis",
-        #title_x=0.5,
-        #title_font_size=16,
         showlegend=True,
         legend={"orientation": "v", "yanchor": "top", "y": 1, "xanchor": "left", "x": 1.02},
     )

@@ -173,7 +173,7 @@ def test_submit_meltquench_and_check(
 
     # Submit meltquench task
     payload = {"components": ["SiO2", "CaO", "Al2O3"], "values": [60.0, 25.0, 15.0], "unit": "wt"}
-    response = client.post("/submit_meltquench", json=payload)
+    response = client.post("/submit/meltquench", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert "task_id" in data
@@ -214,7 +214,7 @@ def test_invalid_payload() -> None:
         "values": [60.0, 25.0],  # Mismatched lengths
         "unit": "wt",
     }
-    response = client.post("/submit_meltquench", json=payload)
+    response = client.post("/submit/meltquench", json=payload)
     assert response.status_code == 422  # Validation error
 
 
@@ -251,7 +251,7 @@ def test_check_cached_result_found() -> None:
         "unit": "wt",
     }
 
-    response = client.post("/check_cached_result", json=payload)
+    response = client.post("/cache/meltquench", json=payload)
     assert response.status_code == 200
     validate_cached_result(response.json())
 
@@ -264,7 +264,7 @@ def test_check_cached_result_not_found() -> None:
         "unit": "wt",
     }
 
-    response = client.post("/check_cached_result", json=payload)
+    response = client.post("/cache/meltquench", json=payload)
     assert response.status_code == 200
     validate_cached_result(response.json())
 
@@ -281,11 +281,11 @@ def test_caching_behavior() -> None:
     }
 
     # Check cache first
-    cache_response = client.post("/check_cached_result", json=unique_payload)
+    cache_response = client.post("/cache/meltquench", json=unique_payload)
     assert cache_response.status_code == 200
 
     # Submit the simulation (will be mocked)
-    submit_response = client.post("/submit_meltquench", json=unique_payload)
+    submit_response = client.post("/submit/meltquench", json=unique_payload)
     assert submit_response.status_code == 200
     submit_data = submit_response.json()
 
@@ -342,7 +342,7 @@ def test_visualization_endpoint(
         "heating_rate": int(unique_suffix[-6:]),  # Use last 6 digits
     }
 
-    submit_response = client.post("/submit_meltquench", json=payload)
+    submit_response = client.post("/submit/meltquench", json=payload)
     assert submit_response.status_code == 200
     submit_data = submit_response.json()
 
@@ -354,7 +354,7 @@ def test_visualization_endpoint(
         wait_for_task_completion(task_id, max_wait=5.0)
 
     # Test the visualization endpoint
-    viz_response = client.get(f"/viz/results/{task_id}")
+    viz_response = client.get(f"/visualize/meltquench/{task_id}")
     assert viz_response.status_code == 200
 
     # Check that we get HTML content
@@ -362,7 +362,7 @@ def test_visualization_endpoint(
     html_content = viz_response.text
 
     # Verify HTML contains expected elements
-    assert "Glass Simulation Results" in html_content
+    assert "Melt-Quench Simulation Results" in html_content
     assert task_id in html_content
     assert "plotlyData" in html_content or "plotly-div" in html_content
 
@@ -372,7 +372,7 @@ def test_visualization_endpoint(
 
 def test_visualization_endpoint_task_not_found() -> None:
     """Test visualization endpoint with non-existent task."""
-    response = client.get("/viz/results/nonexistent-task")
+    response = client.get("/visualize/meltquench/nonexistent-task")
     assert response.status_code == 404
     assert "Task not found" in response.json()["detail"]
 
@@ -396,6 +396,6 @@ def test_visualization_endpoint_incomplete_task() -> None:
     task_store.set(fake_task_id, {"state": "running", "request_data": request_data, "request_hash": request_hash})
 
     # Try to visualize incomplete task
-    viz_response = client.get(f"/viz/results/{fake_task_id}")
+    viz_response = client.get(f"/visualize/meltquench/{fake_task_id}")
     assert viz_response.status_code == 400
     assert "not completed yet" in viz_response.json()["detail"]

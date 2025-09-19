@@ -22,7 +22,6 @@ class Base(DeclarativeBase):
     """SQLAlchemy declarative base class."""
 
 
-
 class Task(Base):
     """SQLAlchemy model for task metadata and results.
 

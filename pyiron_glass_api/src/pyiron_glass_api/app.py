@@ -107,7 +107,7 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(visualization_router, tags=["visualization"])
 
 
-@app.post("/check_cached_result", tags=["tool"])
+@app.post("/cache/meltquench", tags=["tool"])
 async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | None:
     """Check if a result for the given meltquench request is already available in cache."""
     try:
@@ -130,7 +130,7 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
         raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.post("/submit_meltquench", tags=["tool"])
+@app.post("/submit/meltquench", tags=["tool"])
 async def submit_meltquench(request: MeltquenchRequest) -> dict:
     """Start a new meltquench simulation task."""
     try:

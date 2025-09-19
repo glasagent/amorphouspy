@@ -19,7 +19,7 @@ from .database import get_task_store
 logger = logging.getLogger(__name__)
 
 # Create visualization router
-router = APIRouter(prefix="/viz", tags=["visualization"])
+router = APIRouter(prefix="/visualize", tags=["visualization"])
 
 # Setup Jinja2 templates
 template_dir = Path(__file__).parent / "templates"
@@ -154,7 +154,6 @@ def _get_and_validate_results(task_data: dict) -> dict:
     return result_data
 
 
-
 def _process_structure_for_3d(result_data: dict) -> str:
     """Process atomic structure data for 3D visualization.
 
@@ -183,7 +182,7 @@ def _process_structure_for_3d(result_data: dict) -> str:
     return structure_xyz
 
 
-@router.get("/results/{task_id}", response_class=HTMLResponse)
+@router.get("/meltquench/{task_id}", response_class=HTMLResponse)
 async def visualize_results(task_id: str) -> HTMLResponse:
     """Visualize simulation results for a given task ID with interactive Plotly plots.
 
