@@ -53,13 +53,15 @@ def atoms_to_xyz_string(atoms) -> str:
         write(xyz_buffer, atoms_obj, format="extxyz")
         return xyz_buffer.getvalue()
 
-    except Exception as e:
-        logger.exception("Error converting atoms to extended XYZ: %s", e)
+    except Exception:
+        logger.exception("Error converting atoms to extended XYZ")
         logger.exception("Atoms type: %s", type(atoms))
         return ""
 
 
-def prepare_template_context(task_id: str, result_data: dict[str, Any], plotly_fig: dict, structure_xyz: str = "") -> dict[str, Any]:
+def prepare_template_context(
+    task_id: str, result_data: dict[str, Any], plotly_fig: dict, structure_xyz: str = ""
+) -> dict[str, Any]:
     """Prepare context data for the results template.
 
     Args:
@@ -77,18 +79,18 @@ def prepare_template_context(task_id: str, result_data: dict[str, Any], plotly_f
     density = structural_analysis.get("density", "N/A")
     if isinstance(density, (int, float)):
         density = f"{density:.3f}"
-    
+
     network_connectivity = structural_analysis.get("network", {}).get("connectivity", "N/A")
     if isinstance(network_connectivity, (int, float)):
         network_connectivity = f"{network_connectivity:.3f}"
-    
+
     network_formers = structural_analysis.get("elements", {}).get("formers", [])
     modifiers = structural_analysis.get("elements", {}).get("modifiers", [])
 
     mean_temperature = result_data.get("mean_temperature", "N/A")
     if isinstance(mean_temperature, (int, float)):
         mean_temperature = f"{mean_temperature:.1f}"
-    
+
     simulation_steps = result_data.get("simulation_steps", "N/A")
     if isinstance(simulation_steps, int):
         simulation_steps = f"{simulation_steps:,}"
@@ -105,6 +107,113 @@ def prepare_template_context(task_id: str, result_data: dict[str, Any], plotly_f
         "plotly_json": json.dumps(plotly_fig),
         "structure_xyz": structure_xyz,
     }
+
+
+def _validate_task_data(task_data: dict | None, task_id: str) -> dict:
+    """Validate task data and ensure it's complete.
+
+    Args:
+        task_data: Task data from the store
+        task_id: Task identifier for error messages
+
+    Returns:
+        Validated task data
+
+    Raises:
+        HTTPException: If task not found or not completed
+    """
+    if not task_data:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task_data["state"] != "complete":
+        raise HTTPException(status_code=400, detail=f"Task is not completed yet. Current state: {task_data['state']}")
+
+    return task_data
+
+
+def _get_and_validate_results(task_data: dict) -> dict:
+    """Extract and validate result data from task.
+
+    Args:
+        task_data: Validated task data
+
+    Returns:
+        Result data dictionary
+
+    Raises:
+        HTTPException: If no results or structural analysis found
+    """
+    result_data = task_data.get("result")
+    if not result_data:
+        raise HTTPException(status_code=404, detail="No results found for this task")
+
+    structural_analysis = result_data.get("structural_analysis")
+    if not structural_analysis:
+        raise HTTPException(status_code=404, detail="No structural analysis data found")
+
+    return result_data
+
+
+def _prepare_structural_data(result_data: dict) -> StructureData:
+    """Convert structural analysis to StructureData object.
+
+    Args:
+        result_data: Result data containing structural analysis
+
+    Returns:
+        StructureData object
+    """
+    structural_analysis = result_data["structural_analysis"]
+
+    if isinstance(structural_analysis, dict):
+        return StructureData(**structural_analysis)
+    else:
+        return structural_analysis
+
+
+def _process_structure_for_3d(result_data: dict) -> str:
+    """Process atomic structure data for 3D visualization.
+
+    Args:
+        result_data: Result data that may contain final_structure
+
+    Returns:
+        XYZ format string for 3D visualization
+    """
+    structure_xyz = ""
+
+    if "final_structure" not in result_data:
+        logger.warning("No 'final_structure' key found in result_data. Available keys: %s", list(result_data.keys()))
+        return structure_xyz
+
+    try:
+        atoms = result_data["final_structure"]
+        logger.info("Found final_structure data with type: %s", type(atoms))
+
+        if hasattr(atoms, "__len__"):
+            logger.info("Structure data length/size: %s", len(atoms))
+        if hasattr(atoms, "__dict__"):
+            logger.info(
+                "Structure data attributes: %s",
+                list(atoms.__dict__.keys()) if hasattr(atoms, "__dict__") else "No __dict__",
+            )
+
+        # Print the actual structure data to see what we're working with
+        if isinstance(atoms, str):
+            logger.info("Structure string preview (first 500 chars): %s", atoms[:500])
+        else:
+            logger.info("Structure data preview: %s", str(atoms)[:500])
+
+        structure_xyz = atoms_to_xyz_string(atoms)
+        if structure_xyz:
+            logger.info("Successfully converted structure to XYZ format (%d chars)", len(structure_xyz))
+        else:
+            logger.warning("XYZ conversion resulted in empty string")
+
+    except Exception:
+        logger.exception("Could not convert structure to XYZ format")
+
+    return structure_xyz
 
 
 @router.get("/results/{task_id}", response_class=HTMLResponse)
@@ -125,67 +234,19 @@ async def visualize_results(task_id: str) -> HTMLResponse:
     try:
         # Get task data
         task_data = get_task_store().get(task_id)
-        if not task_data:
-            raise HTTPException(status_code=404, detail="Task not found")
-
-        # Check if task is completed
-        if task_data["state"] != "complete":
-            raise HTTPException(
-                status_code=400, detail=f"Task is not completed yet. Current state: {task_data['state']}"
-            )
+        task_data = _validate_task_data(task_data, task_id)
 
         # Get result data
-        result_data = task_data.get("result")
-        if not result_data:
-            raise HTTPException(status_code=404, detail="No results found for this task")
-
-        # Check if structural analysis is available
-        structural_analysis = result_data.get("structural_analysis")
-        if not structural_analysis:
-            raise HTTPException(status_code=404, detail="No structural analysis data found")
-
-        # Convert to StructureData if it's a dict
-        if isinstance(structural_analysis, dict):
-            structural_data = StructureData(**structural_analysis)
-        else:
-            structural_data = structural_analysis
+        result_data = _get_and_validate_results(task_data)
 
         # Generate interactive plot
         from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
 
+        structural_data = _prepare_structural_data(result_data)
         plotly_fig = plot_analysis_results_plotly(structural_data).to_dict()
 
         # Get atomic structure for 3D visualization
-        structure_xyz = ""
-        if "final_structure" in result_data:
-            try:
-                atoms = result_data["final_structure"]
-                logger.info("Found final_structure data with type: %s", type(atoms))
-                if hasattr(atoms, "__len__"):
-                    logger.info("Structure data length/size: %s", len(atoms))
-                if hasattr(atoms, "__dict__"):
-                    logger.info(
-                        "Structure data attributes: %s",
-                        list(atoms.__dict__.keys()) if hasattr(atoms, "__dict__") else "No __dict__",
-                    )
-
-                # Print the actual structure data to see what we're working with
-                if isinstance(atoms, str):
-                    logger.info("Structure string preview (first 500 chars): %s", atoms[:500])
-                else:
-                    logger.info("Structure data preview: %s", str(atoms)[:500])
-
-                structure_xyz = atoms_to_xyz_string(atoms)
-                if structure_xyz:
-                    logger.info("Successfully converted structure to XYZ format (%d chars)", len(structure_xyz))
-                else:
-                    logger.warning("XYZ conversion resulted in empty string")
-            except Exception as e:
-                logger.exception("Could not convert structure to XYZ format: %s", e)
-        else:
-            logger.warning(
-                "No 'final_structure' key found in result_data. Available keys: %s", list(result_data.keys())
-            )
+        structure_xyz = _process_structure_for_3d(result_data)
 
         # Create HTML response using template
         context = prepare_template_context(task_id, result_data, plotly_fig, structure_xyz)

@@ -57,7 +57,7 @@ function init3DViewer() {
             // Get element symbol and atom index
             const element = atom.elem || atom.element || 'Unknown';
             const atomIndex = atom.serial || (atom.index !== undefined ? atom.index + 1 : 'N/A');
-            
+
             atom.label = viewer.addLabel(
                 `${element} (${atomIndex})`,
                 {
@@ -197,7 +197,7 @@ function updateStyle() {
             // Get element symbol and atom index
             const element = atom.elem || atom.element || 'Unknown';
             const atomIndex = atom.serial || (atom.index !== undefined ? atom.index + 1 : 'N/A');
-            
+
             atom.label = viewer.addLabel(
                 `${element} (${atomIndex})`,
                 {

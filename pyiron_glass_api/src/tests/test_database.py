@@ -32,9 +32,17 @@ def test_task_store_cached_result_lookup() -> None:
         store = TaskStore(db_path)
 
         # Create a completed task with results (matching current API format)
+        # Create a simple mock structure that can be validated as ASE Atoms
+        mock_structure = {
+            "numbers": [14, 8, 8],  # Si, O, O
+            "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+            "pbc": [True, True, True]
+        }
+        
         result_data = {
             "composition": "0.75SiO2-0.25Na2O",
-            "final_structure": "test structure",
+            "final_structure": mock_structure,
             "mean_temperature": 300.0,
             "simulation_steps": 1000,
             "structural_analysis": {

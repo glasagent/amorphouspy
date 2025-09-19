@@ -29,9 +29,37 @@ def test_submit_meltquench_and_check(
     mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
     mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
 
-    mock_structure = MagicMock()
-    mock_structure.get_masses.return_value.sum.return_value = 1000  # mock mass
-    mock_structure.__str__ = lambda _: "Mock ASE structure with 100 atoms"
+    # Create a proper mock ASE Atoms-like object that can be serialized
+    mock_structure_dict = {
+        "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
+        "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
+        "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],  # 10x10x10 box
+        "pbc": [True, True, True],
+    }
+    
+    # Create a mock that has the required methods but is serializable
+    class MockAtoms:
+        def __init__(self, atoms_dict):
+            self._dict = atoms_dict
+            
+        def get_masses(self):
+            # Return a mock that has a sum method
+            class MockMasses:
+                def sum(self):
+                    return 1000  # mock mass
+            return MockMasses()
+            
+        def __str__(self):
+            return "Mock ASE structure with 100 atoms"
+            
+        # Make it serializable by providing dict representation
+        def __getstate__(self):
+            return self._dict
+            
+        def __setstate__(self, state):
+            self._dict = state
+
+    mock_structure = MockAtoms(mock_structure_dict)
     mock_get_ase_structure.return_value = mock_structure
 
     mock_potential = "mock_potential_content"
@@ -49,13 +77,17 @@ def test_submit_meltquench_and_check(
     mock_analyze_structure.return_value.pull.return_value = mock_structural_analysis_data
     mock_generate_potential.return_value = mock_potential
 
-    # Mock the simulation result - create a separate structure mock for the result
-    mock_result_structure = MagicMock()
-    mock_result_structure.__str__ = lambda _: "Mock final structure with 100 atoms"
-    mock_result_structure.__len__ = lambda _: 100
+    # Mock the simulation result - use a simple dict instead of MagicMock for serialization
+    # This mimics the basic structure of an ASE Atoms object as a dict
+    mock_result_structure_dict = {
+        "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
+        "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
+        "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],  # 10x10x10 box
+        "pbc": [True, True, True],
+    }
 
     mock_result = {
-        "structure": mock_result_structure,
+        "structure": mock_result_structure_dict,  # Use dict instead of MagicMock
         "result": {
             "volume": [1000, 1000, 1000],  # cm³
             "temperature": [300, 305, 302],  # K
@@ -250,7 +282,7 @@ def test_caching_behavior() -> None:
 
 
 @patch("pyiron_glass.workflows.structural_analysis.analyze_structure")
-@patch("pyiron_glass.workflows.structural_analysis.plot_analysis_results")
+@patch("pyiron_glass.workflows.structural_analysis.plot_analysis_results_plotly")
 @patch("pyiron_glass.melt_quench_simulation")
 @patch("pyiron_glass.generate_potential")
 @patch("pyiron_glass.get_ase_structure")
@@ -262,7 +294,7 @@ def test_visualization_endpoint(
     mock_get_ase_structure,
     mock_generate_potential,
     mock_melt_quench_simulation,
-    mock_plot_analysis_results,
+    mock_plot_analysis_results_plotly,
     mock_analyze_structure,
 ) -> None:
     """Test the visualization endpoint with mocked plot generation."""
@@ -272,21 +304,52 @@ def test_visualization_endpoint(
     mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
     mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
 
-    mock_structure = MagicMock()
-    mock_structure.get_masses.return_value.sum.return_value = 1000
-    mock_structure.__str__ = lambda _: "Mock ASE structure with 100 atoms"
+    # Create a proper mock ASE Atoms-like object that can be serialized
+    mock_structure_dict = {
+        "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
+        "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
+        "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],  # 10x10x10 box
+        "pbc": [True, True, True],
+    }
+    
+    # Create a mock that has the required methods but is serializable
+    class MockAtoms:
+        def __init__(self, atoms_dict):
+            self._dict = atoms_dict
+            
+        def get_masses(self):
+            # Return a mock that has a sum method
+            class MockMasses:
+                def sum(self):
+                    return 1000  # mock mass
+            return MockMasses()
+            
+        def __str__(self):
+            return "Mock ASE structure with 100 atoms"
+            
+        # Make it serializable by providing dict representation
+        def __getstate__(self):
+            return self._dict
+            
+        def __setstate__(self, state):
+            self._dict = state
+
+    mock_structure = MockAtoms(mock_structure_dict)
     mock_get_ase_structure.return_value = mock_structure
 
     mock_potential = "mock_potential_content"
     mock_generate_potential.return_value = mock_potential
 
-    # Mock the simulation result - create a separate structure mock for the result
-    mock_result_structure = MagicMock()
-    mock_result_structure.__str__ = lambda _: "Mock final structure with 100 atoms"
-    mock_result_structure.__len__ = lambda _: 100
+    # Mock the simulation result - use a simple dict instead of MagicMock for serialization
+    mock_result_structure_dict = {
+        "numbers": [14] * 50 + [8] * 100,  # Si and O atoms
+        "positions": [[0.0, 0.0, 0.0]] * 150,  # Simple positions
+        "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+        "pbc": [True, True, True],
+    }
 
     mock_result = {
-        "structure": mock_result_structure,
+        "structure": mock_result_structure_dict,
         "result": {
             "volume": [1000, 1000, 1000],
             "temperature": [300, 305, 302],
@@ -297,7 +360,8 @@ def test_visualization_endpoint(
 
     # Create a mock figure for the plot
     mock_fig = MagicMock()
-    mock_plot_analysis_results.return_value = mock_fig
+    mock_fig.to_dict.return_value = {"data": [], "layout": {}}  # Mock Plotly figure dict
+    mock_plot_analysis_results_plotly.return_value = mock_fig
 
     # Mock the analyze_structure function - return dict directly instead of MagicMock
     mock_structural_analysis_data = {
@@ -361,11 +425,11 @@ def test_visualization_endpoint(
     # Verify HTML contains expected elements
     assert "Glass Simulation Results" in html_content
     assert task_id in html_content
-    assert "Structural Analysis Plot" in html_content
-    assert "data:image/png;base64," in html_content
+    # Update assertions for new HTML template structure
+    assert "plotly_json" in html_content or "Plotly.newPlot" in html_content
 
     # Verify the plot function was called
-    mock_plot_analysis_results.assert_called_once()
+    mock_plot_analysis_results_plotly.assert_called_once()
 
 
 def test_visualization_endpoint_task_not_found() -> None:

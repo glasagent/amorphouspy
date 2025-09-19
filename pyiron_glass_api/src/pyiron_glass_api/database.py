@@ -257,6 +257,7 @@ class TaskStore:
             result_data = task_data["result"].copy()
             if "final_structure" in result_data:
                 from ase import Atoms
+
                 if isinstance(result_data["final_structure"], Atoms):
                     # Serialize ASE Atoms to JSON string for storage
                     result_data["final_structure"] = serialize_atoms(result_data["final_structure"])
