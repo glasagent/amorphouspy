@@ -38,7 +38,7 @@ class NetworkData(BaseModel):
     Qn_distribution_partial: dict[str, dict[str, float]] = Field(
         ..., description="Partial Q^n distributions by former type"
     )
-    connectivity: float = Field(default=0.0, description="Overall network connectivity (0-1)")
+    connectivity: float = Field(default=0.0, description="Overall network connectivity (e.g. 0, 3.5, ...)")
 
 
 class StructuralDistributions(BaseModel):
@@ -368,7 +368,7 @@ def _add_coordination_plots(fig: go.Figure, structure_data: StructureData, color
 
 
 def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
-    """Add network connectivity plots to the figure."""
+    """Add modifier coordination and Q^n distribution plots to the figure."""
     # Plot 3: Modifier coordination distributions
     if structure_data.coordination.modifiers:
         for i, (modifier, coord_data) in enumerate(structure_data.coordination.modifiers.items()):
