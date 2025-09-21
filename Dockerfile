@@ -34,5 +34,6 @@ RUN micromamba run pip install /app/pyiron_glass_api
 
 ENV PYIRONPROJECTPATHS="/app/pyiron_glass_api/projects"
 ENV PYIRONSQLCONNECTIONSTRING="sqlite:////app/pyiron_glass_api/projects/pyiron.db"
+ENV PYIRONSQLTYPE="SQLalchemy"
 
 CMD ["uvicorn","pyiron_glass_api.app:app","--host", "0.0.0.0","--port", "8000","--log-level","trace","--backlog","1","--timeout-keep-alive","60"]
