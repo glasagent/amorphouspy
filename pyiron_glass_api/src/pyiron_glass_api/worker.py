@@ -38,8 +38,10 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
     from pathlib import Path
 
     from .database import TaskStore
+    from pyiron_base import state
 
     logger = setup_worker_logging(task_id)
+    logger.info("[WORKER PROCESS] pyiron state.settings.configuration: %s", state.settings.configuration)
     logger.info(f"Starting meltquench simulation for task {task_id}")
 
     # Create task store instance for this worker process
