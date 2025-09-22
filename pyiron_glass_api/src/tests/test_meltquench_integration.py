@@ -48,6 +48,7 @@ def test_meltquench_api_integration() -> None:
         "heating_rate": int(1e15),  # 10x faster than default
         "cooling_rate": int(1e15),  # 10x faster than default
         "n_print": 1000,
+        "n_atoms": 100,
     }
     logger.info("Submitting meltquench task with faster rates: %s", payload["heating_rate"])
     r = requests.post(f"{API_URL}/submit/meltquench", json=payload, timeout=30)

@@ -79,15 +79,17 @@ class MeltquenchRequest(BaseModel):
         heating_rate: Heating rate in K/s (optional, default: 1e14)
         cooling_rate: Cooling rate in K/s (optional, default: 1e14)
         n_print: Print interval for simulation output (optional, default: 1000)
+        n_atoms: Number of atoms in the generated structure (default: 5000)
 
     """
 
     components: list[str] = Field(..., description="List of oxide components (e.g., ['CaO', 'Al2O3', 'SiO2'])")
     values: list[float] = Field(..., description="List of composition values corresponding to components")
     unit: Literal["wt", "mol"] = Field(..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent")
-    heating_rate: int = Field(default=int(1e14), description="Heating rate in K/s (default: 1e14)")
-    cooling_rate: int = Field(default=int(1e14), description="Cooling rate in K/s (default: 1e14)")
+    heating_rate: int = Field(default=int(1e14), description="Heating rate in K/s (default: 100K/ps)")
+    cooling_rate: int = Field(default=int(1e12), description="Cooling rate in K/s (default: 1K/ps)")
     n_print: int = Field(default=1000, description="Print interval for simulation output (default: 1000)")
+    n_atoms: int = Field(default=5000, description="Target number of atoms for the generated structure (default: 5000)")
 
     @field_validator("values")
     @classmethod
