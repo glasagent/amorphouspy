@@ -112,6 +112,7 @@ def get_meltquench_hash(request: MeltquenchRequest) -> str:
         "heating_rate": request.heating_rate,
         "cooling_rate": request.cooling_rate,
         "n_print": request.n_print,
+        "n_atoms": request.n_atoms,
     }
 
     # Use cloudpickle for consistent serialization, then hash with sha256

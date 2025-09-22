@@ -89,9 +89,8 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
         atoms_dict = get_structure_dict(
             composition=composition,
-            n_molecules=100,  # Default number of molecules
-            min_distance=1.8,
-            max_attempts_per_atom=10000,
+            # n_molecules=5000,  # Default number of molecules
+            target_atoms=request.n_atoms,
             pyiron_project=pr,
         ).pull()
         logger.info(f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms")
