@@ -8,8 +8,39 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pyiron_glass_api.app import app
+from pyiron_glass_api.models import MeltquenchRequest
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _patch_worker(monkeypatch) -> None:
+    """Replace background worker with a no-op that writes a completed result.
+
+    This keeps tests fully in-process and avoids spawning real child processes.
+    """
+    from pyiron_glass_api import app as app_module
+
+    async def fake_worker(task_id: str, request: MeltquenchRequest) -> None:
+        from pyiron_glass_api.database import get_task_store
+
+        ts = get_task_store()
+        ts.set(
+            task_id,
+            {
+                "state": "complete",
+                "status": "Completed",
+                "result": {
+                    "composition": "0.6SiO2-0.25CaO-0.15Al2O3",
+                    "final_structure": create_mock_structure_dict(),
+                    "mean_temperature": 302.3333333333,
+                    "simulation_steps": 3,
+                    "structural_analysis": create_mock_structural_analysis_data(),
+                },
+            },
+        )
+
+    monkeypatch.setattr(app_module, "_meltquench_worker", fake_worker)
 
 
 class MockAtoms:
@@ -146,31 +177,8 @@ def validate_result_structure(result: dict[str, Any]) -> None:
     assert isinstance(result["simulation_steps"], int)
 
 
-@patch("pyiron_glass.workflows.structural_analysis.analyze_structure")
-@patch("pyiron_glass.melt_quench_simulation")
-@patch("pyiron_glass.generate_potential")
-@patch("pyiron_glass.get_ase_structure")
-@patch("pyiron_glass.get_structure_dict")
-@patch("pyiron_base.Project")
-def test_submit_meltquench_and_check(
-    mock_project: MagicMock,
-    mock_get_structure_dict: MagicMock,
-    mock_get_ase_structure: MagicMock,
-    mock_generate_potential: MagicMock,
-    mock_melt_quench_simulation: MagicMock,
-    mock_analyze_structure: MagicMock,
-) -> None:
-    """Test the complete meltquench workflow with mocked pyiron dependencies."""
-    # Setup all mocks
-    setup_common_mocks(
-        mock_project,
-        mock_get_structure_dict,
-        mock_get_ase_structure,
-        mock_generate_potential,
-        mock_melt_quench_simulation,
-        mock_analyze_structure,
-    )
-
+def test_submit_meltquench_and_check() -> None:
+    """Test the complete meltquench workflow without real background processes."""
     # Submit meltquench task
     payload = {"components": ["SiO2", "CaO", "Al2O3"], "values": [60.0, 25.0, 15.0], "unit": "wt"}
     response = client.post("/submit/meltquench", json=payload)
@@ -284,7 +292,7 @@ def test_caching_behavior() -> None:
     cache_response = client.post("/cache/meltquench", json=unique_payload)
     assert cache_response.status_code == 200
 
-    # Submit the simulation (will be mocked)
+    # Submit the simulation (will be mocked by autouse fixture)
     submit_response = client.post("/submit/meltquench", json=unique_payload)
     assert submit_response.status_code == 200
     submit_data = submit_response.json()
@@ -295,43 +303,13 @@ def test_caching_behavior() -> None:
     assert submit_data["status"] in ["started", "completed_from_cache"]
 
 
-@patch("pyiron_glass.workflows.structural_analysis.analyze_structure")
 @patch("pyiron_glass.workflows.structural_analysis.plot_analysis_results_plotly")
-@patch("pyiron_glass.melt_quench_simulation")
-@patch("pyiron_glass.generate_potential")
-@patch("pyiron_glass.get_ase_structure")
-@patch("pyiron_glass.get_structure_dict")
-@patch("pyiron_base.Project")
-def test_visualization_endpoint(
-    mock_project: MagicMock,
-    mock_get_structure_dict: MagicMock,
-    mock_get_ase_structure: MagicMock,
-    mock_generate_potential: MagicMock,
-    mock_melt_quench_simulation: MagicMock,
-    mock_plot_analysis_results_plotly: MagicMock,
-    mock_analyze_structure: MagicMock,
-) -> None:
+def test_visualization_endpoint(mock_plot_analysis_results_plotly: MagicMock) -> None:
     """Test the visualization endpoint with mocked plot generation."""
-    # Setup all mocks
-    setup_common_mocks(
-        mock_project,
-        mock_get_structure_dict,
-        mock_get_ase_structure,
-        mock_generate_potential,
-        mock_melt_quench_simulation,
-        mock_analyze_structure,
-    )
-
     # Create a mock figure for the plot
     mock_fig = MagicMock()
     mock_fig.to_dict.return_value = {"data": [], "layout": {}}  # Mock Plotly figure dict
     mock_plot_analysis_results_plotly.return_value = mock_fig
-
-    # Update the structural analysis data for visualization test
-    mock_analyze_structure.return_value.pull.return_value = {
-        **create_mock_structural_analysis_data(),
-        "density": 2.65,  # Override density for visualization
-    }
 
     # Submit task with unique payload to avoid caching
     unique_suffix = str(int(time.time() * 1000))  # millisecond timestamp
@@ -345,13 +323,25 @@ def test_visualization_endpoint(
     submit_response = client.post("/submit/meltquench", json=payload)
     assert submit_response.status_code == 200
     submit_data = submit_response.json()
+    task_id = submit_data["task_id"]
 
-    if submit_data["status"] == "completed_from_cache":
-        task_id = submit_data["task_id"]
-    else:
-        task_id = submit_data["task_id"]
-        # Wait for mocked completion
-        wait_for_task_completion(task_id, max_wait=5.0)
+    # Overwrite task result directly to tailor the visualization data
+    from pyiron_glass_api.database import get_task_store
+
+    get_task_store().set(
+        task_id,
+        {
+            "state": "complete",
+            "status": "Completed",
+            "result": {
+                "composition": "0.75SiO2-0.25Na2O",
+                "final_structure": create_mock_structure_dict(),
+                "mean_temperature": 300.0,
+                "simulation_steps": 3,
+                "structural_analysis": {**create_mock_structural_analysis_data(), "density": 2.65},
+            },
+        },
+    )
 
     # Test the visualization endpoint
     viz_response = client.get(f"/visualize/meltquench/{task_id}")
