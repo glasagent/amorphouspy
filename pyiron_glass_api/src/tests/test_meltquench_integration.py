@@ -48,9 +48,10 @@ def test_meltquench_api_integration() -> None:
         "heating_rate": int(1e15),  # 10x faster than default
         "cooling_rate": int(1e15),  # 10x faster than default
         "n_print": 1000,
+        "n_atoms": 100,
     }
     logger.info("Submitting meltquench task with faster rates: %s", payload["heating_rate"])
-    r = requests.post(f"{API_URL}/submit_meltquench", json=payload, timeout=30)
+    r = requests.post(f"{API_URL}/submit/meltquench", json=payload, timeout=30)
     r.raise_for_status()
     data = r.json()
     assert "task_id" in data
@@ -92,8 +93,8 @@ def test_meltquench_api_integration() -> None:
     assert "composition" in result
     assert "final_structure" in result
     assert "mean_temperature" in result
-    assert "final_density" in result
     assert "simulation_steps" in result
+    assert "structural_analysis" in result
 
     # Validate composition string format (should be fractions with components)
     composition = result["composition"]
@@ -105,8 +106,19 @@ def test_meltquench_api_integration() -> None:
 
     # Validate numerical results are reasonable
     temp = result["mean_temperature"]
-    density = result["final_density"]
     steps = result["simulation_steps"]
+    structural_analysis = result["structural_analysis"]
+
+    # Check that structural analysis contains density
+    assert "density" in structural_analysis
+    density = structural_analysis["density"]
+
+    # Validate additional structural properties (now nested)
+    assert "network" in structural_analysis
+    assert "elements" in structural_analysis
+    assert "connectivity" in structural_analysis["network"]
+    assert "formers" in structural_analysis["elements"]
+    assert "modifiers" in structural_analysis["elements"]
 
     assert isinstance(temp, (int, float))
     assert isinstance(density, (int, float))
@@ -125,3 +137,4 @@ def test_meltquench_api_integration() -> None:
     logger.info("✓ Temperature: %.1f K", temp)
     logger.info("✓ Density: %.2f g/cm³", density)
     logger.info("✓ Steps: %s", steps)
+    logger.info("✓ Structural analysis: %s", {k: v for k, v in structural_analysis.items() if k != "error"})

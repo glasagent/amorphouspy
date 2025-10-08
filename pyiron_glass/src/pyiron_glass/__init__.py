@@ -50,7 +50,7 @@ __all__ = [
     "get_viscosity",
     "md_simulation",
     "melt_quench_simulation",
-    "plot_analysis_results",
+    "plot_analysis_results_plotly",
     "potential",
     "structure_from_parsed_output",
     "type_to_dict",

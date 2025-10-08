@@ -4,9 +4,13 @@ This module contains data validation models for various simulation types
 including meltquench simulations and other glass modeling workflows.
 """
 
-from typing import Literal
+from io import StringIO
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from ase import Atoms
+from ase.io import read, write
+from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, ValidationInfo, field_validator
+from pyiron_glass.workflows.structural_analysis import StructureData
 
 # Constants for composition validation
 PERCENTAGE_THRESHOLD = 1.1
@@ -19,13 +23,50 @@ FRACTION_MAX = 1.05
 PERCENTAGE_ERROR_MSG = "Composition values sum to {total}, expected around 100 for percentages"
 FRACTION_ERROR_MSG = "Composition values sum to {total}, expected around 1.0 for fractions"
 LENGTH_ERROR_MSG = "Components and values lists must have the same length"
-FRACTION_MIN = 0.95
-FRACTION_MAX = 1.05
 
-# Error messages
-PERCENTAGE_ERROR_MSG = "Composition values sum to {total}, expected around 100 for percentages"
-FRACTION_ERROR_MSG = "Composition values sum to {total}, expected around 1.0 for fractions"
-LENGTH_ERROR_MSG = "Components and values lists must have the same length"
+
+def serialize_atoms(atoms: Atoms) -> str:
+    """Serialize ASE Atoms to JSON string."""
+    json_buffer = StringIO()
+    write(json_buffer, atoms, format="json")
+    return json_buffer.getvalue()
+
+
+def validate_atoms(v: Atoms | dict | str | None) -> Atoms | None:
+    """Validate and convert input to ASE Atoms object."""
+    if v is None:
+        return None
+    elif isinstance(v, Atoms):
+        return v
+    elif isinstance(v, dict):
+        # Try to reconstruct from dict
+        try:
+            return Atoms(**v)
+        except Exception as e:
+            msg = f"Could not reconstruct Atoms from dict: {e}"
+            raise ValueError(msg) from e
+    elif isinstance(v, str):
+        # Try to parse from JSON string format
+        try:
+            return read(StringIO(v), format="json")
+        except Exception as e:
+            msg = f"Could not parse Atoms from string: {e}"
+            raise ValueError(msg) from e
+    else:
+        msg = f"final_structure must be ASE Atoms object, dict, string, or None, got {type(v)}"
+        raise TypeError(msg)
+
+
+# Custom type for ASE Atoms with serialization (allowing None)
+AtomsType = Annotated[
+    Atoms | None,
+    PlainValidator(validate_atoms),
+    PlainSerializer(serialize_atoms, return_type=str, when_used="unless-none"),
+]
+
+
+# Export the serialization functions for use in other modules
+__all__ = ["AtomsType", "MeltquenchRequest", "MeltquenchResult", "serialize_atoms", "validate_atoms"]
 
 
 class MeltquenchRequest(BaseModel):
@@ -38,15 +79,17 @@ class MeltquenchRequest(BaseModel):
         heating_rate: Heating rate in K/s (optional, default: 1e14)
         cooling_rate: Cooling rate in K/s (optional, default: 1e14)
         n_print: Print interval for simulation output (optional, default: 1000)
+        n_atoms: Number of atoms in the generated structure (default: 5000)
 
     """
 
     components: list[str] = Field(..., description="List of oxide components (e.g., ['CaO', 'Al2O3', 'SiO2'])")
     values: list[float] = Field(..., description="List of composition values corresponding to components")
     unit: Literal["wt", "mol"] = Field(..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent")
-    heating_rate: int = Field(default=int(1e14), description="Heating rate in K/s (default: 1e14)")
-    cooling_rate: int = Field(default=int(1e14), description="Cooling rate in K/s (default: 1e14)")
+    heating_rate: int = Field(default=int(1e14), description="Heating rate in K/s (default: 100K/ps)")
+    cooling_rate: int = Field(default=int(1e12), description="Cooling rate in K/s (default: 1K/ps)")
     n_print: int = Field(default=1000, description="Print interval for simulation output (default: 1000)")
+    n_atoms: int = Field(default=5000, description="Target number of atoms for the generated structure (default: 5000)")
 
     @field_validator("values")
     @classmethod
@@ -76,15 +119,15 @@ class MeltquenchResult(BaseModel):
 
     Attributes:
         composition: Final composition string used in simulation
-        final_structure: String representation of the final atomic structure
+        final_structure: ASE Atoms object representing the final atomic structure
         mean_temperature: Average temperature during final equilibration
-        final_density: Calculated density of the final structure (g/cm³)
         simulation_steps: Total number of simulation steps completed
+        structural_analysis: Structural analysis results from glass structure analysis
 
     """
 
     composition: str = Field(..., description="Composition string used in simulation")
-    final_structure: str = Field(..., description="String representation of final structure")
+    final_structure: AtomsType = Field(..., description="ASE Atoms object of final structure")
     mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
-    final_density: float = Field(..., description="Final calculated density (g/cm³)")
     simulation_steps: int = Field(..., description="Total simulation steps completed")
+    structural_analysis: StructureData | dict = Field(..., description="Structural analysis results")
