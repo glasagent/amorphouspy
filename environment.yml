@@ -2,7 +2,7 @@ name: pyiron-glass
 channels:
 - conda-forge
 dependencies:
-- python =3.12
+- python =3.13
 - ase >=3.25.0
 - cryptography =45.0.7
 - hatchling
