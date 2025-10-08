@@ -20,16 +20,20 @@ import concurrent.futures
 import hashlib
 import logging
 import os
+from importlib.metadata import version
 from pathlib import Path
 from uuid import uuid4
 
 import cloudpickle
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
+from pyiron_base import state
 
 from .database import get_task_store, init_task_store
 from .models import MeltquenchRequest, MeltquenchResult
+from .visualization import router as visualization_router
 from .worker import meltquench_worker
 
 # Configure logging
@@ -40,16 +44,59 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Setup shared project directory - check for environment variable first
-SCRATCH_FOLDER = Path(__file__).resolve().parent.parent.parent / "scratch"
-if "PYIRON_SCRATCH_FOLDER" in os.environ:
-    SCRATCH_FOLDER = Path(os.environ["PYIRON_SCRATCH_FOLDER"])
-    logger.info("Using custom scratch directory from PYIRON_SCRATCH_FOLDER: %s", SCRATCH_FOLDER)
+# Log pyiron state.configuration for debugging
+logger.info("[MAIN PROCESS] pyiron state.settings.configuration: %s", state.settings.configuration)
 
-SHARED_PROJECT_DIR = SCRATCH_FOLDER / "meltquench"
+# Get pyiron_glass version for project directory naming
+try:
+    pyiron_glass_version = version("pyiron_glass")
+    logger.info("Using pyiron_glass version: %s", pyiron_glass_version)
+except Exception:
+    pyiron_glass_version = "unknown"
+    logger.warning("Could not determine pyiron_glass version, using 'unknown'")
+
+# Setup shared project directory using canonical pyiron environment variables
+PROJECTS_FOLDER = Path(__file__).resolve().parent.parent.parent / "projects"
+
+# Check for PYIRONPROJECTPATHS environment variables
+if "PYIRONPROJECTPATHS" in os.environ:
+    PROJECTS_FOLDER = Path(os.environ["PYIRONPROJECTPATHS"])
+    logger.info("Using project directory from PYIRONPROJECTPATHS: %s", PROJECTS_FOLDER)
+else:
+    logger.info("Using default project directory: %s", PROJECTS_FOLDER)
+
+MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / f"pyiron_glass_{pyiron_glass_version}" / "meltquench"
+
+
+# Configure pyiron environment variables if not already set
+if "PYIRONPROJECTPATHS" not in os.environ:
+    os.environ["PYIRONPROJECTPATHS"] = str(PROJECTS_FOLDER)
+    logger.info("Set PYIRONPROJECTPATHS to: %s", PROJECTS_FOLDER)
+
+if "PYIRONSQLCONNECTIONSTRING" not in os.environ:
+    pyiron_db_path = PROJECTS_FOLDER / "pyiron.db"
+    os.environ["PYIRONSQLCONNECTIONSTRING"] = f"sqlite:///{pyiron_db_path}"
+    logger.info("Set PYIRONSQLCONNECTIONSTRING to: sqlite:///%s", pyiron_db_path)
+
+# Configure API base URL for visualization links
+API_BASE_URL = os.environ.get("API_BASE_URL", "")
+if API_BASE_URL:
+    logger.info("Using API base URL for visualization links: %s", API_BASE_URL)
+else:
+    logger.info("No API base URL configured, using relative paths")
+
+# Ensure the projects directory exists
+PROJECTS_FOLDER.mkdir(parents=True, exist_ok=True)
+logger.info("Ensured projects directory exists: %s", PROJECTS_FOLDER)
 
 # Initialize persistent task store
-DB_PATH = SCRATCH_FOLDER / "tasks.db"
+DB_PATH = PROJECTS_FOLDER / "tasks.db"
+logger.info("Task store database path: %s", DB_PATH)
+logger.info(
+    "Directory exists: %s, Directory writable: %s",
+    PROJECTS_FOLDER.exists(),
+    os.access(PROJECTS_FOLDER, os.W_OK) if PROJECTS_FOLDER.exists() else "N/A",
+)
 init_task_store(DB_PATH)
 _task_store = get_task_store()
 
@@ -65,11 +112,22 @@ def get_meltquench_hash(request: MeltquenchRequest) -> str:
         "heating_rate": request.heating_rate,
         "cooling_rate": request.cooling_rate,
         "n_print": request.n_print,
+        "n_atoms": request.n_atoms,
     }
 
     # Use cloudpickle for consistent serialization, then hash with sha256
     binary_data = cloudpickle.dumps(hash_params)
     return hashlib.sha256(binary_data).hexdigest()[:16]  # First 16 chars for brevity
+
+
+def get_visualization_url(task_id: str) -> str:
+    """Construct the full visualization URL for a given task ID."""
+    relative_path = f"/visualize/meltquench/{task_id}"
+    if API_BASE_URL:
+        # Remove trailing slash from base URL if present, then combine
+        base_url = API_BASE_URL.rstrip("/")
+        return f"{base_url}{relative_path}"
+    return relative_path
 
 
 async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
@@ -87,7 +145,9 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
 
     # Run the synchronous worker in a process executor to handle pyiron's signal handling
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        await loop.run_in_executor(executor, meltquench_worker, task_id, request_dict, DB_PATH, str(SHARED_PROJECT_DIR))
+        await loop.run_in_executor(
+            executor, meltquench_worker, task_id, request_dict, DB_PATH, str(MELTQUENCH_PROJECT_DIR)
+        )
 
 
 # Create FastAPI app
@@ -97,8 +157,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Mount static files
+static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-@app.post("/check_cached_result", tags=["tool"])
+# Include visualization router
+app.include_router(visualization_router, tags=["visualization"])
+
+
+@app.post("/cache/meltquench", tags=["tool"])
 async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | None:
     """Check if a result for the given meltquench request is already available in cache."""
     try:
@@ -110,7 +177,8 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
 
         if cached_result:
             logger.info("Found cached result")
-            return cached_result
+            # Return just the result, not the task_id (for API compatibility)
+            return cached_result[1]
 
         logger.info("No cached result found")
         return None
@@ -120,18 +188,28 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
         raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
-@app.post("/submit_meltquench", tags=["tool"])
+@app.post("/submit/meltquench", tags=["tool"])
 async def submit_meltquench(request: MeltquenchRequest) -> dict:
-    """Start a new meltquench simulation task."""
+    """Start a new meltquench simulation task.
+
+    Note: Results can be visualized at /visualize/meltquench/{task_id}
+    """
     try:
         # Check if we already have a cached result
-        cached_result = await check_cached_result(request)
+        request_hash = get_meltquench_hash(request)
+        cached_result = _task_store.find_cached_result(request_hash)
+
         if cached_result:
-            logger.info("Returning cached result instead of starting new task")
-            return {"task_id": "cached", "status": "completed_from_cache", "result": cached_result.model_dump()}
+            cached_task_id, cached_meltquench_result = cached_result
+            logger.info("Returning cached result from task %s instead of starting new task", cached_task_id)
+            return {
+                "task_id": cached_task_id,
+                "status": "completed_from_cache",
+                "visualization_url": get_visualization_url(cached_task_id),
+                "result": cached_meltquench_result.model_dump(),
+            }
 
         task_id = str(uuid4())
-        request_hash = get_meltquench_hash(request)
         logger.info("Creating new meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
         # Store task in database
@@ -150,7 +228,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         # Store task reference to prevent garbage collection
         task.add_done_callback(lambda _: None)
 
-        return {"task_id": task_id, "status": "started"}
+        return {"task_id": task_id, "status": "started", "visualization_url": get_visualization_url(task_id)}
     except Exception:
         logger.exception("Error starting meltquench task")
         raise HTTPException(status_code=500, detail="Internal server error") from None
@@ -158,7 +236,10 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
 
 @app.get("/check/{task_id}", tags=["tool"])
 async def check(task_id: str) -> dict:
-    """Check the current status of a simulation task by its ID."""
+    """Check the current status of a simulation task by its ID.
+
+    Note: When ready, visualize results at /visualize/meltquench/{task_id}
+    """
     meta = _task_store.get(task_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -167,8 +248,9 @@ async def check(task_id: str) -> dict:
         "task_id": task_id,
         "state": meta["state"],
         "status": meta.get("status", "processing"),
-        "result": meta.get("result"),
+        "visualization_url": get_visualization_url(task_id),
         "error": meta.get("error"),
+        "result": meta.get("result"),
     }
 
 

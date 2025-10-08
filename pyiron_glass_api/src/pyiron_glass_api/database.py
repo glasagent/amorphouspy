@@ -11,14 +11,15 @@ from typing import Any
 
 from sqlalchemy import JSON, Column, DateTime, Index, String, Text, create_engine
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from .models import MeltquenchResult
+from .models import MeltquenchResult, serialize_atoms
 
 logger = logging.getLogger(__name__)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """SQLAlchemy declarative base class."""
 
 
 class Task(Base):
@@ -166,14 +167,14 @@ class TaskStore:
             logger.exception("Error getting all tasks")
             return []
 
-    def find_cached_result(self, request_hash: str) -> MeltquenchResult | None:
+    def find_cached_result(self, request_hash: str) -> tuple[str, MeltquenchResult] | None:
         """Find a completed task with matching request hash for cache lookup.
 
         Args:
             request_hash: Hash of the request parameters
 
         Returns:
-            MeltquenchResult if cached result found, None otherwise
+            Tuple of (task_id, MeltquenchResult) if cached result found, None otherwise
 
         """
         try:
@@ -186,7 +187,7 @@ class TaskStore:
 
                 if task and task.result_data:
                     logger.info("Found cached result for hash %s in task %s", request_hash, task.task_id)
-                    return MeltquenchResult(**task.result_data)
+                    return (task.task_id, MeltquenchResult(**task.result_data))
 
                 return None
 
@@ -253,7 +254,15 @@ class TaskStore:
             task.request_hash = task_data["request_hash"]
 
         if "result" in task_data:
-            task.result_data = task_data["result"]
+            # Handle ASE Atoms serialization in final_structure
+            result_data = task_data["result"].copy()
+            if "final_structure" in result_data:
+                from ase import Atoms
+
+                if isinstance(result_data["final_structure"], Atoms):
+                    # Serialize ASE Atoms to JSON string for storage
+                    result_data["final_structure"] = serialize_atoms(result_data["final_structure"])
+            task.result_data = result_data
 
         if "error" in task_data:
             task.error_message = task_data["error"]
