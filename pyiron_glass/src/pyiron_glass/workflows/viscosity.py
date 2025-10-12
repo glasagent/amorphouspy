@@ -229,7 +229,7 @@ def viscosity_simulation(
         server_kwargs=server_kwargs,
     )
 
-    # Stage 5: Production simulation for viscosity at T
+    # Stage 2: Production simulation for viscosity at T
     structure_final, parsed_output = _run_lammps_md(
         structure=structure1,
         potential=potential,
@@ -482,7 +482,7 @@ def fit_vft(
         Covariance matrix of the fit.
 
     """
-    popt, pcov = curve_fit(vft_model, T_data, log10_eta_data, p0=initial_guess, maxfev=10000)
+    popt, pcov = curve_fit(vft_model, T_data, log10_eta_data, p0=initial_guess, maxfev=1000000)
     return popt, pcov
 
 
@@ -581,9 +581,12 @@ def get_viscosity(
     lag_time_s = np.arange(max_lag) * dt_s
     lag_time_ps = lag_time_s * 1e12
 
-    max_lag_1 = auto_cutoff(acfxy / acfxy[0], lag_time_ps, method="noise_threshold", epsilon=0.0001)
-
-    max_lag_1 = get_closest_divisor(int(len(pxy) * timestep / 1000), int(max_lag_1)) * 2
+    max_lag_1 = auto_cutoff(
+        acfxy / acfxy[0], lag_time_ps, method="noise_threshold", epsilon=0.0001
+    )  # get the cutoff time in ps
+    max_lag_1 = (
+        get_closest_divisor(int(len(pxy) * timestep / 1000), int(max_lag_1)) * 2
+    )  # make it even and a divisor of the total time as a safeguard
 
     max_lag = int(max_lag_1 / (timestep / 1000))
 
