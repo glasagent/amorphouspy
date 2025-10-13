@@ -5,3 +5,5 @@ __pycache__/
 *.dump
 *.dump.gz
 .coverage*
+*.db
+*.h5
