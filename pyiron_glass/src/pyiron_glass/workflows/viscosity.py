@@ -581,14 +581,19 @@ def get_viscosity(
     lag_time_s = np.arange(max_lag) * dt_s
     lag_time_ps = lag_time_s * 1e12
 
-    max_lag_1 = auto_cutoff(
-        acfxy / acfxy[0], lag_time_ps, method="noise_threshold", epsilon=0.0001
-    )  # get the cutoff time in ps
-    max_lag_1 = (
-        get_closest_divisor(int(len(pxy) * timestep / 1000), int(max_lag_1)) * 2
-    )  # make it even and a divisor of the total time as a safeguard
+    max_lag_1 = [
+        auto_cutoff(acfxy / acfxy[0], lag_time_ps, method="noise_threshold", epsilon=0.0001),
+        auto_cutoff(acfxz / acfxz[0], lag_time_ps, method="noise_threshold", epsilon=0.0001),
+        auto_cutoff(acfyz / acfyz[0], lag_time_ps, method="noise_threshold", epsilon=0.0001),
+    ]
+    # get the cutoff time in ps
+    max_lag_1 = [
+        (get_closest_divisor(int(len(pxy) * timestep / 1000), int(max_lag_1[0])) * 2),
+        (get_closest_divisor(int(len(pxz) * timestep / 1000), int(max_lag_1[1])) * 2),
+        (get_closest_divisor(int(len(pyz) * timestep / 1000), int(max_lag_1[2])) * 2),
+    ]  # make it even and a divisor of the total time as a safeguard
 
-    max_lag = int(max_lag_1 / (timestep / 1000))
+    max_lag = int(np.max(max_lag_1) / (timestep / 1000))
 
     acfxy = autocorrelation_fft(pxy, max_lag)
     acfxz = autocorrelation_fft(pxz, max_lag)
