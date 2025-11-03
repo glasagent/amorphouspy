@@ -235,7 +235,7 @@ def _generate_bjp_potential(atoms_dict: dict) -> pd.DataFrame:
 
 
 @job
-def generate_potential(atoms_dict: dict, potential_type: str) -> pd.DataFrame:
+def generate_potential(atoms_dict: dict, potential_type: str = "pedone") -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 
     Parameters
