@@ -175,81 +175,164 @@ def melt_quench_simulation(
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
-    # Stage 1: Heating from low to high T
-    structure, _ = _run_lammps_md(
-        structure=structure,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        temperature=temperature_low,
-        temperature_end=temperature_high,
-        n_ionic_steps=heating_steps,
-        timestep=timestep,
-        n_print=n_print,
-        initial_temperature=temperature_low,
-        langevin=langevin,
-        seed=seed,
-        server_kwargs=server_kwargs,
-    )
+    potential_name = potential.at[0, "Name"]
 
-    # Stage 2: Equilibration at high T
-    structure, _ = _run_lammps_md(
-        structure=structure,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        temperature=temperature_high,
-        n_ionic_steps=10_000,
-        timestep=timestep,
-        n_print=n_print,
-        initial_temperature=0,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
-    )
+    if potential_name.lower() == "pedone":
+        # Stage 1: Heating from low to high T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_low,
+            temperature_end=temperature_high,
+            n_ionic_steps=heating_steps,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=temperature_low,
+            langevin=langevin,
+            seed=seed,
+            server_kwargs=server_kwargs,
+        )
 
-    # Stage 3: Cooling from high to low T
-    structure, _ = _run_lammps_md(
-        structure=structure,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        temperature=temperature_high,
-        temperature_end=temperature_low,
-        n_ionic_steps=cooling_steps,
-        timestep=timestep,
-        n_print=n_print,
-        initial_temperature=0,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
-    )
+        # Stage 2: Equilibration at high T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_high,
+            n_ionic_steps=10_000,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
 
-    # Stage 4: Pressure release at low T
-    structure, _ = _run_lammps_md(
-        structure=structure,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        temperature=temperature_low,
-        n_ionic_steps=10_000,
-        timestep=timestep,
-        n_print=n_print,
-        initial_temperature=0,
-        pressure=0.0,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
-    )
+        # Stage 3: Cooling from high to low T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_high,
+            temperature_end=temperature_low,
+            n_ionic_steps=cooling_steps,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
 
-    # Stage 5: Long equilibration at low T
-    structure_final, parsed_output = _run_lammps_md(
-        structure=structure,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        temperature=temperature_low,
-        n_ionic_steps=100_000,
-        timestep=timestep,
-        n_print=n_print,
-        initial_temperature=0,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
-    )
+        # Stage 4: Pressure release at low T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_low,
+            n_ionic_steps=10_000,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            pressure=0.0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
 
-    result = parsed_output.get("generic", None)
+        # Stage 5: Long equilibration at low T
+        structure_final, parsed_output = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_low,
+            n_ionic_steps=100_000,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
+
+        result = parsed_output.get("generic", None)
+
+    elif potential_name.lower() == "bjp":
+        # Stage 1: Heating from low to high T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_low,
+            temperature_end=temperature_high,
+            n_ionic_steps=heating_steps,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=temperature_low,
+            pressure=0.0,
+            langevin=langevin,
+            seed=seed,
+            server_kwargs=server_kwargs,
+        )
+
+        # Stage 2: Equilibration at high T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_high,
+            n_ionic_steps=100_000,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            pressure=0.0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
+
+        # Stage 3: Cooling from high to low T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_high,
+            temperature_end=temperature_low,
+            n_ionic_steps=cooling_steps,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            pressure=0.0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
+
+        # Stage 4: Pressure release at low T
+        structure, _ = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_low,
+            n_ionic_steps=100_000,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            pressure=0.0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
+
+        # Stage 5: Long equilibration at low T
+        structure_final, parsed_output = _run_lammps_md(
+            structure=structure,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_low,
+            n_ionic_steps=100_000,
+            timestep=timestep,
+            n_print=n_print,
+            initial_temperature=0,
+            langevin=langevin,
+            server_kwargs=server_kwargs,
+        )
+
+        result = parsed_output.get("generic", None)
 
     if result is None:
         msg = "The 'generic' key is missing from parsed_output."
