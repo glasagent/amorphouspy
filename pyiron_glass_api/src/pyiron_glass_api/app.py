@@ -26,6 +26,7 @@ from uuid import uuid4
 
 import cloudpickle
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
@@ -155,6 +156,15 @@ app = FastAPI(
     title="Pyiron Glass Simulation API",
     description="API for managing long-running glass simulation tasks using pyiron-glass",
     version="0.1.0",
+)
+
+# Enable CORS for all origins (customize as needed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific origins in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Mount static files
