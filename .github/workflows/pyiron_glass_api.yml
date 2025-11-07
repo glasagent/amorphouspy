@@ -29,14 +29,14 @@ jobs:
       shell: bash -l {0}
       working-directory: pyiron_glass_api
       run: |
-        pytest --cov=src/pyiron_glass_api --cov-report=xml --cov-report=term
+        pytest --durations=0 --cov=src/pyiron_glass_api --cov-report=xml --cov-report=term
 
     - name: Run integration test
       shell: bash -l {0}
       working-directory: pyiron_glass_api
       run: |
         PYIRON_GLASS_INTEGRATION=1 uvicorn pyiron_glass_api.app:app --port 8002 &
-        pytest -m integration -s --cov=src/pyiron_glass_api --cov-report=xml --cov-report=term --cov-append
+        pytest -m integration -s --durations=0 --cov=src/pyiron_glass_api --cov-report=xml --cov-report=term --cov-append
 
     - name: Pytest coverage comment
       uses: MishaKav/pytest-coverage-comment@main
