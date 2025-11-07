@@ -29,14 +29,14 @@ jobs:
       shell: bash -l {0}
       working-directory: pyiron_glass
       run: |
-        python -m pytest src/tests --cov=src/pyiron_glass --cov-report=xml --cov-report=term
+        python -m pytest src/tests --durations=0 --cov=src/pyiron_glass --cov-report=xml --cov-report=term
 
     - name: Test notebooks
       shell: bash -l {0}
       working-directory: pyiron_glass
       run: |
         # absolute path in --cov is necessary here, otherwise it gets confused
-        pytest --nbval-lax ../notebooks/*ipynb --cov=$(pwd)/src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
+        pytest --durations=0 --nbval-lax ../notebooks/*ipynb --cov=$(pwd)/src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
 
     - name: Pytest coverage comment
       uses: MishaKav/pytest-coverage-comment@main
