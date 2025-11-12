@@ -98,7 +98,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         structure = get_ase_structure(atoms_dict=atoms_dict, pyiron_project=pr)
         logger.info(f"Task {task_id}: ASE structure created")
 
-        potential = generate_potential(atoms_dict=atoms_dict, pyiron_project=pr)
+        potential = generate_potential(atoms_dict=atoms_dict, potential_type=request.potential_type, pyiron_project=pr)
         logger.info(f"Task {task_id}: Potential generated")
 
         # Update task status

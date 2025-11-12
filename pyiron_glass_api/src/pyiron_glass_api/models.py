@@ -90,6 +90,9 @@ class MeltquenchRequest(BaseModel):
     cooling_rate: int = Field(default=int(1e12), description="Cooling rate in K/s (default: 1K/ps)")
     n_print: int = Field(default=1000, description="Print interval for simulation output (default: 1000)")
     n_atoms: int = Field(default=5000, description="Target number of atoms for the generated structure (default: 5000)")
+    potential_type: Literal["shik", "bjp", "pmmcs"] = Field(
+        default="pmmcs", description="Type of interatomic potential to use (default: 'pmmcs')"
+    )
 
     @field_validator("values")
     @classmethod
