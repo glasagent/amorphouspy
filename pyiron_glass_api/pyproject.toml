@@ -29,7 +29,7 @@ python_functions = ["test_*"]
 markers = [
     "integration: mark a test as an integration test."
 ]
-addopts = ["-m 'not integration'"]
+addopts = ["-m", "not integration"]
 filterwarnings = [
     "ignore::DeprecationWarning:pyiron_vasp",
     "ignore::DeprecationWarning:pyiron_vasp.*",
