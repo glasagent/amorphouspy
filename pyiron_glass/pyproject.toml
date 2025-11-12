@@ -23,9 +23,9 @@ dependencies = [
 
 [tool.pytest]
 testpaths = ["src/tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
 
 [tool.ruff]
 # Target Python version
