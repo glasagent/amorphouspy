@@ -183,42 +183,22 @@ def md_simulation(
             lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
         )
 
-        # Stage 1: constant temperature or pressure simulation
-        structure_final, parsed_output = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_sim,
-            n_ionic_steps=production_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_sim,
-            pressure=pressure,
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
-
-        result = parsed_output.get("generic", None)
-
-    else:
-        # Stage 1: constant temperature or pressure simulation
-        structure_final, parsed_output = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_sim,
-            n_ionic_steps=production_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_sim,
-            pressure=pressure,
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
-
-        result = parsed_output.get("generic", None)
+    # Stage 1: constant temperature or pressure simulation
+    structure_final, parsed_output = _run_lammps_md(
+        structure=structure,
+        potential=potential,
+        tmp_working_directory=tmp_working_directory,
+        temperature=temperature_sim,
+        n_ionic_steps=production_steps,
+        timestep=timestep,
+        n_print=n_print,
+        initial_temperature=temperature_sim,
+        pressure=pressure,
+        langevin=langevin,
+        seed=seed,
+        server_kwargs=server_kwargs,
+    )
+    result = parsed_output.get("generic", None)
 
     if result is None:
         msg = "The 'generic' key is missing from parsed_output."
