@@ -13,7 +13,7 @@ dependencies:
 - numpy =2.3.3
 - pygraphviz =1.14
 - pyiron_atomistics =0.8.4
-- pyiron_base =0.15.10
+- pyiron_base =0.15.9
 - pyiron-data =0.0.30
 - scipy =1.16.2
 - structuretoolkit =0.0.35
