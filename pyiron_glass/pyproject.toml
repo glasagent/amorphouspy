@@ -15,7 +15,7 @@ license = { file = "../LICENSE" }
 dependencies = [
   "ase",
   "pandas",
-  "pyiron_atomistics",
+  "pyiron_lammps",
   "pyiron_base",
   "scipy",
   "structuretoolkit",

@@ -16,7 +16,7 @@ from typing import Any
 import numpy as np
 from ase.atoms import Atoms
 from numpy.typing import ArrayLike, NDArray
-from pyiron_atomistics.lammps.lammps import lammps_function
+from pyiron_lammps.compatibility.file import lammps_file_interface_function
 from pyiron_base import job
 from scipy.optimize import curve_fit
 
@@ -100,7 +100,7 @@ def _run_lammps_md(
         temp_setting = temperature
 
         # Sets up the LAMMPS simulations
-        _shell_output, parsed_output, _job_crashed = lammps_function(
+        _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
             working_directory=tmp_path,
             structure=structure,
             potential=potential,
@@ -115,15 +115,15 @@ def _run_lammps_md(
                 "pressure": pressure,
                 "langevin": langevin,
             },
-            cutoff_radius=None,
+            # cutoff_radius=None,
             units="metal",
-            bonds_kwargs={},
-            server_kwargs=server_kwargs,
-            enable_h5md=False,
-            write_restart_file=False,
-            read_restart_file=False,
-            restart_file="restart.out",
-            executable_path=None,
+            # bonds_kwargs={},
+            # server_kwargs=server_kwargs,
+            # enable_h5md=False,
+            # write_restart_file=False,
+            # read_restart_file=False,
+            # restart_file="restart.out",
+            # executable_path=None,
             input_control_file={
                 "dump_modify": f"1 every {n_ionic_steps} first yes",
                 "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
