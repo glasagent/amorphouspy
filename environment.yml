@@ -15,6 +15,7 @@ dependencies:
 - pyiron_lammps =0.5.0
 - pyiron_base =0.15.10
 - pyiron-data =0.0.30
+- pymatgen =2025.10.07
 - scipy =1.16.2
 - structuretoolkit =0.0.35
 - sqlalchemy
