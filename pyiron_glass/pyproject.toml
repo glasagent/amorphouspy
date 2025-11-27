@@ -17,6 +17,7 @@ dependencies = [
   "pandas",
   "pyiron_atomistics",
   "pyiron_base",
+  "pymatgen",
   "scipy",
   "structuretoolkit",
 ]
