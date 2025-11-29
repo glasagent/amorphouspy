@@ -70,7 +70,7 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-    if server_kwargs is not None:
+    if server_kwargs is not None and len(server_kwargs) > 1:
         raise ValueError
 
     # Creates a temporary directory for the simulation in the specified working directory.

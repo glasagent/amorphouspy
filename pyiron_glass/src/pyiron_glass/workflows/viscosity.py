@@ -92,7 +92,7 @@ def _run_lammps_md(
     - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
 
     """
-    if server_kwargs is not None:
+    if server_kwargs is not None and len(server_kwargs) > 1:
         raise ValueError
 
     # Creates a temporary directory for the simulation in the specified working directory.
