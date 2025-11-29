@@ -11,6 +11,7 @@ from pyiron_base import job
 from pyiron_lammps.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
+from pyiron_glass.workflows.shared import get_lammps_command
 
 
 def _run_lammps_md(
@@ -72,18 +73,6 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-    lmp_command = "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
-    if server_kwargs is not None:
-        if isinstance(server_kwargs, dict) and len(server_kwargs) == 1:
-            if "cores" in server_kwargs:
-                lmp_command = "mpiexec -n {} --oversubscribe lmp_mpi -in lmp.in".format(str(server_kwargs["cores"]))
-            else:
-                raise ValueError
-        elif isinstance(server_kwargs, dict) and len(server_kwargs) == 0:
-            pass
-        else:
-            raise ValueError
-
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
@@ -113,7 +102,7 @@ def _run_lammps_md(
                 "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
                 "thermo_modify": "flush yes",
             },
-            lmp_command=lmp_command,
+            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
         )
 
         # Retrives the final structure from the parsed output
