@@ -1,4 +1,16 @@
-def get_lammps_command(server_kwargs=None):
+from typing import Optional
+
+
+def get_lammps_command(server_kwargs: Optional[dict] = None) -> str:
+    """
+    Generate a LAMMPS command, by default this function returns: "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
+
+    Args:
+        server_kwargs (dict): Server dictionary as defined by pyiron:
+
+    Returns:
+        str: LAMMPS command as a string
+    """
     lmp_command = "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
     if server_kwargs is not None:
         if isinstance(server_kwargs, dict) and len(server_kwargs) == 1:
