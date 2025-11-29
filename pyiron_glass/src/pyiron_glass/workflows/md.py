@@ -73,7 +73,7 @@ def _run_lammps_md(
 
     """
     if server_kwargs is not None:
-        raise ValueError()
+        raise ValueError
 
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
