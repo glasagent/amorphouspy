@@ -1,15 +1,22 @@
-from typing import Optional
+"""Shared module for pyiron glass simulation workflows.
+
+This module contains shared functionality which is reused in the individual workflows.
+"""
 
 
-def get_lammps_command(server_kwargs: Optional[dict] = None) -> str:
-    """
-    Generate a LAMMPS command, by default this function returns: "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
+def get_lammps_command(server_kwargs: dict | None = None) -> str:
+    """Generate a LAMMPS command, by default this function returns: "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in".
 
-    Args:
-        server_kwargs (dict): Server dictionary as defined by pyiron:
+    Parameters
+    ----------
+    server_kwargs: dict
+        Server dictionary as defined by pyiron for example: {"cores": 2}.
 
-    Returns:
-        str: LAMMPS command as a string
+    Returns
+    -------
+    lammps_command: str
+        LAMMPS command as a string.
+
     """
     lmp_command = "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
     if server_kwargs is not None:
