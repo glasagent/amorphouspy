@@ -70,8 +70,15 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
-    if server_kwargs is not None and len(server_kwargs) > 1:
-        raise ValueError
+    lmp_command = "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
+    if server_kwargs is not None:
+        if isinstance(server_kwargs, dict) and len(server_kwargs) > 1:
+            if "cores" in server_kwargs:
+                lmp_command = "mpiexec -n {} --oversubscribe lmp_mpi -in lmp.in".format(str(server_kwargs["cores"]))
+            else:
+                raise ValueError
+        else:
+            raise ValueError
 
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
@@ -100,6 +107,7 @@ def _run_lammps_md(
             input_control_file={
                 "thermo_modify": "flush yes",
             },
+            lmp_command=lmp_command,
         )
 
         if _job_crashed or "generic" not in parsed_output:
