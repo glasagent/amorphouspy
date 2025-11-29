@@ -25,7 +25,7 @@ def get_lammps_command(server_kwargs: dict | None = None) -> str:
                 lmp_command = "mpiexec -n {} --oversubscribe lmp_mpi -in lmp.in".format(str(server_kwargs["cores"]))
             else:
                 raise ValueError("Server dictionary error: " + str(server_kwargs))
-        elif isinstance(server_kwargs, dict) and len(server_kwargs) == 0:
+        elif isinstance(server_kwargs, (dict, list)) and len(server_kwargs) == 0:
             pass
         else:
             raise ValueError("Server dictionary error: " + str(server_kwargs))
