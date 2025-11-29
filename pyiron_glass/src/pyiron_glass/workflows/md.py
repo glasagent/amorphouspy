@@ -7,8 +7,8 @@ import tempfile
 from pathlib import Path
 
 from ase.atoms import Atoms
-from pyiron_lammps.compatibility.file import lammps_file_interface_function
 from pyiron_base import job
+from pyiron_lammps.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
 
@@ -72,6 +72,9 @@ def _run_lammps_md(
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
+    if server_kwargs is not None:
+        raise ValueError()
+
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
@@ -95,15 +98,7 @@ def _run_lammps_md(
                 "pressure": pressure,
                 "langevin": langevin,
             },
-            # cutoff_radius=None,
             units="metal",
-            # bonds_kwargs={},
-            # server_kwargs=server_kwargs,
-            # enable_h5md=False,
-            # write_restart_file=False,
-            # read_restart_file=False,
-            # restart_file="restart.out",
-            # executable_path=None,
             input_control_file={
                 "dump_modify": f"1 every {n_ionic_steps} first yes",
                 "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
