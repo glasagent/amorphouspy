@@ -212,7 +212,7 @@ def _CTE_H_V_workflow_analysis(
     Notes
     -----
         - In lammps, instantaneous enthalphy is calculated based on the total energy and pressure at every
-          time step. Ideally, however, the pressure that defines the ensemble should be used instead of the 
+          time step. Ideally, however, the pressure that defines the ensemble should be used instead of the
           pressure at every individual time step.
         - If isotropic NPT simulations are performed (see "iso" keyword in lammps), the apparent hydrostatic 
           pressure = (pxx+pyy+pzz)/3 will be close to the user-specified pressure, but individual pxx, pyy 
