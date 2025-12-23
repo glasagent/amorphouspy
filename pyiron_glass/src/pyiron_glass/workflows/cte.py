@@ -399,7 +399,9 @@ def _is_converged(data: dict, criterion: float) -> bool:
     return all(bools)
 
 
-def input_checker(production_steps: int, max_production_runs: int, n_log: int, timestep: float) -> tuple[int, int, int]:
+def _input_checker(
+    production_steps: int, max_production_runs: int, n_log: int, timestep: float
+) -> tuple[int, int, int]:
     """Check and adjust input parameters for cte_simulation workflow."""
     # Minimum choices for a working CTE calculation -> For reliable results, user should increase
     # these values via input parameters to cte_simulation
@@ -435,7 +437,7 @@ def input_checker(production_steps: int, max_production_runs: int, n_log: int, t
     return production_steps, max_production_runs, N_for_averaging
 
 
-def set_initial_temperature(T_count: int, T: float, seed: int | None) -> None:
+def _set_initial_temperature(T_count: int, T: float, seed: int | None) -> None:
     """Determine initial temperature and seed for velocity initialization.
 
     Only the very first simulation should initialize the velocity field based on the target
@@ -463,7 +465,7 @@ def set_initial_temperature(T_count: int, T: float, seed: int | None) -> None:
     return 0, None
 
 
-def temperature_checker(temperature: float | list[int | float], *, compute_hysteresis: bool) -> list[int | float]:
+def _temperature_checker(temperature: float | list[int | float], *, compute_hysteresis: bool) -> list[int | float]:
     """Check and prepare temperature list for cte_simulation workflow.
 
     Makes sure that all temperatures are positive and prepares the temperature list. If
@@ -606,12 +608,12 @@ def cte_simulation(
 
     """
     # Check and adjust input parameters if needed
-    production_steps, max_production_runs, N_for_averaging = input_checker(
+    production_steps, max_production_runs, N_for_averaging = _input_checker(
         production_steps, max_production_runs, n_log, timestep
     )
 
     # Prepare temperature list
-    temperature = temperature_checker(temperature, compute_hysteresis=compute_hysteresis)
+    temperature = _temperature_checker(temperature, compute_hysteresis=compute_hysteresis)
 
     # Set pressure to anisotropic if requested
     sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
@@ -627,7 +629,7 @@ def cte_simulation(
         T_key = f"{T_count:02d}_{int(T)}K"
 
         # Determine initial temperature and seed for velocity initialization
-        initial_temperature, seed = set_initial_temperature(T_count, T, seed)
+        initial_temperature, seed = _set_initial_temperature(T_count, T, seed)
 
         # Stage 1: Short equilibration in NVT at T for 10 ps
         structure1, _ = _run_lammps_md(
