@@ -305,6 +305,21 @@ def elastic_simulation(
     - Calculated Cij values assume Voigt notation.
 
     """
+    potential_name = potential.at[0, "Name"]
+
+    if potential_name.lower() == "shik":
+        exclude_patterns = [
+            "fix langevin all langevin 5000 5000 0.01 48279",
+            "fix ensemble all nve/limit 0.5",
+            "run 10000",
+            "unfix langevin",
+            "unfix ensemble",
+        ]
+
+        potential["Config"] = potential["Config"].apply(
+            lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
+        )
+
     # Stage 0: INITIAL EQUILIBRATION
     structure0, res = _run_lammps_md(
         structure=structure,
