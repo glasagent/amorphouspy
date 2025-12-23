@@ -188,7 +188,7 @@ def melt_quench_simulation(
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
-    potential_name = potential.at[0, "Name"].lower()
+    potential_name = potential.at[0, "Name"]
     protocol_map = {
         "pmmcs": PMMCSProtocol,
         "bjp": BJPProtocol,
@@ -217,110 +217,6 @@ def melt_quench_simulation(
     )
 
     result = parsed_output.get("generic", None)
-
-    elif potential_name.lower() == "shik":
-        # ================================================================
-        # Stage 1: heating from 300 to 5000 K for 100 ps
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,  # 5000 K
-            n_ionic_steps=heating_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_high,
-            pressure=None,  # NVT ensemble
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
-
-        exclude_patterns = [
-            "fix langevin all langevin 5000 5000 0.01 48279",
-            "fix ensemble all nve/limit 0.5",
-            "run 10000",
-            "unfix langevin",
-            "unfix ensemble",
-        ]
-
-        potential["Config"] = potential["Config"].apply(
-            lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-        )
-
-        # ================================================================
-        # Stage 2: NVT equilibration at 5000 K for 100 ps
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,  # 5000 K
-            n_ionic_steps=int(100_000 / timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_high,
-            pressure=None,  # NVT ensemble
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 3: NPT equilibration at 5000 K and 0.1 GPa for 700 ps
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            n_ionic_steps=int(700_000 / timestep),  # 700 ps
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.1,  # GPa
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 4: Quenching 5000 K → 300 K in NPT
-        # Nominal rate ~1 K/ps, so ΔT=4700 K → 4700 ps = 4.7 ns = 4.7e6 fs
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            temperature_end=temperature_low,
-            n_ionic_steps=cooling_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=[0.1, 0.0],  # ramp pressure from 0.1 → 0 GPa
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 5: Annealing at 300 K and 0 GPa for 100 ps in NPT
-        # ================================================================
-        structure_final, parsed_output = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            n_ionic_steps=int(100_000 / timestep),  # 100 ps
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        result = parsed_output.get("generic", None)
 
     if result is None:
         result = {}
