@@ -188,7 +188,7 @@ def melt_quench_simulation(
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
-    potential_name = potential.at[0, "Name"]
+    potential_name = potential.at[0, "Name"].lower()
     protocol_map = {
         "pmmcs": PMMCSProtocol,
         "bjp": BJPProtocol,
