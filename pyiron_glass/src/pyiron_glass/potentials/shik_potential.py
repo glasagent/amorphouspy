@@ -66,7 +66,7 @@ def potential_and_force(
     """Compute V(r) and F(r) for the SHIK (Buckingham + r^-24) potential."""
     exp_term = np.exp(-B * r)
     inv_r6 = r**-6
-    inv_r24 = r**-24
+    inv_r24 = inv_r6**4
 
     V = A * exp_term - C * inv_r6 + D * inv_r24
     F = A * B * exp_term - 6 * C * inv_r6 / r + 24 * D * inv_r24 / r
@@ -130,8 +130,6 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".") -> pd.DataF
 
     types = get_element_types_dict(atoms_dict)
     species = list(types.keys())
-
-    atoms_dict["atoms"]
 
     q_O = compute_oxygen_charge(atoms_dict, shik_charges)
     shik_charges["O"] = q_O
