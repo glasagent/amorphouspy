@@ -309,6 +309,8 @@ def elastic_simulation(
     - The structure is first equilibrated (NPT/NVT).
     - Positive and negative strains are applied to cancel lower-order errors (central difference).
     - Calculated Cij values assume Voigt notation.
+    - For production simulations, system size, cooling rate, equilibration time,
+    and strain magnitude should be tested to ensure the robustness of the results.
 
     """
     potential_name = potential.at[0, "Name"]
