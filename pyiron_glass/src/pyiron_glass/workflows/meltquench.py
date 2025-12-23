@@ -218,11 +218,6 @@ def melt_quench_simulation(
 
     result = parsed_output.get("generic", None)
 
-    if result is None:
-        result = {}
-        msg = "The 'generic' key is missing from parsed_output."
-        raise KeyError(msg)
-
     return {
         "structure": structure_final,
         "result": result,

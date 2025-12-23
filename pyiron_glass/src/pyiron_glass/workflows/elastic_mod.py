@@ -176,7 +176,13 @@ def _run_strained_md(structure: Atoms, strain_tensor: np.ndarray, base_kwargs: d
         - "potential" (str): Path to the LAMMPS potential.
         - "temperature" (float): Target temperature.
         - "timestep" (float): Integration time step.
-        ... and other required MD settings.
+        - "tmp_working_directory" (str | Path | None): Temporary working directory.
+        - "n_print" (int): Frequency of output during the simulation.
+        - "initial_temperature" (float): Initial temperature for the simulation.
+        - "pressure" (float | None): Target pressure for NPT simulations.
+        - "langevin" (bool): Whether to use Langevin dynamics.
+        - "seed" (int): Random seed for velocity initialization.
+        - "server_kwargs" (dict | None): Additional keyword arguments for the server.
 
     Returns
     -------
@@ -303,6 +309,8 @@ def elastic_simulation(
     - The structure is first equilibrated (NPT/NVT).
     - Positive and negative strains are applied to cancel lower-order errors (central difference).
     - Calculated Cij values assume Voigt notation.
+    - For production simulations, system size, cooling rate, equilibration time,
+    and strain magnitude should be tested to ensure the robustness of the results.
 
     """
     potential_name = potential.at[0, "Name"]
@@ -393,4 +401,4 @@ def elastic_simulation(
     if not np.allclose(cij[3, 3], cij[4, 4]) or not np.allclose(cij[4, 4], cij[5, 5]):
         warnings.warn("System may not be cubic: C44 != C55 != C66", stacklevel=2)
 
-    return {"result": result}
+    return result
