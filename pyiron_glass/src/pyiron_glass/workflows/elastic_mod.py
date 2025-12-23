@@ -401,4 +401,4 @@ def elastic_simulation(
     if not np.allclose(cij[3, 3], cij[4, 4]) or not np.allclose(cij[4, 4], cij[5, 5]):
         warnings.warn("System may not be cubic: C44 != C55 != C66", stacklevel=2)
 
-    return {"result": result}
+    return result
