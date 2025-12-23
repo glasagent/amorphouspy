@@ -5,6 +5,10 @@ from pyiron_glass.analysis.cavities import compute_cavities
 from pyiron_glass.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
+from pyiron_glass.analysis.cte import (
+    CTE_from_NPT_fluctuations,
+    CTE_from_V_T_data,
+)
 from pyiron_glass.io_utils import (
     get_properties_for_structure_analysis,
     structure_from_parsed_output,
@@ -39,6 +43,8 @@ __all__ = [
     "compute_rdf",
     "count_distribution",
     "create_random_atoms",
+    "CTE_from_NPT_fluctuations",
+    "CTE_from_V_T_data",
     "find_rdf_minimum",
     "generate_bond_length_dict",
     "generate_potential",
