@@ -176,7 +176,13 @@ def _run_strained_md(structure: Atoms, strain_tensor: np.ndarray, base_kwargs: d
         - "potential" (str): Path to the LAMMPS potential.
         - "temperature" (float): Target temperature.
         - "timestep" (float): Integration time step.
-        ... and other required MD settings.
+        - "tmp_working_directory" (str | Path | None): Temporary working directory.
+        - "n_print" (int): Frequency of output during the simulation.
+        - "initial_temperature" (float): Initial temperature for the simulation.
+        - "pressure" (float | None): Target pressure for NPT simulations.
+        - "langevin" (bool): Whether to use Langevin dynamics.
+        - "seed" (int): Random seed for velocity initialization.
+        - "server_kwargs" (dict | None): Additional keyword arguments for the server.
 
     Returns
     -------
