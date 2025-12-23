@@ -611,7 +611,7 @@ def cte_simulation(
     )
 
     # Prepare temperature list
-    temperature = temperature_checker(temperature, compute_hysteresis)
+    temperature = temperature_checker(temperature, compute_hysteresis=compute_hysteresis)
 
     # Set pressure to anisotropic if requested
     sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
