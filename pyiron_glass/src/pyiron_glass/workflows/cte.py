@@ -17,7 +17,7 @@ from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
 
-from pyiron_glass.analysis.cte import CTE_from_NPT_fluctuations
+from pyiron_glass.analysis.cte import cte_from_NPT_fluctuations
 from pyiron_glass.io_utils import structure_from_parsed_output
 
 
@@ -311,28 +311,28 @@ def _CTE_H_V_workflow_analysis(
         PaAng3_to_eV = 6.2415e-12
 
         # compute CTE based on H-V fluctuations
-        cte_data[run_key]["CTE_V"] = CTE_from_NPT_fluctuations(
+        cte_data[run_key]["CTE_V"] = cte_from_NPT_fluctuations(
             T=T_used,
             H=collected_data["E_tot"] + ptot_used * collected_data["V"] * PaAng3_to_eV,
             V=collected_data["V"],
             running_mean=running_mean,
             N=N,
         )
-        cte_data[run_key]["CTE_x"] = CTE_from_NPT_fluctuations(
+        cte_data[run_key]["CTE_x"] = cte_from_NPT_fluctuations(
             T=T_used,
             H=collected_data["E_tot"] + px_used * collected_data["Lx"] * PaAng3_to_eV,
             V=collected_data["Lx"],
             running_mean=running_mean,
             N=N,
         )
-        cte_data[run_key]["CTE_y"] = CTE_from_NPT_fluctuations(
+        cte_data[run_key]["CTE_y"] = cte_from_NPT_fluctuations(
             T=T_used,
             H=collected_data["E_tot"] + py_used * collected_data["Ly"] * PaAng3_to_eV,
             V=collected_data["Ly"],
             running_mean=running_mean,
             N=N,
         )
-        cte_data[run_key]["CTE_z"] = CTE_from_NPT_fluctuations(
+        cte_data[run_key]["CTE_z"] = cte_from_NPT_fluctuations(
             T=T_used,
             H=collected_data["E_tot"] + pz_used * collected_data["Lz"] * PaAng3_to_eV,
             V=collected_data["Lz"],

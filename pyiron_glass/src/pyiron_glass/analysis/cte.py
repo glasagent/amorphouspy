@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def CTE_from_NPT_fluctuations(
+def cte_from_NPT_fluctuations(
     T: float | list | np.ndarray,
     H: list | np.ndarray,
     V: list | np.ndarray,
@@ -100,7 +100,7 @@ def CTE_from_NPT_fluctuations(
     return float(CTE)
 
 
-def CTE_from_V_T_data(
+def cte_from_V_T_data(
     T: list | np.ndarray,
     V: list | np.ndarray,
     *,
