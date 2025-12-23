@@ -260,11 +260,6 @@ def viscosity_simulation(
 
     result = parsed_output.get("generic", None)
 
-    if result is None:
-        err_msg = "The 'generic' key is missing from parsed_output."
-        raise KeyError(err_msg)
-        result = {}
-
     return {"result": result}
 
 
