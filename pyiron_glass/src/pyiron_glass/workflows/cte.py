@@ -185,6 +185,8 @@ def _sanity_check_subresults(
     pxx_actual: float,
     pyy_actual: float,
     pzz_actual: float,
+    T_key: str,
+    run_key: str,
 ) -> None:
     """Perform sanity checks on actual vs target temperature and pressure values."""
     REL_TOL = 0.05  # 5 %
@@ -192,31 +194,31 @@ def _sanity_check_subresults(
     ABS_PRESS_TOL = 1e7  # Pa
 
     if abs(T_target - T_actual) > REL_TOL * T_target and abs(T_target - T_actual) > ABS_TEMP_TOL:
-        msg = "WARNING: Temperature differences (>5% and > 10 K) are observed:\n"
+        msg = f"WARNING: Temperature differences (>5% and > 10 K) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target temperature = {T_target:.2f} K\n"
         msg += f" Actual average temperature   = {T_actual:.2f} K.\n"
         msg += " Using target temperature for CTE calculation."
 
     if abs(p_target - ptot_actual) > REL_TOL * p_target and abs(p_target - ptot_actual) > ABS_PRESS_TOL:
-        msg = "WARNING: Pressure (ptot) differences (>5% and > 10 MPa) are observed:\n"
+        msg = f"WARNING: Pressure (ptot) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {ptot_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
 
     if abs(p_target - pxx_actual) > REL_TOL * p_target and abs(p_target - pxx_actual) > ABS_PRESS_TOL:
-        msg = "WARNING: Pressure (pxx) differences (>5% and > 10 MPa) are observed:\n"
+        msg = f"WARNING: Pressure (pxx) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {pxx_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
 
     if abs(p_target - pyy_actual) > REL_TOL * p_target and abs(p_target - pyy_actual) > ABS_PRESS_TOL:
-        msg = "WARNING: Pressure (pyy) differences (>5% and > 10 MPa) are observed:\n"
+        msg = f"WARNING: Pressure (pyy) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {pyy_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
 
     if abs(p_target - pzz_actual) > REL_TOL * p_target and abs(p_target - pzz_actual) > ABS_PRESS_TOL:
-        msg = "WARNING: Pressure (pzz) differences (>5% and > 10 MPa) are observed:\n"
+        msg = f"WARNING: Pressure (pzz) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {pzz_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
@@ -226,6 +228,7 @@ def _cte_fluctuation_workflow_analysis(
     subresults: dict,
     temperature: float,
     p_in_GPa: float,
+    T_key: str,
     N_points: int = 1000,
     *,
     use_running_mean: bool = False,
@@ -252,6 +255,9 @@ def _cte_fluctuation_workflow_analysis(
     p_in_GPa : float
         Target pressure in GPa (for consistent usage of pyiron units). Will be converted to Pa internally.
         If not specified, the average pressure from the data is used.
+    T_key : str
+        Key name for temperature in the subresults dictionary. Needed for warning messages to identify
+        the specific temperature step.
     N_points: int
         Window size for running mean calculation if use_running_mean is True. (default 1000) If
         use_running_mean is False, this parameter is ignored.
@@ -277,10 +283,10 @@ def _cte_fluctuation_workflow_analysis(
                         "pyy" : ...,       # Pressure yy component in GPa
                         "pzz" : ...,       # Pressure zz component in GPa
                         "E_tot" : ...,     # Average total energy in eV
-                        "V_mean" : ...,    # Average volume
-                        "Lx_mean" : ...,   # Average cell length in x
-                        "Ly_mean" : ...,   # Average cell length in y
-                        "Lz_mean" : ...,   # Average cell length in z
+                        "V" : ...,         # Average volume
+                        "Lx" : ...,        # Average cell length in x
+                        "Ly" : ...,        # Average cell length in y
+                        "Lz" : ...,        # Average cell length in z
                         },
             "run02" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
             ...
@@ -321,9 +327,12 @@ def _cte_fluctuation_workflow_analysis(
             T_target=temperature,
             T_actual=float(np.mean(collected_data["T"])),
             p_target=p,
+            ptot_actual=float(np.mean(collected_data["ptot"])),
             pxx_actual=float(np.mean(collected_data["pxx"])),
             pyy_actual=float(np.mean(collected_data["pyy"])),
             pzz_actual=float(np.mean(collected_data["pzz"])),
+            T_key=T_key,
+            run_key=run_key,
         )
 
         # Conversion from Pa*Ang^3 to eV
@@ -331,30 +340,30 @@ def _cte_fluctuation_workflow_analysis(
 
         # compute CTE based on H-V fluctuations
         cte_data[run_key]["CTE_V"] = cte_from_npt_fluctuations(
-            T=temperature,
-            H=collected_data["E_tot"] + p * collected_data["V"] * PaAng3_to_eV,
-            V=collected_data["V"],
+            temperature=temperature,
+            enthalpy=collected_data["E_tot"] + p * collected_data["V"] * PaAng3_to_eV,
+            volume=collected_data["V"],
             use_running_mean=use_running_mean,
             N_points=N_points,
         )
         cte_data[run_key]["CTE_x"] = cte_from_npt_fluctuations(
-            T=temperature,
-            H=collected_data["E_tot"] + p * collected_data["Lx"] * PaAng3_to_eV,
-            V=collected_data["Lx"],
+            temperature=temperature,
+            enthalpy=collected_data["E_tot"] + p * collected_data["Lx"] * PaAng3_to_eV,
+            volume=collected_data["Lx"],
             use_running_mean=use_running_mean,
             N_points=N_points,
         )
         cte_data[run_key]["CTE_y"] = cte_from_npt_fluctuations(
-            T=temperature,
-            H=collected_data["E_tot"] + p * collected_data["Ly"] * PaAng3_to_eV,
-            V=collected_data["Ly"],
+            temperature=temperature,
+            enthalpy=collected_data["E_tot"] + p * collected_data["Ly"] * PaAng3_to_eV,
+            volume=collected_data["Ly"],
             use_running_mean=use_running_mean,
             N_points=N_points,
         )
         cte_data[run_key]["CTE_z"] = cte_from_npt_fluctuations(
-            T=temperature,
-            H=collected_data["E_tot"] + p * collected_data["Lz"] * PaAng3_to_eV,
-            V=collected_data["Lz"],
+            temperature=temperature,
+            enthalpy=collected_data["E_tot"] + p * collected_data["Lz"] * PaAng3_to_eV,
+            volume=collected_data["Lz"],
             use_running_mean=use_running_mean,
             N_points=N_points,
         )
@@ -367,10 +376,10 @@ def _cte_fluctuation_workflow_analysis(
         cte_data[run_key]["pyy"] = float(np.mean(collected_data["pyy"])) * 10**-9
         cte_data[run_key]["pzz"] = float(np.mean(collected_data["pzz"])) * 10**-9
         cte_data[run_key]["E_tot"] = float(np.mean(collected_data["E_tot"]))
-        cte_data[run_key]["V_mean"] = float(np.mean(collected_data["V"]))
-        cte_data[run_key]["Lx_mean"] = float(np.mean(collected_data["Lx"]))
-        cte_data[run_key]["Ly_mean"] = float(np.mean(collected_data["Ly"]))
-        cte_data[run_key]["Lz_mean"] = float(np.mean(collected_data["Lz"]))
+        cte_data[run_key]["V"] = float(np.mean(collected_data["V"]))
+        cte_data[run_key]["Lx"] = float(np.mean(collected_data["Lx"]))
+        cte_data[run_key]["Ly"] = float(np.mean(collected_data["Ly"]))
+        cte_data[run_key]["Lz"] = float(np.mean(collected_data["Lz"]))
     return cte_data
 
 
@@ -611,8 +620,8 @@ def cte_simulation(
                       },
             ...
         }
-        On the lowest level, the structure is the same as returned by `_CTE_H_V_workflow_analysis`.
-        Additionally, on the temperature level, the following entries are added:
+        On the lowest level, the structure is the same as returned by `_cte_fluctuation_workflow_analysis`.
+        Additionally, on the run key level, the following entries are added for bookkeeping:
         "is_converged" : bool            # Whether convergence was reached within the max_production_runs
         "convergence_criterion" : float  # The convergence criterion
         "structure_final" : Atoms        # Final structure at this temperature
@@ -716,19 +725,24 @@ def cte_simulation(
 
             # Calculate and collect cte results
             cte_results[T_key] = _cte_fluctuation_workflow_analysis(
-                subresults=_results, temperature=T, p_in_GPa=pressure, use_running_mean=True, N_points=N_for_averaging
+                subresults=_results,
+                temperature=T,
+                p_in_GPa=pressure,
+                T_key=T_key,
+                use_running_mean=True,
+                N_points=N_for_averaging,
             )
 
             # check for convergence or if max number of production runs is reached
             if counter_production_run > 1:
                 if _is_converged(cte_results[T_key], CTE_convergence_criterion):
-                    cte_results[T_key]["is_converged"] = True
+                    cte_results[T_key]["is_converged"] = "True"
                     cte_results[T_key]["convergence_criterion"] = CTE_convergence_criterion
                     cte_results[T_key]["structure_final"] = structure_production.copy()
                     structure0 = structure_production.copy()
                     break
                 if counter_production_run >= max_production_runs:
-                    cte_results[T_key]["is_converged"] = False
+                    cte_results[T_key]["is_converged"] = "False"
                     cte_results[T_key]["convergence_criterion"] = CTE_convergence_criterion
                     cte_results[T_key]["structure_final"] = structure_production.copy()
                     structure0 = structure_production.copy()

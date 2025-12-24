@@ -26,6 +26,7 @@ from pyiron_glass.structure import (
     get_glass_density_from_model,
     get_structure_dict,
 )
+from pyiron_glass.workflows.cte import cte_simulation
 from pyiron_glass.workflows.elastic_mod import elastic_simulation
 from pyiron_glass.workflows.md import md_simulation
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
@@ -46,6 +47,7 @@ __all__ = [
     "create_random_atoms",
     "cte_from_npt_fluctuations",
     "cte_from_volume_temperature_data",
+    "cte_simulation",
     "elastic_simulation",
     "find_rdf_minimum",
     "generate_bond_length_dict",
