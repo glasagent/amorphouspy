@@ -17,7 +17,7 @@ from ase.atoms import Atoms
 from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
 
-from pyiron_glass.analysis.cte import cte_from_NPT_fluctuations
+from pyiron_glass.analysis.cte import cte_from_npt_fluctuations
 from pyiron_glass.io_utils import structure_from_parsed_output
 
 
@@ -137,14 +137,98 @@ def _run_lammps_md(
     return new_structure, parsed_output
 
 
-def _CTE_H_V_workflow_analysis(
+def _initialize_intermediate_datadict() -> dict:
+    """Initialize dict to store data over multiple production runs."""
+    return {
+        "steps": 0,
+        "T": np.array([]),
+        "E_tot": np.array([]),
+        "ptot": np.array([]),
+        "pxx": np.array([]),
+        "pyy": np.array([]),
+        "pzz": np.array([]),
+        "V": np.array([]),
+        "Lx": np.array([]),
+        "Ly": np.array([]),
+        "Lz": np.array([]),
+    }
+
+
+def _collect_data(collected_data: dict, subresults: dict, run_key: str) -> dict:
+    """Collect data from a specific production run into the cumulative data dictionary."""
+    collected_data["steps"] += int(subresults[run_key]["steps"][-1])
+    collected_data["T"] = np.append(collected_data["T"], subresults[run_key]["temperature"])
+    collected_data["E_tot"] = np.append(collected_data["E_tot"], subresults[run_key]["energy_tot"])
+
+    pxx = subresults[run_key]["pressures"][:, 0, 0] * 1e9  # in Pa
+    pyy = subresults[run_key]["pressures"][:, 1, 1] * 1e9  # in Pa
+    pzz = subresults[run_key]["pressures"][:, 2, 2] * 1e9  # in Pa
+    p_tot = (pxx + pyy + pzz) / 3  # hydrostatic pressure in Pa
+    collected_data["ptot"] = np.append(collected_data["ptot"], p_tot)
+    collected_data["pxx"] = np.append(collected_data["pxx"], pxx)
+    collected_data["pyy"] = np.append(collected_data["pyy"], pyy)
+    collected_data["pzz"] = np.append(collected_data["pzz"], pzz)
+
+    collected_data["V"] = np.append(collected_data["V"], subresults[run_key]["volume"])  # in Ang^3
+    collected_data["Lx"] = np.append(collected_data["Lx"], subresults[run_key]["Lx"])
+    collected_data["Ly"] = np.append(collected_data["Ly"], subresults[run_key]["Ly"])
+    collected_data["Lz"] = np.append(collected_data["Lz"], subresults[run_key]["Lz"])
+
+    return collected_data
+
+
+def _sanity_check_subresults(
+    T_target: float,
+    T_actual: float,
+    p_target: float,
+    ptot_actual: float,
+    pxx_actual: float,
+    pyy_actual: float,
+    pzz_actual: float,
+) -> None:
+    """Perform sanity checks on actual vs target temperature and pressure values."""
+    REL_TOL = 0.05  # 5 %
+    ABS_TEMP_TOL = 10  # K
+    ABS_PRESS_TOL = 1e7  # Pa
+
+    if abs(T_target - T_actual) > REL_TOL * T_target and abs(T_target - T_actual) > ABS_TEMP_TOL:
+        msg = "WARNING: Temperature differences (>5% and > 10 K) are observed:\n"
+        msg += f" Specified target temperature = {T_target:.2f} K\n"
+        msg += f" Actual average temperature   = {T_actual:.2f} K.\n"
+        msg += " Using target temperature for CTE calculation."
+
+    if abs(p_target - ptot_actual) > REL_TOL * p_target and abs(p_target - ptot_actual) > ABS_PRESS_TOL:
+        msg = "WARNING: Pressure (ptot) differences (>5% and > 10 MPa) are observed:\n"
+        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f" Actual average pressure   = {ptot_actual / 1e6:.2e} MPa.\n"
+        msg += " Using target pressure for CTE calculation."
+
+    if abs(p_target - pxx_actual) > REL_TOL * p_target and abs(p_target - pxx_actual) > ABS_PRESS_TOL:
+        msg = "WARNING: Pressure (pxx) differences (>5% and > 10 MPa) are observed:\n"
+        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f" Actual average pressure   = {pxx_actual / 1e6:.2e} MPa.\n"
+        msg += " Using target pressure for CTE calculation."
+
+    if abs(p_target - pyy_actual) > REL_TOL * p_target and abs(p_target - pyy_actual) > ABS_PRESS_TOL:
+        msg = "WARNING: Pressure (pyy) differences (>5% and > 10 MPa) are observed:\n"
+        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f" Actual average pressure   = {pyy_actual / 1e6:.2e} MPa.\n"
+        msg += " Using target pressure for CTE calculation."
+
+    if abs(p_target - pzz_actual) > REL_TOL * p_target and abs(p_target - pzz_actual) > ABS_PRESS_TOL:
+        msg = "WARNING: Pressure (pzz) differences (>5% and > 10 MPa) are observed:\n"
+        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f" Actual average pressure   = {pzz_actual / 1e6:.2e} MPa.\n"
+        msg += " Using target pressure for CTE calculation."
+
+
+def _cte_fluctuation_workflow_analysis(
     subresults: dict,
-    T: float | None = None,
-    p_in_GPa: float | None = None,
-    N: int = 1000,
+    temperature: float,
+    p_in_GPa: float,
+    N_points: int = 1000,
     *,
-    running_mean: bool = False,
-    sanity_check: bool = False,
+    use_running_mean: bool = False,
 ) -> dict:
     """Parse the specific collected output from cte_simulation workflow.
 
@@ -153,10 +237,6 @@ def _CTE_H_V_workflow_analysis(
     This is done in a fashion to be able to check for convergence in the workflow.
     E.g., if multiple production runs are available, the CTE is first calculated for only
     the first run, then for the combined data of the first two runs, etc.
-    Care needs to be taken to ensure the correct "enthalpy" is used. In Lammps, the enthalpy
-    is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
-    the required property here is H_ens = E_inst + p_target * V_average, where p_target can be either
-    provided by the user or can be computed based on the data.
 
     Parameters
     ----------
@@ -167,22 +247,18 @@ def _CTE_H_V_workflow_analysis(
             "run02" : {"pressure" : ..., "volume" : ..., "temperature" : ..., etc},
             ...
         }
-    T : int | float, optional
+    temperature : int | float
         Target temperature in K. If not specified the average temperature from the data is used.
-    p_in_GPa : float, optional
+    p_in_GPa : float
         Target pressure in GPa (for consistent usage of pyiron units). Will be converted to Pa internally.
         If not specified, the average pressure from the data is used.
-    N: int
-        Window size for running mean calculation if running_mean is True. (default 1000)
-    running_mean: bool
+    N_points: int
+        Window size for running mean calculation if use_running_mean is True. (default 1000) If
+        use_running_mean is False, this parameter is ignored.
+    use_running_mean: bool
         Conventionally, fluctuations are calculated as difference from the mean of the whole trajectory. If
-        running_mean is True, running mean values are used to determine fluctuations. This can be useful for
+        use_running_mean is True, running mean values are used to determine fluctuations. This can be useful for
         non-stationary data where drift in volume and energy is still observed. (default False)
-    sanity_check : bool
-        If True, perform a sanity check to ensure that the specified temperature and pressure fit to the
-        actual data. If deviations larger than 5% are observed, the average values from the data are used
-        instead of the user-provided ones. If False, the user specified values are used without modification.
-        As a fallback, averaged T or p_in_GPa are used if they are specified as None. (default False)
 
     Returns
     -------
@@ -212,9 +288,10 @@ def _CTE_H_V_workflow_analysis(
 
     Notes
     -----
-        - In lammps, instantaneous enthalphy is calculated based on the total energy and pressure at every
-          time step. Ideally, however, the pressure that defines the ensemble should be used instead of the
-          pressure at every individual time step.
+        - Care needs to be taken to ensure the correct "enthalpy" is used. In Lammps, the enthalpy
+          is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
+          the required property here is better reflected if the pressure that defines the ensemble is used:
+          H_ens = E_inst + p_target * V_average, where p_target is ideally provided by the user.
         - If isotropic NPT simulations are performed (see "iso" keyword in lammps), the apparent hydrostatic
           pressure = (pxx+pyy+pzz)/3 will be close to the user-specified pressure, but individual pxx, pyy
           and pzz components can deviate significantly if the structure is not fully relaxed or shows anisotropic
@@ -224,27 +301,11 @@ def _CTE_H_V_workflow_analysis(
           individual components.
 
     """
-
-    def _initialize_intermediate_datadict() -> dict:
-        """Initialize dict to store data over multiple production runs."""
-        return {
-            "steps": 0,
-            "T": np.array([]),
-            "E_tot": np.array([]),
-            "ptot": np.array([]),
-            "pxx": np.array([]),
-            "pyy": np.array([]),
-            "pzz": np.array([]),
-            "V": np.array([]),
-            "Lx": np.array([]),
-            "Ly": np.array([]),
-            "Lz": np.array([]),
-        }
-
-    collected_data = _initialize_intermediate_datadict()
-
     # collect final output here
     cte_data = {}
+
+    # Initialize dict to collect data over multiple production runs
+    collected_data = _initialize_intermediate_datadict()
 
     # convert GPa to Pa
     p = p_in_GPa * 1e9 if p_in_GPa is not None else None
@@ -252,101 +313,59 @@ def _CTE_H_V_workflow_analysis(
     for run_key in sorted(subresults.keys()):
         cte_data[run_key] = {}
 
-        # collect all data up to the current production run
-        collected_data["steps"] += int(subresults[run_key]["steps"][-1])
-        collected_data["T"] = np.append(collected_data["T"], subresults[run_key]["temperature"])
-        collected_data["E_tot"] = np.append(collected_data["E_tot"], subresults[run_key]["energy_tot"])
+        # Update collected_data with data from this production run
+        collected_data = _collect_data(collected_data, subresults, run_key)
 
-        pxx = subresults[run_key]["pressures"][:, 0, 0] * 1e9  # in Pa
-        pyy = subresults[run_key]["pressures"][:, 1, 1] * 1e9  # in Pa
-        pzz = subresults[run_key]["pressures"][:, 2, 2] * 1e9  # in Pa
-        p_tot = (pxx + pyy + pzz) / 3  # hydrostatic pressure in Pa
-        collected_data["ptot"] = np.append(collected_data["ptot"], p_tot)
-        collected_data["pxx"] = np.append(collected_data["pxx"], pxx)
-        collected_data["pyy"] = np.append(collected_data["pyy"], pyy)
-        collected_data["pzz"] = np.append(collected_data["pzz"], pzz)
-
-        collected_data["V"] = np.append(collected_data["V"], subresults[run_key]["volume"])  # in Ang^3
-        collected_data["Lx"] = np.append(collected_data["Lx"], subresults[run_key]["Lx"])
-        collected_data["Ly"] = np.append(collected_data["Ly"], subresults[run_key]["Ly"])
-        collected_data["Lz"] = np.append(collected_data["Lz"], subresults[run_key]["Lz"])
-
-        # sanity check to ensure the specified temperature and pressure by the user makes sense
-        # Ideally, the temperature and pressure that define the ensemble should be used
-        if sanity_check:
-            T_used = (
-                float(np.mean(collected_data["T"]))
-                if T is None or abs(T - np.mean(collected_data["T"])) > 0.05 * T
-                else float(T)
-            )
-            ptot_used = (
-                float(np.mean(collected_data["ptot"]))
-                if p is None or abs(p - np.mean(collected_data["ptot"])) > 0.05 * p
-                else float(p)
-            )
-            px_used = (
-                float(np.mean(collected_data["pxx"]))
-                if p is None or abs(p - np.mean(collected_data["pxx"])) > 0.05 * p
-                else float(p)
-            )
-            py_used = (
-                float(np.mean(collected_data["pyy"]))
-                if p is None or abs(p - np.mean(collected_data["pyy"])) > 0.05 * p
-                else float(p)
-            )
-            pz_used = (
-                float(np.mean(collected_data["pzz"]))
-                if p is None or abs(p - np.mean(collected_data["pzz"])) > 0.05 * p
-                else float(p)
-            )
-        # use user-specified T and p values directly, or as a fallback the average from data
-        else:
-            T_used = float(np.mean(collected_data["T"])) if T is None else float(T)
-            ptot_used = float(np.mean(collected_data["ptot"])) if p is None else float(p)
-            px_used = float(np.mean(collected_data["pxx"])) if p is None else float(p)
-            py_used = float(np.mean(collected_data["pyy"])) if p is None else float(p)
-            pz_used = float(np.mean(collected_data["pzz"])) if p is None else float(p)
+        # Print warning if significant deviations between target and actual T and p are observed
+        _sanity_check_subresults(
+            T_target=temperature,
+            T_actual=float(np.mean(collected_data["T"])),
+            p_target=p,
+            pxx_actual=float(np.mean(collected_data["pxx"])),
+            pyy_actual=float(np.mean(collected_data["pyy"])),
+            pzz_actual=float(np.mean(collected_data["pzz"])),
+        )
 
         # Conversion from Pa*Ang^3 to eV
         PaAng3_to_eV = 6.2415e-12
 
         # compute CTE based on H-V fluctuations
-        cte_data[run_key]["CTE_V"] = cte_from_NPT_fluctuations(
-            T=T_used,
-            H=collected_data["E_tot"] + ptot_used * collected_data["V"] * PaAng3_to_eV,
+        cte_data[run_key]["CTE_V"] = cte_from_npt_fluctuations(
+            T=temperature,
+            H=collected_data["E_tot"] + p * collected_data["V"] * PaAng3_to_eV,
             V=collected_data["V"],
-            running_mean=running_mean,
-            N=N,
+            use_running_mean=use_running_mean,
+            N_points=N_points,
         )
-        cte_data[run_key]["CTE_x"] = cte_from_NPT_fluctuations(
-            T=T_used,
-            H=collected_data["E_tot"] + px_used * collected_data["Lx"] * PaAng3_to_eV,
+        cte_data[run_key]["CTE_x"] = cte_from_npt_fluctuations(
+            T=temperature,
+            H=collected_data["E_tot"] + p * collected_data["Lx"] * PaAng3_to_eV,
             V=collected_data["Lx"],
-            running_mean=running_mean,
-            N=N,
+            use_running_mean=use_running_mean,
+            N_points=N_points,
         )
-        cte_data[run_key]["CTE_y"] = cte_from_NPT_fluctuations(
-            T=T_used,
-            H=collected_data["E_tot"] + py_used * collected_data["Ly"] * PaAng3_to_eV,
+        cte_data[run_key]["CTE_y"] = cte_from_npt_fluctuations(
+            T=temperature,
+            H=collected_data["E_tot"] + p * collected_data["Ly"] * PaAng3_to_eV,
             V=collected_data["Ly"],
-            running_mean=running_mean,
-            N=N,
+            use_running_mean=use_running_mean,
+            N_points=N_points,
         )
-        cte_data[run_key]["CTE_z"] = cte_from_NPT_fluctuations(
-            T=T_used,
-            H=collected_data["E_tot"] + pz_used * collected_data["Lz"] * PaAng3_to_eV,
+        cte_data[run_key]["CTE_z"] = cte_from_npt_fluctuations(
+            T=temperature,
+            H=collected_data["E_tot"] + p * collected_data["Lz"] * PaAng3_to_eV,
             V=collected_data["Lz"],
-            running_mean=running_mean,
-            N=N,
+            use_running_mean=use_running_mean,
+            N_points=N_points,
         )
 
         # Also keep other averaged properties to easily check for drift or convergence
         cte_data[run_key]["steps"] = collected_data["steps"]
-        cte_data[run_key]["T"] = T_used
-        cte_data[run_key]["ptot"] = ptot_used * 10**-9  # export in GPa
-        cte_data[run_key]["pxx"] = px_used * 10**-9
-        cte_data[run_key]["pyy"] = py_used * 10**-9
-        cte_data[run_key]["pzz"] = pz_used * 10**-9
+        cte_data[run_key]["T"] = float(np.mean(collected_data["T"]))
+        cte_data[run_key]["ptot"] = float(np.mean(collected_data["ptot"])) * 10**-9  # export in GPa
+        cte_data[run_key]["pxx"] = float(np.mean(collected_data["pxx"])) * 10**-9
+        cte_data[run_key]["pyy"] = float(np.mean(collected_data["pyy"])) * 10**-9
+        cte_data[run_key]["pzz"] = float(np.mean(collected_data["pzz"])) * 10**-9
         cte_data[run_key]["E_tot"] = float(np.mean(collected_data["E_tot"]))
         cte_data[run_key]["V_mean"] = float(np.mean(collected_data["V"]))
         cte_data[run_key]["Lx_mean"] = float(np.mean(collected_data["Lx"]))
@@ -696,8 +715,8 @@ def cte_simulation(
             _results[run_key].update(parsed_output.get("lammps", None))
 
             # Calculate and collect cte results
-            cte_results[T_key] = _CTE_H_V_workflow_analysis(
-                subresults=_results, T=T, p_in_GPa=pressure, running_mean=True, N=N_for_averaging
+            cte_results[T_key] = _cte_fluctuation_workflow_analysis(
+                subresults=_results, temperature=T, p_in_GPa=pressure, use_running_mean=True, N_points=N_for_averaging
             )
 
             # check for convergence or if max number of production runs is reached

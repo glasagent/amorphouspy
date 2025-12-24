@@ -4,10 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyiron_glass"
-version = "0.0.9"
+version = "0.0.10"
 description = "pyiron workflows atomistic modeling of oxide glasses"
 authors = [
   { name = "Achraf Atila", email = "achraf.atila@bam.de" },
+  { name = "Marcel Sadowski", email = "marcel.sadowski@schott.com" },
   { name = "Jan Janssen", email = "janssen@mpie.de" },
   { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
 ]

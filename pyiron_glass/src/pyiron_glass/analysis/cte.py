@@ -10,17 +10,16 @@ Author
 Marcel Sadowski (github.com/Gitdowski)
 """
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 
-def cte_from_NPT_fluctuations(
-    T: float | list | np.ndarray,
-    H: list | np.ndarray,
-    V: list | np.ndarray,
-    N: int = 1000,
+def cte_from_npt_fluctuations(
+    temperature: float | list | np.ndarray,
+    enthalpy: list | np.ndarray,
+    volume: list | np.ndarray,
+    N_points: int = 1000,
     *,
-    running_mean: bool = False,
+    use_running_mean: bool = False,
 ) -> float:
     """Compute the CTE from enthalpy-volume cross-correlations.
 
@@ -29,23 +28,23 @@ def cte_from_NPT_fluctuations(
 
     Parameters
     ----------
-    T : int | float | list | np.ndarray
+    temperature : int | float | list | np.ndarray
         Target temperature (defining the ensemble) in K. Can be specified as a single value (int/float).
         If provided as list or array-like, the mean will be used as target temperature.
-    H : list | np.ndarray
+    enthalpy : list | np.ndarray
         "Instantaneous enthalpy" in eV, list or np.ndarray. Not that the instantaneous enthalpy is given by
         H = U + pV, where U is the instantaneous internal energy (i.e., kinetic + potential of every timestep),
         p the pressure defining the ensemble and V the average volume. Note that this is not the same quantity
         as the enthalpy obtained from LAMMPS directly via the 'enthalpy' output from thermo_modify. The latter
         uses the instantaneous pressure at the given timestep instead of the average (or ensemble-defining) pressure.
-    V : list | np.ndarray
+    volume : list | np.ndarray
         Instantaneous volume in Ang^3, list or np.ndarray. Here, one can also feed individual cell lengths for
         anisotropic CTE calculations.
-    N: int
+    N_points: int
         Window size for running mean calculation if running_mean is True.
-    running_mean: bool
+    use_running_mean: bool
         Conventionally, fluctuations are calculated as difference from the mean of the whole trajectory. If
-        running_mean is True, running mean values are used to determine fluctuations. This can be useful for
+        use_running_mean is True, running mean values are used to determine fluctuations. This can be useful for
         non-stationary data where drift in volume and energy is still observed.
 
     Returns
@@ -84,27 +83,25 @@ def cte_from_NPT_fluctuations(
         return retArray
 
     kB = 8.617333262145e-5  # eV/K
-    T_target = np.mean(T)
+    T_target = np.mean(temperature)
 
-    if not running_mean:
-        H_fluctuations = np.array(H) - np.mean(H)
-        V_fluctuations = np.array(V) - np.mean(V)
-    elif running_mean:
-        H_fluctuations = np.array(H) - _running_mean(H, N)
-        V_fluctuations = np.array(V) - _running_mean(V, N)
+    if not use_running_mean:
+        H_fluctuations = np.array(enthalpy) - np.mean(enthalpy)
+        V_fluctuations = np.array(volume) - np.mean(volume)
+    elif use_running_mean:
+        H_fluctuations = np.array(enthalpy) - _running_mean(enthalpy, N_points)
+        V_fluctuations = np.array(volume) - _running_mean(volume, N_points)
         # Remove NaN values at beginning and end that resulted from running_mean
         H_fluctuations = H_fluctuations[~np.isnan(H_fluctuations)]
         V_fluctuations = V_fluctuations[~np.isnan(V_fluctuations)]
 
-    CTE = (np.mean(H_fluctuations * V_fluctuations)) / (np.mean(V) * kB * T_target**2)
+    CTE = (np.mean(H_fluctuations * V_fluctuations)) / (np.mean(volume) * kB * T_target**2)
     return float(CTE)
 
 
-def cte_from_V_T_data(
-    T: list | np.ndarray,
-    V: list | np.ndarray,
-    *,
-    show_plot: bool = True,
+def cte_from_volume_temperature_data(
+    temperature: list | np.ndarray,
+    volume: list | np.ndarray,
 ) -> float:
     """Compute the CTE from slope of volume-temperature.
 
@@ -115,12 +112,10 @@ def cte_from_V_T_data(
 
     Parameters
     ----------
-    T : list | np.ndarray
+    temperature : list | np.ndarray
         Target or averaged temperatures in K of different NPT simulations. One entry for every simulation.
-    V : list | np.ndarray
+    volume : list | np.ndarray
         Averaged volumes in Ang^3 of different NPT simulations. One entry for every simulation.
-    show_plot : bool, optional
-        Whether to show the volume-temperature plot with fitted line, by default True.
 
     Returns
     -------
@@ -133,23 +128,12 @@ def cte_from_V_T_data(
 
     """
     # make sure to order lists by increasing temperature
-    sorted_indices = np.argsort(T)
-    T = np.array(T)[sorted_indices]
-    V = np.array(V)[sorted_indices]
+    sorted_indices = np.argsort(temperature)
+    temperature = np.array(temperature)[sorted_indices]
+    volume = np.array(volume)[sorted_indices]
 
     # fit and calculate CTE
-    slope, intercept = np.polyfit(T, V, 1)
-    CTE = slope / V[0]
-
-    # plotting
-    if show_plot:
-        plt.close("all")
-        plt.figure()
-        plt.plot(T, V, label="Data", color="blue")
-        plt.plot(T, slope * T + intercept, color="red", label="Fitted", linestyle="--")
-        plt.xlabel("Temperature / K")
-        plt.ylabel(r"Volume / $\AA^3$")
-        plt.legend()
-        plt.show()
+    slope, intercept = np.polyfit(temperature, volume, 1)
+    CTE = slope / volume[0]
 
     return float(CTE)
