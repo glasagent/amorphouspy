@@ -731,7 +731,7 @@ def cte_simulation(
             _results[run_key] = {}
 
             # to keep track of multiple production runs, print status message
-            msg = f"Starting production run {counter_production_run} at {T_key}."
+            msg = f"Starting production {run_key} at {T_key}."
             logger.info(msg)
 
             # actual production run
