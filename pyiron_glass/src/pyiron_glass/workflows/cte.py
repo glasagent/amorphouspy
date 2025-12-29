@@ -8,6 +8,7 @@ Author
 Marcel Sadowski (github.com/Gitdowski)
 """
 
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,26 @@ from pyiron_base import job
 
 from pyiron_glass.analysis.cte import cte_from_npt_fluctuations
 from pyiron_glass.io_utils import structure_from_parsed_output
+
+
+def _create_logger() -> logging.Logger:
+    """Create and configure a logger for CTE workflow warnings."""
+    # create logger
+    logger = logging.getLogger("pyiron_glass.workflows.cte")
+    logger.setLevel(logging.WARNING)
+
+    # Create file handler
+    file_handler = logging.FileHandler("cte.log")
+    file_handler.setLevel(logging.WARNING)
+
+    # Create a formatter and attach it to the handler
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    file_handler.setFormatter(formatter)
+
+    # Add the handler to the logger
+    logger.addHandler(file_handler)
+
+    return logger
 
 
 def _run_lammps_md(
@@ -187,6 +208,7 @@ def _sanity_check_subresults(
     pzz_actual: float,
     T_key: str,
     run_key: str,
+    logger: logging.Logger,
 ) -> None:
     """Perform sanity checks on actual vs target temperature and pressure values."""
     REL_TOL = 0.05  # 5 %
@@ -198,30 +220,35 @@ def _sanity_check_subresults(
         msg += f" Specified target temperature = {T_target:.2f} K\n"
         msg += f" Actual average temperature   = {T_actual:.2f} K.\n"
         msg += " Using target temperature for CTE calculation."
+        logger.warning(msg)
 
     if abs(p_target - ptot_actual) > REL_TOL * p_target and abs(p_target - ptot_actual) > ABS_PRESS_TOL:
         msg = f"WARNING: Pressure (ptot) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {ptot_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
+        logger.warning(msg)
 
     if abs(p_target - pxx_actual) > REL_TOL * p_target and abs(p_target - pxx_actual) > ABS_PRESS_TOL:
         msg = f"WARNING: Pressure (pxx) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {pxx_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
+        logger.warning(msg)
 
     if abs(p_target - pyy_actual) > REL_TOL * p_target and abs(p_target - pyy_actual) > ABS_PRESS_TOL:
         msg = f"WARNING: Pressure (pyy) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {pyy_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
+        logger.warning(msg)
 
     if abs(p_target - pzz_actual) > REL_TOL * p_target and abs(p_target - pzz_actual) > ABS_PRESS_TOL:
         msg = f"WARNING: Pressure (pzz) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
         msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f" Actual average pressure   = {pzz_actual / 1e6:.2e} MPa.\n"
         msg += " Using target pressure for CTE calculation."
+        logger.warning(msg)
 
 
 def _cte_fluctuation_workflow_analysis(
@@ -232,6 +259,7 @@ def _cte_fluctuation_workflow_analysis(
     N_points: int = 1000,
     *,
     use_running_mean: bool = False,
+    logger: logging.Logger,
 ) -> dict:
     """Parse the specific collected output from cte_simulation workflow.
 
@@ -265,6 +293,8 @@ def _cte_fluctuation_workflow_analysis(
         Conventionally, fluctuations are calculated as difference from the mean of the whole trajectory. If
         use_running_mean is True, running mean values are used to determine fluctuations. This can be useful for
         non-stationary data where drift in volume and energy is still observed. (default False)
+    logger : logging.Logger
+        Logger for warning messages.
 
     Returns
     -------
@@ -333,6 +363,7 @@ def _cte_fluctuation_workflow_analysis(
             pzz_actual=float(np.mean(collected_data["pzz"])),
             T_key=T_key,
             run_key=run_key,
+            logger=logger,
         )
 
         # Conversion from Pa*Ang^3 to eV
@@ -428,7 +459,7 @@ def _is_converged(data: dict, criterion: float) -> bool:
 
 
 def _input_checker(
-    production_steps: int, max_production_runs: int, n_log: int, timestep: float
+    production_steps: int, max_production_runs: int, n_log: int, timestep: float, logger: logging.Logger
 ) -> tuple[int, int, int]:
     """Check and adjust input parameters for cte_simulation workflow."""
     # Minimum choices for a working CTE calculation -> For reliable results, user should increase
@@ -443,6 +474,7 @@ def _input_checker(
         msg += f"\n  However, a value of {max_production_runs} was provided."
         msg += f"\n  Automatically setting max_production_runs to {MIN_PRODUCTION_RUNS} and continue."
         msg += "\n  Consider increasing max_production_runs even further if convergence is not reached."
+        logger.warning(msg)
         max_production_runs = MIN_PRODUCTION_RUNS
 
     if production_steps < MIN_PRODUCTION_STEPS:
@@ -452,6 +484,7 @@ def _input_checker(
         msg += f"\n  Automatically setting the user-specified production_steps of {production_steps} "
         msg += f"to {MIN_PRODUCTION_STEPS} and continue."
         msg += "\n  Consider increasing production_steps even further to get more reliable results."
+        logger.warning(msg)
         production_steps = MIN_PRODUCTION_STEPS
 
     N_for_averaging = int(AVERAGING_TIME_IN_PS * 1000 / n_log / timestep)
@@ -461,6 +494,7 @@ def _input_checker(
         msg += f"but currently only {N_for_averaging} are used."
         msg += "\n  Consider decreasing n_log or change hard-coded AVERAGING_TIME_IN_PS variable."
         msg += "\n  Continuing regardless."
+        logger.warning(msg)
 
     return production_steps, max_production_runs, N_for_averaging
 
@@ -635,9 +669,12 @@ def cte_simulation(
       jobs with independent temperatures can be submitted to achieve parallelization.
 
     """
+    # Logging setup
+    logger = _create_logger()
+
     # Check and adjust input parameters if needed
     production_steps, max_production_runs, N_for_averaging = _input_checker(
-        production_steps, max_production_runs, n_log, timestep
+        production_steps, max_production_runs, n_log, timestep, logger
     )
 
     # Prepare temperature list
@@ -731,6 +768,7 @@ def cte_simulation(
                 T_key=T_key,
                 use_running_mean=True,
                 N_points=N_for_averaging,
+                logger=logger,
             )
 
             # check for convergence or if max number of production runs is reached
