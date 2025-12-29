@@ -216,38 +216,38 @@ def _sanity_check_subresults(
     ABS_PRESS_TOL = 1e7  # Pa
 
     if abs(T_target - T_actual) > REL_TOL * T_target and abs(T_target - T_actual) > ABS_TEMP_TOL:
-        msg = f"WARNING: Temperature differences (>5% and > 10 K) are observed at {T_key}, {run_key}:\n"
-        msg += f" Specified target temperature = {T_target:.2f} K\n"
-        msg += f" Actual average temperature   = {T_actual:.2f} K.\n"
-        msg += " Using target temperature for CTE calculation."
+        msg = f"\n  Temperature differences (>5% and > 10 K) are observed at {T_key}, {run_key}:\n"
+        msg += f"  Specified target temperature = {T_target:.2f} K\n"
+        msg += f"  Actual average temperature   = {T_actual:.2f} K.\n"
+        msg += "  Using target temperature for CTE calculation."
         logger.warning(msg)
 
     if abs(p_target - ptot_actual) > REL_TOL * p_target and abs(p_target - ptot_actual) > ABS_PRESS_TOL:
-        msg = f"WARNING: Pressure (ptot) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
-        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
-        msg += f" Actual average pressure   = {ptot_actual / 1e6:.2e} MPa.\n"
-        msg += " Using target pressure for CTE calculation."
+        msg = f"\n  Pressure (ptot) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+        msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f"  Actual average pressure   = {ptot_actual / 1e6:.2e} MPa.\n"
+        msg += "  Using target pressure for CTE calculation."
         logger.warning(msg)
 
     if abs(p_target - pxx_actual) > REL_TOL * p_target and abs(p_target - pxx_actual) > ABS_PRESS_TOL:
-        msg = f"WARNING: Pressure (pxx) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
-        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
-        msg += f" Actual average pressure   = {pxx_actual / 1e6:.2e} MPa.\n"
-        msg += " Using target pressure for CTE calculation."
+        msg = f"\n  Pressure (pxx) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+        msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f"  Actual average pressure   = {pxx_actual / 1e6:.2e} MPa.\n"
+        msg += "  Using target pressure for CTE calculation."
         logger.warning(msg)
 
     if abs(p_target - pyy_actual) > REL_TOL * p_target and abs(p_target - pyy_actual) > ABS_PRESS_TOL:
-        msg = f"WARNING: Pressure (pyy) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
-        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
-        msg += f" Actual average pressure   = {pyy_actual / 1e6:.2e} MPa.\n"
-        msg += " Using target pressure for CTE calculation."
+        msg = f"\n  Pressure (pyy) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+        msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f"  Actual average pressure   = {pyy_actual / 1e6:.2e} MPa.\n"
+        msg += "  Using target pressure for CTE calculation."
         logger.warning(msg)
 
     if abs(p_target - pzz_actual) > REL_TOL * p_target and abs(p_target - pzz_actual) > ABS_PRESS_TOL:
-        msg = f"WARNING: Pressure (pzz) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
-        msg += f" Specified target pressure = {p_target / 1e6:.2e} MPa\n"
-        msg += f" Actual average pressure   = {pzz_actual / 1e6:.2e} MPa.\n"
-        msg += " Using target pressure for CTE calculation."
+        msg = f"\n  Pressure (pzz) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+        msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
+        msg += f"  Actual average pressure   = {pzz_actual / 1e6:.2e} MPa.\n"
+        msg += "  Using target pressure for CTE calculation."
         logger.warning(msg)
 
 
@@ -327,7 +327,7 @@ def _cte_fluctuation_workflow_analysis(
         - Care needs to be taken to ensure the correct "enthalpy" is used. In Lammps, the enthalpy
           is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
           the required property here is better reflected if the pressure that defines the ensemble is used:
-          H_ens = E_inst + p_target * V_average, where p_target is ideally provided by the user.
+          H_ens = E_inst + p_target * V_inst.
         - If isotropic NPT simulations are performed (see "iso" keyword in lammps), the apparent hydrostatic
           pressure = (pxx+pyy+pzz)/3 will be close to the user-specified pressure, but individual pxx, pyy
           and pzz components can deviate significantly if the structure is not fully relaxed or shows anisotropic
@@ -344,7 +344,7 @@ def _cte_fluctuation_workflow_analysis(
     collected_data = _initialize_intermediate_datadict()
 
     # convert GPa to Pa
-    p = p_in_GPa * 1e9 if p_in_GPa is not None else None
+    p = p_in_GPa * 1e9
 
     for run_key in sorted(subresults.keys()):
         cte_data[run_key] = {}
@@ -462,15 +462,14 @@ def _input_checker(
     production_steps: int, max_production_runs: int, n_log: int, timestep: float, logger: logging.Logger
 ) -> tuple[int, int, int]:
     """Check and adjust input parameters for cte_simulation workflow."""
-    # Minimum choices for a working CTE calculation -> For reliable results, user should increase
-    # these values via input parameters to cte_simulation
+    # Minimum choices for a working CTE calculation. For reliable results, use considreably higher values!
     MIN_PRODUCTION_RUNS = 2
-    AVERAGING_TIME_IN_PS = 2
+    AVERAGING_TIME_IN_PS = 10
     MIN_PRODUCTION_STEPS = int(2 * AVERAGING_TIME_IN_PS * 1000 / timestep)
     MIN_RUNNING_MEAN_POINTS = 1000
 
     if max_production_runs < MIN_PRODUCTION_RUNS:
-        msg = "WARNING: At least 2 individual production runs are needed to check for CTE convergence."
+        msg = "\n  At least 2 individual production runs are needed to check for CTE convergence."
         msg += f"\n  However, a value of {max_production_runs} was provided."
         msg += f"\n  Automatically setting max_production_runs to {MIN_PRODUCTION_RUNS} and continue."
         msg += "\n  Consider increasing max_production_runs even further if convergence is not reached."
@@ -478,9 +477,9 @@ def _input_checker(
         max_production_runs = MIN_PRODUCTION_RUNS
 
     if production_steps < MIN_PRODUCTION_STEPS:
-        msg = "WARNING: For calculating fluctuations based on running averages, sufficient data is needed."
-        msg += f"\n  With currently averaging over {AVERAGING_TIME_IN_PS} ps, production runs are too short"
-        msg += f"  and we recommend at least {2 * AVERAGING_TIME_IN_PS} ps."
+        msg = "\n  For calculating fluctuations based on running averages, sufficient data is needed."
+        msg += f"\n  With currently averaging over {AVERAGING_TIME_IN_PS} ps, production runs are too short "
+        msg += f"and we recommend at least {2 * AVERAGING_TIME_IN_PS} ps."
         msg += f"\n  Automatically setting the user-specified production_steps of {production_steps} "
         msg += f"to {MIN_PRODUCTION_STEPS} and continue."
         msg += "\n  Consider increasing production_steps even further to get more reliable results."
@@ -489,7 +488,7 @@ def _input_checker(
 
     N_for_averaging = int(AVERAGING_TIME_IN_PS * 1000 / n_log / timestep)
     if N_for_averaging < MIN_RUNNING_MEAN_POINTS:
-        msg = "WARNING: Running mean values are most likely based on insufficient data points."
+        msg = "\n  Running mean values are most likely based on insufficient data points."
         msg += f"\n  We recommend averaging over at least {MIN_RUNNING_MEAN_POINTS} data points, "
         msg += f"but currently only {N_for_averaging} are used."
         msg += "\n  Consider decreasing n_log or change hard-coded AVERAGING_TIME_IN_PS variable."
@@ -527,36 +526,34 @@ def _set_initial_temperature(T_count: int, T: float, seed: int | None) -> None:
     return 0, None
 
 
-def _temperature_checker(temperature: float | list[int | float], *, compute_hysteresis: bool) -> list[int | float]:
+def _temperature_checker(temperature: float | list[int | float]) -> list[int | float]:
     """Check and prepare temperature list for cte_simulation workflow.
 
-    Makes sure that all temperatures are positive and prepares the temperature list. If
-    compute_hysteresis is True, the temperature list is extended by reverting the specified
-    temperatures after the last temperature is reached.
+    Makes sure that all temperatures are positive. If only specified as a single value, it
+    converts it to a list as required for the workflow.
 
     Parameters
     ----------
     temperature : float | list[int | float]
         Simulation temperature in Kelvin.
-    compute_hysteresis : bool
-        If True, the temperature list is extended and reverts the specified temperatures after the last
-        temperature is reached. This allows to compute hysteresis effects in the CTE calculation
-        (default False).
 
     Returns
     -------
     list[int | float]
         Prepared list of temperatures for the workflow.
 
+    Raises
+    ------
+    ValueError
+        If any temperature is non-positive.
+
     """
     if isinstance(temperature, (int, float)):
         temperature_sim = [temperature]
-    if compute_hysteresis:
-        temperature_sim += temperature_sim[-2::-1]
 
     for T in temperature_sim:
         if T <= 0:
-            msg = "Temperature must be positive for CTE simulations."
+            msg = "All Temperatures must be positive for CTE simulations."
             raise ValueError(msg)
 
     return temperature_sim
@@ -578,7 +575,6 @@ def cte_simulation(
     server_kwargs: dict[str, Any] | None = None,
     *,
     aniso: bool = False,
-    compute_hysteresis: bool = False,
     seed: int | None = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict[Any, Any]:  # pylint: disable=too-many-positional-arguments
@@ -626,10 +622,6 @@ def cte_simulation(
         If false, an isotropic NPT calculation is performed and the simulation box is scaled uniformly.
         If True, anisotropic NPT calculation is performed and the simulation box can change shape and
         size independently along each axis (default False).
-    compute_hysteresis : bool, optional
-        If True, the temperature list is extended and reverts the specified temperatures after the last
-        temperature is reached. This allows to compute hysteresis effects in the CTE calculation
-        (default False).
     seed : int, None, optional
         Random seed for velocity initialization (default 12345). If
     tmp_working_directory : str or Path, optional
@@ -664,7 +656,6 @@ def cte_simulation(
     -----
     - For every temperature, the structure is first pre-equilibrated with short (10 ps) NVT.
     - Simulation settings for the NVT equilibration run are hard-coded
-    - Dump frequency of the NPT equilibration run is hard-coded and set to 5 dumps over the run.
     - CTEs are calculated sequentially if a list of temperatures is provided. Alternatively, multiple
       jobs with independent temperatures can be submitted to achieve parallelization.
 
@@ -678,7 +669,7 @@ def cte_simulation(
     )
 
     # Prepare temperature list
-    temperature = _temperature_checker(temperature, compute_hysteresis=compute_hysteresis)
+    temperature = _temperature_checker(temperature)
 
     # Set pressure to anisotropic if requested
     sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
@@ -721,7 +712,7 @@ def cte_simulation(
             pressure=sim_pressure,
             n_ionic_steps=equilibration_steps,
             timestep=timestep,
-            n_dump=int(equilibration_steps / 5),
+            n_dump=equilibration_steps,
             n_log=100,
             initial_temperature=0,
             langevin=True,
