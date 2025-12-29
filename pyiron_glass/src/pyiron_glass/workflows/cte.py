@@ -26,11 +26,11 @@ def _create_logger() -> logging.Logger:
     """Create and configure a logger for CTE workflow warnings."""
     # create logger
     logger = logging.getLogger("pyiron_glass.workflows.cte")
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.INFO)
 
     # Create file handler
     file_handler = logging.FileHandler("cte.log")
-    file_handler.setLevel(logging.WARNING)
+    file_handler.setLevel(logging.INFO)
 
     # Create a formatter and attach it to the handler
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -729,6 +729,10 @@ def cte_simulation(
             run_key = f"run{counter_production_run:02d}"
             cte_results[T_key][run_key] = {}
             _results[run_key] = {}
+
+            # to keep track of multiple production runs, print status message
+            msg = f"Starting production run {counter_production_run} at {T_key}."
+            logger.info(msg)
 
             # actual production run
             structure_production, parsed_output = _run_lammps_md(
