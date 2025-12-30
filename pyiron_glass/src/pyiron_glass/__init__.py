@@ -2,6 +2,10 @@
 
 from pyiron_glass.analysis.bond_angle_distribution import compute_angles
 from pyiron_glass.analysis.cavities import compute_cavities
+from pyiron_glass.analysis.cte import (
+    cte_from_npt_fluctuations,
+    cte_from_volume_temperature_data,
+)
 from pyiron_glass.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
 from pyiron_glass.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from pyiron_glass.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
@@ -23,6 +27,7 @@ from pyiron_glass.structure import (
     get_glass_density_from_model,
     get_structure_dict,
 )
+from pyiron_glass.workflows.cte import cte_simulation
 from pyiron_glass.workflows.elastic_mod import elastic_simulation
 from pyiron_glass.workflows.md import md_simulation
 from pyiron_glass.workflows.meltquench import melt_quench_simulation
@@ -41,6 +46,9 @@ __all__ = [
     "compute_rdf",
     "count_distribution",
     "create_random_atoms",
+    "cte_from_npt_fluctuations",
+    "cte_from_volume_temperature_data",
+    "cte_simulation",
     "elastic_simulation",
     "find_rdf_minimum",
     "generate_bond_length_dict",
