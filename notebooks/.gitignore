@@ -6,3 +6,4 @@ tmp_cte*/
 *.dat
 *.log
 *.h5
+.nfs*
