@@ -24,58 +24,14 @@ Lester Guttman, J. Non-Cryst. Solids doi:https://doi.org/10.1016/0022-3093(90)90
 
 import tempfile
 from itertools import combinations_with_replacement
-from pathlib import Path
 
 import numpy as np
 from ase import Atoms
 from sovapy.computation.rings import RINGs
 from sovapy.core.file import File
 
-from pyiron_glass.io_utils import get_properties_for_structure_analysis
+from pyiron_glass.io_utils import get_properties_for_structure_analysis, write_xyz
 from pyiron_glass.shared import type_to_dict
-
-
-def write_xyz(
-    filename: str,
-    coords: np.ndarray,
-    types: np.ndarray,
-    box_size: np.ndarray = None,
-    type_dict: dict[int, str] | None = None,
-) -> None:
-    """Write atomic configuration to an XYZ file.
-
-    Parameters
-    ----------
-    filename : str
-        Output XYZ file name.
-    coords : np.ndarray, shape (N, 3)
-        Atomic coordinates.
-    types : np.ndarray, shape (N,)
-        Atomic types as integers.
-    box_size : array-like of float, shape (3,), optional
-        Simulation box size in x, y, z.
-    type_dict : dict[int, str], optional
-        Dictionary mapping atomic type integers to element symbols.
-
-    """
-    if type_dict is None:
-        msg = "type_dict must be provided"
-        raise ValueError(msg)
-
-    N = coords.shape[0]
-    path = Path(filename)
-    with path.open("w") as f:
-        f.write(f"{N}\n")
-        if box_size is not None:
-            f.write(f"CUB {box_size[0]:.8f} {box_size[1]:.8f} {box_size[2]:.8f}\n")
-        else:
-            f.write("\n")
-        for t, (x, y, z) in zip(types, coords, strict=False):
-            symbol = type_dict.get(t)
-            if symbol is None:
-                msg = f"Unknown atomic type: {t}"
-                raise ValueError(msg)
-            f.write(f"{symbol} {x:.8f} {y:.8f} {z:.8f}\n")
 
 
 def compute_guttmann_rings(

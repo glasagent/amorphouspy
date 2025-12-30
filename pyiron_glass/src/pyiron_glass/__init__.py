@@ -10,6 +10,7 @@ from pyiron_glass.io_utils import (
     structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
+    write_xyz,
 )
 from pyiron_glass.neighbors import get_neighbors
 from pyiron_glass.potentials import potential
@@ -58,4 +59,5 @@ __all__ = [
     "viscosity_simulation",
     "write_angle_distribution",
     "write_distribution_to_file",
+    "write_xyz",
 ]
