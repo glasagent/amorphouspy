@@ -64,7 +64,6 @@ class TaskStore:
 
         Args:
             db_path: Path to SQLite database file. If None, uses 'tasks.db' in current directory.
-
         """
         if db_path is None:
             db_path = Path("tasks.db")
@@ -108,11 +107,10 @@ class TaskStore:
         """Get task data by task ID.
 
         Args:
-            task_id: Task identifier
+            task_id: Task identifier.
 
         Returns:
-            Task data dict or None if not found
-
+            Task data dict or None if not found.
         """
         try:
             with self.get_session() as session:
@@ -125,12 +123,14 @@ class TaskStore:
             return None
 
     def set(self, task_id: str, task_data: dict[str, Any]) -> None:
-        """Set/update task data.
+        """Set or update task data.
 
         Args:
-            task_id: Task identifier
-            task_data: Task data dictionary
+            task_id: Task identifier.
+            task_data: Task data dictionary.
 
+        Raises:
+            SQLAlchemyError: If a database error occurs.
         """
         try:
             with self.get_session() as session:
@@ -156,8 +156,7 @@ class TaskStore:
         """Get all tasks as (task_id, task_data) tuples.
 
         Returns:
-            List of (task_id, task_data) tuples
-
+            List of (task_id, task_data) tuples.
         """
         try:
             with self.get_session() as session:
@@ -171,11 +170,10 @@ class TaskStore:
         """Find a completed task with matching request hash for cache lookup.
 
         Args:
-            request_hash: Hash of the request parameters
+            request_hash: Hash of the request parameters.
 
         Returns:
-            Tuple of (task_id, MeltquenchResult) if cached result found, None otherwise
-
+            Tuple of (task_id, MeltquenchResult) if cached result found, None otherwise.
         """
         try:
             with self.get_session() as session:
@@ -199,11 +197,10 @@ class TaskStore:
         """Clean up old completed/error tasks older than specified days.
 
         Args:
-            days: Number of days to keep tasks
+            days: Number of days to keep tasks. Defaults to 30.
 
         Returns:
-            Number of tasks deleted
-
+            Number of tasks deleted.
         """
         try:
             cutoff_date = datetime.now(UTC).replace(day=datetime.now(UTC).day - days)
@@ -292,11 +289,10 @@ def init_task_store(db_path: Path | None = None) -> TaskStore:
     """Initialize the global task store with custom database path.
 
     Args:
-        db_path: Path to SQLite database file
+        db_path: Path to SQLite database file.
 
     Returns:
-        TaskStore instance
-
+        TaskStore instance.
     """
     global _task_store_instance
     _task_store_instance = TaskStore(db_path)

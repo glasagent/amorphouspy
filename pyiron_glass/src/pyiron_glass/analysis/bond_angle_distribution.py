@@ -12,6 +12,7 @@ Currently implemented:
 - compute_angles: Calculates bond angle distributions for atom
   triplets of the form neighbor-center-neighbor, filtered by atomic
   types and distance cutoff.
+
 """
 
 import numpy as np
@@ -33,14 +34,19 @@ def compute_angles(
     """Compute bond angle distribution between triplets of neighbor_type-center-neighbor_type.
 
     Args:
-        structure (Atoms): Atomic structure.
-        center_type (int): Atom type at the angle center.
-        neighbor_type (int): Atom type forming the angle with center.
-        cutoff (float): Neighbor search cutoff.
-        bins (int): Number of histogram bins (default: 180).
+        structure: Atomic structure.
+        center_type: Atom type at the angle center.
+        neighbor_type: Atom type forming the angle with center.
+        cutoff: Neighbor search cutoff.
+        bins: Number of histogram bins. Defaults to 180.
 
     Returns:
-        tuple[np.ndarray, np.ndarray]: Bin centers (degrees), normalized angle histogram.
+        A tuple containing:
+            - bin_centers: Bin centers (degrees).
+            - angle_hist: Normalized angle histogram.
+
+    Example:
+        >>> bins, hist = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)
 
     """
     ids, types, coords, box_size = get_properties_for_structure_analysis(structure)

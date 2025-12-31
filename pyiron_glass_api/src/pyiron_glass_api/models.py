@@ -26,14 +26,32 @@ LENGTH_ERROR_MSG = "Components and values lists must have the same length"
 
 
 def serialize_atoms(atoms: Atoms) -> str:
-    """Serialize ASE Atoms to JSON string."""
+    """Serialize ASE Atoms to JSON string.
+
+    Args:
+        atoms: The ASE Atoms object to serialize.
+
+    Returns:
+        JSON string representation of the Atoms object.
+    """
     json_buffer = StringIO()
     write(json_buffer, atoms, format="json")
     return json_buffer.getvalue()
 
 
 def validate_atoms(v: Atoms | dict | str | None) -> Atoms | None:
-    """Validate and convert input to ASE Atoms object."""
+    """Validate and convert input to ASE Atoms object.
+
+    Args:
+        v: Input value which can be an ASE Atoms object, a dictionary, a JSON string, or None.
+
+    Returns:
+        The validated ASE Atoms object or None if input is None.
+
+    Raises:
+        ValueError: If reconstruction from dict or parsing from string fails.
+        TypeError: If input type is not supported.
+    """
     if v is None:
         return None
     elif isinstance(v, Atoms):
@@ -73,14 +91,14 @@ class MeltquenchRequest(BaseModel):
     """Request model for meltquench simulation.
 
     Attributes:
-        components: List of component names (e.g., ["CaO", "Al2O3", "SiO2"])
-        values: List of composition values corresponding to components
-        unit: Unit type - either "wt" (weight percent) or "mol" (molar percent)
-        heating_rate: Heating rate in K/s (optional, default: 1e14)
-        cooling_rate: Cooling rate in K/s (optional, default: 1e14)
-        n_print: Print interval for simulation output (optional, default: 1000)
-        n_atoms: Number of atoms in the generated structure (default: 5000)
-
+        components: List of oxide components (e.g., ["CaO", "Al2O3", "SiO2"]).
+        values: List of composition values corresponding to components.
+        unit: Unit type - either "wt" (weight percent) or "mol" (molar percent).
+        heating_rate: Heating rate in K/s (default: 1e14).
+        cooling_rate: Cooling rate in K/s (default: 1e12).
+        n_print: Print interval for simulation output (default: 1000).
+        n_atoms: Target number of atoms for the generated structure (default: 5000).
+        potential_type: Type of interatomic potential to use (default: 'pmmcs').
     """
 
     components: list[str] = Field(..., description="List of oxide components (e.g., ['CaO', 'Al2O3', 'SiO2'])")
@@ -121,12 +139,11 @@ class MeltquenchResult(BaseModel):
     """Result model for completed meltquench simulation.
 
     Attributes:
-        composition: Final composition string used in simulation
-        final_structure: ASE Atoms object representing the final atomic structure
-        mean_temperature: Average temperature during final equilibration
-        simulation_steps: Total number of simulation steps completed
-        structural_analysis: Structural analysis results from glass structure analysis
-
+        composition: Composition string used in simulation.
+        final_structure: ASE Atoms object representing the final atomic structure.
+        mean_temperature: Mean temperature during final phase (K).
+        simulation_steps: Total number of simulation steps completed.
+        structural_analysis: Structural analysis results from glass structure analysis.
     """
 
     composition: str = Field(..., description="Composition string used in simulation")

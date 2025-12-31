@@ -96,14 +96,19 @@ def find_rdf_minimum(
     detecting where the RDF drops below 1.0 after the peak.
 
     Args:
-        r (np.ndarray): Array of radial distances (Å), assumed to be uniformly spaced.
-        rdf_data (np.ndarray): RDF values corresponding to `r`.
-        sigma (float, optional): Standard deviation for Gaussian smoothing. Default is 2.0.
-        window_length (int, optional): Window length for Savitzky-Golay filter. Must be odd. Default is 21.
-        polyorder (int, optional): Polynomial order for Savitzky-Golay filter. Default is 3.
+        r: Array of radial distances (Å), assumed to be uniformly spaced.
+        rdf_data: RDF values corresponding to `r`.
+        sigma: Standard deviation for Gaussian smoothing.
+        window_length: Window length for Savitzky-Golay filter. Must be odd.
+        polyorder: Polynomial order for Savitzky-Golay filter.
 
     Returns:
-        float | None: The radial distance of the first minimum (Å) if found, otherwise `None`.
+        The radial distance of the first minimum (Å) if found, otherwise `None`.
+
+    Example:
+        >>> r = np.linspace(0, 10, 100)
+        >>> rdf = np.sin(r) + 1.0  # Dummy data
+        >>> min_r = find_rdf_minimum(r, rdf)
 
     """
     rdf_smooth1 = gaussian_filter1d(rdf_data, sigma=sigma)
@@ -131,17 +136,21 @@ def find_rdf_minimum(
 
 
 def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], set[str], bool]:
-    """Classify elements into network formers, modifiers, and oxygen.
+    """Classifies elements into network formers, modifiers, and oxygen.
 
     Args:
-        unique_z (np.ndarray): Unique atomic numbers in the system.
+        unique_z: Unique atomic numbers in the system.
 
     Returns:
-        tuple:
-            - type_map (dict[int, str]): Mapping atomic number -> element symbol.
-            - network_formers (set[str]): Set of network former symbols.
-            - modifiers (set[str]): Set of modifier symbols.
-            - oxygen_present (bool): Whether oxygen is present.
+        A tuple containing:
+            - type_map: Mapping atomic number -> element symbol.
+            - network_formers: Set of network former symbols.
+            - modifiers: Set of modifier symbols.
+            - oxygen_present: Whether oxygen is present.
+
+    Example:
+        >>> unique_z = np.array([14, 8, 11])
+        >>> type_map, formers, modifiers, has_O = _classify_elements(unique_z)
 
     """
     type_map: dict[int, str] = {}
@@ -177,10 +186,14 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     """Perform a comprehensive structural analysis of an atomic configuration.
 
     Args:
-        atoms (ase.Atoms): Atomic configuration to analyze.
+        atoms: Atomic configuration to analyze.
 
     Returns:
         StructureData: Object containing structured analysis results.
+
+    Example:
+        >>> structure_data = analyze_structure(my_atoms)
+        >>> print(structure_data.density)
 
     """
     atomic_numbers = atoms.get_atomic_numbers()
@@ -507,10 +520,14 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     """Generate interactive Plotly plots for structural analysis results.
 
     Args:
-        structure_data (StructureData): Structural analysis results
+        structure_data: Structural analysis results.
 
     Returns:
-        plotly.graph_objects.Figure: Interactive Plotly figure object
+        Interactive Plotly figure object.
+
+    Example:
+        >>> fig = plot_analysis_results_plotly(structure_data)
+        >>> fig.show()
 
     """
     # Constants for magic values

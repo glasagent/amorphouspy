@@ -30,10 +30,10 @@ def atoms_to_xyz_string(atoms) -> str:
     """Convert ASE Atoms object to extended XYZ format string for 3Dmol.js.
 
     Args:
-        atoms: ASE Atoms object or serialized structure data
+        atoms: ASE Atoms object or serialized structure data.
 
     Returns:
-        Extended XYZ format string with cell information
+        Extended XYZ format string with cell information.
     """
     if atoms is None:
         return ""
@@ -65,13 +65,13 @@ def prepare_template_context(
     """Prepare context data for the results template.
 
     Args:
-        task_id: Task identifier
-        result_data: Dictionary containing simulation results
-        plotly_fig: Plotly figure as dictionary
-        structure_xyz: XYZ format string for 3D visualization
+        task_id: Task identifier.
+        result_data: Dictionary containing simulation results.
+        plotly_fig: Plotly figure as dictionary.
+        structure_xyz: XYZ format string for 3D visualization.
 
     Returns:
-        Dictionary containing all template variables
+        Dictionary containing all template variables.
     """
     structural_analysis = result_data.get("structural_analysis", {})
 
@@ -113,14 +113,14 @@ def _validate_task_data(task_data: dict | None, task_id: str) -> dict:
     """Validate task data and ensure it's complete.
 
     Args:
-        task_data: Task data from the store
-        task_id: Task identifier for error messages
+        task_data: Task data from the store.
+        task_id: Task identifier for error messages.
 
     Returns:
-        Validated task data
+        Validated task data.
 
     Raises:
-        HTTPException: If task not found or not completed
+        HTTPException: If task not found or not completed.
     """
     if not task_data:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -135,13 +135,13 @@ def _get_and_validate_results(task_data: dict) -> dict:
     """Extract and validate result data from task.
 
     Args:
-        task_data: Validated task data
+        task_data: Validated task data.
 
     Returns:
-        Result data dictionary
+        Result data dictionary.
 
     Raises:
-        HTTPException: If no results or structural analysis found
+        HTTPException: If no results or structural analysis found.
     """
     result_data = task_data.get("result")
     if not result_data:
@@ -158,10 +158,10 @@ def _process_structure_for_3d(result_data: dict) -> str:
     """Process atomic structure data for 3D visualization.
 
     Args:
-        result_data: Result data that may contain final_structure
+        result_data: Result data that may contain final_structure.
 
     Returns:
-        XYZ format string for 3D visualization
+        XYZ format string for 3D visualization.
     """
     structure_xyz = ""
 
@@ -189,13 +189,13 @@ async def visualize_results(task_id: str) -> HTMLResponse:
     This endpoint returns an HTML page with interactive structural analysis plots and key results.
 
     Args:
-        task_id: The simulation task identifier
+        task_id: The simulation task identifier.
 
     Returns:
-        HTML page with interactive results visualization
+        HTML page with interactive results visualization.
 
     Raises:
-        HTTPException: If task not found, not completed, or missing structural analysis
+        HTTPException: If task not found, not completed, or missing structural analysis.
     """
     try:
         # Get task data

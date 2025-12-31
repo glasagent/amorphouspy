@@ -12,7 +12,14 @@ from .models import MeltquenchRequest
 
 
 def setup_worker_logging(task_id: str) -> logging.Logger:
-    """Set up logging for worker process."""
+    """Set up logging for worker process.
+
+    Args:
+        task_id: The unique identifier for the task.
+
+    Returns:
+        Configured logger instance describing the worker process.
+    """
     logger = logging.getLogger(f"worker.{task_id}")
     if not logger.handlers:
         handler = logging.StreamHandler()
@@ -29,11 +36,10 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
     This runs in a separate process to avoid blocking the event loop and handle pyiron's signal handling.
 
     Args:
-        task_id (str): Unique identifier for the task
-        request_dict (dict): Serialized meltquench parameters
-        db_path (str): Path to SQLite database for task store
-        shared_project_dir (str): Path to the shared project directory
-
+        task_id: Unique identifier for the task.
+        request_dict: Serialized meltquench parameters.
+        db_path: Path to SQLite database for task store.
+        shared_project_dir: Path to the shared project directory.
     """
     from pathlib import Path
 

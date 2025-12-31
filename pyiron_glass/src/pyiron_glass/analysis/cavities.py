@@ -46,8 +46,13 @@ def compute_cavities(
                      If None, default radii from sovapy are used.
 
     Returns:
-        dict: A dictionary containing cavity attributes volumes,
+        A dictionary containing cavity attributes volumes,
         surface_areas, asphericities, acylindricities, anisotropies.
+
+    Example:
+        >>> structure = read('glass.xyz')
+        >>> cavities = compute_cavities(structure, resolution=128)
+        >>> print(cavities['volumes'])
 
     """
     # Extract properties using the provided helper
