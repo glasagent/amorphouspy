@@ -58,9 +58,15 @@ TRACE_OXIDES = {
 
 
 def parse_formula(formula: str) -> dict[str, int]:
-    """Parse a chemical formula (e.g. "Al2O3") and return a dict of element counts.
+    """Parse a chemical formula and returns a dictionary of element counts.
 
-    Example: {"Al": 2, "O": 3}.
+    Args:
+        formula: A string representing the chemical formula (e.g., "Al2O3").
+
+    Returns:
+        A dictionary mapping element symbols (str) to their counts (int).
+        Example: {"Al": 2, "O": 3} for "Al2O3".
+
     """
     counts: dict[str, int] = {}
     for elem, cnt_str in ELEMENT.findall(formula):
@@ -71,29 +77,50 @@ def parse_formula(formula: str) -> dict[str, int]:
 
 
 def formula_mass_g_per_mol(formula: str) -> float:
-    """Molar mass using ASE masses."""
+    """Calculate the molar mass of a compound using ASE atomic masses.
+
+    Args:
+        formula: A string representing the chemical formula (e.g., "SiO2").
+
+    Returns:
+        The molar mass of the compound in grams per mole (float).
+
+    """
     return sum(get_atomic_mass(el) * cnt for el, cnt in parse_formula(formula).items())
 
 
 def normalize(d: dict[str, float]) -> dict[str, float]:
-    """Normalize a dictionary of fractions so that they sum to 1.0."""
+    """Normalize a dictionary of values so that they sum to 1.0.
+
+    Args:
+        d: A dictionary where values are numbers to be normalized.
+
+    Returns:
+        A new dictionary with the same keys but normalized values.
+
+    Raises:
+        ValueError: If the sum of values is non-positive.
+
+    """
     s = float(sum(d.values()))
     if s <= 0:
-        error_msg = "Sum of fractions is non-positive."
+        error_msg = "Sum of fractions are non-positive."
         raise ValueError(error_msg)
     return {k: v / s for k, v in d.items()}
 
 
 def weight_percent_to_mol_fraction(comp_wt_raw: dict[str, float]) -> dict[str, float]:
-    """Convert weight fractions to mol fractions.
+    """Convert weight fractions to molar fractions.
 
-    Convert weight fractions (any scale: %, or normalized) to mol fractions.
-    x_i = (w_i/M_i) / Σ_j (w_j/M_j)
+    The conversion uses the formula:
+    x_i = (w_i/M_i) / sum(w_j/M_j)
+    where x_i is the mole fraction, w_i is the weight fraction, and M_i is the molar mass.
 
     Args:
-        comp_wt_raw: dict[str, float], The raw weight composition to convert.
-    return:
-        dict[str, float]: The molar composition as a dictionary.
+        comp_wt_raw: A dictionary mapping oxide formulas to their weight fractions (or percentages).
+
+    Returns:
+        A dictionary mapping oxide formulas to their normalized molar fractions.
 
     """
     n_i = {ox: comp_wt_raw[ox] / formula_mass_g_per_mol(ox) for ox in comp_wt_raw}
@@ -101,14 +128,17 @@ def weight_percent_to_mol_fraction(comp_wt_raw: dict[str, float]) -> dict[str, f
 
 
 def get_composition(comp_str: str, mode: str = "molar") -> dict[str, float]:
-    """Get the composition of a chemical formula.
+    """Parse a composition string into a dictionary of molar fractions.
 
     Args:
-        comp_str: Composition string to parse (e.g., "0.25CaO-0.25Al2O3-0.5SiO2")
-        mode: Interpretation mode - 'molar' for molar proportions, 'weight' for weight proportions
+        comp_str: The composition string (e.g., "0.25CaO-0.25Al2O3-0.5SiO2").
+        mode: The interpretation mode, either 'molar' or 'weight'. Defaults to "molar".
 
     Returns:
-        dict[str, float]: oxide molar fractions
+        A dictionary mapping oxide formulas to their molar fractions.
+
+    Raises:
+        ValueError: If `mode` is not 'molar' or 'weight'.
 
     """
     if mode.lower() not in ("molar", "weight"):
@@ -125,17 +155,17 @@ def _atoms_per_fu_map(mol_frac: dict[str, float]) -> dict[str, int]:
 
 
 def _integer_fu_from_total(Nfu_target: int, mol_frac: dict[str, float]) -> dict[str, int]:
-    """Allocate integer formula units to oxides using largest-remainder rounding.
+    """Allocates integer formula units to oxides using the largest-remainder method.
 
-    Given a total number of formula units, produce integer N_i that exactly sum
-    to Nfu_target and best match the mol fractions via largest-remainder method.
+    This ensures that the total number of formula units sums exactly to `Nfu_target`
+    while best approximating the target molar fractions.
 
     Args:
-        Nfu_target: int, target number of formula units
-        mol_frac: dict[str, float], molar fractions of each oxide
+        Nfu_target: The target total number of formula units (int).
+        mol_frac: A dictionary mapping oxide formulas to their target molar fractions.
 
     Returns:
-        dict[str, int]: integer formula units {oxide: N_i}
+        A dictionary mapping oxide formulas to their allocated integer formula units.
 
     """
     x = mol_frac
@@ -154,21 +184,21 @@ def allocate_formula_units_to_target_atoms(
     target_atoms: int,
     search_half_width: int = 1000,
 ) -> tuple[dict[str, int], int]:
-    """Allocate formula units to target atoms.
+    """Allocates formula units to approximate a target total number of atoms.
 
-    Choose integer formula-unit counts {oxide: N_i} so that
-    total atoms = Σ_i N_i * a_i is as close as possible to target_atoms.
-    Composition across oxides is enforced via integer FUs (exact stoichiometries),
-    with N_i chosen by rounding + remainder distribution.
+    This function searches for a total number of formula units (Nfu) that results
+    in a total atom count closest to `target_atoms`. It ensures exact stoichiometry
+    for each oxide.
 
     Args:
-      mol_frac: dict[str, float], molar fractions of each oxide
-      target_atoms: int, target number of atoms
-      search_half_width: int, half-width of the search range for Nfu
+        mol_frac: A dictionary mapping oxide formulas to their molar fractions.
+        target_atoms: The desired total number of atoms in the system.
+        search_half_width: The range to search around the estimated Nfu. Defaults to 1000.
 
-    return: tuple[dict[str, int], int]
-      - dict[str, int]: allocated formula units {oxide: N_i}
-      - int: total number of atoms represented by the formula units
+    Returns:
+        A tuple containing:
+            - A dictionary mapping oxide formulas to their allocated integer formula units.
+            - The actual total number of atoms resulting from this allocation.
 
     """
     a = _atoms_per_fu_map(mol_frac)
@@ -192,13 +222,13 @@ def allocate_formula_units_to_target_atoms(
 
 
 def element_counts_from_formula_units(Ni: dict[str, int]) -> dict[str, int]:
-    """Given formula units {oxide: N_i}, return total element counts {element: count}.
+    """Calculate total element counts from oxide formula units.
 
     Args:
-        Ni: dict[str, int], formula units for each oxide
+        Ni: A dictionary mapping oxide formulas to their integer counts (formula units).
 
     Returns:
-        dict[str, int]: total element counts.
+        A dictionary mapping element symbols to their total counts in the system.
 
     """
     counts: dict[str, int] = {}
@@ -210,21 +240,26 @@ def element_counts_from_formula_units(Ni: dict[str, int]) -> dict[str, int]:
 
 
 def plan_system(comp_str: str, target: int, mode: str = "molar", target_type: str = "atoms") -> dict:
-    """Unified planning for both atoms and molecules target.
+    """Generate a comprehensive plan for the system composition and size.
+
+    This unified planner handles both 'atoms' and 'molecules' target types,
+    converting them into a concrete allocation of formula units and atoms.
 
     Args:
-        comp_str: composition string
-        target: desired atom or molecule count
-        mode: 'molar' or 'weight' (weight% accepted; ASE masses used)
-        target_type: 'atoms' or 'molecules'
+        comp_str: The composition string.
+        target: The target count (atoms or molecules depending on `target_type`).
+        mode: The composition mode ('molar' or 'weight'). Defaults to "molar".
+        target_type: The type of target ('atoms' or 'molecules'). Defaults to "atoms".
 
     Returns:
-        dict: {
-            'mol_fraction': {oxide: x_i},
-            'formula_units': {oxide: N_i},
-            'total_atoms': int,
-            'element_counts': {element: count}
-        }.
+        A dictionary containing:
+            - "mol_fraction": Dictionary of molar fractions.
+            - "formula_units": Dictionary of allocated integer formula units.
+            - "total_atoms": The actual total number of atoms.
+            - "element_counts": Dictionary of total counts per element.
+
+    Raises:
+        ValueError: If `target_type` is not 'atoms' or 'molecules'.
 
     """
     mol_frac = get_composition(comp_str, mode=mode)
@@ -257,7 +292,16 @@ def plan_system(comp_str: str, target: int, mode: str = "molar", target_type: st
 
 
 def validate_target_mode(n_molecules: int, target_atoms: int) -> None:
-    """Validate that exactly one target mode is specified."""
+    """Validate that exactly one target mode is specified.
+
+    Args:
+        n_molecules: The number of molecules (can be None).
+        target_atoms: The number of atoms (can be None).
+
+    Raises:
+        ValueError: If both or neither are specified.
+
+    """
     if n_molecules is None and target_atoms is None:
         error_msg = "Either n_molecules or target_atoms must be specified"
         raise ValueError(error_msg)
@@ -267,7 +311,16 @@ def validate_target_mode(n_molecules: int, target_atoms: int) -> None:
 
 
 def check_neutral_oxide(oxide: str) -> None:
-    """Check charge neutrality using pymatgen's oxidation state guesses."""
+    """Check if an oxide formula is charge neutral based on standard oxidation states.
+
+    Args:
+        oxide: The chemical formula of the oxide (e.g., "Al2O3").
+
+    Raises:
+        ValueError: If the oxide is invalid, oxidation states cannot be determined,
+            or the net charge is not zero.
+
+    """
     try:
         comp = Composition(oxide)
     except Exception as e:
@@ -289,21 +342,21 @@ def check_neutral_oxide(oxide: str) -> None:
 
 
 def extract_composition(composition: str) -> dict[str, float]:
-    """Extract the fraction of each element from a given composition, checking validity.
+    """Extract molar fractions from a composition string.
 
-    The composition can be given as a fraction or in mol%, and the function will return
-    the molar fraction in all cases
-    Example of usage: extract_composition("0.25CaO-0.25Al2O3-0.5SiO2")
-                      extract_composition("79SiO2-13B2O3-3Al2O3-4Na2O-1K2O").
+    Handles both fractional (0.0-1.0) and percentage (0-100) inputs. Always returns
+    fractions summing to 1.0.
 
-    Example of an output:
-    print(extract_composition("0.25CaO-0.25Al2O3-0.5SiO2"))
-    Output: {'CaO': 0.25, 'Al2O3': 0.25, 'SiO2': 0.5}
+    Args:
+        composition: The composition string (e.g., "0.25CaO-0.25Al2O3-0.5SiO2").
 
-    - Supports fractions (sum=1.0) or percentages (sum=100.0)
-    - Rejects non-ASCII characters
-    - Validates element symbols using ASE
-    - Checks oxide charge neutrality via check_neutral_oxide()
+    Returns:
+        A dictionary mapping oxide formulas to their molar fractions.
+
+    Raises:
+        ValueError: If input contains non-ASCII characters, has invalid format,
+            invalid elements, non-neutral oxides, or sums to an invalid total.
+
     """
     if any(ord(ch) > MAX_ASCII for ch in composition):
         error_msg = f"Composition contains non-ASCII characters: {composition!r}"
@@ -378,15 +431,15 @@ def minimum_image_distance(
     pos2: np.ndarray,
     box_length: float,
 ) -> float:
-    """Calculate the minimum image distance between two positions in a periodic box.
+    """Calculate the minimum image distance between two points in a cubic periodic box.
 
     Args:
-        pos1: The first position as a NumPy array.
-        pos2: The second position as a NumPy array.
-        box_length: The length of the periodic box.
+        pos1: The first position vector (NumPy array).
+        pos2: The second position vector (NumPy array).
+        box_length: The side length of the cubic box.
 
     Returns:
-        The minimum image distance as a float.
+        The Euclidean distance between the two points considering periodic boundaries.
 
     """
     delta = np.abs(pos1 - pos2)
@@ -395,10 +448,15 @@ def minimum_image_distance(
 
 
 def extract_stoichiometry(composition: str) -> dict[str, dict[str, int]]:
-    """Given a composition string, return a mapping.
+    """Extract the stoichiometry of each component in the composition.
 
-    { oxide_formula: { element: count, ... }, ... }
-    Uses extract_composition() to isolate formulas first.
+    Args:
+        composition: The composition string.
+
+    Returns:
+        A dictionary mapping oxide formulas to their stoichiometric dictionaries
+        (e.g., {"Al2O3": {"Al": 2, "O": 3}}).
+
     """
     comp_dict = extract_composition(composition)
     return {oxide: parse_formula(oxide) for oxide in comp_dict}
@@ -415,24 +473,30 @@ def create_random_atoms(
     seed: int = 42,
     max_attempts_per_atom: int = 100000,
 ) -> tuple[list[dict[str, str | list[float]]], dict[str, int]]:
-    """Generate random atom positions in a periodic cubic box, according to a given composition.
+    """Generate random atom positions for a glass system in a periodic cubic box.
 
-    Now supports both n_molecules and target_atoms input modes.
+    Supports specifying system size either by total number of molecules (`n_molecules`)
+    or total number of atoms (`target_atoms`).
 
     Args:
-        composition: e.g. "0.25CaO-0.25Al2O3-0.5SiO2"
-        n_molecules: total number of molecules (traditional mode)
-        target_atoms: target number of atoms (new mode)
-        mode: composition mode ("molar" or "weight")
-        stoichiometry: dictionary of stoichiometric coefficients
-        box_length: size of cubic box
-        min_distance: minimum distance between any two atoms
-        seed: random seed for reproducibility
-        max_attempts_per_atom: max attempts to place an atom before giving up
+        composition: The composition string (e.g., "0.25CaO-0.25Al2O3-0.5SiO2").
+        n_molecules: The desired total number of molecules. Mutually exclusive with `target_atoms`.
+        target_atoms: The desired target number of atoms. Mutually exclusive with `n_molecules`.
+        mode: The composition interpretation mode ("molar" or "weight"). Defaults to "molar".
+        stoichiometry: Optional pre-calculated stoichiometry dictionary.
+        box_length: The length of the cubic simulation box in Angstroms. Defaults to 50.0.
+        min_distance: The minimum allowed distance between any two atoms in Angstroms. Defaults to 1.6.
+        seed: Random seed for reproducibility. Defaults to 42.
+        max_attempts_per_atom: Maximum attempts to place a single atom before failing. Defaults to 100000.
 
     Returns:
-        atoms: list of {"element": str, "position": [x, y, z]}
-        atom_counts: dictionary of element counts
+        A tuple containing:
+            - A list of atom dictionaries, each with "element" and "position".
+            - A dictionary of total counts per element.
+
+    Raises:
+        ValueError: If composition sum is invalid or target mode is ambiguous.
+        RuntimeError: If atom placement fails due to overcrowding (max attempts reached).
 
     """
     rng = np.random.default_rng(seed)
@@ -501,33 +565,21 @@ def create_random_atoms(
 
 
 def get_glass_density_from_model(composition_string: str) -> float:
-    """Calculate the room-temperature glass density from its chemical composition.
+    """Calculate the room-temperature glass density using Fluegel's empirical model.
 
-    The empirical polynomial model described by Fluegel (2007) is used.
-
-    The model is based on mole percent (mol%) of oxides, excluding SiO2 from
-    the summations. The coefficients for the calculation are hardcoded from
-    Table II of the source paper.
-
-    Paper:
-        Title: Global Model for Calculating Room-Temperature Glass Density from the Composition
-        Author: Alexander Fluegel
-        First published: 26 June 2007
-        DOI: https://doi.org/10.1111/j.1551-2916.2007.01751.x
+    The model uses a polynomial expansion based on mole percentages of oxides.
+    Source: Fluegel, A. "Global Model for Calculating Room-Temperature Glass Density from the Composition",
+    J. Am. Ceram. Soc., 90 [8] 2622-2635 (2007).
 
     Args:
-        composition_string (str): A string representing the glass composition
-                                  in mole fraction or mol%, e.g., '0.25CaO-0.25Al2O3-0.5SiO2'
-                                  or '25CaO-25Al2O3-50SiO2'.
+        composition_string: The glass composition string (molar fractions or mol%).
 
     Returns:
-        float: The calculated density in g/cm^3.
-        None: If the input string format is invalid or a component is not in the model.
+        The calculated density in g/cm^3.
 
-    Examples:
-        composition = "0.20Na2O-0.80SiO2"  # 20 mol% Na₂O
-        density = calculate_glass_density(composition)
-        Expected: ~2.391 g/cm³
+    Raises:
+        ValueError: If the composition contains components unsupported by the model
+            or if the format is invalid.
 
     """
     COEFFICIENTS = {
