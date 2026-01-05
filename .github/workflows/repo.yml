@@ -35,6 +35,7 @@ jobs:
     - name: Pip check
       shell: bash -l {0}
       run: |
+        pip install hatchling editables
         pip install --no-deps --no-build-isolation -e pyiron_glass
         pip install --no-deps --no-build-isolation -e pyiron_glass_api
         pip check
