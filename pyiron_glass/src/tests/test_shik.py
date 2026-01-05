@@ -12,6 +12,8 @@ from pyiron_glass import (
     md_simulation,
 )
 
+from . import DATA_DIR
+
 
 def test_glass_simulation() -> None:
     """Test the complete glass simulation workflow."""
@@ -30,7 +32,7 @@ def test_glass_simulation() -> None:
             pyiron_project=pr,
         )
 
-        structure = read("data/SiO2_glass_300_atoms.xyz")
+        structure = read(DATA_DIR / "SiO2_glass_300_atoms.xyz")
 
         server_kwargs = {"cores": 2}
 
