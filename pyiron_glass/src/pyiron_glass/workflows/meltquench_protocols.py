@@ -232,19 +232,9 @@ def shik_protocol(
         "unfix ensemble",
     ]
 
+    # Modify potential in-place (partial captures reference, so no need to recreate)
     potential["Config"] = potential["Config"].apply(
         lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
-
-    # Update run with modified potential
-    run = partial(
-        runner,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        timestep=timestep,
-        n_print=n_print,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
     )
 
     # Stage 2: NVT equilibration at 5000 K for 100 ps
