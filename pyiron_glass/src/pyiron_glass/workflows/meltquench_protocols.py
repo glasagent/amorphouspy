@@ -232,7 +232,8 @@ def shik_protocol(
         "unfix ensemble",
     ]
 
-    # Modify potential in-place (partial captures reference, so no need to recreate)
+    # Modify potential in-place; the partial function holds a reference to this object,
+    # so subsequent calls to run() will automatically use the modified potential
     potential["Config"] = potential["Config"].apply(
         lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
     )
