@@ -16,7 +16,7 @@ from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
 
 from pyiron_glass.io_utils import structure_from_parsed_output
-from pyiron_glass.workflows.meltquench_protocols import BJPProtocol, PMMCSProtocol, SHIKProtocol
+from pyiron_glass.workflows.meltquench_protocols import PROTOCOLS, run_protocol
 
 
 def _run_lammps_md(
@@ -189,19 +189,17 @@ def melt_quench_simulation(
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
     potential_name = potential.at[0, "Name"]
-    protocol_map = {
-        "pmmcs": PMMCSProtocol,
-        "bjp": BJPProtocol,
-        "shik": SHIKProtocol,
-    }
 
-    protocol_class = protocol_map.get(potential_name.lower())
-    if not protocol_class:
-        msg = f"Unknown potential: {potential_name}"
+    # Check if protocol exists
+    if potential_name.lower() not in PROTOCOLS:
+        available = ", ".join(PROTOCOLS.keys())
+        msg = f"Unknown potential: {potential_name}. Available protocols: {available}"
         raise ValueError(msg)
 
-    protocol = protocol_class(runner=_run_lammps_md)
-    structure_final, parsed_output = protocol.run(
+    # Run the protocol using the function-based approach
+    structure_final, parsed_output = run_protocol(
+        protocol_name=potential_name,
+        runner=_run_lammps_md,
         structure=structure,
         potential=potential,
         temperature_high=temperature_high,
