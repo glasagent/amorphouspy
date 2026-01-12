@@ -1,6 +1,7 @@
 """Unit tests for meltquench protocols with dataclass parameters."""
 
-import sys
+# Import the module directly to avoid dependency issues
+import importlib.util
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -8,8 +9,6 @@ import pandas as pd
 import pytest
 from ase import Atoms
 
-# Import the module directly to avoid dependency issues
-import importlib.util
 spec = importlib.util.spec_from_file_location(
     "meltquench_protocols",
     Path(__file__).parent.parent / "pyiron_glass" / "workflows" / "meltquench_protocols.py"
