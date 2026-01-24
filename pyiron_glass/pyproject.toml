@@ -22,7 +22,6 @@ dependencies = [
   "pymatgen",
   "scipy",
   "sovapy",
-  "structuretoolkit",
 ]
 
 [tool.pytest]
