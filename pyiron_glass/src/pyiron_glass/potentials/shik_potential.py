@@ -153,7 +153,8 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".") -> pd.DataF
         "# for alkali and alkaline-earth aluminosilicate glasses, J. Chem. Phys. 2019, 150, 15, https://doi.org/10.1063/1.5079663\n",
         "# for borate glasses with mixed network formers, J. Chem. Phys. 2020, 152, 10, https://doi.org/10.1063/1.5142605\n",
         "# for alkaline earth silicate and borate glasses, Shih et al. J. Non-Cryst. Sol. 2021, 565, 120853, https://doi.org/10.1016/j.jnoncrysol.2021.120853\n",
-        "\nunits metal\n",
+        "\n",
+        "units metal\n",
         "dimension 3\n",
         "atom_style charge\n\n",
     ]
