@@ -103,6 +103,9 @@ def _run_lammps_md(
                 "langevin": langevin,
             },
             units="metal",
+            write_restart_file=False,
+            read_restart_file=False,
+            restart_file="restart.out",
             input_control_file={
                 "thermo_modify": "flush yes",
             },

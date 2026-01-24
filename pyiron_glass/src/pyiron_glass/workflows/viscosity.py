@@ -101,6 +101,9 @@ def _run_lammps_md(
                 "langevin": langevin,
             },
             units="metal",
+            write_restart_file=False,
+            read_restart_file=False,
+            restart_file="restart.out",
             input_control_file={
                 "dump_modify": f"1 every {n_ionic_steps} first yes",
                 "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
