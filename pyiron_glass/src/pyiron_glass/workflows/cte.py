@@ -138,7 +138,7 @@ def _run_lammps_md(
             write_restart_file=False,
             read_restart_file=False,
             restart_file="restart.out",
-            executable_path=get_lammps_command(server_kwargs=server_kwargs),
+            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
             input_control_file={
                 "dump_modify": f"1 every {n_dump} first yes",
                 "thermo_style": "custom step temp pe etotal pxx pxy pxz pyy pyz pzz lx ly lz vol",
