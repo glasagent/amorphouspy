@@ -134,7 +134,6 @@ def _run_lammps_md(
                 "pressure": pressure,
                 "langevin": langevin,
             },
-            cutoff_radius=None,
             units="metal",
             write_restart_file=False,
             read_restart_file=False,
