@@ -17,6 +17,7 @@ from pyiron_lammps.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
 from pyiron_glass.workflows.meltquench_protocols import PROTOCOLS, run_protocol
+from pyiron_glass.workflows.shared import get_lammps_command
 
 
 def _run_lammps_md(
