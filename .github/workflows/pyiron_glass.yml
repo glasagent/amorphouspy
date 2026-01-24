@@ -23,6 +23,7 @@ jobs:
       working-directory: pyiron_glass
       shell: bash -l {0}
       run: |
+        pip install hatchling editables
         pip install --no-deps --no-build-isolation -e .
         pip install -r requirements-dev.txt
     - name: Run pytest test suite

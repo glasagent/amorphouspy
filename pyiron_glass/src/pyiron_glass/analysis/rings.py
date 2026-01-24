@@ -24,58 +24,14 @@ Lester Guttman, J. Non-Cryst. Solids doi:https://doi.org/10.1016/0022-3093(90)90
 
 import tempfile
 from itertools import combinations_with_replacement
-from pathlib import Path
 
 import numpy as np
 from ase import Atoms
 from sovapy.computation.rings import RINGs
 from sovapy.core.file import File
 
-from pyiron_glass.io_utils import get_properties_for_structure_analysis
+from pyiron_glass.io_utils import get_properties_for_structure_analysis, write_xyz
 from pyiron_glass.shared import type_to_dict
-
-
-def write_xyz(
-    filename: str,
-    coords: np.ndarray,
-    types: np.ndarray,
-    box_size: np.ndarray = None,
-    type_dict: dict[int, str] | None = None,
-) -> None:
-    """Write atomic configuration to an XYZ file.
-
-    Parameters
-    ----------
-    filename : str
-        Output XYZ file name.
-    coords : np.ndarray, shape (N, 3)
-        Atomic coordinates.
-    types : np.ndarray, shape (N,)
-        Atomic types as integers.
-    box_size : array-like of float, shape (3,), optional
-        Simulation box size in x, y, z.
-    type_dict : dict[int, str], optional
-        Dictionary mapping atomic type integers to element symbols.
-
-    """
-    if type_dict is None:
-        msg = "type_dict must be provided"
-        raise ValueError(msg)
-
-    N = coords.shape[0]
-    path = Path(filename)
-    with path.open("w") as f:
-        f.write(f"{N}\n")
-        if box_size is not None:
-            f.write(f"CUB {box_size[0]:.8f} {box_size[1]:.8f} {box_size[2]:.8f}\n")
-        else:
-            f.write("\n")
-        for t, (x, y, z) in zip(types, coords, strict=False):
-            symbol = type_dict.get(t)
-            if symbol is None:
-                msg = f"Unknown atomic type: {t}"
-                raise ValueError(msg)
-            f.write(f"{symbol} {x:.8f} {y:.8f} {z:.8f}\n")
 
 
 def compute_guttmann_rings(
@@ -92,23 +48,24 @@ def compute_guttmann_rings(
     Ring structure of the crystalline and amorphous forms of silicon dioxide
     Lester Guttman, J. Non-Cryst. Solids doi:https://doi.org/10.1016/0022-3093(90)90686-G.
 
-    Parameters
-    ----------
-    structure : ase.Atoms
-        ASE Atoms object containing atomic coordinates and types.
-    bond_lengths : dict[(str, str), float]
-        Dictionary specifying maximum bond lengths for each element pair.
-    max_size : int, optional
-        Maximum ring size to consider (default is 24).
-    n_cpus : int, optional
-        Number of CPUs to use for parallel ring search (default is 1).
+    Args:
+        structure: ASE Atoms object containing atomic coordinates and types.
+        bond_lengths: Dictionary specifying maximum bond lengths for each element pair.
+        max_size: Maximum ring size to consider (default is 24).
+        n_cpus: Number of CPUs to use for parallel ring search (default is 1).
 
-    Returns
-    -------
-    hist : dict[int, int]
-        Dictionary mapping ring size to frequency (number of occurrences).
-    mean_ring_size : float
-        Mean ring size computed as sum over (s / 2) * p(s), where s is ring size and p(s) is its probability.
+    Returns:
+        A tuple containing:
+            - hist (dict[int, int]): Dictionary mapping ring size to frequency (number of occurrences).
+            - mean_ring_size (float): Mean ring size computed as sum over (s / 2) * p(s),
+              where s is ring size and p(s) is its probability.
+
+    Example:
+        >>> structure = read('glass.xyz')
+        >>> bond_lengths = {('Si', 'O'): 1.8}
+        >>> hist, mean_size = compute_guttmann_rings(
+        ...     structure, bond_lengths, max_size=12
+        ... )
 
     """
     ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
@@ -146,19 +103,19 @@ def generate_bond_length_dict(
 
     and assign bond lengths using specific or default cutoffs.
 
-    Parameters
-    ----------
-    atoms : ase.Atoms
-        ASE Atoms object containing atomic types and coordinates.
-    specific_cutoffs : dict[(str, str), float]
-        Optional cutoff overrides for specific pairs.
-    default_cutoff : float
-        Default bond length for unspecified pairs.
+    Args:
+        atoms: ASE Atoms object containing atomic types and coordinates.
+        specific_cutoffs: Optional cutoff overrides for specific pairs.
+        default_cutoff: Default bond length for unspecified pairs.
 
-    Returns
-    -------
-    dict[(str, str), float]
+    Returns:
         Dictionary of bond length thresholds.
+
+    Example:
+        >>> structure = read('glass.xyz')
+        >>> bond_lengths = generate_bond_length_dict(
+        ...     structure, default_cutoff=2.0
+        ... )
 
     """
     if specific_cutoffs is None:

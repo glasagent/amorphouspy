@@ -192,11 +192,7 @@ def md_simulation(
         seed=seed,
         server_kwargs=server_kwargs,
     )
-    result = parsed_output.get("generic", None)
 
-    if result is None:
-        msg = "The 'generic' key is missing from parsed_output."
-        raise KeyError(msg)
-        result = {}
+    result = parsed_output.get("generic", None)
 
     return {"structure": structure_final, "result": result}

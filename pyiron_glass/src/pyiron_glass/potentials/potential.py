@@ -10,7 +10,7 @@ from . import shik_potential as shik
 
 
 @job
-def generate_potential(atoms_dict: dict, potential_type: str = "pedone") -> pd.DataFrame:
+def generate_potential(atoms_dict: dict, potential_type: str = "pmmcs") -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 
     Parameters
@@ -18,7 +18,8 @@ def generate_potential(atoms_dict: dict, potential_type: str = "pedone") -> pd.D
     atoms_dict : dict
         Dictionary containing atomic structure information
     potential_type : str
-        Type of potential to generate. Options are "Pedone" or "BJP".
+        Type of potential to generate. Options are "pmmcs", "bjp", or "shik".
+        (default is "pmmcs")
 
     Returns
     -------

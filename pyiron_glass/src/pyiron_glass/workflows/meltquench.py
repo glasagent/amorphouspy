@@ -1,4 +1,12 @@
-"""Melt-quench simulation workflows for glass systems using LAMMPS."""
+"""Melt-quench simulation workflows for glass systems using LAMMPS.
+
+Implementations of melt-quench simulation workflows for glass systems using LAMMPS via
+pyiron_atomistics.
+
+Author
+------
+Achraf Atila (achraf.atila@bam.de)
+"""
 
 import tempfile
 from pathlib import Path
@@ -8,7 +16,7 @@ from pyiron_base import job
 from pyiron_lammps.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
-from pyiron_glass.workflows.shared import get_lammps_command
+from pyiron_glass.workflows.meltquench_protocols import PROTOCOLS, run_protocol
 
 
 def _run_lammps_md(
@@ -175,291 +183,31 @@ def melt_quench_simulation(
 
     potential_name = potential.at[0, "Name"]
 
-    if potential_name.lower() == "pmmcs":
-        # ================================================================
-        # Stage 1: Heating from low to high T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            temperature_end=temperature_high,
-            n_ionic_steps=heating_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_low,
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
+    # Check if protocol exists
+    if potential_name.lower() not in PROTOCOLS:
+        available = ", ".join(PROTOCOLS.keys())
+        msg = f"Unknown potential: {potential_name}. Available protocols: {available}"
+        raise ValueError(msg)
 
-        # ================================================================
-        # Stage 2: Equilibration at high T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            n_ionic_steps=10_000,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
+    # Run the protocol using the function-based approach
+    structure_final, parsed_output = run_protocol(
+        protocol_name=potential_name,
+        runner=_run_lammps_md,
+        structure=structure,
+        potential=potential,
+        temperature_high=temperature_high,
+        temperature_low=temperature_low,
+        heating_steps=heating_steps,
+        cooling_steps=cooling_steps,
+        timestep=timestep,
+        n_print=n_print,
+        langevin=langevin,
+        seed=seed,
+        server_kwargs=server_kwargs,
+        tmp_working_directory=tmp_working_directory,
+    )
 
-        # ================================================================
-        # Stage 3: Cooling from high to low T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            temperature_end=temperature_low,
-            n_ionic_steps=cooling_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 4: Pressure release at low T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            n_ionic_steps=10_000,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 5: Long equilibration at low T
-        # ================================================================
-        structure_final, parsed_output = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            n_ionic_steps=100_000,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        result = parsed_output.get("generic", None)
-
-    elif potential_name.lower() == "bjp":
-        # ================================================================
-        # Stage 1: Heating from low to high T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            temperature_end=temperature_high,
-            n_ionic_steps=heating_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_low,
-            pressure=0.0,
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 2: Equilibration at high T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            n_ionic_steps=100_000,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 3: Cooling from high to low T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            temperature_end=temperature_low,
-            n_ionic_steps=cooling_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 4: Pressure release at low T
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            n_ionic_steps=100_000,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 5: Long equilibration at low T
-        # ================================================================
-        structure_final, parsed_output = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            n_ionic_steps=100_000,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        result = parsed_output.get("generic", None)
-
-    elif potential_name.lower() == "shik":
-        # ================================================================
-        # Stage 1: heating from 300 to 5000 K for 100 ps
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,  # 5000 K
-            n_ionic_steps=heating_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_high,
-            pressure=None,  # NVT ensemble
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
-
-        exclude_patterns = [
-            "fix langevin all langevin 5000 5000 0.01 48279",
-            "fix ensemble all nve/limit 0.5",
-            "run 10000",
-            "unfix langevin",
-            "unfix ensemble",
-        ]
-
-        potential["Config"] = potential["Config"].apply(
-            lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-        )
-
-        # ================================================================
-        # Stage 2: NVT equilibration at 5000 K for 100 ps
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,  # 5000 K
-            n_ionic_steps=int(100_000 / timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_high,
-            pressure=None,  # NVT ensemble
-            langevin=langevin,
-            seed=seed,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 3: NPT equilibration at 5000 K and 0.1 GPa for 700 ps
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            n_ionic_steps=int(700_000 / timestep),  # 700 ps
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.1,  # GPa
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 4: Quenching 5000 K → 300 K in NPT
-        # Nominal rate ~1 K/ps, so ΔT=4700 K → 4700 ps = 4.7 ns = 4.7e6 fs
-        # ================================================================
-        structure, _ = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_high,
-            temperature_end=temperature_low,
-            n_ionic_steps=cooling_steps,
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=[0.1, 0.0],  # ramp pressure from 0.1 → 0 GPa
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        # ================================================================
-        # Stage 5: Annealing at 300 K and 0 GPa for 100 ps in NPT
-        # ================================================================
-        structure_final, parsed_output = _run_lammps_md(
-            structure=structure,
-            potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_low,
-            n_ionic_steps=int(100_000 / timestep),  # 100 ps
-            timestep=timestep,
-            n_print=n_print,
-            initial_temperature=0,
-            pressure=0.0,
-            langevin=langevin,
-            server_kwargs=server_kwargs,
-        )
-
-        result = parsed_output.get("generic", None)
-
-    if result is None:
-        msg = "The 'generic' key is missing from parsed_output."
-        raise KeyError(msg)
-        result = {}
+    result = parsed_output.get("generic", None)
 
     return {
         "structure": structure_final,

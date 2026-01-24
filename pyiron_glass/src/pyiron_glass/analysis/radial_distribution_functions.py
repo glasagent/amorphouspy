@@ -22,15 +22,19 @@ def compute_coordination(
     """Compute coordination number for atoms of a target type.
 
     Args:
-        structure (Atoms): The atomic structure as ASE object.
-        target_type (int): Atom type for which to compute coordination.
-        cutoff (float): Cutoff radius.
-        neighbor_types (List[int] or None): Valid neighbor types.
+        structure: The atomic structure as ASE object.
+        target_type: Atom type for which to compute coordination.
+        cutoff: Cutoff radius.
+        neighbor_types: Valid neighbor types.
 
     Returns:
         Tuple containing:
             - coordination number distribution (dict): coordination number → count
             - per-atom coordination numbers (dict): atom ID → coordination number
+
+    Example:
+        >>> structure = read('glass.xyz')
+        >>> dist, cn = compute_coordination(structure, target_type=14, cutoff=2.0)
 
     """
     ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
@@ -88,34 +92,28 @@ def compute_rdf(
     cumulative coordination number n(r), i.e., the average number of
     neighbors within radius r.
 
-    Parameters
-    ----------
-    structure : ase.Atoms
-        ASE Atoms object containing atomic coordinates and types.
-    r_max : float, optional
-        Maximum distance to evaluate RDF (default is 10.0 Å).
-    n_bins : int, optional
-        Number of radial bins between 0 and r_max (default is 500).
-    type_pairs : list of tuple(int, int), optional
-        List of type index pairs to compute RDF for. If None, computes all
-        combinations of present types.
+    Args:
+        structure: ASE Atoms object containing atomic coordinates and types.
+        r_max: Maximum distance to evaluate RDF (default is 10.0 Å).
+        n_bins: Number of radial bins between 0 and r_max (default is 500).
+        type_pairs: List of type index pairs to compute RDF for. If None, computes all
+            combinations of present types.
 
-    Returns
-    -------
-    r : np.ndarray, shape (n_bins,)
-        Radial bin centers (Å).
-    rdfs : dict[(int, int), np.ndarray]
-        Normalized RDF values g(r) for each type pair.
-    cn_cumulative : dict[(int, int), np.ndarray]
-        Cumulative coordination number n(r), average count of neighbors
-        within distance r for each reference type.
+    Returns:
+        r (np.ndarray): Radial bin centers (Å).
+        rdfs (dict[(int, int), np.ndarray]): Normalized RDF values g(r) for each type pair.
+        cn_cumulative (dict[(int, int), np.ndarray]): Cumulative coordination number n(r), average count of neighbors
+            within distance r for each reference type.
 
-    Notes
-    -----
-    - Periodic boundaries handled via minimum image convention.
-    - Normalization accounts for shell volume and pair densities.
-    - Cumulative coordination is normalized per reference particle.
-    - If t1 == t2, self-correlation is corrected via density and count.
+    Notes:
+        - Periodic boundaries handled via minimum image convention.
+        - Normalization accounts for shell volume and pair densities.
+        - Cumulative coordination is normalized per reference particle.
+        - If t1 == t2, self-correlation is corrected via density and count.
+
+    Example:
+        >>> structure = read('glass.xyz')
+        >>> r, rdfs, cn = compute_rdf(structure, r_max=10.0, n_bins=500)
 
     """
     ids, types, coords, box_size = get_properties_for_structure_analysis(structure)

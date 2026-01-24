@@ -31,16 +31,21 @@ def compute_qn(
     network-forming units based on bridging oxygens (BOs) count.
 
     Args:
-        structure (Atoms): The atomic structure as ASE object.
-        cutoff (float): Cutoff radius for former-O neighbor search.
-        former_types (list[int]): Atom types considered as formers.
-        o_type (int): Atom type considered as oxygen.
+        structure: The atomic structure as ASE object.
+        cutoff: Cutoff radius for former-O neighbor search.
+        former_types: Atom types considered as formers.
+        o_type: Atom type considered as oxygen.
 
     Returns:
-        tuple[
-            dict[int, int],             # Total Qn distribution
-            dict[int, dict[int, int]]   # Partial Qn per former type
-        ]
+        A tuple containing:
+            - dict[int, int]: Total Qn distribution
+            - dict[int, dict[int, int]]: Partial Qn per former type
+
+    Example:
+        >>> structure = read('glass.xyz')
+        >>> total_qn, partial_qn = compute_qn(
+        ...     structure, cutoff=2.0, former_types=[14], o_type=8
+        ... )
 
     """
     ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
@@ -80,13 +85,17 @@ def compute_network_connectivity(qn_dist: dict[int, int]) -> float:
     """Compute average network connectivity based on Qn distribution.
 
     Args:
-        qn_dist (dict[int, int]): Qn distribution histogram.
+        qn_dist: Qn distribution histogram.
 
     Returns:
-        float: Average network connectivity.
+        Average network connectivity.
 
     Raises:
         ValueError: If qn_dist is empty or sum of counts is zero.
+
+    Example:
+        >>> qn_dist = {0: 10, 1: 50, 2: 100, 3: 200, 4: 50}
+        >>> connectivity = compute_network_connectivity(qn_dist)
 
     """
     total_formers = sum(qn_dist.values())

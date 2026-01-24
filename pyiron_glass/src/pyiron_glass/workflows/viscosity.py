@@ -41,56 +41,40 @@ def _run_lammps_md(
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> tuple[Atoms, dict[str, Any]]:  # pylint: disable=too-many-positional-arguments
-    """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
+    """Run a LAMMPS MD calculation with given parameters.
 
-    Parameters
-    ----------
-    structure : Atoms
-        The atomic structure to simulate.
-    potential : str
-        The potential file to be used for the simulation.
-    temperature : float or list
-        The target temperature for the MD run. Can be a single value or a list [start, end].
-    n_ionic_steps : int
-        Number of MD steps to run.
-    timestep : float
-        Time step for integration in femtoseconds.
-    n_print : int
-        Frequency of output writing in simulation steps.
-    initial_temperature : None or float
-        Initial temperature according to which the initial velocity field is created. If None, the initial
-        temperature will be twice the target temperature (which would go immediately down to the target temperature
-        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
-        initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-    temperature_end : float, optional
-        Final temperature for ramping. If None, no temperature ramp is applied.
-    pressure : float, optional
-        Target pressure for NPT simulations. If None, NVT is used.
-    server_kwargs : dict | None, optional
-        Additional keyword arguments for the server.
-    langevin : bool, optional
-        Whether to use Langevin dynamics
-    seed : int, optional
-        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
-    tmp_working_directory : str | Path | None
-        Specifies the location of the temporary directory to run the simulations. Per default (None), the
-        directory is located in the operating systems location for temperary files. With the specification
-        of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
-        tmp_working_directory needs to exist beforehand.
+    Args:
+        structure: The atomic structure to simulate.
+        potential: The potential file to be used for the simulation.
+        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
+        n_ionic_steps: Number of MD steps to run.
+        timestep: Time step for integration in femtoseconds.
+        n_print: Frequency of output writing in simulation steps.
+        initial_temperature: Initial temperature for velocity initialization.
+            If None, defaults to twice the target temperature.
+            If 0, velocities are not initialized.
+        pressure: Target pressure for NPT simulations. If None, NVT is used.
+        server_kwargs: Additional keyword arguments for the server.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization. Defaults to 12345.
+            Ignored if `initial_temperature` is 0.
+        tmp_working_directory: Temporary directory location.
 
+    Returns:
+        A tuple containing:
+            - structure_final: The final atomic structure.
+            - parsed_output: The parsed output dictionary.
 
-    Returns
-    -------
-    structure_final : Atoms
-        Final atomic structure from the simulation.
-    parsed_output : dict
-        Parsed output dictionary returned by `lammps_function`.
-
-    Notes
-    -----
-    - Automatically manages a temporary working directory and cleans it after execution.
-    - Uses `pyiron_atomistics.lammps.lammps_function` as the backend.
-    - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
+    Example:
+        >>> structure, output = _run_lammps_md(
+        ...     structure=my_atoms,
+        ...     potential=my_potential_df,
+        ...     temperature=300.0,
+        ...     n_ionic_steps=1000,
+        ...     timestep=1.0,
+        ...     n_print=100,
+        ...     initial_temperature=600.0
+        ... )
 
     """
     # Creates a temporary directory for the simulation in the specified working directory.
@@ -147,50 +131,35 @@ def viscosity_simulation(
 ) -> dict[str, Any]:  # pylint: disable=too-many-positional-arguments
     """Perform a LAMMPS-based viscosity simulation via the Green-Kubo formalism.
 
-    This workflow equilibrates a structure at a target temperature and performs a
-    production MD run to collect the instantaneous off-diagonal stress tensor
-    components required for viscosity computation.
+    Equilibrate a structure at a target temperature and perform a production MD run
+    to collect the instantaneous off-diagonal stress tensor components required for
+    viscosity computation.
 
-    The number of steps used here is only for testing purposes.
-    It is assumed in this workflow that the given in structure is pre-quilibrated.
+    Args:
+        structure: Input structure (assumed pre-equilibrated).
+        potential: LAMMPS potential file.
+        temperature_sim: Simulation temperature in Kelvin.
+        timestep: MD timestep in fs.
+        production_steps: Number of MD steps for the production run.
+        n_print: Thermodynamic output frequency.
+        server_kwargs: Additional server arguments.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization.
+        tmp_working_directory: Temporary directory.
 
-    Parameters
-    ----------
-    structure : Atoms
-        Input structure (assumed pre-equilibrated).
-    potential : str
-        LAMMPS potential file.
-    temperature_sim : float, optional
-        Simulation temperature in Kelvin (default 5000.0 K).
-    timestep : float, optional
-        MD integration timestep in femtoseconds (default 1.0 fs).
-    production_steps : int, optional
-        Number of MD steps for the production run (default 10,000,000).
-    n_print : int, optional
-        Thermodynamic output frequency (default 1).
-    server_kwargs : dict, optional
-        Additional server configuration arguments for pyiron.
-    langevin : bool, optional
-        Whether to use Langevin dynamics (default False).
-    seed : int, optional
-        Random seed for velocity initialization (default 12345).
-    tmp_working_directory : str or Path, optional
-        Temporary directory for job execution.
+    Returns:
+        A dictionary containing the parsed `result` section from LAMMPS output.
 
-    Returns
-    -------
-    dict
-        Dictionary containing the parsed `result` section from LAMMPS output.
+    Raises:
+        KeyError: If `"generic"` key is missing from the parsed output.
 
-    Raises
-    ------
-    KeyError
-        If `"generic"` key is missing from the parsed output.
-
-    Notes
-    -----
-    - The structure is first equilibrated with short NVT and Langevin stages.
-    - The final production run provides stress tensors for Green-Kubo analysis.
+    Example:
+        >>> result = viscosity_simulation(
+        ...     structure=my_atoms,
+        ...     potential=my_potential_df,
+        ...     temperature_sim=2000.0,
+        ...     production_steps=1000000
+        ... )
 
     """
     potential_name = potential.at[0, "Name"]
@@ -254,33 +223,22 @@ def viscosity_simulation(
 
     result = parsed_output.get("generic", None)
 
-    if result is None:
-        err_msg = "The 'generic' key is missing from parsed_output."
-        raise KeyError(err_msg)
-        result = {}
-
     return {"result": result}
 
 
 def autocorrelation_fft(signal: ArrayLike, max_lag: int) -> NDArray[np.float64]:
     """Compute the autocorrelation function using FFT.
 
-    Parameters
-    ----------
-    signal : array_like
-        Input signal array.
-    max_lag : int
-        Maximum lag (number of time steps) to include.
+    Args:
+        signal: Input signal array.
+        max_lag: Maximum lag (number of time steps) to include.
 
-    Returns
-    -------
-    acf : ndarray
+    Returns:
         Autocorrelation function up to `max_lag`.
 
-    Notes
-    -----
-    - Computation is O(N log N) using FFT convolution.
-    - Output is normalized by the number of overlapping samples.
+    Example:
+        >>> signal = np.random.randn(100)
+        >>> acf = autocorrelation_fft(signal, max_lag=50)
 
     """
     N = len(signal)
@@ -294,17 +252,16 @@ def autocorrelation_fft(signal: ArrayLike, max_lag: int) -> NDArray[np.float64]:
 def cumulative_trapezoid(acf: ArrayLike, dt: float) -> NDArray[np.float64]:
     """Compute cumulative trapezoidal integral of an array.
 
-    Parameters
-    ----------
-    acf : array_like
-        Input array to integrate.
-    dt : float
-        Sampling interval.
+    Args:
+        acf: Input array to integrate.
+        dt: Sampling interval.
 
-    Returns
-    -------
-    out : ndarray
+    Returns:
         Cumulative integral with the same shape as `acf`.
+
+    Example:
+        >>> data = np.array([0, 1, 2, 3])
+        >>> integral = cumulative_trapezoid(data, dt=0.1)
 
     """
     if len(acf) < NPOINTS:
@@ -329,43 +286,25 @@ def auto_cutoff(  # noqa: C901, PLR0912, PLR0915
 ) -> float | tuple[float, int]:
     """Determine an optimal cutoff time for the symmetrized autocorrelation function (SACF).
 
-    Parameters
-    ----------
-    sacf : array_like
-        SACF values.
-    times : array_like
-        Corresponding time points (monotonically increasing).
-    method : {'noise_threshold', 'cumulative_integral'}, optional
-        Cutoff detection method (default 'noise_threshold').
-    epsilon : float, optional
-        Relative tolerance or threshold level (default 0.01).
-    min_cutoff : float, optional
-        Minimum allowed cutoff time.
-    max_cutoff : float, optional
-        Maximum allowed cutoff time.
-    min_points : int, optional
-        Minimum number of remaining points after applying max_cutoff.
-    consecutive : int, optional
-        Consecutive points below threshold required for stable cutoff (default 3).
-    return_index : bool, optional
-        If True, also return index of the cutoff point (default False).
+    Args:
+        sacf: SACF values.
+        times: Corresponding time points (monotonically increasing).
+        method: Cutoff detection method. Defaults to 'noise_threshold'.
+        epsilon: Relative tolerance or threshold level. Defaults to 0.01.
+        min_cutoff: Minimum allowed cutoff time.
+        max_cutoff: Maximum allowed cutoff time.
+        min_points: Minimum number of remaining points after applying max_cutoff.
+        consecutive: Consecutive points below threshold required for stable cutoff. Defaults to 3.
+        return_index: If True, also return index of the cutoff point.
 
-    Returns
-    -------
-    t_cutoff : float
-        Detected cutoff time.
-    cutoff_idx : int, optional
-        Index of cutoff (if `return_index=True`).
+    Returns:
+        Detected cutoff time, and optionally the cutoff index.
 
-    Raises
-    ------
-    ValueError
-        If input validation fails or no valid cutoff is detected.
+    Raises:
+        ValueError: If input validation fails or no valid cutoff is detected.
 
-    Notes
-    -----
-    - Supports both noise-based and cumulative integral saturation methods.
-    - Falls back to last time point if no cutoff is detected.
+    Example:
+        >>> t_cut = auto_cutoff(sacf_data, time_array, method='noise_threshold', epsilon=0.01)
 
     """
     sacf = np.asarray(sacf)
@@ -472,23 +411,19 @@ def vft_model(T: ArrayLike, log10_eta0: float, B: float, T0: float) -> NDArray[n
 def fit_vft(
     T_data: ArrayLike, log10_eta_data: ArrayLike, initial_guess: tuple[float, float, float] = (-3, 1000, 200)
 ) -> tuple[tuple[float, float, float], NDArray[np.float64]]:
-    """Fit viscosity data to the Vogel-Fulcher-Tammann (VFT) model.
+    """Fits viscosity data to the Vogel-Fulcher-Tammann (VFT) model.
 
-    Parameters
-    ----------
-    T_data : array_like
-        Temperatures in Kelvin.
-    log10_eta_data : array_like
-        log10(viscosity) values.
-    initial_guess : tuple, optional
-        Initial guess for (log10_eta0, B, T0). Default is (-3, 1000, 200).
+    Args:
+        T_data: Temperatures in Kelvin.
+        log10_eta_data: log10(viscosity) values.
+        initial_guess: Initial guess for (log10_eta0, B, T0).
 
-    Returns
-    -------
-    popt : tuple
-        Best-fit parameters (log10_eta0, B, T0).
-    pcov : ndarray
-        Covariance matrix of the fit.
+    Returns:
+        A tuple containing the best-fit parameters and the covariance matrix.
+
+    Example:
+        >>> params, cov = fit_vft(temps, log_visc_data)
+        >>> log10_eta0, B, T0 = params
 
     """
     popt, pcov = curve_fit(vft_model, T_data, log10_eta_data, p0=initial_guess, maxfev=1000000)
@@ -498,22 +433,20 @@ def fit_vft(
 def get_closest_divisor(target: int, y: int) -> int:
     """Return the divisor of `target` closest to a reference integer `y`.
 
-    Parameters
-    ----------
-    target : int
-        Positive integer whose divisors are considered.
-    y : int
-        Reference integer.
+    Args:
+        target: Positive integer whose divisors are considered.
+        y: Reference integer.
 
-    Returns
-    -------
-    int
+    Returns:
         Divisor of `target` closest to `y`.
 
-    Raises
-    ------
-    ValueError
-        If `target` is not a positive integer.
+    Raises:
+        ValueError: If `target` is not a positive integer.
+
+    Example:
+        >>> d = get_closest_divisor(100, 33)
+        >>> print(d)
+        25
 
     """
     if target <= 0:
@@ -542,30 +475,17 @@ def get_viscosity(
 ) -> dict[str, float]:
     """Compute viscosity using the Green-Kubo formalism from MD stress data.
 
-    Parameters
-    ----------
-    result : dict
-        Parsed output dictionary from `viscosity_simulation`, containing stress tensor, volume, and temperature.
-    timestep : float, optional
-        MD integration time step in femtoseconds (default 1.0 fs).
-    max_lag : int, optional
-        Maximum correlation lag (number of steps). Default 1,000,000.
+    Args:
+        result: Parsed output dictionary from `viscosity_simulation`.
+        timestep: MD integration time step in femtoseconds.
+        max_lag: Maximum correlation lag (number of steps). Defaults to 1,000,000.
 
-    Returns
-    -------
-    dict
-        Dictionary with:
-        - 'temperature' : float — average temperature (K),
-        - 'viscosity' : float — viscosity (Pa·s),
-        - 'max_lag' : float — effective cutoff time (ps).
+    Returns:
+        A dictionary with 'temperature', 'viscosity' (Pa·s), and 'max_lag'.
 
-    Notes
-    -----
-    - Uses the off-diagonal stress components (pxy, pxz, pyz).
-    - Autocorrelation functions are computed using FFT.
-    - Integration of SACF is performed using trapezoidal rule.
-    - Automatically estimates a cutoff using `auto_cutoff`.
-    - Assumes input units from LAMMPS 'metal' style except for timestep to be given in fs.
+    Example:
+        >>> result_dict = get_viscosity(simulation_output, timestep=1.0)
+        >>> print(result_dict['viscosity'])
 
     """
     kB = 1.380649e-23  # m2 kg s-2 K-1

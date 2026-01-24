@@ -103,7 +103,14 @@ _task_store = get_task_store()
 
 
 def get_meltquench_hash(request: MeltquenchRequest) -> str:
-    """Compute hash for a meltquench request to enable caching."""
+    """Compute hash for a meltquench request to enable caching.
+
+    Args:
+        request: The meltquench request object to hash.
+
+    Returns:
+        First 16 characters of the SHA256 hash of the request parameters.
+    """
     # Create sorted component-value pairs for consistent hashing
     comp_value_pairs = sorted(zip(request.components, request.values, strict=True))
 
@@ -122,7 +129,14 @@ def get_meltquench_hash(request: MeltquenchRequest) -> str:
 
 
 def get_visualization_url(task_id: str) -> str:
-    """Construct the full visualization URL for a given task ID."""
+    """Construct the full visualization URL for a given task ID.
+
+    Args:
+        task_id: The unique identifier for the task.
+
+    Returns:
+        The full URL or relative path to the visualization page.
+    """
     relative_path = f"/visualize/meltquench/{task_id}"
     if API_BASE_URL:
         # Remove trailing slash from base URL if present, then combine
@@ -135,9 +149,8 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
     """Async wrapper for meltquench simulation that runs the synchronous worker in a process executor.
 
     Args:
-        task_id (str): Unique identifier for the task
-        request (MeltquenchRequest): Validated meltquench parameters
-
+        task_id: Unique identifier for the task
+        request: Validated meltquench parameters
     """
     loop = asyncio.get_event_loop()
 
@@ -177,7 +190,17 @@ app.include_router(visualization_router, tags=["visualization"])
 
 @app.post("/cache/meltquench", tags=["tool"])
 async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | None:
-    """Check if a result for the given meltquench request is already available in cache."""
+    """Check if a result for the given meltquench request is already available in cache.
+
+    Args:
+        request: The meltquench request to check.
+
+    Returns:
+        The cached result if found, otherwise None.
+
+    Raises:
+        HTTPException: If an error occurs during the check.
+    """
     try:
         request_hash = get_meltquench_hash(request)
         logger.info("Checking for cached result with hash: %s", request_hash)
@@ -203,6 +226,15 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
     """Start a new meltquench simulation task.
 
     Note: Results can be visualized at /visualize/meltquench/{task_id}
+
+    Args:
+        request: The meltquench request parameters.
+
+    Returns:
+        A dictionary containing the task ID, status, and visualization URL.
+
+    Raises:
+        HTTPException: If the task cannot be started.
     """
     try:
         # Check if we already have a cached result
@@ -249,6 +281,15 @@ async def check(task_id: str) -> dict:
     """Check the current status of a simulation task by its ID.
 
     Note: When ready, visualize results at /visualize/meltquench/{task_id}
+
+    Args:
+        task_id: The ID of the task to check.
+
+    Returns:
+        A dictionary containing the task status, result (if available), and visualization URL.
+
+    Raises:
+        HTTPException: If the task is not found.
     """
     meta = _task_store.get(task_id)
     if not meta:
