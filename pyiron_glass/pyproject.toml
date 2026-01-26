@@ -17,12 +17,11 @@ dependencies = [
   "ase",
   "numba",
   "pandas",
-  "pyiron_atomistics",
+  "pyiron_lammps",
   "pyiron_base",
   "pymatgen",
   "scipy",
   "sovapy",
-  "structuretoolkit",
 ]
 
 [tool.pytest]

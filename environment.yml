@@ -12,12 +12,10 @@ dependencies:
 - pandas =2.3.3
 - numpy =2.3.3
 - pygraphviz =1.14
-- pyiron_atomistics =0.8.4
-- pyiron_base =0.15.9
-- pyiron-data =0.0.30
+- pyiron_lammps =0.5.3
+- pyiron_base =0.15.12
 - pymatgen =2025.10.07
 - scipy =1.16.2
-- structuretoolkit =0.0.35
 - sqlalchemy
 - numba
 - uvicorn

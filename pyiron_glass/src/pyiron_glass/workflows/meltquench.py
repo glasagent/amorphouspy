@@ -12,11 +12,12 @@ import tempfile
 from pathlib import Path
 
 from ase.atoms import Atoms
-from pyiron_atomistics.lammps.lammps import lammps_function
 from pyiron_base import job
+from pyiron_lammps.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
 from pyiron_glass.workflows.meltquench_protocols import PROTOCOLS, run_protocol
+from pyiron_glass.workflows.shared import get_lammps_command
 
 
 def _run_lammps_md(
@@ -87,7 +88,7 @@ def _run_lammps_md(
         temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
         # Sets up the LAMMPS simulations
-        _shell_output, parsed_output, _job_crashed = lammps_function(
+        _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
             working_directory=tmp_path,
             structure=structure,
             potential=potential,
@@ -102,18 +103,14 @@ def _run_lammps_md(
                 "pressure": pressure,
                 "langevin": langevin,
             },
-            cutoff_radius=None,
             units="metal",
-            bonds_kwargs={},
-            server_kwargs=server_kwargs,
-            enable_h5md=False,
             write_restart_file=False,
             read_restart_file=False,
             restart_file="restart.out",
-            executable_path=None,
             input_control_file={
                 "thermo_modify": "flush yes",
             },
+            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
         )
 
         if _job_crashed or "generic" not in parsed_output:
