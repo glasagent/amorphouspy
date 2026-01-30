@@ -131,7 +131,6 @@ pyfileindex==0.0.35
 Pygments==2.19.1
 pyiron==0.5.2
 pyiron_atomistics==0.7.6
-pyiron_base==0.11.12
 pyiron_dataclasses==0.0.1
 pyiron_lammps==0.4.1
 pyiron_snippets==0.1.4

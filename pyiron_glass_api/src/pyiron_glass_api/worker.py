@@ -60,27 +60,15 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
     try:
         # Import pyiron_glass modules (import here to avoid startup dependencies)
+        from executorlib import SingleNodeExecutor
         import numpy as np
-        from pyiron_base import Project, job
         from pyiron_glass import (
-            generate_potential as _generate_potential,
+            generate_potential,
+            get_ase_structure,
+            get_structure_dict,
+            melt_quench_simulation,
         )
-        from pyiron_glass import (
-            get_ase_structure as _get_ase_structure,
-        )
-        from pyiron_glass import (
-            get_structure_dict as _get_structure_dict,
-        )
-        from pyiron_glass import (
-            melt_quench_simulation as _melt_quench_simulation,
-        )
-        from pyiron_glass.workflows.structural_analysis import analyze_structure as _analyze_structure
-
-        analyze_structure = job(_analyze_structure)
-        generate_potential = job(_generate_potential)
-        get_ase_structure = job(_get_ase_structure)
-        get_structure_dict = job(_get_structure_dict)
-        melt_quench_simulation = job(_melt_quench_simulation)
+        from pyiron_glass.workflows.structural_analysis import analyze_structure
 
         # Create composition string from request
         comp_parts = []
@@ -103,61 +91,70 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Using shared project directory: {project_path}")
 
         # Create shared pyiron project
-        pr = Project(str(project_path))
+        with SingleNodeExecutor(cache_directory=project_path) as exe:
+            atoms_dict = exe.submit(
+                get_structure_dict,
+                composition=composition,
+                # n_molecules=5000,  # Default number of molecules
+                target_atoms=request.n_atoms,
+            ).result()
+            logger.info(f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms")
 
-        atoms_dict = get_structure_dict(
-            composition=composition,
-            # n_molecules=5000,  # Default number of molecules
-            target_atoms=request.n_atoms,
-            pyiron_project=pr,
-        ).pull()
-        logger.info(f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms")
+            structure_future = exe.submit(
+                get_ase_structure,
+                atoms_dict=atoms_dict,
+            )
+            logger.info(f"Task {task_id}: ASE structure created")
 
-        structure = get_ase_structure(atoms_dict=atoms_dict, pyiron_project=pr)
-        logger.info(f"Task {task_id}: ASE structure created")
+            potential_future = exe.submit(
+                generate_potential,
+                atoms_dict=atoms_dict,
+                potential_type=request.potential_type,
+            )
+            logger.info(f"Task {task_id}: Potential generated")
 
-        potential = generate_potential(atoms_dict=atoms_dict, potential_type=request.potential_type, pyiron_project=pr)
-        logger.info(f"Task {task_id}: Potential generated")
+            # Update task status
+            current_task = task_store.get(task_id) or {"state": "processing"}
+            current_task["status"] = "Running meltquench simulation"
+            task_store.set(task_id, current_task)
+            logger.info(f"Task {task_id}: Starting meltquench simulation")
 
-        # Update task status
-        current_task = task_store.get(task_id) or {"state": "processing"}
-        current_task["status"] = "Running meltquench simulation"
-        task_store.set(task_id, current_task)
-        logger.info(f"Task {task_id}: Starting meltquench simulation")
+            # Use simulation parameters from the request
+            logger.info(
+                f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}"
+            )
 
-        # Use simulation parameters from the request
-        logger.info(
-            f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}"
-        )
+            # Run meltquench simulation
+            logger.info(f"Task {task_id}: Executing simulation workflow")
+            result = exe.submit(
+                melt_quench_simulation,
+                structure=structure_future,
+                potential=potential_future,
+                n_print=request.n_print,
+                # tmp_working_directory=str(tmp_dir_base), # note: if provided needs to be static - or prevents caching at pyiron level
+                heating_rate=request.heating_rate,
+                cooling_rate=request.cooling_rate,
+                langevin=False,
+                server_kwargs={},
+            ).result()
+            logger.info(f"Task {task_id}: Simulation completed successfully")
 
-        # Run meltquench simulation
-        logger.info(f"Task {task_id}: Executing simulation workflow")
-        result = melt_quench_simulation(
-            structure=structure,
-            potential=potential,
-            n_print=request.n_print,
-            pyiron_project=pr,
-            # tmp_working_directory=str(tmp_dir_base), # note: if provided needs to be static - or prevents caching at pyiron level
-            heating_rate=request.heating_rate,
-            cooling_rate=request.cooling_rate,
-            langevin=False,
-            server_kwargs={},
-        ).pull()
-        logger.info(f"Task {task_id}: Simulation completed successfully")
+            # Update task status for structural analysis
+            current_task = task_store.get(task_id) or {"state": "processing"}
+            current_task["status"] = "Running structural analysis"
+            task_store.set(task_id, current_task)
+            logger.info(f"Task {task_id}: Starting structural analysis")
 
-        # Update task status for structural analysis
-        current_task = task_store.get(task_id) or {"state": "processing"}
-        current_task["status"] = "Running structural analysis"
-        task_store.set(task_id, current_task)
-        logger.info(f"Task {task_id}: Starting structural analysis")
+            # Perform structural analysis on the final structure (includes density calculation)
+            final_structure = result["structure"]
+            logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
-        # Perform structural analysis on the final structure (includes density calculation)
-        final_structure = result["structure"]
-        logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
-
-        # Run structural analysis (decorated with @job, needs pyiron_project and .pull())
-        structural_data = analyze_structure(atoms=final_structure, pyiron_project=pr).pull()
-        logger.info(f"Task {task_id}: Structural analysis completed successfully")
+            # Run structural analysis (decorated with @job, needs pyiron_project and .pull())
+            structural_data = exe.submit(
+                analyze_structure,
+                atoms=final_structure,
+            ).result()
+            logger.info(f"Task {task_id}: Structural analysis completed successfully")
 
         # Debug: Check what fields are present in the structural_data object
         logger.info(f"Task {task_id}: StructureData type: {type(structural_data)}")
