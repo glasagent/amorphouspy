@@ -4,15 +4,20 @@ import shutil
 from pathlib import Path
 
 from ase.io import read
-from pyiron_base import Project
+from pyiron_base import job, Project
 
 from pyiron_glass import (
-    generate_potential,
-    get_structure_dict,
-    md_simulation,
+    generate_potential as _generate_potential,
+    get_structure_dict as _get_structure_dict,
+    md_simulation as _md_simulation,
 )
 
 from . import DATA_DIR
+
+
+generate_potential = job(_generate_potential)
+get_structure_dict = job(_get_structure_dict)
+md_simulation = job(_md_simulation)
 
 
 def test_glass_simulation() -> None:

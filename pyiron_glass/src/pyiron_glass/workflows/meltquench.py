@@ -12,7 +12,6 @@ import tempfile
 from pathlib import Path
 
 from ase.atoms import Atoms
-from pyiron_base import job
 from pyiron_lammps.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
@@ -123,7 +122,6 @@ def _run_lammps_md(
     return new_structure, parsed_output
 
 
-@job
 def melt_quench_simulation(
     structure: Atoms,
     potential: str,

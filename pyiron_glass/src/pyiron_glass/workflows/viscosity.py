@@ -16,7 +16,6 @@ from typing import Any
 import numpy as np
 from ase.atoms import Atoms
 from numpy.typing import ArrayLike, NDArray
-from pyiron_base import job
 from pyiron_lammps.compatibility.file import lammps_file_interface_function
 from scipy.optimize import curve_fit
 
@@ -118,7 +117,6 @@ def _run_lammps_md(
     return new_structure, parsed_output
 
 
-@job
 def viscosity_simulation(
     structure: Atoms,
     potential: str,
