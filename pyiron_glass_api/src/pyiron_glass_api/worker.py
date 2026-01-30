@@ -60,8 +60,8 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
     try:
         # Import pyiron_glass modules (import here to avoid startup dependencies)
-        from executorlib import SingleNodeExecutor
         import numpy as np
+        from executorlib import SingleNodeExecutor
         from pyiron_glass import (
             generate_potential,
             get_ase_structure,

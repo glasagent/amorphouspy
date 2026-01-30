@@ -30,7 +30,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
-from pyiron_base import state
 
 from .database import get_task_store, init_task_store
 from .models import MeltquenchRequest, MeltquenchResult
@@ -44,9 +43,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(), logging.FileHandler("glass_api.log")],
 )
 logger = logging.getLogger(__name__)
-
-# Log pyiron state.configuration for debugging
-logger.info("[MAIN PROCESS] pyiron state.settings.configuration: %s", state.settings.configuration)
 
 # Get pyiron_glass version for project directory naming
 try:
