@@ -6,9 +6,12 @@ conflicts with signal handling.
 """
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from .models import MeltquenchRequest
+from .models import MeltquenchRequest, ViscosityRequest, ViscosityResult
+
+if TYPE_CHECKING:
+    from ase import Atoms
 
 
 def setup_worker_logging(task_id: str) -> logging.Logger:
@@ -182,6 +185,308 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
     except Exception as exc:
         logger.error(f"Task {task_id}: Simulation failed with error: {exc!s}", exc_info=True)
+        current_task = task_store.get(task_id) or {}
+        current_task.update({"state": "error", "status": "Failed", "error": str(exc)})
+        task_store.set(task_id, current_task)
+
+
+def viscosity_worker(task_id: str, request_dict: dict[str, Any], db_path: str, shared_project_dir: str) -> None:
+    """Run synchronous viscosity simulation, optionally preceded by meltquench.
+
+    This runs in a separate process to avoid blocking the event loop and handle pyiron's signal handling.
+
+    Args:
+        task_id: Unique identifier for the task.
+        request_dict: Serialized viscosity parameters.
+        db_path: Path to SQLite database for task store.
+        shared_project_dir: Path to the shared project directory.
+    """
+    from pathlib import Path
+
+    from pyiron_base import Project
+    from pyiron_glass import (
+        generate_potential,
+        get_ase_structure,
+        get_structure_dict,
+        melt_quench_simulation,
+    )
+    from pyiron_glass.workflows.viscosity import get_viscosity, viscosity_simulation
+
+    from .database import TaskStore
+    from .models import validate_atoms
+
+    logger = setup_worker_logging(task_id)
+    logger.info(f"Starting viscosity simulation for task {task_id}")
+
+    # Create task store instance for this worker process
+    task_store = TaskStore(Path(db_path))
+
+    # Reconstruct the request object from the dict
+    request = ViscosityRequest(**request_dict)
+    logger.info(f"Viscosity request parameters: {request.model_dump()}")
+
+    try:
+        # Create shared pyiron project
+        project_path = Path(shared_project_dir)
+        logger.info(f"Task {task_id}: Using shared project directory: {project_path}")
+        pr = Project(str(project_path))
+
+        composition: str | None = None
+
+        # Normalize and sort temperatures: always start from highest and work down
+        temperatures = sorted(request.temperatures or [], reverse=True)
+        logger.info("Task %s: Viscosity temperatures (high->low): %s", task_id, temperatures)
+
+        viscosities: list[float] = []
+        all_max_lags: list[list[float]] = []
+        sim_steps: list[int] = []
+        lag_times_ps: list[list[float]] = []
+        sacf_data: list[dict[str, list[float]]] = []
+        viscosity_running: list[list[float]] = []
+
+        # Determine starting structure: either from meltquench or from user-provided structure
+        if request.meltquench_request is not None:
+            logger.info("Task %s: Generating initial structure via meltquench workflow", task_id)
+
+            # Create composition string from nested meltquench request
+            mq_req = request.meltquench_request
+            comp_parts: list[str] = []
+            total_values = sum(mq_req.values)
+            for component, value in zip(mq_req.components, mq_req.values, strict=False):
+                fraction = value / 100.0 if total_values > 1.1 else value
+                comp_parts.append(f"{fraction}{component}")
+            composition = "-".join(comp_parts)
+            logger.info("Task %s: Generated composition string for viscosity: %s", task_id, composition)
+
+            # Update task status
+            current_task = task_store.get(task_id) or {"state": "processing"}
+            current_task["status"] = "Creating structure for viscosity"
+            task_store.set(task_id, current_task)
+
+            # Generate starting structure via pyiron_glass helpers
+            atoms_dict = get_structure_dict(
+                composition=composition,
+                target_atoms=mq_req.n_atoms,
+                pyiron_project=pr,
+            ).pull()
+            logger.info(
+                "Task %s: Structure dictionary created for viscosity with %d atoms",
+                task_id,
+                len(atoms_dict["atoms"]),
+            )
+
+            structure_current = get_ase_structure(atoms_dict=atoms_dict, pyiron_project=pr)
+            logger.info("Task %s: Initial ASE structure for viscosity created", task_id)
+
+            potential = generate_potential(
+                atoms_dict=atoms_dict, potential_type=mq_req.potential_type, pyiron_project=pr
+            )
+            logger.info("Task %s: Potential for viscosity generated", task_id)
+
+            # Sequential cooling: from 5000 K to highest T, then stepwise downwards
+            for idx, T in enumerate(temperatures):
+                temp_high = 5000.0 if idx == 0 else temperatures[idx - 1]
+
+                # Pre-cool / equilibrate at this temperature via melt-quench style protocol
+                current_task = task_store.get(task_id) or {"state": "processing"}
+                current_task["status"] = f"Cooling structure to {T} K for viscosity"
+                task_store.set(task_id, current_task)
+                logger.info("Task %s: Cooling from %.1f K to %.1f K before viscosity run", task_id, temp_high, T)
+
+                mq_result = melt_quench_simulation(
+                    structure=structure_current,
+                    potential=potential,
+                    temperature_high=float(temp_high),
+                    temperature_low=float(T),
+                    timestep=1.0,
+                    heating_rate=float(mq_req.heating_rate),
+                    cooling_rate=float(mq_req.cooling_rate),
+                    n_print=mq_req.n_print,
+                    langevin=False,
+                    server_kwargs={},
+                    pyiron_project=pr,
+                ).pull()
+
+                # Save the cooled structure at this temperature
+                structure_at_T: Atoms = mq_result["structure"]
+                logger.info(
+                    "Task %s: Cooling to %.1f K completed, structure has %d atoms",
+                    task_id,
+                    T,
+                    len(structure_at_T),
+                )
+
+                # Run viscosity simulation at this temperature
+                current_task = task_store.get(task_id) or {"state": "processing"}
+                current_task["status"] = f"Running viscosity simulation at {T} K"
+                task_store.set(task_id, current_task)
+                logger.info("Task %s: Starting viscosity simulation at %.1f K", task_id, T)
+
+                visc_job = viscosity_simulation(
+                    structure=structure_at_T,
+                    potential=potential,
+                    temperature_sim=float(T),
+                    timestep=float(request.timestep),
+                    production_steps=int(request.n_timesteps),
+                    n_print=int(request.n_print),
+                    langevin=False,
+                    seed=12345,
+                    server_kwargs={},
+                    pyiron_project=pr,
+                )
+                visc_result = visc_job.pull()
+                logger.info("Task %s: Viscosity simulation at %.1f K completed", task_id, T)
+
+                # Post-process viscosity using Green-Kubo analysis
+                viscosity_data = get_viscosity(
+                    visc_result,
+                    timestep=float(request.timestep),
+                    max_lag=request.max_lag,
+                )
+                logger.info(
+                    "Task %s: Viscosity post-processing at %.1f K completed, eta=%.3e Pa·s",
+                    task_id,
+                    viscosity_data["temperature"],
+                    viscosity_data["viscosity"],
+                )
+
+                # Debug: Log available fields from get_viscosity
+                logger.info("Task %s: get_viscosity returned fields: %s", task_id, list(viscosity_data.keys()))
+
+                viscosities.append(float(viscosity_data["viscosity"]))
+                all_max_lags.append(float(viscosity_data["max_lag"]))
+                sim_steps.append(int(request.n_timesteps))
+
+                # Store averaged SACF data for visualization
+                lag_time = viscosity_data.get("lag_time_ps", [])
+                sacf_avg = viscosity_data.get("sacf", [])
+                visc_running = viscosity_data.get("viscosity_running", [])
+
+                logger.info(
+                    "Task %s: Collected visualization data at %.1f K - lag_time: %d pts, sacf: %d pts, visc_running: %d pts",
+                    task_id,
+                    T,
+                    len(lag_time),
+                    len(sacf_avg),
+                    len(visc_running),
+                )
+
+                lag_times_ps.append(lag_time)
+                sacf_data.append(sacf_avg)  # Now storing single averaged SACF
+                viscosity_running.append(visc_running)
+
+                # Use the pre-viscosity cooled structure as the starting point for the next cooling step
+                structure_current = structure_at_T
+
+        else:
+            logger.info("Task %s: Using user-provided initial structure for viscosity", task_id)
+            # Validate and reconstruct ASE Atoms from the provided structure
+            atoms = validate_atoms(request.initial_structure)
+            if atoms is None:
+                msg = "initial_structure must not be None when meltquench_request is not provided"
+                raise ValueError(msg)
+            structure_current = atoms
+
+            # Generate potential using the user-provided structure
+            atoms_dict = {
+                "atoms": [
+                    {"element": str(sym), "position": pos.tolist()}
+                    for sym, pos in zip(
+                        structure_current.get_chemical_symbols(), structure_current.get_positions(), strict=False
+                    )
+                ]
+            }
+            potential = generate_potential(
+                atoms_dict=atoms_dict, potential_type=request.potential_type, pyiron_project=pr
+            )
+            logger.info("Task %s: Potential for viscosity (custom structure) generated", task_id)
+
+            # For custom structures, run viscosity simulations independently at each temperature
+            for T in temperatures:
+                current_task = task_store.get(task_id) or {"state": "processing"}
+                current_task["status"] = f"Running viscosity simulation at {T} K"
+                task_store.set(task_id, current_task)
+                logger.info("Task %s: Starting viscosity simulation at %.1f K (custom structure)", task_id, T)
+
+                visc_job = viscosity_simulation(
+                    structure=structure_current,
+                    potential=potential,
+                    temperature_sim=float(T),
+                    timestep=float(request.timestep),
+                    production_steps=int(request.n_timesteps),
+                    n_print=int(request.n_print),
+                    langevin=False,
+                    seed=12345,
+                    server_kwargs={},
+                    pyiron_project=pr,
+                )
+                visc_result = visc_job.pull()
+                logger.info("Task %s: Viscosity simulation at %.1f K completed", task_id, T)
+
+                viscosity_data = get_viscosity(
+                    visc_result,
+                    timestep=float(request.timestep),
+                    max_lag=request.max_lag,
+                )
+                logger.info(
+                    "Task %s: Viscosity post-processing at %.1f K completed, eta=%.3e Pa·s",
+                    task_id,
+                    viscosity_data["temperature"],
+                    viscosity_data["viscosity"],
+                )
+
+                # Debug: Log available fields from get_viscosity
+                logger.info("Task %s: get_viscosity returned fields: %s", task_id, list(viscosity_data.keys()))
+
+                viscosities.append(float(viscosity_data["viscosity"]))
+                all_max_lags.append(float(viscosity_data["max_lag"]))
+                sim_steps.append(int(request.n_timesteps))
+
+                # Store averaged SACF data for visualization
+                lag_time = viscosity_data.get("lag_time_ps", [])
+                sacf_avg = viscosity_data.get("sacf", [])
+                visc_running = viscosity_data.get("viscosity_running", [])
+
+                logger.info(
+                    "Task %s: Collected visualization data at %.1f K - lag_time: %d pts, sacf: %d pts, visc_running: %d pts",
+                    task_id,
+                    T,
+                    len(lag_time),
+                    len(sacf_avg),
+                    len(visc_running),
+                )
+
+                lag_times_ps.append(lag_time)
+                sacf_data.append(sacf_avg)  # Now storing single averaged SACF
+                viscosity_running.append(visc_running)
+
+        # Prepare multi-temperature result model
+        result_model = ViscosityResult(
+            composition=composition,
+            temperatures=temperatures,
+            viscosities=viscosities,
+            max_lag=all_max_lags,
+            simulation_steps=sim_steps,
+            lag_times_ps=lag_times_ps,
+            sacf_data=sacf_data,
+            viscosity_running=viscosity_running,
+        )
+
+        # Store results
+        current_task = task_store.get(task_id) or {}
+        current_task.update(
+            {
+                "state": "complete",
+                "status": "Completed",
+                "result": result_model.model_dump(),
+            }
+        )
+        task_store.set(task_id, current_task)
+
+        logger.info("Task %s: Viscosity results stored, simulation complete", task_id)
+
+    except Exception as exc:
+        logger.error("Task %s: Viscosity simulation failed with error: %s", task_id, exc, exc_info=True)
         current_task = task_store.get(task_id) or {}
         current_task.update({"state": "error", "status": "Failed", "error": str(exc)})
         task_store.set(task_id, current_task)

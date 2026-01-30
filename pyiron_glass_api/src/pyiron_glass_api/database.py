@@ -13,7 +13,7 @@ from sqlalchemy import JSON, Column, DateTime, Index, String, Text, create_engin
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-from .models import MeltquenchResult, serialize_atoms
+from .models import MeltquenchResult, ViscosityResult, serialize_atoms
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +191,33 @@ class TaskStore:
 
         except SQLAlchemyError:
             logger.exception("Error finding cached result for hash %s", request_hash)
+            return None
+
+    def find_cached_viscosity_result(self, request_hash: str) -> tuple[str, ViscosityResult] | None:
+        """Find a completed viscosity task with matching request hash for cache lookup.
+
+        Args:
+            request_hash: Hash of the viscosity request parameters.
+
+        Returns:
+            Tuple of (task_id, ViscosityResult) if cached result found, None otherwise.
+        """
+        try:
+            with self.get_session() as session:
+                task = (
+                    session.query(Task)
+                    .filter(Task.request_hash == request_hash, Task.state == "complete", Task.result_data.isnot(None))
+                    .first()
+                )
+
+                if task and task.result_data and task.result_data.get("kind") == "viscosity":
+                    logger.info("Found cached viscosity result for hash %s in task %s", request_hash, task.task_id)
+                return (task.task_id, ViscosityResult(**task.result_data))
+
+                return None
+
+        except SQLAlchemyError:
+            logger.exception("Error finding cached viscosity result for hash %s", request_hash)
             return None
 
     def cleanup_old_tasks(self, days: int = 30) -> int:

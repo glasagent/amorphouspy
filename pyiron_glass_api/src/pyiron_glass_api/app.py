@@ -33,9 +33,16 @@ from fastapi_mcp import FastApiMCP
 from pyiron_base import state
 
 from .database import get_task_store, init_task_store
-from .models import MeltquenchRequest, MeltquenchResult
+from .models import (
+    MeltquenchRequest,
+    MeltquenchResult,
+    ViscosityRequest,
+    ViscosityResult,
+    serialize_atoms,
+    validate_atoms,
+)
 from .visualization import router as visualization_router
-from .worker import meltquench_worker
+from .worker import meltquench_worker, viscosity_worker
 
 # Configure logging
 logging.basicConfig(
@@ -128,6 +135,42 @@ def get_meltquench_hash(request: MeltquenchRequest) -> str:
     return hashlib.sha256(binary_data).hexdigest()[:16]  # First 16 chars for brevity
 
 
+def get_viscosity_hash(request: ViscosityRequest) -> str:
+    """Compute hash for a viscosity request to enable caching.
+
+    Args:
+        request: The viscosity request object to hash.
+
+    Returns:
+        First 16 characters of the SHA256 hash of the request parameters.
+    """
+    # Normalize temperatures list (model validator already ensures non-empty)
+    temperatures = sorted(request.temperatures or [], reverse=False)
+
+    hash_params: dict[str, object] = {
+        "temperatures": tuple(temperatures),
+        "timestep": request.timestep,
+        "n_timesteps": request.n_timesteps,
+        "n_print": request.n_print,
+        "potential_type": request.potential_type,
+        "max_lag": request.max_lag,
+    }
+
+    if request.meltquench_request is not None:
+        # Reuse meltquench hash for composition-related parameters
+        hash_params["source"] = "meltquench"
+        hash_params["meltquench_hash"] = get_meltquench_hash(request.meltquench_request)
+    else:
+        # Hash the user-provided structure together with parameters
+        hash_params["source"] = "structure"
+        atoms = validate_atoms(request.initial_structure)
+        structure_serial = serialize_atoms(atoms) if atoms is not None else None
+        hash_params["structure"] = structure_serial
+
+    binary_data = cloudpickle.dumps(hash_params)
+    return hashlib.sha256(binary_data).hexdigest()[:16]
+
+
 def get_visualization_url(task_id: str) -> str:
     """Construct the full visualization URL for a given task ID.
 
@@ -161,6 +204,25 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
     with concurrent.futures.ProcessPoolExecutor() as executor:
         await loop.run_in_executor(
             executor, meltquench_worker, task_id, request_dict, DB_PATH, str(MELTQUENCH_PROJECT_DIR)
+        )
+
+
+async def _viscosity_worker(task_id: str, request: ViscosityRequest) -> None:
+    """Async wrapper for viscosity simulation that runs the synchronous worker in a process executor.
+
+    Args:
+        task_id: Unique identifier for the task
+        request: Validated viscosity parameters
+    """
+    loop = asyncio.get_event_loop()
+
+    # Convert request to dict for serialization across processes
+    request_dict = request.model_dump()
+
+    # Run the synchronous worker in a process executor to handle pyiron's signal handling
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        await loop.run_in_executor(
+            executor, viscosity_worker, task_id, request_dict, DB_PATH, str(MELTQUENCH_PROJECT_DIR)
         )
 
 
@@ -273,6 +335,89 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         return {"task_id": task_id, "status": "started", "visualization_url": get_visualization_url(task_id)}
     except Exception:
         logger.exception("Error starting meltquench task")
+        raise HTTPException(status_code=500, detail="Internal server error") from None
+
+
+@app.post("/cache/viscosity", tags=["tool"])
+async def check_cached_viscosity_result(request: ViscosityRequest) -> ViscosityResult | None:
+    """Check if a result for the given viscosity request is already available in cache.
+
+    Args:
+        request: The viscosity request to check.
+
+    Returns:
+        The cached viscosity result if found, otherwise None.
+
+    Raises:
+        HTTPException: If an error occurs during the check.
+    """
+    try:
+        request_hash = get_viscosity_hash(request)
+        logger.info("Checking for cached viscosity result with hash: %s", request_hash)
+
+        cached_result = _task_store.find_cached_viscosity_result(request_hash)
+
+        if cached_result:
+            logger.info("Found cached viscosity result")
+            return cached_result[1]
+
+        logger.info("No cached viscosity result found")
+        return None
+
+    except Exception:
+        logger.exception("Error checking cached viscosity result")
+        raise HTTPException(status_code=500, detail="Internal server error") from None
+
+
+@app.post("/submit/viscosity", tags=["tool"])
+async def submit_viscosity(request: ViscosityRequest) -> dict:
+    """Start a new viscosity simulation task, optionally including a meltquench preconditioning step.
+
+    Args:
+        request: The viscosity request parameters.
+
+    Returns:
+        A dictionary containing the task ID and status.
+
+    Raises:
+        HTTPException: If the task cannot be started.
+    """
+    try:
+        # Check if we already have a cached result
+        request_hash = get_viscosity_hash(request)
+        cached_result = _task_store.find_cached_viscosity_result(request_hash)
+
+        if cached_result:
+            cached_task_id, cached_viscosity_result = cached_result
+            logger.info("Returning cached viscosity result from task %s instead of starting new task", cached_task_id)
+            return {
+                "task_id": cached_task_id,
+                "status": "completed_from_cache",
+                "visualization_url": None,
+                "result": cached_viscosity_result.model_dump(),
+            }
+
+        task_id = str(uuid4())
+        logger.info("Creating new viscosity task with ID: %s, hash: %s", task_id, request_hash)
+
+        # Store task in database
+        _task_store.set(
+            task_id,
+            {
+                "state": "processing",
+                "status": "Initializing viscosity simulation",
+                "request_hash": request_hash,
+                "request_data": request.model_dump(),
+            },
+        )
+
+        # Always run as background task using process executor
+        task = asyncio.create_task(_viscosity_worker(task_id, request))
+        task.add_done_callback(lambda _: None)
+
+        return {"task_id": task_id, "status": "started", "visualization_url": None}
+    except Exception:
+        logger.exception("Error starting viscosity task")
         raise HTTPException(status_code=500, detail="Internal server error") from None
 
 

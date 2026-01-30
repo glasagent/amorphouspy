@@ -230,3 +230,133 @@ async def visualize_results(task_id: str) -> HTMLResponse:
     except Exception as e:
         logger.exception("Error generating visualization for task %s", task_id)
         raise HTTPException(status_code=500, detail=f"Error generating visualization: {e!s}") from e
+
+
+@router.get("/viscosity/{task_id}", response_class=HTMLResponse)
+async def visualize_viscosity(task_id: str) -> HTMLResponse:
+    """Visualize viscosity results for a given task ID as viscosity vs 1000/T."""
+
+    def validate_and_extract_data(task_data: dict) -> dict:
+        task_data = _validate_task_data(task_data, task_id)
+        result_data = task_data.get("result")
+        if not result_data or result_data.get("kind") != "viscosity":
+            raise HTTPException(status_code=404, detail="Task does not contain viscosity results")
+        temperatures = result_data.get("temperatures", [])
+        viscosities = result_data.get("viscosities", [])
+        lag_times_ps = result_data.get("lag_times_ps", [])
+        sacf_data = result_data.get("sacf_data", [])
+        viscosity_running = result_data.get("viscosity_running", [])
+        if not temperatures or not viscosities or len(temperatures) != len(viscosities):
+            raise HTTPException(status_code=404, detail="Invalid viscosity result data")
+        return {
+            "temperatures": temperatures,
+            "viscosities": viscosities,
+            "lag_times_ps": lag_times_ps,
+            "sacf_data": sacf_data,
+            "viscosity_running": viscosity_running,
+        }
+
+    def build_plot(
+        x: list[float],
+        y: list[float],
+        title: str,
+        xaxis_title: str,
+        yaxis_title: str,
+        *,
+        mode: str = "lines",
+        log_y: bool = False,
+    ) -> dict:
+        return {
+            "data": [{"x": x, "y": y, "mode": mode, "line": {"width": 2}}],
+            "layout": {
+                "title": title,
+                "xaxis": {"title": xaxis_title, "type": "log" if "Lag" in xaxis_title else "linear"},
+                "yaxis": {"title": yaxis_title, "type": "log" if log_y else "linear"},
+                "hovermode": "closest",
+                "showlegend": True,
+            },
+        }
+
+    def build_multi_trace_plot(
+        x_list: list[list[float]],
+        y_list: list[list[float]],
+        labels: list[float],
+        title: str,
+        xaxis_title: str,
+        yaxis_title: str,
+        *,
+        log_y: bool = False,
+    ) -> list[dict]:
+        traces = [
+            {"x": x_list[i], "y": y_list[i], "mode": "lines", "name": f"{labels[i]} K", "line": {"width": 2}}
+            for i in range(len(labels))
+            if x_list[i] and y_list[i]
+        ]
+        if traces:
+            return [
+                {
+                    "data": traces,
+                    "layout": {
+                        "title": title,
+                        "xaxis": {"title": xaxis_title, "type": "log" if "Lag" in xaxis_title else "linear"},
+                        "yaxis": {"title": yaxis_title, "type": "log" if log_y else "linear"},
+                        "hovermode": "closest",
+                        "showlegend": True,
+                    },
+                }
+            ]
+        return []
+
+    try:
+        task_data = get_task_store().get(task_id)
+        data = validate_and_extract_data(task_data)
+
+        inv_T = [1000.0 / float(T) for T in data["temperatures"]]
+        plotly_json_visc = json.dumps(
+            build_plot(
+                inv_T,
+                data["viscosities"],
+                "Viscosity vs 1000/T",
+                "1000 / T (1/K)",
+                "Viscosity (Pa·s)",
+                mode="markers+lines",
+                log_y=True,
+            )
+        )
+
+        sacf_plots = build_multi_trace_plot(
+            data["lag_times_ps"],
+            data["sacf_data"],
+            data["temperatures"],
+            "Stress Autocorrelation Function",
+            "Lag Time (ps)",
+            "Normalized SACF",
+        )
+        viscosity_running_plots = build_multi_trace_plot(
+            data["lag_times_ps"],
+            data["viscosity_running"],
+            data["temperatures"],
+            "Viscosity Convergence",
+            "Lag Time (ps)",
+            "Viscosity (Pa·s)",
+            log_y=True,
+        )
+
+        context = {
+            "task_id": task_id,
+            "temperatures": data["temperatures"],
+            "viscosities": data["viscosities"],
+            "plotly_json_visc": plotly_json_visc,
+            "sacf_plots": [json.dumps(plot) for plot in sacf_plots],
+            "viscosity_running_plots": [json.dumps(plot) for plot in viscosity_running_plots],
+        }
+
+        html_content = templates.get_template("viscosity_results.html").render(context)
+        logger.info("Generated viscosity visualization for task %s", task_id)
+        return HTMLResponse(content=html_content)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error generating viscosity visualization for task %s", task_id)
+        raise HTTPException(status_code=500, detail=f"Error generating viscosity visualization: {e!s}") from e

@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 
 from ase import Atoms
 from ase.io import read, write
-from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, ValidationInfo, field_validator, model_validator
 from pyiron_glass.workflows.structural_analysis import StructureData
 
 # Constants for composition validation
@@ -84,7 +84,15 @@ AtomsType = Annotated[
 
 
 # Export the serialization functions for use in other modules
-__all__ = ["AtomsType", "MeltquenchRequest", "MeltquenchResult", "serialize_atoms", "validate_atoms"]
+__all__ = [
+    "AtomsType",
+    "MeltquenchRequest",
+    "MeltquenchResult",
+    "ViscosityRequest",
+    "ViscosityResult",
+    "serialize_atoms",
+    "validate_atoms",
+]
 
 
 class MeltquenchRequest(BaseModel):
@@ -151,3 +159,119 @@ class MeltquenchResult(BaseModel):
     mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
     simulation_steps: int = Field(..., description="Total simulation steps completed")
     structural_analysis: StructureData | dict = Field(..., description="Structural analysis results")
+
+
+class ViscosityRequest(BaseModel):
+    """Request model for viscosity simulation.
+
+    The simulation can either start from a fresh melt-quench run (via nested MeltquenchRequest)
+    or from a user-provided atomic structure.
+
+    Attributes:
+        meltquench_request: Optional nested meltquench request describing how to generate the structure.
+        initial_structure: Optional initial structure; if provided and meltquench_request is None,
+            viscosity is computed starting from this structure.
+        temperature_sim: Target simulation temperature in Kelvin for the viscosity run.
+        timestep: MD timestep in femtoseconds.
+        n_timesteps: Number of MD steps for the viscosity production run.
+        n_print: Thermodynamic output frequency.
+        potential_type: Type of interatomic potential to use.
+        max_lag: Optional maximum lag (number of steps) for the viscosity post-processing.
+    """
+
+    meltquench_request: MeltquenchRequest | None = Field(
+        default=None,
+        description="Optional nested meltquench request used to generate a glass structure before viscosity.",
+    )
+    initial_structure: AtomsType = Field(
+        default=None,
+        description="Optional initial structure; if provided, viscosity is computed starting from this structure.",
+    )
+    temperatures: list[float] | None = Field(
+        default=None,
+        description="List of simulation temperatures in Kelvin for viscosity calculation. "
+        "If omitted, temperature_sim (deprecated) can be used as a single temperature.",
+    )
+    # Backwards-compatible single-temperature field; internally converted to `temperatures`.
+    temperature_sim: float | None = Field(
+        default=None,
+        description="Single simulation temperature in Kelvin for viscosity calculation "
+        "(deprecated, use 'temperatures' instead).",
+    )
+    timestep: float = Field(default=1.0, description="MD timestep in femtoseconds (default: 1.0)")
+    n_timesteps: int = Field(
+        default=10_000_000, description="Number of MD steps for the viscosity production run (default: 10_000_000)"
+    )
+    n_print: int = Field(default=1, description="Thermodynamic output frequency (default: every step)")
+    potential_type: Literal["shik", "bjp", "pmmcs"] = Field(
+        default="pmmcs", description="Type of interatomic potential to use (default: 'pmmcs')"
+    )
+    max_lag: int | None = Field(
+        default=1_000_000,
+        description=(
+            "Maximum correlation lag (number of time steps) for Green-Kubo viscosity post-processing; "
+            "if None, uses full trajectory length."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "ViscosityRequest":
+        """Normalize temperature fields and ensure a valid source for viscosity."""
+        # Normalize temperature specification
+        if self.temperatures is None and self.temperature_sim is not None:
+            self.temperatures = [self.temperature_sim]
+        if not self.temperatures:
+            msg = "At least one simulation temperature must be provided via 'temperatures' or 'temperature_sim'"
+            raise ValueError(msg)
+
+        # Ensure that at least one of meltquench_request or initial_structure is provided
+        if self.meltquench_request is None and self.initial_structure is None:
+            msg = "Either 'meltquench_request' or 'initial_structure' must be provided for viscosity simulations"
+            raise ValueError(msg)
+        return self
+
+
+class ViscosityResult(BaseModel):
+    """Result model for completed viscosity simulation.
+
+    Attributes:
+        kind: Discriminator field identifying this as a viscosity result.
+        composition: Optional composition string (if derived from meltquench).
+        temperature: Mean simulation temperature in Kelvin.
+        viscosity: Viscosity in Pa·s computed via the Green-Kubo formalism.
+        max_lag: List of cutoff correlation times (per stress component) in picoseconds.
+        simulation_steps: Number of MD steps used for the viscosity production run.
+    """
+
+    kind: Literal["viscosity"] = Field("viscosity", description="Result type discriminator")
+    composition: str | None = Field(
+        default=None,
+        description="Composition string used in simulation (if generated from meltquench); "
+        "None for custom input structures.",
+    )
+    temperatures: list[float] = Field(..., description="List of simulation temperatures during viscosity runs (K)")
+    viscosities: list[float] = Field(
+        ...,
+        description="List of viscosities computed from Green-Kubo analysis (Pa·s), matching the temperatures list",
+    )
+    max_lag: list[float] = Field(
+        ...,
+        description=(
+            "List of maximum cutoff correlation times (per temperature) in picoseconds used in viscosity integration"
+        ),
+    )
+    simulation_steps: list[int] = Field(
+        ..., description="List of MD steps used for viscosity production runs at each temperature"
+    )
+    lag_times_ps: list[list[float]] = Field(
+        default_factory=list,
+        description="List of lag time arrays (per temperature) in picoseconds for plotting SACF and running viscosity",
+    )
+    sacf_data: list[list[float]] = Field(
+        default_factory=list,
+        description="List of averaged normalized SACF arrays (per temperature)",
+    )
+    viscosity_running: list[list[float]] = Field(
+        default_factory=list,
+        description="List of running viscosity arrays (per temperature) showing convergence vs lag time (Pa·s)",
+    )
