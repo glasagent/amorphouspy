@@ -2,14 +2,12 @@
 
 # Author: Achraf Atila (achraf.atila@bam.de)
 import pandas as pd
-from pyiron_base import job
 
 from . import bjp_potential as bjp
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
 
 
-@job
 def generate_potential(atoms_dict: dict, potential_type: str = "pmmcs") -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 
