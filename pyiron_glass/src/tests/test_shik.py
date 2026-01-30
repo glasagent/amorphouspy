@@ -31,7 +31,6 @@ def test_glass_simulation() -> None:
             generate_potential,
             atoms_dict=atoms_dict_future,
             potential_type="shik",
-            pyiron_project=pr,
         )
 
         delayed_future = exe.submit(
@@ -44,6 +43,5 @@ def test_glass_simulation() -> None:
             n_print=100,
             server_kwargs=server_kwargs,
             pressure=0,
-            pyiron_project=pr,
         )
         _ = delayed_future.result()
