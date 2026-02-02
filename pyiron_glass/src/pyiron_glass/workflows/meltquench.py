@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ase.atoms import Atoms
 from pyiron_base import job
-from pyiron_lammps.compatibility.file import lammps_file_interface_function
+from lammpsparser.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
 from pyiron_glass.workflows.meltquench_protocols import PROTOCOLS, run_protocol
