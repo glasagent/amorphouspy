@@ -12,8 +12,8 @@ import tempfile
 from pathlib import Path
 
 from ase.atoms import Atoms
+from lammpsparser.compatibility.file import lammps_file_interface_function
 from pyiron_base import job
-from pyiron_lammps.compatibility.file import lammps_file_interface_function
 
 from pyiron_glass.io_utils import structure_from_parsed_output
 from pyiron_glass.workflows.meltquench_protocols import PROTOCOLS, run_protocol
@@ -87,31 +87,71 @@ def _run_lammps_md(
         # defines the temperature protocol
         temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
 
-        # Sets up the LAMMPS simulations
-        _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
-            working_directory=tmp_path,
-            structure=structure,
-            potential=potential,
-            calc_mode="md",
-            calc_kwargs={
-                "temperature": temp_setting,
-                "n_ionic_steps": n_ionic_steps,
-                "time_step": timestep,
-                "n_print": n_print,
-                "initial_temperature": initial_temperature,
-                "seed": seed,
-                "pressure": pressure,
-                "langevin": langevin,
-            },
-            units="metal",
-            write_restart_file=False,
-            read_restart_file=False,
-            restart_file="restart.out",
-            input_control_file={
-                "thermo_modify": "flush yes",
-            },
-            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
-        )
+        # If pressure is a list [P_start, P_end], create a custom fix command
+        # This bypasses the parser's inability to handle pressure ramps
+        if isinstance(pressure, list) and len(pressure) == 2:  # noqa: PLR2004
+            p_start, p_end = pressure[0] * 10000, pressure[1] * 10000
+            # Convert to metal units (bar) if necessary, or use as is for GPa
+            t_start = temperature if not isinstance(temperature, list) else temperature[0]
+            t_end = temperature_end if temperature_end is not None else t_start
+
+            custom_fix = f"ensemble all npt temp {t_start} {t_end} 0.1 iso {p_start} {p_end} 1.0"
+            # Set scalar pressure for the parser to avoid crashes
+            passed_pressure = p_start
+            # Sets up the LAMMPS simulations
+            _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
+                working_directory=tmp_path,
+                structure=structure,
+                potential=potential,
+                calc_mode="md",
+                calc_kwargs={
+                    "temperature": temp_setting,
+                    "n_ionic_steps": n_ionic_steps,
+                    "time_step": timestep,
+                    "n_print": n_print,
+                    "initial_temperature": initial_temperature,
+                    "seed": seed,
+                    "pressure": passed_pressure,
+                    "langevin": langevin,
+                },
+                units="metal",
+                write_restart_file=False,
+                read_restart_file=False,
+                restart_file="restart.out",
+                input_control_file={
+                    "thermo_modify": "flush yes",
+                    "unfix": "ensemble",
+                    "fix": custom_fix,
+                },
+                lmp_command=get_lammps_command(server_kwargs=server_kwargs),
+            )
+        else:
+            passed_pressure = pressure
+            # Sets up the LAMMPS simulations
+            _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
+                working_directory=tmp_path,
+                structure=structure,
+                potential=potential,
+                calc_mode="md",
+                calc_kwargs={
+                    "temperature": temp_setting,
+                    "n_ionic_steps": n_ionic_steps,
+                    "time_step": timestep,
+                    "n_print": n_print,
+                    "initial_temperature": initial_temperature,
+                    "seed": seed,
+                    "pressure": passed_pressure,
+                    "langevin": langevin,
+                },
+                units="metal",
+                write_restart_file=False,
+                read_restart_file=False,
+                restart_file="restart.out",
+                input_control_file={
+                    "thermo_modify": "flush yes",
+                },
+                lmp_command=get_lammps_command(server_kwargs=server_kwargs),
+            )
 
         if _job_crashed or "generic" not in parsed_output:
             msg = f"LAMMPS crashed. Check logs in {tmp_path}"
