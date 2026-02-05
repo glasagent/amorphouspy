@@ -17,7 +17,7 @@ dependencies = [
   "ase",
   "numba",
   "pandas",
-  "pyiron_lammps",
+  "lammpsparser",
   "pyiron_base",
   "pymatgen",
   "scipy",

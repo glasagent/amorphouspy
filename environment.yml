@@ -12,7 +12,7 @@ dependencies:
 - pandas =2.3.3
 - numpy =2.3.3
 - pygraphviz =1.14
-- pyiron_lammps =0.5.3
+- lammpsparser =0.0.1
 - pyiron_base =0.15.12
 - pymatgen =2025.10.07
 - scipy =1.16.2
