@@ -23,7 +23,7 @@ jobs:
       shell: bash -l {0}
       run: |
         pip install hatchling editables
-        pip install --no-deps --no-build-isolation -e ./pyiron_glass
+        pip install --no-deps --no-build-isolation -e ./amorphouspy
         pip install --no-deps --no-build-isolation -e ./pyiron_glass_api
         pip install -r pyiron_glass_api/requirements-dev.txt
     - name: Run pytest test suite

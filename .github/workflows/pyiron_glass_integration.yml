@@ -1,4 +1,4 @@
-name: notebooks for pyiron_glass module
+name: notebooks for amorphouspy module
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
         condarc-file: .condarc
         environment-file: environment.yml
     - name: Install dependencies
-      working-directory: pyiron_glass
+      working-directory: amorphouspy
       shell: bash -l {0}
       run: |
         pip install hatchling editables
@@ -33,15 +33,15 @@ jobs:
 
     - name: Test notebooks
       shell: bash -l {0}
-      working-directory: pyiron_glass
+      working-directory: amorphouspy
       run: |
         # absolute path in --cov is necessary here, otherwise it gets confused
-        pytest --durations=0 --nbval-lax ../notebooks/*ipynb --cov=$(pwd)/src/pyiron_glass --cov-report=term --cov-report=xml --cov-append
+        pytest --durations=0 --nbval-lax ../notebooks/*ipynb --cov=$(pwd)/src/amorphouspy --cov-report=term --cov-report=xml --cov-append
 
     - name: Pytest coverage comment
       uses: MishaKav/pytest-coverage-comment@main
       with:
-        pytest-xml-coverage-path: pyiron_glass/coverage.xml
+        pytest-xml-coverage-path: amorphouspy/coverage.xml
 
 
     # - name: Upload coverage to Codecov
