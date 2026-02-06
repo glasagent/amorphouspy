@@ -57,7 +57,7 @@ pip install -e .
 ## Launch API (including MCP server)
 
 ```bash
-python -m uvicorn amorphouspy_api.app:app
+python -m uvicorn pyiron_glass_api.app:app
 ```
 
 The API will be available at:
@@ -83,7 +83,7 @@ pytest
 **Integration tests**:
 ```bash
 # Start API server
-uvicorn amorphouspy_api.app:app --port 8002 --reload
+uvicorn pyiron_glass_api.app:app --port 8002 --reload
 
 # Run integration tests
 pytest -m integration -s

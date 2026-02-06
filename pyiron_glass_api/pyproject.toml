@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "amorphouspy_api"
+name = "pyiron_glass_api"
 version = "0.0.1"
-description = "Model Context Protocol server for launching glass simulations via amorphouspy"
+description = "Model Context Protocol server for launching glass simulations via pyiron_glass"
 authors = [
   { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
 ]
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/amorphouspy_api"]
+packages = ["src/pyiron_glass_api"]
 
 [tool.pytest]
 testpaths = ["src/tests"]

@@ -3,7 +3,7 @@
 import tempfile
 from pathlib import Path
 
-from amorphouspy_api.database import TaskStore
+from pyiron_glass_api.database import TaskStore
 
 
 def test_task_store_basic_operations() -> None:

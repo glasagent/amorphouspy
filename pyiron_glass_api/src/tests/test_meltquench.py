@@ -5,9 +5,10 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from amorphouspy_api.app import app
-from amorphouspy_api.models import MeltquenchRequest
 from fastapi.testclient import TestClient
+
+from pyiron_glass_api.app import app
+from pyiron_glass_api.models import MeltquenchRequest
 
 client = TestClient(app)
 
@@ -18,10 +19,10 @@ def _patch_worker(monkeypatch) -> None:
 
     This keeps tests fully in-process and avoids spawning real child processes.
     """
-    from amorphouspy_api import app as app_module
+    from pyiron_glass_api import app as app_module
 
     async def fake_worker(task_id: str, request: MeltquenchRequest) -> None:
-        from amorphouspy_api.database import get_task_store
+        from pyiron_glass_api.database import get_task_store
 
         ts = get_task_store()
         ts.set(
@@ -325,7 +326,7 @@ def test_visualization_endpoint(mock_plot_analysis_results_plotly: MagicMock) ->
     task_id = submit_data["task_id"]
 
     # Overwrite task result directly to tailor the visualization data
-    from amorphouspy_api.database import get_task_store
+    from pyiron_glass_api.database import get_task_store
 
     get_task_store().set(
         task_id,
@@ -369,9 +370,9 @@ def test_visualization_endpoint_task_not_found() -> None:
 def test_visualization_endpoint_incomplete_task() -> None:
     """Test visualization endpoint with incomplete task."""
     # Create a task manually in the database with 'running' state
-    from amorphouspy_api.app import get_meltquench_hash
-    from amorphouspy_api.database import get_task_store
-    from amorphouspy_api.models import MeltquenchRequest
+    from pyiron_glass_api.app import get_meltquench_hash
+    from pyiron_glass_api.database import get_task_store
+    from pyiron_glass_api.models import MeltquenchRequest
 
     task_store = get_task_store()
     fake_task_id = "test-incomplete-task-123"
