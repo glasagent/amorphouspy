@@ -7,10 +7,10 @@ including meltquench simulations and other glass modeling workflows.
 from io import StringIO
 from typing import Annotated, Literal
 
+from amorphouspy.workflows.structural_analysis import StructureData
 from ase import Atoms
 from ase.io import read, write
 from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, ValidationInfo, field_validator
-from pyiron_glass.workflows.structural_analysis import StructureData
 
 # Constants for composition validation
 PERCENTAGE_THRESHOLD = 1.1

@@ -1,4 +1,4 @@
-name: pyiron-glass
+name: amorphouspy
 channels:
 - conda-forge
 dependencies:

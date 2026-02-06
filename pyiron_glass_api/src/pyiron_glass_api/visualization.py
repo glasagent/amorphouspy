@@ -9,10 +9,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from amorphouspy.workflows.structural_analysis import StructureData
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pyiron_glass.workflows.structural_analysis import StructureData
 
 from .database import get_task_store
 
@@ -206,7 +206,7 @@ async def visualize_results(task_id: str) -> HTMLResponse:
         result_data = _get_and_validate_results(task_data)
 
         # Generate interactive plot
-        from pyiron_glass.workflows.structural_analysis import plot_analysis_results_plotly
+        from amorphouspy.workflows.structural_analysis import plot_analysis_results_plotly
 
         structural_data = result_data["structural_analysis"]
         if isinstance(structural_data, dict):

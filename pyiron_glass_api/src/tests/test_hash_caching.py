@@ -6,8 +6,8 @@ This module tests that:
 3. The caching logic can be imported and executed without errors
 """
 
-from pyiron_glass_api.app import get_meltquench_hash
-from pyiron_glass_api.models import MeltquenchRequest
+from amorphouspy_api.app import get_meltquench_hash
+from amorphouspy_api.models import MeltquenchRequest
 
 
 def test_hash_consistency() -> None:

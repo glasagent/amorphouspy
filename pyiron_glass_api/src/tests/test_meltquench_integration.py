@@ -31,7 +31,7 @@ def test_meltquench_api_integration() -> None:
     """Full integration test for the meltquench API using a running server.
     Requires: API server running in main thread with PYIRON_GLASS_INTEGRATION=1
     Example:
-        PYIRON_GLASS_INTEGRATION=1 uvicorn pyiron_glass_api.src.pyiron_glass_api.app:app --port 8002
+        PYIRON_GLASS_INTEGRATION=1 uvicorn amorphouspy_api.src.amorphouspy_api.app:app --port 8002
         pytest -m integration.
     """
     API_URL = "http://127.0.0.1:8002"

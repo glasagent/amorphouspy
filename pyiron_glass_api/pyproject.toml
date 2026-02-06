@@ -11,7 +11,7 @@ authors = [
 ]
 license = { file = "../LICENSE" }
 dependencies = [
-  "pyiron_glass",
+  "amorphouspy",
   "uvicorn",
   "fastapi-mcp",
   "sqlalchemy",

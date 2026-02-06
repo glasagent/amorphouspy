@@ -1,0 +1,1 @@
+"""potentials subpackage of amorphouspy."""

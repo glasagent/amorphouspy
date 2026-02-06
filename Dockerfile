@@ -26,8 +26,8 @@ EXPOSE 8000
 WORKDIR /app
 COPY LICENSE .
 
-COPY pyiron_glass pyiron_glass/
-RUN micromamba run pip install /app/pyiron_glass
+COPY amorphouspy amorphouspy/
+RUN micromamba run pip install /app/amorphouspy
 
 COPY pyiron_glass_api/ pyiron_glass_api/
 RUN micromamba run pip install /app/pyiron_glass_api

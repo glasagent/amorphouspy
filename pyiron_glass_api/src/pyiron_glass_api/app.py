@@ -48,13 +48,13 @@ logger = logging.getLogger(__name__)
 # Log pyiron state.configuration for debugging
 logger.info("[MAIN PROCESS] pyiron state.settings.configuration: %s", state.settings.configuration)
 
-# Get pyiron_glass version for project directory naming
+# Get amorphouspy version for project directory naming
 try:
-    pyiron_glass_version = version("pyiron_glass")
-    logger.info("Using pyiron_glass version: %s", pyiron_glass_version)
+    amorphouspy_version = version("amorphouspy")
+    logger.info("Using amorphouspy version: %s", amorphouspy_version)
 except Exception:
-    pyiron_glass_version = "unknown"
-    logger.warning("Could not determine pyiron_glass version, using 'unknown'")
+    amorphouspy_version = "unknown"
+    logger.warning("Could not determine amorphouspy version, using 'unknown'")
 
 # Setup shared project directory using canonical pyiron environment variables
 PROJECTS_FOLDER = Path(__file__).resolve().parent.parent.parent / "projects"
@@ -66,7 +66,7 @@ if "PYIRONPROJECTPATHS" in os.environ:
 else:
     logger.info("Using default project directory: %s", PROJECTS_FOLDER)
 
-MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / f"pyiron_glass_{pyiron_glass_version}" / "meltquench"
+MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / f"amorphouspy_{amorphouspy_version}" / "meltquench"
 
 
 # Configure pyiron environment variables if not already set
