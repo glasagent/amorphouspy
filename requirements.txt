@@ -132,7 +132,7 @@ Pygments==2.19.1
 pyiron==0.5.2
 pyiron_atomistics==0.7.6
 pyiron_dataclasses==0.0.1
-pyiron_lammps==0.4.1
+lammpsparser==0.0.1
 pyiron_snippets==0.1.4
 pyiron_vasp==0.2.5
 pylammpsmpi==0.2.34

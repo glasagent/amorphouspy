@@ -15,8 +15,8 @@ from typing import Any
 
 import numpy as np
 from ase.atoms import Atoms
+from lammpsparser.compatibility.file import lammps_file_interface_function
 from numpy.typing import ArrayLike, NDArray
-from pyiron_lammps.compatibility.file import lammps_file_interface_function
 from scipy.optimize import curve_fit
 
 from pyiron_glass.io_utils import structure_from_parsed_output
