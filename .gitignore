@@ -8,3 +8,4 @@ __pycache__/
 *.db
 *.h5
 *.tbl
+!amorphouspy/src/tests/data/*.dump
