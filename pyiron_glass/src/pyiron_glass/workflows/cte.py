@@ -16,7 +16,6 @@ from typing import Any
 import numpy as np
 from ase.atoms import Atoms
 from lammpsparser.compatibility.file import lammps_file_interface_function
-from pyiron_base import job
 
 from pyiron_glass.analysis.cte import cte_from_npt_fluctuations
 from pyiron_glass.io_utils import structure_from_parsed_output
@@ -556,7 +555,6 @@ def _temperature_checker(temperature: float | list[int | float]) -> list[int | f
     return temperature_sim
 
 
-@job
 def cte_simulation(
     structure: Atoms,
     potential: str,

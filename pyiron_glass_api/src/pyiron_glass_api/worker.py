@@ -61,14 +61,26 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
     try:
         # Import pyiron_glass modules (import here to avoid startup dependencies)
         import numpy as np
-        from pyiron_base import Project
+        from pyiron_base import Project, job
         from pyiron_glass import (
-            generate_potential,
-            get_ase_structure,
-            get_structure_dict,
-            melt_quench_simulation,
+            generate_potential as _generate_potential,
         )
-        from pyiron_glass.workflows.structural_analysis import analyze_structure
+        from pyiron_glass import (
+            get_ase_structure as _get_ase_structure,
+        )
+        from pyiron_glass import (
+            get_structure_dict as _get_structure_dict,
+        )
+        from pyiron_glass import (
+            melt_quench_simulation as _melt_quench_simulation,
+        )
+        from pyiron_glass.workflows.structural_analysis import analyze_structure as _analyze_structure
+
+        generate_potential = job(_generate_potential)
+        get_structure_dict = job(_get_structure_dict)
+        get_ase_structure = job(_get_ase_structure)
+        melt_quench_simulation = job(_melt_quench_simulation)
+        analyze_structure = job(_analyze_structure)
 
         # Create composition string from request
         comp_parts = []

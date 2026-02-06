@@ -16,7 +16,6 @@ from typing import Any
 import numpy as np
 from ase.atoms import Atoms
 from lammpsparser.compatibility.file import lammps_file_interface_function
-from pyiron_base import job
 
 from pyiron_glass.io_utils import structure_from_parsed_output
 from pyiron_glass.workflows.shared import get_lammps_command
@@ -244,7 +243,6 @@ def isotropic_moduli_from_Cij(cij: np.ndarray) -> dict[str, float]:
     return {"B": bulk, "G": shear, "E": youngs, "nu": poisson}
 
 
-@job
 def elastic_simulation(
     structure: Atoms,
     potential: str,

@@ -9,7 +9,6 @@ from ase.atoms import Atoms
 from ase.data import chemical_symbols
 from plotly.subplots import make_subplots
 from pydantic import BaseModel, Field
-from pyiron_base import job
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 
@@ -181,7 +180,6 @@ def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], 
     return type_map, network_formers, modifiers, oxygen_present
 
 
-@job
 def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PLR0915
     """Perform a comprehensive structural analysis of an atomic configuration.
 

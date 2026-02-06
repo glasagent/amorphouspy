@@ -11,7 +11,6 @@ import numpy as np
 from ase.atoms import Atoms
 from ase.data import chemical_symbols
 from ase.io import read
-from pyiron_base import job
 from pymatgen.core import Composition
 from scipy.constants import Avogadro
 
@@ -824,7 +823,6 @@ def get_box_from_density(
     return volume_ang3 ** (1 / 3)
 
 
-@job
 def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1, 1)) -> Atoms:
     """Generate a LAMMPS data file format string and read into an ASE Atoms object.
 
@@ -906,7 +904,6 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
     )
 
 
-@job
 def get_structure_dict(
     composition: str,
     n_molecules: int | None = None,
