@@ -14,33 +14,28 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def _patch_worker(monkeypatch) -> None:
-    """Replace background worker with a no-op that writes a completed result.
+def _patch_job_manager(monkeypatch) -> None:
+    """Replace JobManager.submit_meltquench with a mock that returns completed result.
 
-    This keeps tests fully in-process and avoids spawning real child processes.
+    This keeps tests fully in-process and avoids spawning real executorlib jobs.
     """
-    from amorphouspy_api import app as app_module
+    from amorphouspy_api import jobs as jobs_module
 
-    async def fake_worker(task_id: str, request: MeltquenchRequest) -> None:
-        from amorphouspy_api.database import get_task_store
-
-        ts = get_task_store()
-        ts.set(
-            task_id,
-            {
-                "state": "complete",
-                "status": "Completed",
-                "result": {
-                    "composition": "0.6SiO2-0.25CaO-0.15Al2O3",
-                    "final_structure": create_mock_structure_dict(),
-                    "mean_temperature": 302.3333333333,
-                    "simulation_steps": 3,
-                    "structural_analysis": create_mock_structural_analysis_data(),
-                },
+    def fake_submit_meltquench(self, request_data: dict) -> dict:
+        return {
+            "state": "complete",
+            "status": "Completed",
+            "result": {
+                "composition": "0.6SiO2-0.25CaO-0.15Al2O3",
+                "final_structure": create_mock_structure_dict(),
+                "mean_temperature": 302.3333333333,
+                "simulation_steps": 3,
+                "structural_analysis": create_mock_structural_analysis_data(),
             },
-        )
+        }
 
-    monkeypatch.setattr(app_module, "_meltquench_worker", fake_worker)
+    monkeypatch.setattr(jobs_module.JobManager, "submit_meltquench", fake_submit_meltquench)
+    monkeypatch.setattr(jobs_module.JobManager, "check_status", fake_submit_meltquench)
 
 
 class MockAtoms:
@@ -193,6 +188,12 @@ def test_submit_meltquench_and_check() -> None:
         validate_result_structure(data["result"])
         return
 
+    # Handle immediate completion (from mocked job manager) or started status
+    if data["status"] == "completed":
+        assert "result" in data
+        validate_result_structure(data["result"])
+        return
+
     # Wait for completion and validate
     assert data["status"] == "started"
     check_data = wait_for_task_completion(data["task_id"])
@@ -297,10 +298,10 @@ def test_caching_behavior() -> None:
     assert submit_response.status_code == 200
     submit_data = submit_response.json()
 
-    # Should either start a new task or return cached result
+    # Should either start a new task or return cached/completed result
     assert "task_id" in submit_data
     assert "status" in submit_data
-    assert submit_data["status"] in ["started", "completed_from_cache"]
+    assert submit_data["status"] in ["started", "completed", "completed_from_cache"]
 
 
 @patch("amorphouspy.workflows.structural_analysis.plot_analysis_results_plotly")
@@ -372,7 +373,6 @@ def test_visualization_endpoint_incomplete_task() -> None:
     # Create a task manually in the database with 'running' state
     from amorphouspy_api.app import get_meltquench_hash
     from amorphouspy_api.database import get_task_store
-    from amorphouspy_api.models import MeltquenchRequest
 
     task_store = get_task_store()
     fake_task_id = "test-incomplete-task-123"
