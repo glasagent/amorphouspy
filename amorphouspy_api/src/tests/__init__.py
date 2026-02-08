@@ -1,1 +1,1 @@
-"""Test package for PyIron Glass API."""
+"""Test package for amorphouspy API."""

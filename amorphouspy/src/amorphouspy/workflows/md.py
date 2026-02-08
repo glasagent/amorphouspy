@@ -127,7 +127,7 @@ def md_simulation(
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
-    """Perform a molecular dynamics simulation using LAMMPS via pyiron_atomistics.
+    """Perform a molecular dynamics simulation using LAMMPS.
 
     This function equilibrate a structure at predefined temperature and pressure.
     The number of steps used here is only for testing purposes.

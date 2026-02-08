@@ -1,4 +1,4 @@
-"""Shared module for pyiron glass simulation workflows.
+"""Shared module for amorphouspy simulation workflows.
 
 This module contains shared functionality which is reused in the individual workflows.
 """
@@ -10,7 +10,7 @@ def get_lammps_command(server_kwargs: dict | None = None) -> str:
     Parameters
     ----------
     server_kwargs: dict
-        Server dictionary as defined by pyiron for example: {"cores": 2}.
+        Server dictionary for example: {"cores": 2}.
 
     Returns
     -------

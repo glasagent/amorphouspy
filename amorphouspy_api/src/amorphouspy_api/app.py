@@ -1,4 +1,4 @@
-"""Pyiron Glass Simulation API.
+"""amorphouspy Simulation API.
 
 This module provides a FastAPI server for managing long-running glass simulation tasks.
 It supports meltquench simulations for multi-component oxide glasses using the PMMCS
@@ -52,28 +52,18 @@ except Exception:
     amorphouspy_version = "unknown"
     logger.warning("Could not determine amorphouspy version, using 'unknown'")
 
-# Setup shared project directory using canonical pyiron environment variables
+# Setup shared project directory
 PROJECTS_FOLDER = Path(__file__).resolve().parent.parent.parent / "projects"
 
-# Check for PYIRONPROJECTPATHS environment variables
-if "PYIRONPROJECTPATHS" in os.environ:
-    PROJECTS_FOLDER = Path(os.environ["PYIRONPROJECTPATHS"])
-    logger.info("Using project directory from PYIRONPROJECTPATHS: %s", PROJECTS_FOLDER)
+# Check for AMORPHOUSPY_PROJECTS environment variable
+if "AMORPHOUSPY_PROJECTS" in os.environ:
+    PROJECTS_FOLDER = Path(os.environ["AMORPHOUSPY_PROJECTS"])
+    logger.info("Using project directory from AMORPHOUSPY_PROJECTS: %s", PROJECTS_FOLDER)
 else:
     logger.info("Using default project directory: %s", PROJECTS_FOLDER)
 
 MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / f"amorphouspy_{amorphouspy_version}" / "meltquench"
 
-
-# Configure pyiron environment variables if not already set
-if "PYIRONPROJECTPATHS" not in os.environ:
-    os.environ["PYIRONPROJECTPATHS"] = str(PROJECTS_FOLDER)
-    logger.info("Set PYIRONPROJECTPATHS to: %s", PROJECTS_FOLDER)
-
-if "PYIRONSQLCONNECTIONSTRING" not in os.environ:
-    pyiron_db_path = PROJECTS_FOLDER / "pyiron.db"
-    os.environ["PYIRONSQLCONNECTIONSTRING"] = f"sqlite:///{pyiron_db_path}"
-    logger.info("Set PYIRONSQLCONNECTIONSTRING to: sqlite:///%s", pyiron_db_path)
 
 # Configure API base URL for visualization links
 API_BASE_URL = os.environ.get("API_BASE_URL", "")
@@ -153,7 +143,7 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
     # Convert request to dict for serialization across processes
     request_dict = request.model_dump()
 
-    # Run the synchronous worker in a process executor to handle pyiron's signal handling
+    # Run the synchronous worker in a process executor
     with concurrent.futures.ProcessPoolExecutor() as executor:
         await loop.run_in_executor(
             executor, meltquench_worker, task_id, request_dict, DB_PATH, str(MELTQUENCH_PROJECT_DIR)
@@ -162,8 +152,8 @@ async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
 
 # Create FastAPI app
 app = FastAPI(
-    title="Pyiron Glass Simulation API",
-    description="API for managing long-running glass simulation tasks using pyiron-glass",
+    title="amorphouspy Simulation API",
+    description="API for managing long-running glass simulation tasks using amorphouspy",
     version="0.1.0",
 )
 

@@ -1,4 +1,4 @@
-"""Database models and utilities for pyiron-glass API.
+"""Database models and utilities for amorphouspy API.
 
 This module provides SQLAlchemy models for persisting task metadata and cached results,
 replacing the ephemeral in-memory task store with persistent SQLite storage.

@@ -1,4 +1,4 @@
-"""Pydantic models for pyiron-glass API requests and responses.
+"""Pydantic models for amorphouspy API requests and responses.
 
 This module contains data validation models for various simulation types
 including meltquench simulations and other glass modeling workflows.

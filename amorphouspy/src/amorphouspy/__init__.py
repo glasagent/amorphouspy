@@ -1,4 +1,4 @@
-"""Pyiron Glass package for atomistic modeling of oxide glasses."""
+"""amorphouspy - workflows for atomistic modeling of oxide glasses."""
 
 from amorphouspy.analysis.bond_angle_distribution import compute_angles
 from amorphouspy.analysis.cavities import compute_cavities

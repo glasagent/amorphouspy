@@ -109,7 +109,7 @@ def _run_lammps_md(
     Notes
     -----
     - Automatically manages a temporary working directory and cleans it after execution.
-    - Uses `pyiron_atomistics.lammps.lammps_function` as the backend.
+    - Uses `lammpsparser.compatibility.file.lammps_file_interface_function` as the backend.
     - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
 
     """
@@ -277,7 +277,7 @@ def _cte_fluctuation_workflow_analysis(
     temperature : int | float
         Target temperature in K. If not specified the average temperature from the data is used.
     p_in_GPa : float
-        Target pressure in GPa (for consistent usage of pyiron units). Will be converted to Pa internally.
+        Target pressure in GPa. Will be converted to Pa internally.
         If not specified, the average pressure from the data is used.
     T_key : str
         Key name for temperature in the subresults dictionary. Needed for warning messages to identify
@@ -592,7 +592,7 @@ def cte_simulation(
     temperature : float | list[int | float], optional
         Simulation temperature in Kelvin (default 300 K).
     pressure : float, optional
-        Target pressure in GPa (use pyiron units here!) for NPT simulations.
+        Target pressure in GPa for NPT simulations.
         (default 10-4 GPa = 10^5 Pa = 1 bar).
     timestep : float, optional
         MD integration timestep in femtoseconds (default 1.0 fs).
@@ -612,7 +612,7 @@ def cte_simulation(
     n_log : int, optional
         Log output frequency (default 10).
     server_kwargs : dict, optional
-        Additional server configuration arguments for pyiron.
+        Additional server configuration arguments.
     aniso : bool, optional
         If false, an isotropic NPT calculation is performed and the simulation box is scaled uniformly.
         If True, anisotropic NPT calculation is performed and the simulation box can change shape and

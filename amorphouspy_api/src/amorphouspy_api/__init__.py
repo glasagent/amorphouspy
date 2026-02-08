@@ -1,1 +1,1 @@
-"""PyIron Glass API package for meltquench simulations."""
+"""amorphouspy_api - API package for meltquench simulations."""

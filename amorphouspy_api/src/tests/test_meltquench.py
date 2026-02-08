@@ -5,9 +5,10 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi.testclient import TestClient
+
 from amorphouspy_api.app import app
 from amorphouspy_api.models import MeltquenchRequest
-from fastapi.testclient import TestClient
 
 client = TestClient(app)
 
@@ -119,7 +120,7 @@ def setup_common_mocks(
     mock_analyze_structure: MagicMock,
 ) -> None:
     """Set up common mock objects for meltquench tests."""
-    # Mock the pyiron components
+    # Mock the simulation components
     mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
     mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
 

@@ -1,4 +1,4 @@
-"""Visualization router for pyiron-glass API.
+"""Visualization router for amorphouspy API.
 
 This module provides endpoints for visualizing simulation results,
 including structural analysis plots and data summaries.

@@ -1,7 +1,6 @@
 """Melt-quench simulation workflows for glass systems using LAMMPS.
 
-Implementations of melt-quench simulation workflows for glass systems using LAMMPS via
-pyiron_atomistics.
+Implementations of melt-quench simulation workflows for glass systems using LAMMPS.
 
 Author
 ------
@@ -177,7 +176,7 @@ def melt_quench_simulation(
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
-    """Perform a melt-quench simulation using LAMMPS via pyiron_atomistics.
+    """Perform a melt-quench simulation using LAMMPS.
 
     This function heats a structure to a high temperature, equilibrates it,
     and then cools it down to a low temperature, simulating a melt-quench process.

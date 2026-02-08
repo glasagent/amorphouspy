@@ -1,6 +1,6 @@
 # amorphouspy-api
 
-API for atomistic modeling of oxide glasses using the pyiron-glass workflows.
+API for atomistic modeling of oxide glasses using the amorphouspy workflows.
 
 This FastAPI-based service provides a Model Context Protocol (MCP) interface for running long-running glass simulation tasks with intelligent caching and persistent task management.
 
@@ -12,7 +12,7 @@ This FastAPI-based service provides a Model Context Protocol (MCP) interface for
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   FastAPI App   │ ── │  SQLite Cache   │ ── │  Worker Process │
 │                 │    │                 │    │                 │
-│ • Request hash  │    │ • Task metadata │    │ • pyiron-glass  │
+│ • Request hash  │    │ • Task metadata │    │ • amorphouspy   │
 │ • Cache lookup  │    │ • Results       │    │ • LAMMPS sims   │
 │ • Task creation │    │ • Hash index    │    │ • File cleanup  │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
@@ -35,7 +35,7 @@ This FastAPI-based service provides a Model Context Protocol (MCP) interface for
 #### 3. **Async Processing with Process Isolation**
 - Uses `ProcessPoolExecutor` to run simulations in separate processes
 - Avoids blocking the FastAPI event loop
-- Handles pyiron's signal handling requirements
+- Proper signal handling for subprocess management
 - Automatic temporary file cleanup using `tempfile.TemporaryDirectory()`
 
 #### 4. **Model Context Protocol (MCP) Integration**
