@@ -1,4 +1,4 @@
-name: jobs for pyiron_glass module
+name: jobs for amorphouspy module
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
         condarc-file: .condarc
         environment-file: environment.yml
     - name: Install dependencies
-      working-directory: pyiron_glass
+      working-directory: amorphouspy
       shell: bash -l {0}
       run: |
         pip install hatchling editables
@@ -28,14 +28,14 @@ jobs:
         pip install -r requirements-dev.txt
     - name: Run pytest test suite
       shell: bash -l {0}
-      working-directory: pyiron_glass
+      working-directory: amorphouspy
       run: |
-        python -m pytest src/tests --durations=0 --cov=src/pyiron_glass --cov-report=xml --cov-report=term
+        python -m pytest src/tests --durations=0 --cov=src/amorphouspy --cov-report=xml --cov-report=term
 
     - name: Pytest coverage comment
       uses: MishaKav/pytest-coverage-comment@main
       with:
-        pytest-xml-coverage-path: pyiron_glass/coverage.xml
+        pytest-xml-coverage-path: amorphouspy/coverage.xml
 
 
     # - name: Upload coverage to Codecov

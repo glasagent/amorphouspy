@@ -56,16 +56,16 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
     logger.info(f"Request parameters: {request.model_dump()}")
 
     try:
-        # Import pyiron_glass modules (import here to avoid startup dependencies)
+        # Import amorphouspy modules (import here to avoid startup dependencies)
         import numpy as np
-        from executorlib import SingleNodeExecutor
-        from pyiron_glass import (
+        from amorphouspy import (
             generate_potential,
             get_ase_structure,
             get_structure_dict,
             melt_quench_simulation,
         )
-        from pyiron_glass.workflows.structural_analysis import analyze_structure
+        from amorphouspy.workflows.structural_analysis import analyze_structure
+        from executorlib import SingleNodeExecutor
 
         # Create composition string from request
         comp_parts = []

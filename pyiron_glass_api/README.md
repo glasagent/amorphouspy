@@ -47,8 +47,8 @@ This FastAPI-based service provides a Model Context Protocol (MCP) interface for
 ## Installation
 
 ```bash
-# Install pyiron-glass dependency
-pip install -e ../pyiron-glass/
+# Install amorphouspy dependency
+pip install -e ../amorphouspy/
 
 # Install the API
 pip install -e .

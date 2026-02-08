@@ -1,0 +1,167 @@
+"""Tests for structural analysis functions related to glassy systems.
+
+Author: Achraf Atila (achraf.atila@bam.de)
+
+This script provides tests for structural analysis functions related to glassy systems.
+The 0.2Na2O-0.8SiO2 glass is used. It calculates expected values for non-bridging oxygens (NBO),
+bridging oxygens (BO), and network connectivity based on chemical composition. These
+expected values are compared against values computed using the implemented analysis functions.
+
+The structure used in this test is a realistic representation of a 20Na2O-80SiO2 glass system,
+prepared using Pedone (2006) potential parameters.
+
+Glass Composition and Expected Values:
+--------------------------------------
+x = 0.2  # Sodium content in the glass
+N_Si = (1 - x) * N_mols  # Number of Si atoms
+N_Na = 2 * x * N_mols  # Number of Na atoms
+N_O = 2 * N_Si + N_Na / 2  # Number of O atoms
+
+N_NBO = 2 * x * N_mols  # Number of non-bridging oxygen atoms (NBO)
+N_BO = N_O - N_NBO  # Number of bridging oxygen atoms (BO)
+
+Expected network connectivity:
+expected_NC = (4 * (1 - x) - 2 * x) / (1 - x)
+Reference: https://doi.org/10.1039/D4TB02414A
+"""
+
+import numpy as np
+import pytest
+from ase.io import read
+
+from amorphouspy import (
+    compute_coordination,
+    compute_network_connectivity,
+    compute_qn,
+)
+
+from . import DATA_DIR
+
+# Glass composition parameters
+x = 0.2  # Sodium molar fraction (20% Na2O, 80% SiO2)
+N_mols = 100  # Number of oxide molecules (SiO2 + Na2O)
+
+# Expected number of atoms based on stoichiometry
+N_Si = int((1 - x) * N_mols)  # Should be integer (80)
+N_Na = int(2 * x * N_mols)  # Should be integer (40)
+N_O = int(2 * N_Si + N_Na / 2)  # Should be integer (180)
+
+N_NBO = int(2 * x * N_mols)  # Number of non-bridging oxygens (40)
+N_BO = N_O - N_NBO  # Number of bridging oxygens (140)
+
+# Expected network connectivity
+expected_nc = (4 * (1 - x) - 2 * x) / (1 - x)  # 3.5
+
+
+def test_compute_coordination_o() -> None:
+    """Test the compute_coordination function for oxygens."""
+    filename = DATA_DIR / "20Na2O-80SiO2.dump"
+    atoms = read(filename, format="lammps-dump-text")
+    type_id = atoms.get_atomic_numbers().copy()  # this currently holds IDs 1/2/3
+    to_Z = np.array([0, 11, 8, 14], dtype=int)  # index 0 unused; 1->8, 2->14, 3->11
+    Z = to_Z[type_id]  # vectorized mapping 1/2/3 -> 8/14/11
+    atoms.set_atomic_numbers(Z)  # fixes both numbers and symbols
+
+    # Preserve original LAMMPS IDs and expose a clean 'type' = atomic numbers
+    atoms.new_array("lammps_type", type_id)  # keeps 1/2/3 if you still need them
+    atoms.arrays["type"] = Z  # downstream code can index by atomic number
+
+    cutoff_map = {"O": 1.9, "Si": 1.9, "Na": 3.0}
+
+    O_type = [8]
+    former_types = [14]
+
+    # compute_coordination returns (distribution_dict, per-atom coordination dict)
+    o_coord_dist, _ = compute_coordination(
+        atoms,
+        [O_type],
+        cutoff_map["O"],
+        former_types,
+    )
+
+    # Check types
+    assert isinstance(o_coord_dist, dict), "O coordination should return a dictionary"
+    assert all(isinstance(k, int) for k in o_coord_dist), "Keys of O coordination should be integers"
+    assert all(isinstance(v, int) for v in o_coord_dist.values()), "Values of O coordination should be integers"
+
+    # Two categories: NBO (coordination = 1) and BO (coordination = 2)
+    assert o_coord_dist.get(1, 0) == N_NBO, f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
+    assert o_coord_dist.get(2, 0) == N_BO, f"BO count mismatch. Expected {N_BO}, got {o_coord_dist.get(2, 0)}"
+
+
+def test_compute_network_connectivity() -> None:
+    """Test the compute_network_connectivity function."""
+    filename = DATA_DIR / "20Na2O-80SiO2.dump"
+    atoms = read(filename, format="lammps-dump-text")
+    type_id = atoms.get_atomic_numbers().copy()  # this currently holds IDs 1/2/3
+    to_Z = np.array([0, 11, 8, 14], dtype=int)  # index 0 unused; 1->8, 2->14, 3->11
+    Z = to_Z[type_id]  # vectorized mapping 1/2/3 -> 8/14/11
+    atoms.set_atomic_numbers(Z)  # fixes both numbers and symbols
+
+    # Preserve original LAMMPS IDs and expose a clean 'type' = atomic numbers
+    atoms.new_array("lammps_type", type_id)  # keeps 1/2/3 if you still need them
+    atoms.arrays["type"] = Z  # downstream code can index by atomic number
+
+    cutoff_map = {"O": 1.9, "Si": 1.9, "Na": 3.0}
+
+    O_type = [8]
+    former_types = [14]
+
+    # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
+    qn_dist, _ = compute_qn(
+        atoms,
+        cutoff_map["O"],
+        former_types,
+        [O_type],
+    )
+
+    net_conn = compute_network_connectivity(qn_dist)
+
+    # Type checks
+    assert isinstance(net_conn, float), "Network connectivity should return a float"
+    assert net_conn >= 0, "Network connectivity should be non-negative"
+
+    # Expected NC ≈ 3.5 for 20Na2O-80SiO2
+    assert net_conn == pytest.approx(
+        expected_nc,
+    ), f"Network connectivity should be {expected_nc}, got {net_conn}"
+
+
+def test_compute_network_connectivity_multi() -> None:
+    """Test the compute_network_connectivity function."""
+    filename = DATA_DIR / "20Na2O-10B2O3-70SiO2.dump"
+
+    # Cutoff distances for computing coordination numbers (in Ångström)
+    cutoff_map = {"O": 1.9, "Si": 1.9, "B": 1.9, "Na": 3.0}
+
+    atoms = read(filename, format="lammps-dump-text")
+    type_id = atoms.get_atomic_numbers().copy()  # this currently holds IDs 1/2/3
+    to_Z = np.array([0, 8, 14, 5, 11], dtype=int)  # index 0 unused; 1->8, 2->14, 3->5, 4->11
+    Z = to_Z[type_id]  # vectorized mapping 1/2/3 -> 8/14/5/11
+    atoms.set_atomic_numbers(Z)  # fixes both numbers and symbols
+
+    # Preserve original LAMMPS IDs and expose a clean 'type' = atomic numbers
+    atoms.new_array("lammps_type", type_id)  # keeps 1/2/3 if you still need them
+    atoms.arrays["type"] = Z  # downstream code can index by atomic number
+
+    O_type_multi = [8]
+    former_types = [5, 14]
+
+    # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
+    qn_dist, _ = compute_qn(
+        atoms,
+        cutoff_map["O"],
+        former_types,
+        [O_type_multi],
+    )
+
+    net_conn = compute_network_connectivity(qn_dist)
+
+    # Type checks
+    assert isinstance(net_conn, float), "Network connectivity should return a float"
+    assert net_conn >= 0, "Network connectivity should be non-negative"
+
+    # Expected NC ≈ pr_qn for 20Na2O-10B2O3-70SiO2.dump
+    assert round(net_conn, 3) == pytest.approx(
+        3.577,
+    ), f"Network connectivity should be {3.577}, got {net_conn}"

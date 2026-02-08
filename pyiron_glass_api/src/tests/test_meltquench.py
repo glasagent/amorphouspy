@@ -303,7 +303,7 @@ def test_caching_behavior() -> None:
     assert submit_data["status"] in ["started", "completed_from_cache"]
 
 
-@patch("pyiron_glass.workflows.structural_analysis.plot_analysis_results_plotly")
+@patch("amorphouspy.workflows.structural_analysis.plot_analysis_results_plotly")
 def test_visualization_endpoint(mock_plot_analysis_results_plotly: MagicMock) -> None:
     """Test the visualization endpoint with mocked plot generation."""
     # Create a mock figure for the plot
