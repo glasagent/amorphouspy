@@ -30,8 +30,8 @@ class MockFuture:
         """Return False to indicate job was not cancelled."""
         return False
 
-    def result(self) -> dict[str, Any]:
-        """Return the stored result."""
+    def result(self, _timeout: float | None = None) -> dict[str, Any]:
+        """Return the stored result (timeout is ignored for mock)."""
         return self._result
 
 

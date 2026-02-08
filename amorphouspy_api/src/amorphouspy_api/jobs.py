@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Singleton executor instance
-_executor_instance: "TestClusterExecutor | None" = None
-_executor_cache_dir: Path | None = None
-
 
 def get_executor_class() -> type:
     """Get the appropriate executor class based on environment.
@@ -85,11 +81,13 @@ def get_lammps_resource_dict() -> dict[str, Any]:
 
 
 def get_executor(cache_directory: Path) -> "TestClusterExecutor":
-    """Get or create the singleton executor instance.
+    """Create a fresh executor instance.
 
-    The executor is created once and reused for all submissions.
-    This allows multiple jobs to share the same executor context
-    and enables proper dependency tracking between jobs.
+    A new executor is created for each call to properly detect cached results.
+    With wait=False, futures from a previous executor instance don't update
+    their done() status when background jobs complete. Creating a fresh
+    executor allows it to check the disk cache and return done()=True
+    immediately if results are cached.
 
     Args:
         cache_directory: Directory for executor disk cache.
@@ -97,51 +95,19 @@ def get_executor(cache_directory: Path) -> "TestClusterExecutor":
     Returns:
         The executor instance (already entered via __enter__).
     """
-    global _executor_instance, _executor_cache_dir
-
-    # If executor exists and cache dir matches, return it
-    if _executor_instance is not None and _executor_cache_dir == cache_directory:
-        return _executor_instance
-
-    # Close existing executor if cache dir changed
-    if _executor_instance is not None:
-        try:
-            _executor_instance.__exit__(None, None, None)
-        except Exception:
-            logger.exception("Error closing previous executor")
-        _executor_instance = None
-
-    # Create new executor
+    # Create new executor each time to properly detect cached results
     executor_class = get_executor_class()
     executor_config = get_executor_config()
 
     logger.info(
-        "Creating singleton executor: %s with cache_directory=%s",
+        "Creating executor: %s with cache_directory=%s",
         executor_class.__name__,
         cache_directory,
     )
 
-    _executor_instance = executor_class(cache_directory=cache_directory, **executor_config)
-    _executor_cache_dir = cache_directory
+    executor = executor_class(cache_directory=cache_directory, **executor_config)
 
     # Enter context manager
-    _executor_instance.__enter__()
+    executor.__enter__()
 
-    return _executor_instance
-
-
-def shutdown_executor() -> None:
-    """Shutdown the singleton executor if it exists.
-
-    Call this during application shutdown to clean up resources.
-    """
-    global _executor_instance, _executor_cache_dir
-
-    if _executor_instance is not None:
-        try:
-            _executor_instance.__exit__(None, None, None)
-        except Exception:
-            logger.exception("Error shutting down executor")
-        finally:
-            _executor_instance = None
-            _executor_cache_dir = None
+    return executor

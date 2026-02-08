@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
-from .jobs import get_executor, get_lammps_resource_dict, shutdown_executor
+from .jobs import get_executor, get_lammps_resource_dict
 from .models import MeltquenchRequest, MeltquenchResult
 from .visualization import router as visualization_router
 from .workflows import run_meltquench_workflow
@@ -92,10 +92,10 @@ _task_store = get_task_store()
 def submit_to_executor(request_data: dict) -> dict:
     """Submit a meltquench job to executorlib and check status.
 
-    Uses a singleton executor pattern: the executor is created once and
-    reused for all submissions. This allows proper dependency tracking
-    between jobs and different resource configurations for different
-    parts of the workflow.
+    Creates a fresh executor for each call. This is necessary because with
+    wait=False, futures from previous executor instances don't update their
+    done() status when background jobs complete. A fresh executor checks
+    the disk cache and returns done()=True immediately if results are cached.
 
     Args:
         request_data: Dictionary containing the meltquench request parameters.
@@ -107,7 +107,7 @@ def submit_to_executor(request_data: dict) -> dict:
         - error: Error message if failed
     """
     try:
-        # Get or create singleton executor
+        # Create fresh executor to properly detect cached results
         exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
 
         # Get LAMMPS-specific resource configuration
@@ -193,13 +193,15 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for the FastAPI application.
 
     Handles startup and shutdown events for resource cleanup.
+    Note: We don't call shutdown_executor() because with wait=False,
+    jobs run in background processes and __exit__ can hang waiting for them.
+    The cache persists independently.
     """
     # Startup: nothing to do, executor is created lazily
     yield
-    # Shutdown: clean up executor
-    logger.info("Shutting down executor...")
-    shutdown_executor()
-    logger.info("Executor shutdown complete")
+    # Shutdown: skip executor cleanup - with wait=False it can hang
+    # Jobs continue in background and cache is persisted to disk
+    logger.info("Application shutting down")
 
 
 # Create FastAPI app
