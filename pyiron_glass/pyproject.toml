@@ -15,10 +15,10 @@ authors = [
 license = { file = "../LICENSE" }
 dependencies = [
   "ase",
+  "executorlib",
   "numba",
   "pandas",
   "lammpsparser",
-  "pyiron_base",
   "pymatgen",
   "scipy",
   "sovapy",
