@@ -38,40 +38,6 @@ def _patch_job_manager(monkeypatch) -> None:
     monkeypatch.setattr(jobs_module.JobManager, "check_status", fake_submit_meltquench)
 
 
-class MockAtoms:
-    """Mock ASE Atoms-like object that can be serialized."""
-
-    def __init__(self, atoms_dict: dict[str, Any]) -> None:
-        """Initialize mock atoms with dictionary data."""
-        self._dict = atoms_dict
-
-    def get_masses(self) -> object:
-        """Return a mock that has a sum method."""
-
-        class MockMasses:
-            def sum(self) -> int:
-                return 1000  # mock mass
-
-        return MockMasses()
-
-    def __str__(self) -> str:
-        """Return string representation of mock atoms."""
-        return "Mock ASE structure with 100 atoms"
-
-    def __getstate__(self) -> dict[str, Any]:
-        """Return a fully serializable dictionary - avoid any ASE objects."""
-        return {
-            "numbers": self._dict["numbers"],
-            "positions": self._dict["positions"],
-            "cell": self._dict["cell"],  # Keep as nested list, not Cell object
-            "pbc": self._dict["pbc"],
-        }
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore state from serialized dictionary."""
-        self._dict = state
-
-
 def create_mock_structure_dict() -> dict[str, Any]:
     """Create a mock structure dictionary."""
     return {
@@ -87,71 +53,15 @@ def create_mock_structural_analysis_data() -> dict[str, Any]:
     return {
         "density": 2.5,
         "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
-        "network": {"Qn_distribution": {}, "Qn_distribution_partial": {}, "connectivity": 0.0},
+        "network": {
+            "Qn_distribution": {},
+            "Qn_distribution_partial": {},
+            "connectivity": 0.0,
+        },
         "distributions": {"bond_angles": {}, "rings": {}},
         "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
         "elements": {"formers": [], "modifiers": [], "cutoffs": {}},
     }
-
-
-def create_mock_result_data() -> dict[str, Any]:
-    """Create mock simulation result data."""
-    return {
-        "structure": create_mock_structure_dict(),
-        "result": {
-            "volume": [1000, 1000, 1000],  # cm³
-            "temperature": [300, 305, 302],  # K
-            "steps": [1, 2, 3],
-        },
-    }
-
-
-def setup_common_mocks(
-    mock_project: MagicMock,
-    mock_get_structure_dict: MagicMock,
-    mock_get_ase_structure: MagicMock,
-    mock_generate_potential: MagicMock,
-    mock_melt_quench_simulation: MagicMock,
-    mock_analyze_structure: MagicMock,
-) -> None:
-    """Set up common mock objects for meltquench tests."""
-    # Mock the simulation components
-    mock_atoms_dict = {"atoms": [{"element": "Si", "position": [0, 0, 0]}] * 100}
-    mock_get_structure_dict.return_value.pull.return_value = mock_atoms_dict
-
-    # Create mock structure
-    mock_structure_dict = create_mock_structure_dict()
-    mock_structure = MockAtoms(mock_structure_dict)
-    mock_get_ase_structure.return_value = mock_structure
-
-    # Mock potential
-    mock_potential = "mock_potential_content"
-    mock_generate_potential.return_value = mock_potential
-
-    # Mock structural analysis
-    mock_analyze_structure.return_value.pull.return_value = create_mock_structural_analysis_data()
-
-    # Mock simulation result
-    mock_melt_quench_simulation.return_value.pull.return_value = create_mock_result_data()
-
-
-def wait_for_task_completion(task_id: str, max_wait: float = 10.0) -> dict[str, Any]:
-    """Wait for a task to complete and return the final check data."""
-    waited = 0.0
-    while waited < max_wait:
-        check_response = client.get(f"/check/{task_id}")
-        assert check_response.status_code == 200
-        check_data = check_response.json()
-
-        if check_data["state"] == "complete":
-            return check_data
-        if check_data["state"] == "error":
-            pytest.fail(f"Simulation failed: {check_data.get('error')}")
-
-        time.sleep(0.5)
-        waited += 0.5
-
-    pytest.fail(f"Task {task_id} did not complete within {max_wait} seconds")
 
 
 def validate_result_structure(result: dict[str, Any]) -> None:
@@ -173,40 +83,71 @@ def validate_result_structure(result: dict[str, Any]) -> None:
 
 
 def test_submit_meltquench_and_check() -> None:
-    """Test the complete meltquench workflow without real background processes."""
-    # Submit meltquench task
-    payload = {"components": ["SiO2", "CaO", "Al2O3"], "values": [60.0, 25.0, 15.0], "unit": "wt"}
+    """Test the complete meltquench workflow with mocked job manager."""
+    payload = {
+        "components": ["SiO2", "CaO", "Al2O3"],
+        "values": [60.0, 25.0, 15.0],
+        "unit": "wt",
+    }
     response = client.post("/submit/meltquench", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert "task_id" in data
     assert "status" in data
 
-    # Handle cached results
-    if data["status"] == "completed_from_cache":
-        assert "result" in data
-        validate_result_structure(data["result"])
-        return
+    # Mock returns "completed" immediately
+    assert data["status"] in ["completed", "completed_from_cache"]
+    assert "result" in data
+    validate_result_structure(data["result"])
 
-    # Handle immediate completion (from mocked job manager) or started status
-    if data["status"] == "completed":
-        assert "result" in data
-        validate_result_structure(data["result"])
-        return
 
-    # Wait for completion and validate
-    assert data["status"] == "started"
-    check_data = wait_for_task_completion(data["task_id"])
+def test_check_running_then_complete() -> None:
+    """Test the running → complete flow by directly manipulating the task store."""
+    from amorphouspy_api.database import get_task_store
 
-    assert check_data["task_id"] == data["task_id"]
+    task_store = get_task_store()
+    task_id = "test-running-to-complete-task"
+
+    # Insert a "running" task directly into the task store
+    task_store.set(
+        task_id,
+        {
+            "state": "running",
+            "status": "Running simulation",
+            "request_data": {"components": ["SiO2"], "values": [100.0], "unit": "wt"},
+            "request_hash": "test-hash-running",
+        },
+    )
+
+    # Check that the task is running
+    check_response = client.get(f"/check/{task_id}")
+    assert check_response.status_code == 200
+    check_data = check_response.json()
+    assert check_data["state"] == "running"
+
+    # Simulate completion by updating the task store entry
+    task_store.set(
+        task_id,
+        {
+            "state": "complete",
+            "status": "Completed",
+            "result": {
+                "composition": "1.0SiO2",
+                "final_structure": create_mock_structure_dict(),
+                "mean_temperature": 300.0,
+                "simulation_steps": 3,
+                "structural_analysis": create_mock_structural_analysis_data(),
+            },
+        },
+    )
+
+    # Check again - should now be complete
+    check_response = client.get(f"/check/{task_id}")
+    assert check_response.status_code == 200
+    check_data = check_response.json()
     assert check_data["state"] == "complete"
     assert check_data["result"] is not None
-
-    # Validate the result structure
     validate_result_structure(check_data["result"])
-
-    # Validate composition format
-    assert check_data["result"]["composition"] == "0.6SiO2-0.25CaO-0.15Al2O3"
 
 
 def test_check_nonexistent_task() -> None:
@@ -309,7 +250,10 @@ def test_visualization_endpoint(mock_plot_analysis_results_plotly: MagicMock) ->
     """Test the visualization endpoint with mocked plot generation."""
     # Create a mock figure for the plot
     mock_fig = MagicMock()
-    mock_fig.to_dict.return_value = {"data": [], "layout": {}}  # Mock Plotly figure dict
+    mock_fig.to_dict.return_value = {
+        "data": [],
+        "layout": {},
+    }  # Mock Plotly figure dict
     mock_plot_analysis_results_plotly.return_value = mock_fig
 
     # Submit task with unique payload to avoid caching
@@ -339,7 +283,10 @@ def test_visualization_endpoint(mock_plot_analysis_results_plotly: MagicMock) ->
                 "final_structure": create_mock_structure_dict(),
                 "mean_temperature": 300.0,
                 "simulation_steps": 3,
-                "structural_analysis": {**create_mock_structural_analysis_data(), "density": 2.65},
+                "structural_analysis": {
+                    **create_mock_structural_analysis_data(),
+                    "density": 2.65,
+                },
             },
         },
     )
@@ -383,7 +330,14 @@ def test_visualization_endpoint_incomplete_task() -> None:
     request_hash = get_meltquench_hash(request)
 
     # Add incomplete task to database
-    task_store.set(fake_task_id, {"state": "running", "request_data": request_data, "request_hash": request_hash})
+    task_store.set(
+        fake_task_id,
+        {
+            "state": "running",
+            "request_data": request_data,
+            "request_hash": request_hash,
+        },
+    )
 
     # Try to visualize incomplete task
     viz_response = client.get(f"/visualize/meltquench/{fake_task_id}")
