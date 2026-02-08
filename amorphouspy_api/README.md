@@ -1,4 +1,4 @@
-# pyiron-glass-api
+# amorphouspy-api
 
 API for atomistic modeling of oxide glasses using the pyiron-glass workflows.
 
@@ -57,7 +57,7 @@ pip install -e .
 ## Launch API (including MCP server)
 
 ```bash
-python -m uvicorn pyiron_glass_api.app:app
+python -m uvicorn amorphouspy_api.app:app
 ```
 
 The API will be available at:
@@ -83,7 +83,7 @@ pytest
 **Integration tests**:
 ```bash
 # Start API server
-uvicorn pyiron_glass_api.app:app --port 8002 --reload
+uvicorn amorphouspy_api.app:app --port 8002 --reload
 
 # Run integration tests
 pytest -m integration -s

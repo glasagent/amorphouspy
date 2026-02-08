@@ -1,53 +1,51 @@
-name: jobs for pyiron_glass_api module
+name: jobs for amorphouspy_api module
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
 
 jobs:
   pytest:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: Conda config
-      run: echo -e "channels:\n  - conda-forge\n" > .condarc
-    - name: Setup Mambaforge
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        python-version: "3.13"
-        miniforge-version: latest
-        condarc-file: .condarc
-        environment-file: environment.yml
-    - name: Install dependencies
-      shell: bash -l {0}
-      run: |
-        pip install hatchling editables
-        pip install --no-deps --no-build-isolation -e ./amorphouspy
-        pip install --no-deps --no-build-isolation -e ./pyiron_glass_api
-        pip install -r pyiron_glass_api/requirements-dev.txt
-    - name: Run pytest test suite
-      shell: bash -l {0}
-      working-directory: pyiron_glass_api
-      run: |
-        pytest --durations=0 --cov=src/pyiron_glass_api --cov-report=xml --cov-report=term
+      - uses: actions/checkout@v4
+      - name: Conda config
+        run: echo -e "channels:\n  - conda-forge\n" > .condarc
+      - name: Setup Mambaforge
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.13"
+          miniforge-version: latest
+          condarc-file: .condarc
+          environment-file: environment.yml
+      - name: Install dependencies
+        shell: bash -l {0}
+        run: |
+          pip install hatchling editables
+          pip install --no-deps --no-build-isolation -e ./amorphouspy
+          pip install --no-deps --no-build-isolation -e ./amorphouspy_api
+          pip install -r amorphouspy_api/requirements-dev.txt
+      - name: Run pytest test suite
+        shell: bash -l {0}
+        working-directory: amorphouspy_api
+        run: |
+          pytest --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term
 
-    - name: Run integration test
-      shell: bash -l {0}
-      working-directory: pyiron_glass_api
-      run: |
-        PYIRON_GLASS_INTEGRATION=1 uvicorn pyiron_glass_api.app:app --port 8002 &
-        pytest -m integration -s --durations=0 --cov=src/pyiron_glass_api --cov-report=xml --cov-report=term --cov-append
+      - name: Run integration test
+        shell: bash -l {0}
+        working-directory: amorphouspy_api
+        run: |
+          amorphouspy_INTEGRATION=1 uvicorn amorphouspy_api.app:app --port 8002 &
+          pytest -m integration -s --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term --cov-append
 
-    - name: Pytest coverage comment
-      uses: MishaKav/pytest-coverage-comment@main
-      with:
-        pytest-xml-coverage-path: pyiron_glass_api/coverage.xml
-
+      - name: Pytest coverage comment
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-xml-coverage-path: amorphouspy_api/coverage.xml
 
     # - name: Upload coverage to Codecov
     #   uses: codecov/codecov-action@v3
     #   with:
     #     file: ./coverage.xml
     #     fail_ci_if_error: false
-

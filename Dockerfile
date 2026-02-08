@@ -1,4 +1,4 @@
-# pyiron-glass-api service
+# amorphouspy-api service
 
 # Note: Using ubuntu-based micromamba images, since default debian-based micromamba images 
 # don't work with http proxy settings,
@@ -29,7 +29,7 @@ COPY LICENSE .
 COPY amorphouspy amorphouspy/
 RUN micromamba run pip install /app/amorphouspy
 
-COPY pyiron_glass_api/ pyiron_glass_api/
-RUN micromamba run pip install /app/pyiron_glass_api
+COPY amorphouspy_api/ amorphouspy_api/
+RUN micromamba run pip install /app/amorphouspy_api
 
-CMD ["uvicorn","pyiron_glass_api.app:app","--host", "0.0.0.0","--port", "8000","--log-level","info","--backlog","1","--timeout-keep-alive","60"]
+CMD ["uvicorn","amorphouspy_api.app:app","--host", "0.0.0.0","--port", "8000","--log-level","info","--backlog","1","--timeout-keep-alive","60"]

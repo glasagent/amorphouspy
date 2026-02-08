@@ -5,7 +5,7 @@ repos:
       # -------- lint & autofix ------------------------------------
       - id: ruff-check
         args: [--unsafe-fixes, --fix] # auto-fix what can be fixed
-        files: ^(pyiron_glass/.*\.py|pyiron_glass_api/.*\.py|notebooks/.*\.ipynb)$ # staged files in pyiron_glass/, pyiron_glass_api/, and notebooks/
+        files: ^(amorphouspy/.*\.py|amorphouspy_api/.*\.py|notebooks/.*\.ipynb)$ # staged files in amorphouspy/, amorphouspy_api/, and notebooks/
       # -------- final formatting pass -----------------------------
       - id: ruff-format
-        files: ^(pyiron_glass/.*\.py|pyiron_glass_api/.*\.py|notebooks/.*\.ipynb)$ # staged files in pyiron_glass/, pyiron_glass_api/, and notebooks/
+        files: ^(amorphouspy/.*\.py|amorphouspy_api/.*\.py|notebooks/.*\.ipynb)$ # staged files in amorphouspy/, amorphouspy_api/, and notebooks/
