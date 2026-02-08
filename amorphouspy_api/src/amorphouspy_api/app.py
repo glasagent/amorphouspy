@@ -15,8 +15,6 @@ Example usage:
     2. Check status: GET /check/{task_id} -> returns current status or results
 """
 
-import asyncio
-import concurrent.futures
 import hashlib
 import logging
 import os
@@ -32,9 +30,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
+from .jobs import JobManager
 from .models import MeltquenchRequest, MeltquenchResult
 from .visualization import router as visualization_router
-from .worker import meltquench_worker
 
 # Configure logging
 logging.basicConfig(
@@ -87,6 +85,9 @@ logger.info(
 init_task_store(DB_PATH)
 _task_store = get_task_store()
 
+# Initialize job manager (executor type configured via EXECUTOR_TYPE env var)
+_job_manager = JobManager(cache_directory=MELTQUENCH_PROJECT_DIR)
+
 
 def get_meltquench_hash(request: MeltquenchRequest) -> str:
     """Compute hash for a meltquench request to enable caching.
@@ -129,25 +130,6 @@ def get_visualization_url(task_id: str) -> str:
         base_url = API_BASE_URL.rstrip("/")
         return f"{base_url}{relative_path}"
     return relative_path
-
-
-async def _meltquench_worker(task_id: str, request: MeltquenchRequest) -> None:
-    """Async wrapper for meltquench simulation that runs the synchronous worker in a process executor.
-
-    Args:
-        task_id: Unique identifier for the task
-        request: Validated meltquench parameters
-    """
-    loop = asyncio.get_event_loop()
-
-    # Convert request to dict for serialization across processes
-    request_dict = request.model_dump()
-
-    # Run the synchronous worker in a process executor
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        await loop.run_in_executor(
-            executor, meltquench_worker, task_id, request_dict, DB_PATH, str(MELTQUENCH_PROJECT_DIR)
-        )
 
 
 # Create FastAPI app
@@ -211,6 +193,10 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
 async def submit_meltquench(request: MeltquenchRequest) -> dict:
     """Start a new meltquench simulation task.
 
+    This endpoint submits a meltquench job using executorlib.
+    If the job with identical parameters has already been submitted,
+    it will return the cached result or current status.
+
     Note: Results can be visualized at /visualize/meltquench/{task_id}
 
     Args:
@@ -223,13 +209,14 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         HTTPException: If the task cannot be started.
     """
     try:
-        # Check if we already have a cached result
         request_hash = get_meltquench_hash(request)
-        cached_result = _task_store.find_cached_result(request_hash)
+        request_data = request.model_dump()
 
+        # Check if we already have a cached result in our database
+        cached_result = _task_store.find_cached_result(request_hash)
         if cached_result:
             cached_task_id, cached_meltquench_result = cached_result
-            logger.info("Returning cached result from task %s instead of starting new task", cached_task_id)
+            logger.info("Returning cached result from task %s", cached_task_id)
             return {
                 "task_id": cached_task_id,
                 "status": "completed_from_cache",
@@ -238,33 +225,50 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
             }
 
         task_id = str(uuid4())
-        logger.info("Creating new meltquench task with ID: %s, hash: %s", task_id, request_hash)
+        logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
+
+        # Submit job via executorlib
+        # This will either start a new job or return cached status
+        job_status = _job_manager.submit_meltquench(request_data=request_data)
 
         # Store task in database
         _task_store.set(
             task_id,
             {
-                "state": "processing",
-                "status": "Initializing",
+                "state": job_status["state"],
+                "status": job_status["status"],
                 "request_hash": request_hash,
-                "request_data": request.model_dump(),  # Store original request for reference
+                "request_data": request.model_dump(),
+                "result": job_status.get("result"),
+                "error": job_status.get("error"),
             },
         )
 
-        # Always run as background task using process executor
-        task = asyncio.create_task(_meltquench_worker(task_id, request))
-        # Store task reference to prevent garbage collection
-        task.add_done_callback(lambda _: None)
+        if job_status["state"] == "complete":
+            return {
+                "task_id": task_id,
+                "status": "completed",
+                "visualization_url": get_visualization_url(task_id),
+                "result": job_status["result"],
+            }
 
-        return {"task_id": task_id, "status": "started", "visualization_url": get_visualization_url(task_id)}
+        return {
+            "task_id": task_id,
+            "status": job_status["status"],
+            "visualization_url": get_visualization_url(task_id),
+        }
     except Exception:
-        logger.exception("Error starting meltquench task")
+        logger.exception("Error submitting meltquench task")
         raise HTTPException(status_code=500, detail="Internal server error") from None
 
 
 @app.get("/check/{task_id}", tags=["tool"])
 async def check(task_id: str) -> dict:
     """Check the current status of a simulation task by its ID.
+
+    This endpoint re-submits the job parameters to check status.
+    If the job is complete, the cached result is returned.
+    If still running, the current status is returned.
 
     Note: When ready, visualize results at /visualize/meltquench/{task_id}
 
@@ -281,6 +285,45 @@ async def check(task_id: str) -> dict:
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    # If already complete or errored in our database, return that
+    if meta["state"] in ("complete", "error"):
+        return {
+            "task_id": task_id,
+            "state": meta["state"],
+            "status": meta.get("status", "processing"),
+            "visualization_url": get_visualization_url(task_id),
+            "error": meta.get("error"),
+            "result": meta.get("result"),
+        }
+
+    # For running jobs, re-check by re-submitting
+    # executorlib's caching will return the running future or cached result
+    request_data = meta.get("request_data")
+    if request_data:
+        job_status = _job_manager.check_status(request_data=request_data)
+
+        # Update database if status changed
+        if job_status["state"] != meta["state"]:
+            meta.update(
+                {
+                    "state": job_status["state"],
+                    "status": job_status["status"],
+                    "result": job_status.get("result"),
+                    "error": job_status.get("error"),
+                }
+            )
+            _task_store.set(task_id, meta)
+
+        return {
+            "task_id": task_id,
+            "state": job_status["state"],
+            "status": job_status["status"],
+            "visualization_url": get_visualization_url(task_id),
+            "error": job_status.get("error"),
+            "result": job_status.get("result"),
+        }
+
+    # Fallback to database state
     return {
         "task_id": task_id,
         "state": meta["state"],

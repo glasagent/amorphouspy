@@ -10,11 +10,11 @@ This FastAPI-based service provides a Model Context Protocol (MCP) interface for
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   FastAPI App   │ ── │  SQLite Cache   │ ── │  Worker Process │
+│   FastAPI App   │ ── │  SQLite Cache   │ ── │   executorlib   │
 │                 │    │                 │    │                 │
-│ • Request hash  │    │ • Task metadata │    │ • amorphouspy   │
-│ • Cache lookup  │    │ • Results       │    │ • LAMMPS sims   │
-│ • Task creation │    │ • Hash index    │    │ • File cleanup  │
+│ • Request hash  │    │ • Task metadata │    │ • Local exec    │
+│ • Cache lookup  │    │ • Results       │    │ • SLURM cluster │
+│ • Task creation │    │ • Hash index    │    │ • Job caching   │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
@@ -32,16 +32,27 @@ This FastAPI-based service provides a Model Context Protocol (MCP) interface for
 - Tracks task states: `processing` → `complete`/`error`
 - Survives server restarts and process crashes
 
-#### 3. **Async Processing with Process Isolation**
-- Uses `ProcessPoolExecutor` to run simulations in separate processes
-- Avoids blocking the FastAPI event loop
-- Proper signal handling for subprocess management
-- Automatic temporary file cleanup using `tempfile.TemporaryDirectory()`
+#### 3. **Job Execution with executorlib**
+- Supports local execution (`SingleNodeExecutor`) or SLURM cluster (`SlurmClusterExecutor`)
+- Executor type configured via environment variables
+- Built-in job caching at the executor level
+- Re-submitting same job returns cached result or running future
 
 #### 4. **Model Context Protocol (MCP) Integration**
 - Exposes simulation capabilities as MCP tools
 - Compatible with Claude, VS Code, and other MCP clients
 - Server-Sent Events (SSE) endpoint at `/mcp`
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EXECUTOR_TYPE` | Executor backend: `local` or `slurm` | `local` |
+| `EXECUTOR_CORES` | Number of CPU cores per worker | `4` |
+| `SLURM_PARTITION` | SLURM partition name (slurm only) | - |
+| `SLURM_TIME` | SLURM job time limit (slurm only) | - |
+| `AMORPHOUSPY_PROJECTS` | Directory for project/cache files | `./projects` |
+| `API_BASE_URL` | Base URL for visualization links | - |
 
 
 ## Installation
