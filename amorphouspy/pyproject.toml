@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "amorphouspy"
 version = "0.0.12"
-description = "pyiron workflows atomistic modeling of oxide glasses"
+description = "Workflows for atomistic modeling of oxide glasses"
 authors = [
   { name = "Achraf Atila", email = "achraf.atila@bam.de" },
   { name = "Marcel Sadowski", email = "marcel.sadowski@schott.com" },

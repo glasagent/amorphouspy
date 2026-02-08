@@ -1,4 +1,4 @@
-"""Worker module for pyiron glass simulations.
+"""Worker module for amorphouspy simulations.
 
 This module contains the actual simulation logic that runs in separate processes,
 isolated from the FastAPI server code to avoid unnecessary imports and potential
@@ -33,7 +33,7 @@ def setup_worker_logging(task_id: str) -> logging.Logger:
 def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, shared_project_dir: str) -> None:
     """Run synchronous meltquench simulation.
 
-    This runs in a separate process to avoid blocking the event loop and handle pyiron's signal handling.
+    This runs in a separate process to avoid blocking the event loop.
 
     Args:
         task_id: Unique identifier for the task.
@@ -87,7 +87,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         project_path = Path(shared_project_dir)
         logger.info(f"Task {task_id}: Using shared project directory: {project_path}")
 
-        # Create shared pyiron project
+        # Create executor for caching workflow results
         with SingleNodeExecutor(cache_directory=project_path) as exe:
             atoms_dict = exe.submit(
                 get_structure_dict,
@@ -128,7 +128,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
                 structure=structure_future,
                 potential=potential_future,
                 n_print=request.n_print,
-                # tmp_working_directory=str(tmp_dir_base), # note: if provided needs to be static - or prevents caching at pyiron level
+                # tmp_working_directory=str(tmp_dir_base), # note: if provided needs to be static - or prevents caching at executor level
                 heating_rate=request.heating_rate,
                 cooling_rate=request.cooling_rate,
                 langevin=False,
@@ -146,7 +146,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             final_structure = result["structure"]
             logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
-            # Run structural analysis (decorated with @job, needs pyiron_project and .pull())
+            # Run structural analysis
             structural_data = exe.submit(
                 analyze_structure,
                 atoms=final_structure,

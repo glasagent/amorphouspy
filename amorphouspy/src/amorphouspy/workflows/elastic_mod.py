@@ -286,7 +286,7 @@ def elastic_simulation(
     strain : float, optional
         Magnitude of the strain applied for finite differences (default 1e-3).
     server_kwargs : dict, optional
-        Additional server configuration arguments for pyiron.
+        Additional server configuration arguments.
     langevin : bool, optional
         Whether to use Langevin dynamics (default False).
     seed : int, optional

@@ -1,13 +1,13 @@
 # amorphouspy
 
-This project aims at setting up pyiron-workflows to perform atomistic simulations for glasses.
+This project provides workflows to perform atomistic simulations for glasses.
 This concerns, but is not limited to, generating initial structural models, performing melt-quenching simulations as well as analysing relevant properties. 
 
 Later, these workflows serve as blueprints intended to be used by "Otto", the GlasAgent. 
 
 ## Contents
 
-- `amorphouspy`: pyiron workflows for atomistic modeling of oxide glasses
+- `amorphouspy`: Workflows for atomistic modeling of oxide glasses
 - `notebooks`: Jupyter notebooks for atomistic modeling of oxide glasses	
 
 ## Installation
@@ -29,8 +29,8 @@ pre-commit install
 
 ## Upcoming milestones
 
-- MS12 (end of 2025): Integration of existing GlasDigital workflows (DFT and classical MD) for determining density and elastic moduli into current pyiron version and adaptation to glasses
-- MS12 (end of 2025): Defining pyiron workflows (classical MD) to determine high-temperature viscosity (TODO) and generation of structural models via melt-quenching (DONE)
+- MS12 (end of 2025): Integration of existing GlasDigital workflows (DFT and classical MD) for determining density and elastic moduli
+- MS12 (end of 2025): Workflows (classical MD) to determine high-temperature viscosity (TODO) and generation of structural models via melt-quenching (DONE)
 
 ----------------------------------------------------------
 
@@ -68,7 +68,7 @@ Later, more complicated glasses from Schott can be considered. The following are
    - Al2​O3​ (~5%)
    - CaO (~1.5%)
 
-# Approximate pyiron-glass workflow diagram 
+# Approximate amorphouspy workflow diagram 
 
 ```mermaid
 %% Mermaid live editor: https://mermaid-js.github.io/mermaid-live-editor
