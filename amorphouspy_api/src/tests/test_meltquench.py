@@ -1,7 +1,8 @@
 """Unit tests for meltquench API functionality."""
 
 import time
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Self
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,29 +14,57 @@ from amorphouspy_api.models import MeltquenchRequest
 client = TestClient(app)
 
 
-@pytest.fixture(autouse=True)
-def _patch_job_manager(monkeypatch) -> None:
-    """Replace JobManager.submit_meltquench with a mock that returns completed result.
+class MockFuture:
+    """Mock future that returns completed result immediately."""
 
-    This keeps tests fully in-process and avoids spawning real executorlib jobs.
-    """
-    from amorphouspy_api import jobs as jobs_module
+    def __init__(self, result: dict[str, Any]) -> None:
+        """Initialize mock future with result."""
+        self._result = result
 
-    def fake_submit_meltquench(self, request_data: dict) -> dict:
-        return {
-            "state": "complete",
-            "status": "Completed",
-            "result": {
+    def done(self) -> bool:
+        """Return True to indicate job is complete."""
+        return True
+
+    def result(self) -> dict[str, Any]:
+        """Return the stored result."""
+        return self._result
+
+
+class MockExecutor:
+    """Mock executor that returns completed results immediately."""
+
+    def __init__(self, **_kwargs: object) -> None:
+        """Initialize mock executor (ignores all kwargs)."""
+
+    def __enter__(self) -> Self:
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        """Exit context manager."""
+
+    def submit(self, _fn: Callable[..., Any], **_kwargs: object) -> MockFuture:
+        """Submit a job and return a mock future with completed result."""
+        return MockFuture(
+            {
                 "composition": "0.6SiO2-0.25CaO-0.15Al2O3",
                 "final_structure": create_mock_structure_dict(),
                 "mean_temperature": 302.3333333333,
                 "simulation_steps": 3,
                 "structural_analysis": create_mock_structural_analysis_data(),
-            },
-        }
+            }
+        )
 
-    monkeypatch.setattr(jobs_module.JobManager, "submit_meltquench", fake_submit_meltquench)
-    monkeypatch.setattr(jobs_module.JobManager, "check_status", fake_submit_meltquench)
+
+@pytest.fixture(autouse=True)
+def _patch_executor(monkeypatch) -> None:
+    """Replace get_executor_class with a mock that returns MockExecutor.
+
+    This keeps tests fully in-process and avoids spawning real executorlib jobs.
+    """
+    from amorphouspy_api import jobs as jobs_module
+
+    monkeypatch.setattr(jobs_module, "get_executor_class", lambda: MockExecutor)
 
 
 def create_mock_structure_dict() -> dict[str, Any]:

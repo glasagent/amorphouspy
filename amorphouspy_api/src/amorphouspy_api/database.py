@@ -46,7 +46,11 @@ class Task(Base):
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
     # Index for efficient cache lookups
     __table_args__ = (Index("ix_request_hash_state", "request_hash", "state"),)
@@ -179,12 +183,20 @@ class TaskStore:
             with self.get_session() as session:
                 task = (
                     session.query(Task)
-                    .filter(Task.request_hash == request_hash, Task.state == "complete", Task.result_data.isnot(None))
+                    .filter(
+                        Task.request_hash == request_hash,
+                        Task.state == "complete",
+                        Task.result_data.isnot(None),
+                    )
                     .first()
                 )
 
                 if task and task.result_data:
-                    logger.info("Found cached result for hash %s in task %s", request_hash, task.task_id)
+                    logger.info(
+                        "Found cached result for hash %s in task %s",
+                        request_hash,
+                        task.task_id,
+                    )
                     return (task.task_id, MeltquenchResult(**task.result_data))
 
                 return None
@@ -208,7 +220,10 @@ class TaskStore:
             with self.get_session() as session:
                 deleted_count = (
                     session.query(Task)
-                    .filter(Task.state.in_(["complete", "error"]), Task.updated_at < cutoff_date)
+                    .filter(
+                        Task.state.in_(["complete", "error"]),
+                        Task.updated_at < cutoff_date,
+                    )
                     .delete()
                 )
 
@@ -251,15 +266,19 @@ class TaskStore:
             task.request_hash = task_data["request_hash"]
 
         if "result" in task_data:
-            # Handle ASE Atoms serialization in final_structure
-            result_data = task_data["result"].copy()
-            if "final_structure" in result_data:
-                from ase import Atoms
+            result = task_data["result"]
+            if result is not None:
+                # Handle ASE Atoms serialization in final_structure
+                result_data = result.copy()
+                if "final_structure" in result_data:
+                    from ase import Atoms
 
-                if isinstance(result_data["final_structure"], Atoms):
-                    # Serialize ASE Atoms to JSON string for storage
-                    result_data["final_structure"] = serialize_atoms(result_data["final_structure"])
-            task.result_data = result_data
+                    if isinstance(result_data["final_structure"], Atoms):
+                        # Serialize ASE Atoms to JSON string for storage
+                        result_data["final_structure"] = serialize_atoms(result_data["final_structure"])
+                task.result_data = result_data
+            else:
+                task.result_data = None
 
         if "error" in task_data:
             task.error_message = task_data["error"]

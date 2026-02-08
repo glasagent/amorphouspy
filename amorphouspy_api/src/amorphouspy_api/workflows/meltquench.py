@@ -4,7 +4,10 @@ This module contains the meltquench workflow function that can be
 submitted to executorlib for local or SLURM execution.
 """
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def run_meltquench_workflow(
@@ -32,56 +35,69 @@ def run_meltquench_workflow(
 
     Returns:
         Dictionary containing simulation results and structural analysis.
+
+    Raises:
+        RuntimeError: If the simulation fails.
     """
-    import numpy as np
-    from amorphouspy import (
-        generate_potential,
-        get_ase_structure,
-        get_structure_dict,
-        melt_quench_simulation,
-    )
-    from amorphouspy.workflows.structural_analysis import analyze_structure
+    try:
+        import numpy as np
+        from amorphouspy import (
+            generate_potential,
+            get_ase_structure,
+            get_structure_dict,
+            melt_quench_simulation,
+        )
+        from amorphouspy.workflows.structural_analysis import analyze_structure
 
-    # Build composition string from components and values
-    comp_parts = []
-    for component, value in zip(components, values, strict=False):
-        # Convert to fractions if percentages were provided
-        fraction = value / 100.0 if sum(values) > 1.1 else value
-        comp_parts.append(f"{fraction}{component}")
-    composition = "-".join(comp_parts)
+        # Build composition string from components and values
+        comp_parts = []
+        for component, value in zip(components, values, strict=False):
+            # Convert to fractions if percentages were provided
+            fraction = value / 100.0 if sum(values) > 1.1 else value
+            comp_parts.append(f"{fraction}{component}")
+        composition = "-".join(comp_parts)
+        logger.info("Running meltquench for composition: %s", composition)
 
-    # Create structure dictionary
-    atoms_dict = get_structure_dict(
-        composition=composition,
-        target_atoms=n_atoms,
-    )
+        # Create structure dictionary
+        atoms_dict = get_structure_dict(
+            composition=composition,
+            target_atoms=n_atoms,
+        )
 
-    # Create ASE structure and potential
-    structure = get_ase_structure(atoms_dict=atoms_dict)
-    potential = generate_potential(atoms_dict=atoms_dict, potential_type=potential_type)
+        # Create ASE structure and potential
+        structure = get_ase_structure(atoms_dict=atoms_dict)
+        potential = generate_potential(atoms_dict=atoms_dict, potential_type=potential_type)
+        logger.info("Structure created with %d atoms", len(structure))
 
-    # Run meltquench simulation
-    result = melt_quench_simulation(
-        structure=structure,
-        potential=potential,
-        n_print=n_print,
-        heating_rate=heating_rate,
-        cooling_rate=cooling_rate,
-        langevin=False,
-        server_kwargs={},
-    )
+        # Run meltquench simulation
+        logger.info("Starting melt-quench simulation...")
+        result = melt_quench_simulation(
+            structure=structure,
+            potential=potential,
+            n_print=n_print,
+            heating_rate=heating_rate,
+            cooling_rate=cooling_rate,
+            langevin=False,
+            server_kwargs={},
+        )
+        logger.info("Simulation completed")
 
-    # Perform structural analysis
-    final_structure = result["structure"]
-    structural_data = analyze_structure(atoms=final_structure)
+        # Perform structural analysis
+        final_structure = result["structure"]
+        structural_data = analyze_structure(atoms=final_structure)
 
-    # Prepare output
-    structural_summary = structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
+        # Prepare output
+        structural_summary = structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
 
-    return {
-        "composition": composition,
-        "final_structure": result["structure"],
-        "mean_temperature": float(np.mean(result["result"]["temperature"])),
-        "simulation_steps": len(result["result"]["steps"]),
-        "structural_analysis": structural_summary,
-    }
+        return {
+            "composition": composition,
+            "final_structure": result["structure"],
+            "mean_temperature": float(np.mean(result["result"]["temperature"])),
+            "simulation_steps": len(result["result"]["steps"]),
+            "structural_analysis": structural_summary,
+        }
+
+    except Exception as e:
+        logger.exception("Meltquench workflow failed")
+        msg = f"Meltquench simulation failed: {e}"
+        raise RuntimeError(msg) from e

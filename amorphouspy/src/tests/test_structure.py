@@ -66,7 +66,7 @@ def test_structure_atom_counts_molar() -> None:
         assert atom_counts[elem] == expected, f"{elem} atoms should be {expected} for {n_molecules} mode."
 
     # Test with target_atoms
-    atoms, atom_counts = ps.create_random_atoms(
+    _atoms, atom_counts = ps.create_random_atoms(
         composition=composition,
         n_molecules=None,
         target_atoms=target_atoms,
@@ -110,7 +110,7 @@ def test_structure_atom_counts_weight() -> None:
         assert atom_counts[elem] == expected, f"{elem} atoms should be {expected} for {n_molecules} mode."
 
     # Test with target_atoms
-    atoms, atom_counts = ps.create_random_atoms(
+    _atoms, atom_counts = ps.create_random_atoms(
         composition=weight_composition,
         n_molecules=None,
         target_atoms=target_atoms,

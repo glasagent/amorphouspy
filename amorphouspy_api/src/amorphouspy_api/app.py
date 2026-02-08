@@ -30,9 +30,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
-from .jobs import JobManager
+from .jobs import get_executor_class, get_executor_config
 from .models import MeltquenchRequest, MeltquenchResult
 from .visualization import router as visualization_router
+from .workflows import run_meltquench_workflow
 
 # Configure logging
 logging.basicConfig(
@@ -85,8 +86,60 @@ logger.info(
 init_task_store(DB_PATH)
 _task_store = get_task_store()
 
-# Initialize job manager (executor type configured via EXECUTOR_TYPE env var)
-_job_manager = JobManager(cache_directory=MELTQUENCH_PROJECT_DIR)
+
+def submit_to_executor(request_data: dict) -> dict:
+    """Submit a meltquench job to executorlib and check status.
+
+    Uses executorlib's recommended pattern: submit inside context manager,
+    check status outside. With wait=False, futures may be cancelled when
+    exiting the context manager, but the job continues in the background.
+
+    Args:
+        request_data: Dictionary containing the meltquench request parameters.
+
+    Returns:
+        Dictionary with job status:
+        - state: 'complete', 'running', or 'error'
+        - result: Result dict if complete
+        - error: Error message if failed
+    """
+    executor_class = get_executor_class()
+    executor_config = get_executor_config()
+
+    try:
+        # Submit job inside context manager
+        # wait=False allows non-blocking exit - job continues in background
+        with executor_class(cache_directory=MELTQUENCH_PROJECT_DIR, **executor_config) as exe:
+            future = exe.submit(
+                run_meltquench_workflow,
+                components=request_data["components"],
+                values=request_data["values"],
+                n_atoms=request_data["n_atoms"],
+                potential_type=request_data["potential_type"],
+                heating_rate=request_data["heating_rate"],
+                cooling_rate=request_data["cooling_rate"],
+                n_print=request_data["n_print"],
+            )
+
+        # Check status OUTSIDE context manager (recommended by executorlib author)
+        # With wait=False, future.cancelled() may be True even if job is running
+        # So we check done() first, which returns True if result is cached
+        if future.done() and not future.cancelled():
+            try:
+                result = future.result()
+                # Serialize using MeltquenchResult to handle ASE Atoms objects
+                serialized_result = MeltquenchResult(**result).model_dump()
+                return {"state": "complete", "result": serialized_result}
+            except Exception as e:
+                logger.exception("Job failed with exception")
+                return {"state": "error", "error": str(e)}
+
+        # Job is running in background (cancelled just means we didn't wait)
+        return {"state": "running"}
+
+    except Exception as e:
+        logger.exception("Error in executor")
+        return {"state": "error", "error": f"Executor error: {e}"}
 
 
 def get_meltquench_hash(request: MeltquenchRequest) -> str:
@@ -228,17 +281,16 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
         # Submit job via executorlib
-        # This will either start a new job or return cached status
-        job_status = _job_manager.submit_meltquench(request_data=request_data)
+        job_status = submit_to_executor(request_data)
 
         # Store task in database
         _task_store.set(
             task_id,
             {
                 "state": job_status["state"],
-                "status": job_status["status"],
+                "status": ("Completed" if job_status["state"] == "complete" else "Job running"),
                 "request_hash": request_hash,
-                "request_data": request.model_dump(),
+                "request_data": request_data,
                 "result": job_status.get("result"),
                 "error": job_status.get("error"),
             },
@@ -252,11 +304,16 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
                 "result": job_status["result"],
             }
 
+        if job_status["state"] == "error":
+            raise HTTPException(status_code=500, detail=job_status["error"])
+
         return {
             "task_id": task_id,
-            "status": job_status["status"],
+            "status": "started",
             "visualization_url": get_visualization_url(task_id),
         }
+    except HTTPException:
+        raise
     except Exception:
         logger.exception("Error submitting meltquench task")
         raise HTTPException(status_code=500, detail="Internal server error") from None
@@ -296,18 +353,17 @@ async def check(task_id: str) -> dict:
             "result": meta.get("result"),
         }
 
-    # For running jobs, re-check by re-submitting
-    # executorlib's caching will return the running future or cached result
+    # For running jobs, re-check by re-submitting to executorlib
+    # The disk cache will return the result if complete
     request_data = meta.get("request_data")
     if request_data:
-        job_status = _job_manager.check_status(request_data=request_data)
+        job_status = submit_to_executor(request_data)
 
-        # Update database if status changed
-        if job_status["state"] != meta["state"]:
+        if job_status["state"] != "running":
             meta.update(
                 {
                     "state": job_status["state"],
-                    "status": job_status["status"],
+                    "status": ("Completed" if job_status["state"] == "complete" else "Failed"),
                     "result": job_status.get("result"),
                     "error": job_status.get("error"),
                 }
@@ -317,7 +373,7 @@ async def check(task_id: str) -> dict:
         return {
             "task_id": task_id,
             "state": job_status["state"],
-            "status": job_status["status"],
+            "status": meta.get("status", "Job running"),
             "visualization_url": get_visualization_url(task_id),
             "error": job_status.get("error"),
             "result": job_status.get("result"),
