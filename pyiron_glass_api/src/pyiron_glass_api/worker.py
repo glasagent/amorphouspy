@@ -58,7 +58,6 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
     try:
         # Import amorphouspy modules (import here to avoid startup dependencies)
         import numpy as np
-        from executorlib import SingleNodeExecutor
         from amorphouspy import (
             generate_potential,
             get_ase_structure,
@@ -66,6 +65,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             melt_quench_simulation,
         )
         from amorphouspy.workflows.structural_analysis import analyze_structure
+        from executorlib import SingleNodeExecutor
 
         # Create composition string from request
         comp_parts = []
