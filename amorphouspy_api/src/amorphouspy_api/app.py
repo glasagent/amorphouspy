@@ -18,8 +18,7 @@ Example usage:
 import hashlib
 import logging
 import os
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+import time
 from importlib.metadata import version
 from pathlib import Path
 from uuid import uuid4
@@ -33,7 +32,7 @@ from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
 from .jobs import get_executor, get_lammps_resource_dict
-from .models import MeltquenchRequest, MeltquenchResult
+from .models import MeltquenchRequest, MeltquenchResult, TaskResponse, TaskStatus
 from .visualization import router as visualization_router
 from .workflows import run_meltquench_workflow
 
@@ -126,6 +125,13 @@ def submit_to_executor(request_data: dict) -> dict:
             lammps_resource_dict=lammps_resource_dict,
         )
 
+        # Wait briefly for cache check to complete (happens in background thread)
+        # With wait=False, executorlib checks cache asynchronously
+        for _ in range(10):  # Up to 1 second
+            if future.done():
+                break
+            time.sleep(0.1)
+
         # Check if result is already available (from cache or completed)
         if future.done() and not future.cancelled():
             try:
@@ -188,20 +194,41 @@ def get_visualization_url(task_id: str) -> str:
     return relative_path
 
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Lifespan context manager for the FastAPI application.
+def build_task_response(
+    task_id: str,
+    job_status: dict,
+    *,
+    from_cache: bool = False,
+) -> TaskResponse:
+    """Build a TaskResponse from job status.
 
-    Handles startup and shutdown events for resource cleanup.
-    Note: We don't call shutdown_executor() because with wait=False,
-    jobs run in background processes and __exit__ can hang waiting for them.
-    The cache persists independently.
+    Args:
+        task_id: The task identifier.
+        job_status: Dictionary with 'state', 'result', and 'error' keys.
+        from_cache: Whether this result was retrieved from cache.
+
+    Returns:
+        A TaskResponse model instance.
     """
-    # Startup: nothing to do, executor is created lazily
-    yield
-    # Shutdown: skip executor cleanup - with wait=False it can hang
-    # Jobs continue in background and cache is persisted to disk
-    logger.info("Application shutting down")
+    state = job_status["state"]
+
+    if state == "complete":
+        status = TaskStatus.COMPLETED_FROM_CACHE if from_cache else TaskStatus.COMPLETED
+        result = MeltquenchResult(**job_status["result"]) if job_status.get("result") else None
+    elif state == "error":
+        status = TaskStatus.ERROR
+        result = None
+    else:  # running
+        status = TaskStatus.RUNNING
+        result = None
+
+    return TaskResponse(
+        task_id=task_id,
+        status=status,
+        visualization_url=get_visualization_url(task_id),
+        result=result,
+        error=job_status.get("error"),
+    )
 
 
 # Create FastAPI app
@@ -209,7 +236,6 @@ app = FastAPI(
     title="amorphouspy Simulation API",
     description="API for managing long-running glass simulation tasks using amorphouspy",
     version="0.1.0",
-    lifespan=lifespan,
 )
 
 # Enable CORS for all origins (customize as needed)
@@ -263,7 +289,7 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
 
 
 @app.post("/submit/meltquench", tags=["tool"])
-async def submit_meltquench(request: MeltquenchRequest) -> dict:
+async def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
     """Start a new meltquench simulation task.
 
     This endpoint submits a meltquench job using executorlib.
@@ -276,7 +302,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         request: The meltquench request parameters.
 
     Returns:
-        A dictionary containing the task ID, status, and visualization URL.
+        TaskResponse with task ID, status, and result if available.
 
     Raises:
         HTTPException: If the task cannot be started.
@@ -290,12 +316,12 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
         if cached_result:
             cached_task_id, cached_meltquench_result = cached_result
             logger.info("Returning cached result from task %s", cached_task_id)
-            return {
-                "task_id": cached_task_id,
-                "status": "completed_from_cache",
-                "visualization_url": get_visualization_url(cached_task_id),
-                "result": cached_meltquench_result.model_dump(),
-            }
+            return TaskResponse(
+                task_id=cached_task_id,
+                status=TaskStatus.COMPLETED_FROM_CACHE,
+                visualization_url=get_visualization_url(cached_task_id),
+                result=cached_meltquench_result,
+            )
 
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
@@ -308,7 +334,6 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
             task_id,
             {
                 "state": job_status["state"],
-                "status": ("Completed" if job_status["state"] == "complete" else "Job running"),
                 "request_hash": request_hash,
                 "request_data": request_data,
                 "result": job_status.get("result"),
@@ -316,22 +341,18 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
             },
         )
 
-        if job_status["state"] == "complete":
-            return {
-                "task_id": task_id,
-                "status": "completed",
-                "visualization_url": get_visualization_url(task_id),
-                "result": job_status["result"],
-            }
-
         if job_status["state"] == "error":
             raise HTTPException(status_code=500, detail=job_status["error"])
 
-        return {
-            "task_id": task_id,
-            "status": "started",
-            "visualization_url": get_visualization_url(task_id),
-        }
+        # For initial submission, use STARTED (not RUNNING) to indicate job was just submitted
+        if job_status["state"] == "running":
+            return TaskResponse(
+                task_id=task_id,
+                status=TaskStatus.STARTED,
+                visualization_url=get_visualization_url(task_id),
+            )
+
+        return build_task_response(task_id, job_status)
     except HTTPException:
         raise
     except Exception:
@@ -340,7 +361,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> dict:
 
 
 @app.get("/check/{task_id}", tags=["tool"])
-async def check(task_id: str) -> dict:
+async def check(task_id: str) -> TaskResponse:
     """Check the current status of a simulation task by its ID.
 
     This endpoint re-submits the job parameters to check status.
@@ -353,7 +374,7 @@ async def check(task_id: str) -> dict:
         task_id: The ID of the task to check.
 
     Returns:
-        A dictionary containing the task status, result (if available), and visualization URL.
+        TaskResponse with current status, result (if available), and visualization URL.
 
     Raises:
         HTTPException: If the task is not found.
@@ -362,52 +383,36 @@ async def check(task_id: str) -> dict:
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # If already complete or errored in our database, return that
+    # If already complete or errored, return stored result
     if meta["state"] in ("complete", "error"):
-        return {
-            "task_id": task_id,
-            "state": meta["state"],
-            "status": meta.get("status", "processing"),
-            "visualization_url": get_visualization_url(task_id),
-            "error": meta.get("error"),
-            "result": meta.get("result"),
-        }
+        return build_task_response(
+            task_id,
+            {
+                "state": meta["state"],
+                "result": meta.get("result"),
+                "error": meta.get("error"),
+            },
+        )
 
-    # For running jobs, re-check by re-submitting to executorlib
-    # The disk cache will return the result if complete
+    # Re-check by submitting to executor (checks disk cache)
     request_data = meta.get("request_data")
-    if request_data:
-        job_status = submit_to_executor(request_data)
+    if not request_data:
+        return TaskResponse(
+            task_id=task_id,
+            status=TaskStatus.RUNNING,
+            visualization_url=get_visualization_url(task_id),
+        )
 
-        if job_status["state"] != "running":
-            meta.update(
-                {
-                    "state": job_status["state"],
-                    "status": ("Completed" if job_status["state"] == "complete" else "Failed"),
-                    "result": job_status.get("result"),
-                    "error": job_status.get("error"),
-                }
-            )
-            _task_store.set(task_id, meta)
+    job_status = submit_to_executor(request_data)
 
-        return {
-            "task_id": task_id,
-            "state": job_status["state"],
-            "status": meta.get("status", "Job running"),
-            "visualization_url": get_visualization_url(task_id),
-            "error": job_status.get("error"),
-            "result": job_status.get("result"),
-        }
+    # Update task store if job completed
+    if job_status["state"] != "running":
+        meta["state"] = job_status["state"]
+        meta["result"] = job_status.get("result")
+        meta["error"] = job_status.get("error")
+        _task_store.set(task_id, meta)
 
-    # Fallback to database state
-    return {
-        "task_id": task_id,
-        "state": meta["state"],
-        "status": meta.get("status", "processing"),
-        "visualization_url": get_visualization_url(task_id),
-        "error": meta.get("error"),
-        "result": meta.get("result"),
-    }
+    return build_task_response(task_id, job_status)
 
 
 mcp = FastApiMCP(app, include_tags=["tool"])

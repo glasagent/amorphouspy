@@ -4,13 +4,21 @@ This module contains data validation models for various simulation types
 including meltquench simulations and other glass modeling workflows.
 """
 
+from enum import Enum
 from io import StringIO
 from typing import Annotated, Literal
 
 from amorphouspy.workflows.structural_analysis import StructureData
 from ase import Atoms
 from ase.io import read, write
-from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PlainSerializer,
+    PlainValidator,
+    ValidationInfo,
+    field_validator,
+)
 
 # Constants for composition validation
 PERCENTAGE_THRESHOLD = 1.1
@@ -84,7 +92,25 @@ AtomsType = Annotated[
 
 
 # Export the serialization functions for use in other modules
-__all__ = ["AtomsType", "MeltquenchRequest", "MeltquenchResult", "serialize_atoms", "validate_atoms"]
+__all__ = [
+    "AtomsType",
+    "MeltquenchRequest",
+    "MeltquenchResult",
+    "TaskResponse",
+    "TaskStatus",
+    "serialize_atoms",
+    "validate_atoms",
+]
+
+
+class TaskStatus(str, Enum):
+    """Status of a simulation task."""
+
+    STARTED = "started"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    COMPLETED_FROM_CACHE = "completed_from_cache"
+    ERROR = "error"
 
 
 class MeltquenchRequest(BaseModel):
@@ -107,9 +133,13 @@ class MeltquenchRequest(BaseModel):
     heating_rate: int = Field(default=int(1e14), description="Heating rate in K/s (default: 100K/ps)")
     cooling_rate: int = Field(default=int(1e12), description="Cooling rate in K/s (default: 1K/ps)")
     n_print: int = Field(default=1000, description="Print interval for simulation output (default: 1000)")
-    n_atoms: int = Field(default=5000, description="Target number of atoms for the generated structure (default: 5000)")
+    n_atoms: int = Field(
+        default=5000,
+        description="Target number of atoms for the generated structure (default: 5000)",
+    )
     potential_type: Literal["shik", "bjp", "pmmcs"] = Field(
-        default="pmmcs", description="Type of interatomic potential to use (default: 'pmmcs')"
+        default="pmmcs",
+        description="Type of interatomic potential to use (default: 'pmmcs')",
     )
 
     @field_validator("values")
@@ -151,3 +181,16 @@ class MeltquenchResult(BaseModel):
     mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
     simulation_steps: int = Field(..., description="Total simulation steps completed")
     structural_analysis: StructureData | dict = Field(..., description="Structural analysis results")
+
+
+class TaskResponse(BaseModel):
+    """Response model for task submission and status check endpoints.
+
+    Provides a consistent response format for both /submit and /check endpoints.
+    """
+
+    task_id: str = Field(..., description="Unique identifier for the task")
+    status: TaskStatus = Field(..., description="Current status of the task")
+    visualization_url: str = Field(..., description="URL to visualize results when complete")
+    result: MeltquenchResult | None = Field(default=None, description="Simulation result if completed")
+    error: str | None = Field(default=None, description="Error message if failed")

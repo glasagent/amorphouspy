@@ -71,20 +71,20 @@ def test_meltquench_api_integration() -> None:
             r = requests.get(f"{API_URL}/check/{task_id}", timeout=30)
             r.raise_for_status()
             check_data = r.json()
-            state = check_data["state"]
-            logger.info("Polling: state=%s", state)
-            if state == "complete":
+            status = check_data["status"]
+            logger.info("Polling: status=%s", status)
+            if status == "completed":
                 logger.info("Result: %s", check_data["result"])
                 result = check_data["result"]
                 break
-            if state == "error":
+            if status == "error":
                 logger.error("Meltquench task errored: %s", check_data.get("error"))
                 pytest.fail(f"Meltquench task errored: {check_data.get('error')}")
             if time.time() - start > timeout:
                 logger.error(
-                    "Timeout: Meltquench task did not complete within %s seconds. Last state: %s", timeout, state
+                    "Timeout: Meltquench task did not complete within %s seconds. Last status: %s", timeout, status
                 )
-                pytest.fail(f"Meltquench task did not complete within {timeout} seconds. Last state: {state}")
+                pytest.fail(f"Meltquench task did not complete within {timeout} seconds. Last status: {status}")
             time.sleep(poll_interval)
 
     assert result is not None

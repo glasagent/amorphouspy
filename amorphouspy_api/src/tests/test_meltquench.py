@@ -154,7 +154,6 @@ def test_check_running_then_complete() -> None:
         task_id,
         {
             "state": "running",
-            "status": "Running simulation",
             "request_data": {"components": ["SiO2"], "values": [100.0], "unit": "wt"},
             "request_hash": "test-hash-running",
         },
@@ -164,14 +163,13 @@ def test_check_running_then_complete() -> None:
     check_response = client.get(f"/check/{task_id}")
     assert check_response.status_code == 200
     check_data = check_response.json()
-    assert check_data["state"] == "running"
+    assert check_data["status"] == "running"
 
     # Simulate completion by updating the task store entry
     task_store.set(
         task_id,
         {
             "state": "complete",
-            "status": "Completed",
             "result": {
                 "composition": "1.0SiO2",
                 "final_structure": create_mock_structure_dict(),
@@ -186,7 +184,7 @@ def test_check_running_then_complete() -> None:
     check_response = client.get(f"/check/{task_id}")
     assert check_response.status_code == 200
     check_data = check_response.json()
-    assert check_data["state"] == "complete"
+    assert check_data["status"] == "completed"
     assert check_data["result"] is not None
     validate_result_structure(check_data["result"])
 
