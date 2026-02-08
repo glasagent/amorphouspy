@@ -2,6 +2,7 @@
 
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Self
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +25,10 @@ class MockFuture:
     def done(self) -> bool:
         """Return True to indicate job is complete."""
         return True
+
+    def cancelled(self) -> bool:
+        """Return False to indicate job was not cancelled."""
+        return False
 
     def result(self) -> dict[str, Any]:
         """Return the stored result."""
@@ -56,15 +61,22 @@ class MockExecutor:
         )
 
 
+# Singleton mock executor instance for tests
+_mock_executor = MockExecutor()
+
+
 @pytest.fixture(autouse=True)
 def _patch_executor(monkeypatch) -> None:
-    """Replace get_executor_class with a mock that returns MockExecutor.
+    """Replace get_executor with a mock that returns a MockExecutor instance.
 
     This keeps tests fully in-process and avoids spawning real executorlib jobs.
     """
     from amorphouspy_api import jobs as jobs_module
 
-    monkeypatch.setattr(jobs_module, "get_executor_class", lambda: MockExecutor)
+    def mock_get_executor(_cache_directory: Path) -> MockExecutor:
+        return _mock_executor
+
+    monkeypatch.setattr(jobs_module, "get_executor", mock_get_executor)
 
 
 def create_mock_structure_dict() -> dict[str, Any]:

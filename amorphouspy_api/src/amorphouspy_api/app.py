@@ -18,6 +18,8 @@ Example usage:
 import hashlib
 import logging
 import os
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
 from uuid import uuid4
@@ -30,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .database import get_task_store, init_task_store
-from .jobs import get_executor_class, get_executor_config
+from .jobs import get_executor, get_lammps_resource_dict, shutdown_executor
 from .models import MeltquenchRequest, MeltquenchResult
 from .visualization import router as visualization_router
 from .workflows import run_meltquench_workflow
@@ -90,9 +92,10 @@ _task_store = get_task_store()
 def submit_to_executor(request_data: dict) -> dict:
     """Submit a meltquench job to executorlib and check status.
 
-    Uses executorlib's recommended pattern: submit inside context manager,
-    check status outside. With wait=False, futures may be cancelled when
-    exiting the context manager, but the job continues in the background.
+    Uses a singleton executor pattern: the executor is created once and
+    reused for all submissions. This allows proper dependency tracking
+    between jobs and different resource configurations for different
+    parts of the workflow.
 
     Args:
         request_data: Dictionary containing the meltquench request parameters.
@@ -103,27 +106,27 @@ def submit_to_executor(request_data: dict) -> dict:
         - result: Result dict if complete
         - error: Error message if failed
     """
-    executor_class = get_executor_class()
-    executor_config = get_executor_config()
-
     try:
-        # Submit job inside context manager
-        # wait=False allows non-blocking exit - job continues in background
-        with executor_class(cache_directory=MELTQUENCH_PROJECT_DIR, **executor_config) as exe:
-            future = exe.submit(
-                run_meltquench_workflow,
-                components=request_data["components"],
-                values=request_data["values"],
-                n_atoms=request_data["n_atoms"],
-                potential_type=request_data["potential_type"],
-                heating_rate=request_data["heating_rate"],
-                cooling_rate=request_data["cooling_rate"],
-                n_print=request_data["n_print"],
-            )
+        # Get or create singleton executor
+        exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
 
-        # Check status OUTSIDE context manager (recommended by executorlib author)
-        # With wait=False, future.cancelled() may be True even if job is running
-        # So we check done() first, which returns True if result is cached
+        # Get LAMMPS-specific resource configuration
+        lammps_resource_dict = get_lammps_resource_dict()
+
+        # Submit the workflow - this returns a future for the final result
+        future = run_meltquench_workflow(
+            executor=exe,
+            components=request_data["components"],
+            values=request_data["values"],
+            n_atoms=request_data["n_atoms"],
+            potential_type=request_data["potential_type"],
+            heating_rate=request_data["heating_rate"],
+            cooling_rate=request_data["cooling_rate"],
+            n_print=request_data["n_print"],
+            lammps_resource_dict=lammps_resource_dict,
+        )
+
+        # Check if result is already available (from cache or completed)
         if future.done() and not future.cancelled():
             try:
                 result = future.result()
@@ -134,7 +137,7 @@ def submit_to_executor(request_data: dict) -> dict:
                 logger.exception("Job failed with exception")
                 return {"state": "error", "error": str(e)}
 
-        # Job is running in background (cancelled just means we didn't wait)
+        # Job is running in background
         return {"state": "running"}
 
     except Exception as e:
@@ -185,11 +188,26 @@ def get_visualization_url(task_id: str) -> str:
     return relative_path
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+    """Lifespan context manager for the FastAPI application.
+
+    Handles startup and shutdown events for resource cleanup.
+    """
+    # Startup: nothing to do, executor is created lazily
+    yield
+    # Shutdown: clean up executor
+    logger.info("Shutting down executor...")
+    shutdown_executor()
+    logger.info("Executor shutdown complete")
+
+
 # Create FastAPI app
 app = FastAPI(
     title="amorphouspy Simulation API",
     description="API for managing long-running glass simulation tasks using amorphouspy",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Enable CORS for all origins (customize as needed)
