@@ -397,11 +397,7 @@ async def check(task_id: str) -> TaskResponse:
     # Re-check by submitting to executor (checks disk cache)
     request_data = meta.get("request_data")
     if not request_data:
-        return TaskResponse(
-            task_id=task_id,
-            status=TaskStatus.RUNNING,
-            visualization_url=get_visualization_url(task_id),
-        )
+        raise HTTPException(status_code=500, detail="Task data missing")
 
     job_status = submit_to_executor(request_data)
 
