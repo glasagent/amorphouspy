@@ -71,12 +71,12 @@ def _patch_executor(monkeypatch) -> None:
 
     This keeps tests fully in-process and avoids spawning real executorlib jobs.
     """
-    from amorphouspy_api import jobs as jobs_module
+    from amorphouspy_api import app as app_module
 
-    def mock_get_executor(_cache_directory: Path) -> MockExecutor:
+    def mock_get_executor(cache_directory: Path) -> MockExecutor:
         return _mock_executor
 
-    monkeypatch.setattr(jobs_module, "get_executor", mock_get_executor)
+    monkeypatch.setattr(app_module, "get_executor", mock_get_executor)
 
 
 def create_mock_structure_dict() -> dict[str, Any]:
