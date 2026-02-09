@@ -154,7 +154,16 @@ def test_check_running_then_complete() -> None:
         task_id,
         {
             "state": "running",
-            "request_data": {"components": ["SiO2"], "values": [100.0], "unit": "wt"},
+            "request_data": {
+                "components": ["SiO2"], 
+                "values": [100.0], 
+                "unit": "wt",
+                "n_atoms": 3,
+                "potential_type": "test",
+                "heating_rate": 1e12,
+                "cooling_rate": 1e12,
+                "n_print": 100,
+            },
             "request_hash": "test-hash-running",
         },
     )
