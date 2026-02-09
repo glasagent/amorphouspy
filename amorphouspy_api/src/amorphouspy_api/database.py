@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import JSON, Column, DateTime, Index, String, Text, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .models import MeltquenchResult, serialize_atoms
 
@@ -79,7 +80,7 @@ class TaskStore:
         self.engine = create_engine(
             self.db_url,
             echo=False,  # Set to True for SQL debugging
-            pool_pre_ping=True,  # Verify connections before use
+            poolclass=StaticPool,  # Use single connection for SQLite to avoid resource warnings
             connect_args={
                 "check_same_thread": False,  # Allow use from multiple threads
                 "timeout": 30,  # 30 second timeout for busy database
@@ -102,6 +103,12 @@ class TaskStore:
         except SQLAlchemyError:
             logger.exception("Error creating database tables")
             raise
+
+    def close(self) -> None:
+        """Close the database engine and dispose of all connections."""
+        if self.engine:
+            self.engine.dispose()
+            logger.info("Closed task store database connection")
 
     def get_session(self) -> Session:
         """Get a new database session."""
@@ -319,3 +326,11 @@ def init_task_store(db_path: Path | None = None) -> TaskStore:
     global _task_store_instance
     _task_store_instance = TaskStore(db_path)
     return _task_store_instance
+
+
+def close_task_store() -> None:
+    """Close and reset the global task store instance."""
+    global _task_store_instance
+    if _task_store_instance is not None:
+        _task_store_instance.close()
+        _task_store_instance = None

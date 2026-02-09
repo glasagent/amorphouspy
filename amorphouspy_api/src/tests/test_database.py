@@ -24,6 +24,8 @@ def test_task_store_basic_operations() -> None:
         assert retrieved["status"] == "Starting"
         assert retrieved["request_hash"] == "abc123def456"
 
+        store.close()
+
 
 def test_task_store_cached_result_lookup() -> None:
     """Test efficient cached result lookup by hash."""
@@ -82,6 +84,8 @@ def test_task_store_cached_result_lookup() -> None:
         no_result = store.find_cached_result("nonexistent_hash")
         assert no_result is None
 
+        store.close()
+
 
 def test_task_store_items() -> None:
     """Test getting all tasks."""
@@ -101,6 +105,8 @@ def test_task_store_items() -> None:
         assert "task1" in task_ids
         assert "task2" in task_ids
 
+        store.close()
+
 
 def test_task_store_persistence() -> None:
     """Test that data persists across TaskStore instances."""
@@ -119,3 +125,6 @@ def test_task_store_persistence() -> None:
         assert retrieved["state"] == "complete"
         assert retrieved["status"] == "Done"
         assert retrieved["request_hash"] == "persistent_hash"
+
+        store1.close()
+        store2.close()
