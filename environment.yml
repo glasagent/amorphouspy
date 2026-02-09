@@ -16,6 +16,7 @@ dependencies:
   - pygraphviz =1.14
   - lammpsparser =0.0.1
   - pymatgen =2025.10.07
+  - pysqa >=0.3.4
   - scipy =1.16.2
   - sqlalchemy
   - numba
