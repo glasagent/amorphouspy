@@ -5,6 +5,9 @@ except for tests that specifically exercise the /submit endpoint.
 """
 
 import time
+from collections.abc import Generator
+from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -129,26 +132,45 @@ def validate_result_structure(result: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
+@contextmanager
+def _mock_executor_context() -> Generator[SimpleNamespace, None, None]:
+    """Context manager that patches get_executor and run_meltquench_workflow."""
+    mock_future = MagicMock()
+    mock_future.result.return_value = create_mock_result()
+
+    with (
+        patch("amorphouspy_api.app.get_executor") as mock_get_exe,
+        patch(
+            "amorphouspy_api.app.run_meltquench_workflow",
+            return_value=mock_future,
+        ) as mock_workflow,
+    ):
+        mock_get_exe.return_value.__enter__ = MagicMock(return_value=MagicMock())
+        mock_get_exe.return_value.__exit__ = MagicMock(return_value=False)
+        yield SimpleNamespace(mock_workflow=mock_workflow, mock_future=mock_future)
+
+
 def test_submit_meltquench_new_task() -> None:
-    """Test submitting a new meltquench task returns STARTED immediately."""
-    payload = {
-        "components": ["SiO2", "CaO", "Al2O3"],
-        "values": [60.0, 25.0, 15.0],
-        "unit": "wt",
-    }
-    response = client.post("/submit/meltquench", json=payload)
+    """Test submitting a new task runs the executor and returns completed."""
+    with _mock_executor_context():
+        payload = {
+            "components": ["SiO2", "CaO", "Al2O3"],
+            "values": [60.0, 25.0, 15.0],
+            "unit": "wt",
+        }
+        response = client.post("/submit/meltquench", json=payload)
 
     assert response.status_code == 200
     data = response.json()
     assert "task_id" in data
-    assert data["status"] == "started"
-    assert data["result"] is None
+    assert data["status"] == "completed"
+    assert data["result"] is not None
+    validate_result_structure(data["result"])
 
-    # Verify task was stored as running
-    task_id = data["task_id"]
-    stored = get_task_store().get(task_id)
+    # Verify task was stored as complete
+    stored = get_task_store().get(data["task_id"])
     assert stored is not None
-    assert stored["state"] == "running"
+    assert stored["state"] == "complete"
 
 
 def test_submit_meltquench_returns_cached() -> None:
@@ -162,42 +184,35 @@ def test_submit_meltquench_returns_cached() -> None:
     request_hash = get_meltquench_hash(request)
     insert_completed_task("cached-task-1", request_hash=request_hash, composition="0.8SiO2-0.2BaO")
 
-    # Submit with the same parameters — should return cached, no executor call
-    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
-        response = client.post("/submit/meltquench", json=request.model_dump())
+    # Submit with the same parameters — should return cached
+    response = client.post("/submit/meltquench", json=request.model_dump())
 
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "completed_from_cache"
     assert data["task_id"] == "cached-task-1"
-    mock_submit.assert_not_called()
 
 
 def test_submit_meltquench_stores_request_data() -> None:
-    """Test that submitting a new task stores request_data for later use."""
-    payload = {
-        "components": ["SiO2", "ZnO"],
-        "values": [90.0, 10.0],
-        "unit": "wt",
-    }
-    response = client.post("/submit/meltquench", json=payload)
+    """Test that submitting a new task stores request_data."""
+    with _mock_executor_context():
+        payload = {
+            "components": ["SiO2", "ZnO"],
+            "values": [90.0, 10.0],
+            "unit": "wt",
+        }
+        response = client.post("/submit/meltquench", json=payload)
 
     assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "started"
-
-    stored = get_task_store().get(data["task_id"])
+    stored = get_task_store().get(response.json()["task_id"])
     assert stored is not None
     assert stored["request_data"]["components"] == ["SiO2", "ZnO"]
     assert stored["request_data"]["values"] == [90.0, 10.0]
 
 
-def test_submit_meltquench_error_returns_500() -> None:
-    """Test that an internal error during submit (not executor) raises HTTP 500."""
-    with patch(
-        "amorphouspy_api.app.get_meltquench_hash",
-        side_effect=RuntimeError("hash failed"),
-    ):
+def test_submit_meltquench_executor_error_returns_500() -> None:
+    """Test that an executor error returns HTTP 500 and stores the error."""
+    with patch("amorphouspy_api.app.get_executor", side_effect=RuntimeError("LAMMPS crashed")):
         payload = {
             "components": ["SiO2", "TiO2"],
             "values": [95.0, 5.0],
@@ -206,6 +221,7 @@ def test_submit_meltquench_error_returns_500() -> None:
         response = client.post("/submit/meltquench", json=payload)
 
     assert response.status_code == 500
+    assert "LAMMPS crashed" in response.json()["detail"]
 
 
 def test_invalid_payload() -> None:

@@ -87,56 +87,6 @@ init_task_store(DB_PATH)
 _task_store = get_task_store()
 
 
-def submit_to_executor(request_data: dict) -> dict:
-    """Submit a meltquench job to executorlib and block until complete.
-
-    Creates a fresh executor for each call. This is necessary because with
-    wait=False, futures from previous executor instances don't update their
-    done() status when background jobs complete. A fresh executor checks
-    the disk cache and returns done()=True immediately if results are cached.
-
-    This function is called from a background thread, so blocking is fine.
-
-    Args:
-        request_data: Dictionary containing the meltquench request parameters.
-
-    Returns:
-        Dictionary with job status:
-        - state: 'complete' or 'error'
-        - result: Result dict if complete
-        - error: Error message if failed
-    """
-    try:
-        logger.info("submit_to_executor: creating executor for %s", MELTQUENCH_PROJECT_DIR)
-        with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
-            lammps_resource_dict = get_lammps_resource_dict()
-
-            logger.info("submit_to_executor: submitting workflow")
-            future = run_meltquench_workflow(
-                executor=exe,
-                components=request_data["components"],
-                values=request_data["values"],
-                n_atoms=request_data["n_atoms"],
-                potential_type=request_data["potential_type"],
-                heating_rate=request_data["heating_rate"],
-                cooling_rate=request_data["cooling_rate"],
-                n_print=request_data["n_print"],
-                lammps_resource_dict=lammps_resource_dict,
-            )
-
-            # Block until the future completes (runs in background thread)
-            logger.info("submit_to_executor: waiting for result")
-            result = future.result()
-
-        serialized_result = MeltquenchResult(**result).model_dump()
-        logger.info("submit_to_executor: complete")
-        return {"state": "complete", "result": serialized_result}
-
-    except Exception as e:
-        logger.exception("Error in executor")
-        return {"state": "error", "error": f"Executor error: {e}"}
-
-
 def get_meltquench_hash(request: MeltquenchRequest) -> str:
     """Compute hash for a meltquench request to enable caching.
 
@@ -312,7 +262,7 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
-        # Store task immediately as running
+        # Store task as running (visible to /check while executor blocks)
         _task_store.set(
             task_id,
             {
@@ -322,11 +272,49 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
             },
         )
 
-        return TaskResponse(
-            task_id=task_id,
-            status=TaskStatus.STARTED,
-            visualization_url=get_visualization_url(task_id),
-        )
+        # Run the executor — this blocks until done.
+        # FastAPI runs sync endpoints in a threadpool, so this won't
+        # block the event loop or other requests.
+        try:
+            with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
+                lammps_resource_dict = get_lammps_resource_dict()
+                future = run_meltquench_workflow(
+                    executor=exe,
+                    components=request_data["components"],
+                    values=request_data["values"],
+                    n_atoms=request_data["n_atoms"],
+                    potential_type=request_data["potential_type"],
+                    heating_rate=request_data["heating_rate"],
+                    cooling_rate=request_data["cooling_rate"],
+                    n_print=request_data["n_print"],
+                    lammps_resource_dict=lammps_resource_dict,
+                )
+                result = future.result()
+
+            serialized = MeltquenchResult(**result).model_dump()
+            _task_store.set(
+                task_id,
+                {
+                    "state": "complete",
+                    "request_hash": request_hash,
+                    "request_data": request_data,
+                    "result": serialized,
+                },
+            )
+            return build_task_response(task_id, {"state": "complete", "result": serialized})
+
+        except Exception as exc:
+            logger.exception("Executor failed for task %s", task_id)
+            _task_store.set(
+                task_id,
+                {
+                    "state": "error",
+                    "request_hash": request_hash,
+                    "request_data": request_data,
+                    "error": str(exc),
+                },
+            )
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception:
