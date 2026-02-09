@@ -253,16 +253,22 @@ def test_check_completed_task() -> None:
     validate_result_structure(data["result"])
 
 
-def test_check_running_task() -> None:
-    """Test that checking a running task returns running status from store."""
+def test_check_running_task_resubmits() -> None:
+    """Test that checking a running task re-submits to executor and completes."""
     insert_running_task("check-running-1", request_hash="hash-check-running-1")
 
-    response = client.get("/check/check-running-1")
+    with _mock_executor_context():
+        response = client.get("/check/check-running-1")
 
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "running"
-    assert data["result"] is None
+    assert data["status"] == "completed"
+    assert data["result"] is not None
+    validate_result_structure(data["result"])
+
+    # Verify task store was updated to complete
+    stored = get_task_store().get("check-running-1")
+    assert stored["state"] == "complete"
 
 
 def test_check_errored_task() -> None:

@@ -13,7 +13,12 @@ from fastapi import APIRouter, HTTPException
 from amorphouspy_api.config import API_BASE_URL, MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import get_task_store
 from amorphouspy_api.jobs import get_executor, get_lammps_resource_dict
-from amorphouspy_api.models import MeltquenchRequest, MeltquenchResult, TaskResponse, TaskStatus
+from amorphouspy_api.models import (
+    MeltquenchRequest,
+    MeltquenchResult,
+    TaskResponse,
+    TaskStatus,
+)
 from amorphouspy_api.workflows import run_meltquench_workflow
 
 logger = logging.getLogger(__name__)
@@ -100,6 +105,37 @@ def build_task_response(
         result=result,
         error=job_status.get("error"),
     )
+
+
+def submit_to_executor(request_data: dict) -> dict:
+    """Submit a meltquench job to the executor and return the raw result.
+
+    This is the shared core that both ``submit_meltquench`` and ``check``
+    use so that the executor-submission logic is not duplicated.
+
+    The executor's disk cache (``MELTQUENCH_PROJECT_DIR``) means that a
+    previously-completed job will return almost immediately.
+
+    Args:
+        request_data: Dictionary with the meltquench request parameters.
+
+    Returns:
+        The raw result dictionary produced by the workflow.
+    """
+    with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
+        lammps_resource_dict = get_lammps_resource_dict()
+        future = run_meltquench_workflow(
+            executor=exe,
+            components=request_data["components"],
+            values=request_data["values"],
+            n_atoms=request_data["n_atoms"],
+            potential_type=request_data["potential_type"],
+            heating_rate=request_data["heating_rate"],
+            cooling_rate=request_data["cooling_rate"],
+            n_print=request_data["n_print"],
+            lammps_resource_dict=lammps_resource_dict,
+        )
+        return future.result()
 
 
 # ---------------------------------------------------------------------------
@@ -199,20 +235,7 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
         # FastAPI runs sync endpoints in a threadpool, so this won't
         # block the event loop or other requests.
         try:
-            with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
-                lammps_resource_dict = get_lammps_resource_dict()
-                future = run_meltquench_workflow(
-                    executor=exe,
-                    components=request_data["components"],
-                    values=request_data["values"],
-                    n_atoms=request_data["n_atoms"],
-                    potential_type=request_data["potential_type"],
-                    heating_rate=request_data["heating_rate"],
-                    cooling_rate=request_data["cooling_rate"],
-                    n_print=request_data["n_print"],
-                    lammps_resource_dict=lammps_resource_dict,
-                )
-                result = future.result()
+            result = submit_to_executor(request_data)
 
             serialized = MeltquenchResult(**result).model_dump()
             task_store.set(
@@ -270,6 +293,39 @@ def check(task_id: str) -> TaskResponse:
         raise HTTPException(status_code=404, detail="Task not found")
 
     logger.info("check %s: state=%s", task_id, meta["state"])
+
+    # If the task is still marked as running, re-submit to the executor.
+    # The executor's disk cache means a finished job returns immediately;
+    # if it's genuinely still running this will block until done.
+    if meta["state"] == "running" and "request_data" in meta:
+        request_data = meta["request_data"]
+        request_hash = meta.get("request_hash", "")
+        try:
+            result = submit_to_executor(request_data)
+
+            serialized = MeltquenchResult(**result).model_dump()
+            task_store.set(
+                task_id,
+                {
+                    "state": "complete",
+                    "request_hash": request_hash,
+                    "request_data": request_data,
+                    "result": serialized,
+                },
+            )
+            return build_task_response(task_id, {"state": "complete", "result": serialized})
+        except Exception as exc:
+            logger.exception("Re-submit failed for task %s", task_id)
+            task_store.set(
+                task_id,
+                {
+                    "state": "error",
+                    "request_hash": request_hash,
+                    "request_data": request_data,
+                    "error": str(exc),
+                },
+            )
+            return build_task_response(task_id, {"state": "error", "error": str(exc)})
 
     return build_task_response(
         task_id,

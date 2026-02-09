@@ -1,6 +1,7 @@
 """Integration tests for meltquench API with live server."""
 
 import logging
+import os
 import time
 
 import pytest
@@ -29,15 +30,20 @@ def is_api_server_running(url: str) -> bool:
 @pytest.mark.integration
 def test_meltquench_api_integration() -> None:
     """Full integration test for the meltquench API using a running server.
-    Requires: API server running in main thread with amorphouspy_INTEGRATION=1
+    Requires: API server running in main thread with AMORPHOUSPY_INTEGRATION=1
     Example:
-        amorphouspy_INTEGRATION=1 uvicorn amorphouspy_api.src.amorphouspy_api.app:app --port 8002
+        AMORPHOUSPY_INTEGRATION=1 uvicorn amorphouspy_api.src.amorphouspy_api.app:app --port 8002
         pytest -m integration.
     """
     API_URL = "http://127.0.0.1:8002"
     root_url = f"{API_URL}/"
     logger.info("Checking API server status...")
     if not is_api_server_running(root_url):
+        if os.environ.get("AMORPHOUSPY_INTEGRATION"):
+            pytest.fail(
+                "API server not running at http://127.0.0.1:8002/ "
+                "but AMORPHOUSPY_INTEGRATION is set — the server should have started"
+            )
         pytest.skip("API server not running at http://127.0.0.1:8002/")
 
     # Use faster rates for integration testing
