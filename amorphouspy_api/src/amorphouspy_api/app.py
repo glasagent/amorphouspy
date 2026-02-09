@@ -15,11 +15,9 @@ Example usage:
     2. Check status: GET /check/{task_id} -> returns current status or results
 """
 
-import asyncio
 import hashlib
 import logging
 import os
-import time
 from importlib.metadata import version
 from pathlib import Path
 from uuid import uuid4
@@ -90,29 +88,30 @@ _task_store = get_task_store()
 
 
 def submit_to_executor(request_data: dict) -> dict:
-    """Submit a meltquench job to executorlib and check status.
+    """Submit a meltquench job to executorlib and block until complete.
 
     Creates a fresh executor for each call. This is necessary because with
     wait=False, futures from previous executor instances don't update their
     done() status when background jobs complete. A fresh executor checks
     the disk cache and returns done()=True immediately if results are cached.
 
+    This function is called from a background thread, so blocking is fine.
+
     Args:
         request_data: Dictionary containing the meltquench request parameters.
 
     Returns:
         Dictionary with job status:
-        - state: 'complete', 'running', or 'error'
+        - state: 'complete' or 'error'
         - result: Result dict if complete
         - error: Error message if failed
     """
     try:
-        # Create fresh executor to properly detect cached results
+        logger.info("submit_to_executor: creating executor for %s", MELTQUENCH_PROJECT_DIR)
         with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
-            # Get LAMMPS-specific resource configuration
             lammps_resource_dict = get_lammps_resource_dict()
 
-            # Submit the workflow - this returns a future for the final result
+            logger.info("submit_to_executor: submitting workflow")
             future = run_meltquench_workflow(
                 executor=exe,
                 components=request_data["components"],
@@ -125,26 +124,13 @@ def submit_to_executor(request_data: dict) -> dict:
                 lammps_resource_dict=lammps_resource_dict,
             )
 
-            # Wait briefly for cache check to complete (happens in background thread)
-            # With wait=False, executorlib checks cache asynchronously
-            for _ in range(10):  # Up to 1 second
-                if future.done():
-                    break
-                time.sleep(0.1)
+            # Block until the future completes (runs in background thread)
+            logger.info("submit_to_executor: waiting for result")
+            result = future.result()
 
-            # Check if result is already available (from cache or completed)
-            if future.done() and not future.cancelled():
-                try:
-                    result = future.result()
-                    # Serialize using MeltquenchResult to handle ASE Atoms objects
-                    serialized_result = MeltquenchResult(**result).model_dump()
-                    return {"state": "complete", "result": serialized_result}
-                except Exception as e:
-                    logger.exception("Job failed with exception")
-                    return {"state": "error", "error": str(e)}
-
-        # Job is running in background
-        return {"state": "running"}
+        serialized_result = MeltquenchResult(**result).model_dump()
+        logger.info("submit_to_executor: complete")
+        return {"state": "complete", "result": serialized_result}
 
     except Exception as e:
         logger.exception("Error in executor")
@@ -256,7 +242,7 @@ app.include_router(visualization_router, tags=["visualization"])
 
 
 @app.post("/cache/meltquench", tags=["tool"])
-async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | None:
+def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | None:
     """Check if a result for the given meltquench request is already available in cache.
 
     Args:
@@ -289,7 +275,7 @@ async def check_cached_result(request: MeltquenchRequest) -> MeltquenchResult | 
 
 
 @app.post("/submit/meltquench", tags=["tool"])
-async def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
+def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
     """Start a new meltquench simulation task.
 
     This endpoint submits a meltquench job using executorlib.
@@ -326,33 +312,21 @@ async def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
-        # Submit job via executorlib (run in thread to avoid blocking event loop)
-        job_status = await asyncio.to_thread(submit_to_executor, request_data)
-
-        # Store task in database
+        # Store task immediately as running
         _task_store.set(
             task_id,
             {
-                "state": job_status["state"],
+                "state": "running",
                 "request_hash": request_hash,
                 "request_data": request_data,
-                "result": job_status.get("result"),
-                "error": job_status.get("error"),
             },
         )
 
-        if job_status["state"] == "error":
-            raise HTTPException(status_code=500, detail=job_status["error"])
-
-        # For initial submission, use STARTED (not RUNNING) to indicate job was just submitted
-        if job_status["state"] == "running":
-            return TaskResponse(
-                task_id=task_id,
-                status=TaskStatus.STARTED,
-                visualization_url=get_visualization_url(task_id),
-            )
-
-        return build_task_response(task_id, job_status)
+        return TaskResponse(
+            task_id=task_id,
+            status=TaskStatus.STARTED,
+            visualization_url=get_visualization_url(task_id),
+        )
     except HTTPException:
         raise
     except Exception:
@@ -361,7 +335,7 @@ async def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
 
 
 @app.get("/check/{task_id}", tags=["tool"])
-async def check(task_id: str) -> TaskResponse:
+def check(task_id: str) -> TaskResponse:
     """Check the current status of a simulation task by its ID.
 
     This endpoint re-submits the job parameters to check status.
@@ -383,32 +357,16 @@ async def check(task_id: str) -> TaskResponse:
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # If already complete or errored, return stored result
-    if meta["state"] in ("complete", "error"):
-        return build_task_response(
-            task_id,
-            {
-                "state": meta["state"],
-                "result": meta.get("result"),
-                "error": meta.get("error"),
-            },
-        )
+    logger.info("check %s: state=%s", task_id, meta["state"])
 
-    # Re-check by submitting to executor (checks disk cache)
-    request_data = meta.get("request_data")
-    if not request_data:
-        raise HTTPException(status_code=500, detail="Task data missing")
-
-    job_status = await asyncio.to_thread(submit_to_executor, request_data)
-
-    # Update task store if job completed
-    if job_status["state"] != "running":
-        meta["state"] = job_status["state"]
-        meta["result"] = job_status.get("result")
-        meta["error"] = job_status.get("error")
-        _task_store.set(task_id, meta)
-
-    return build_task_response(task_id, job_status)
+    return build_task_response(
+        task_id,
+        {
+            "state": meta["state"],
+            "result": meta.get("result"),
+            "error": meta.get("error"),
+        },
+    )
 
 
 mcp = FastApiMCP(app, include_tags=["tool"])
@@ -416,6 +374,6 @@ mcp.mount_http(mount_path="/mcp")
 
 
 @app.get("/")
-async def root() -> RedirectResponse:
+def root() -> RedirectResponse:
     """Root endpoint redirects to API documentation."""
     return RedirectResponse(url="/docs")

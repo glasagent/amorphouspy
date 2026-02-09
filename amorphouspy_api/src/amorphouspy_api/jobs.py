@@ -44,9 +44,12 @@ def get_executor_class() -> type:
     else:
         # Use TestClusterExecutor for local - it supports wait=False
         # (SingleNodeExecutor does not support wait=False)
-        from executorlib.api import TestClusterExecutor
+        # from executorlib.api import TestClusterExecutor
 
-        return TestClusterExecutor
+        # return TestClusterExecutor
+        from executorlib import SingleNodeExecutor
+
+        return SingleNodeExecutor
 
 
 def get_executor_config() -> dict[str, Any]:

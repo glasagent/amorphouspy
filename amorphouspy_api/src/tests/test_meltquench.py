@@ -48,7 +48,9 @@ def create_mock_structural_analysis_data() -> dict[str, Any]:
     }
 
 
-def create_mock_result(composition: str = "0.6SiO2-0.25CaO-0.15Al2O3") -> dict[str, Any]:
+def create_mock_result(
+    composition: str = "0.6SiO2-0.25CaO-0.15Al2O3",
+) -> dict[str, Any]:
     """Create a complete mock meltquench result."""
     return {
         "composition": composition,
@@ -128,27 +130,25 @@ def validate_result_structure(result: dict[str, Any]) -> None:
 
 
 def test_submit_meltquench_new_task() -> None:
-    """Test submitting a new meltquench task via the executor."""
-    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
-        mock_submit.return_value = {
-            "state": "complete",
-            "result": create_mock_result(),
-        }
-        # Use a unique composition unlikely to be in the DB cache
-        payload = {
-            "components": ["SiO2", "CaO", "Al2O3"],
-            "values": [60.0, 25.0, 15.0],
-            "unit": "wt",
-        }
-        response = client.post("/submit/meltquench", json=payload)
+    """Test submitting a new meltquench task returns STARTED immediately."""
+    payload = {
+        "components": ["SiO2", "CaO", "Al2O3"],
+        "values": [60.0, 25.0, 15.0],
+        "unit": "wt",
+    }
+    response = client.post("/submit/meltquench", json=payload)
 
     assert response.status_code == 200
     data = response.json()
     assert "task_id" in data
-    assert data["status"] == "completed"
-    assert data["result"] is not None
-    validate_result_structure(data["result"])
-    mock_submit.assert_called_once()
+    assert data["status"] == "started"
+    assert data["result"] is None
+
+    # Verify task was stored as running
+    task_id = data["task_id"]
+    stored = get_task_store().get(task_id)
+    assert stored is not None
+    assert stored["state"] == "running"
 
 
 def test_submit_meltquench_returns_cached() -> None:
@@ -173,27 +173,31 @@ def test_submit_meltquench_returns_cached() -> None:
     mock_submit.assert_not_called()
 
 
-def test_submit_meltquench_started() -> None:
-    """Test that a still-running submission returns 'started' status."""
-    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
-        mock_submit.return_value = {"state": "running"}
-        payload = {
-            "components": ["SiO2", "ZnO"],
-            "values": [90.0, 10.0],
-            "unit": "wt",
-        }
-        response = client.post("/submit/meltquench", json=payload)
+def test_submit_meltquench_stores_request_data() -> None:
+    """Test that submitting a new task stores request_data for later use."""
+    payload = {
+        "components": ["SiO2", "ZnO"],
+        "values": [90.0, 10.0],
+        "unit": "wt",
+    }
+    response = client.post("/submit/meltquench", json=payload)
 
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "started"
-    assert data["result"] is None
+
+    stored = get_task_store().get(data["task_id"])
+    assert stored is not None
+    assert stored["request_data"]["components"] == ["SiO2", "ZnO"]
+    assert stored["request_data"]["values"] == [90.0, 10.0]
 
 
-def test_submit_meltquench_error() -> None:
-    """Test that an executor error raises HTTP 500."""
-    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
-        mock_submit.return_value = {"state": "error", "error": "LAMMPS crashed"}
+def test_submit_meltquench_error_returns_500() -> None:
+    """Test that an internal error during submit (not executor) raises HTTP 500."""
+    with patch(
+        "amorphouspy_api.app.get_meltquench_hash",
+        side_effect=RuntimeError("hash failed"),
+    ):
         payload = {
             "components": ["SiO2", "TiO2"],
             "values": [95.0, 5.0],
@@ -202,7 +206,6 @@ def test_submit_meltquench_error() -> None:
         response = client.post("/submit/meltquench", json=payload)
 
     assert response.status_code == 500
-    assert "LAMMPS crashed" in response.json()["detail"]
 
 
 def test_invalid_payload() -> None:
@@ -234,13 +237,10 @@ def test_check_completed_task() -> None:
 
 
 def test_check_running_task() -> None:
-    """Test that checking a running task re-submits and returns updated status."""
+    """Test that checking a running task returns running status from store."""
     insert_running_task("check-running-1", request_hash="hash-check-running-1")
 
-    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
-        # Simulate executor still running
-        mock_submit.return_value = {"state": "running"}
-        response = client.get("/check/check-running-1")
+    response = client.get("/check/check-running-1")
 
     assert response.status_code == 200
     data = response.json()
@@ -248,27 +248,22 @@ def test_check_running_task() -> None:
     assert data["result"] is None
 
 
-def test_check_running_task_now_complete() -> None:
-    """Test that a running task transitions to complete on check."""
-    insert_running_task("check-running-2", request_hash="hash-check-running-2")
+def test_check_errored_task() -> None:
+    """Test that checking an errored task returns the error."""
+    get_task_store().set(
+        "check-error-1",
+        {
+            "state": "error",
+            "request_hash": "hash-check-error-1",
+            "error": "LAMMPS crashed",
+        },
+    )
 
-    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
-        mock_submit.return_value = {
-            "state": "complete",
-            "result": create_mock_result("1.0SiO2"),
-        }
-        response = client.get("/check/check-running-2")
-
+    response = client.get("/check/check-error-1")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "completed"
-    assert data["result"] is not None
-    validate_result_structure(data["result"])
-
-    # Verify the store was updated
-    stored = get_task_store().get("check-running-2")
-    assert stored is not None
-    assert stored["state"] == "complete"
+    assert data["status"] == "error"
+    assert data["error"] == "LAMMPS crashed"
 
 
 def test_check_nonexistent_task() -> None:
