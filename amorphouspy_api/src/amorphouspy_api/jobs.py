@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from executorlib.executor.single import TestClusterExecutor
+    from executorlib.api import TestClusterExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def get_executor_class() -> type:
     else:
         # Use TestClusterExecutor for local - it supports wait=False
         # (SingleNodeExecutor does not support wait=False)
-        from executorlib.executor.single import TestClusterExecutor
+        from executorlib.api import TestClusterExecutor
 
         return TestClusterExecutor
 
@@ -106,8 +106,5 @@ def get_executor(cache_directory: Path) -> "TestClusterExecutor":
     )
 
     executor = executor_class(cache_directory=cache_directory, **executor_config)
-
-    # Enter context manager
-    executor.__enter__()
 
     return executor
