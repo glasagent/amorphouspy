@@ -7,6 +7,7 @@ dependencies:
   - cryptography =45.0.7
   - executorlib >=1.8.0
   - hatchling
+  - h5py >=3.15.1
   - jupyter
   - lammps =2024.08.29=*_openmpi_*
   - networkx ~=3.4
