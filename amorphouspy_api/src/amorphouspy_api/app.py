@@ -36,13 +36,13 @@ from .models import MeltquenchRequest, MeltquenchResult, TaskResponse, TaskStatu
 from .visualization import router as visualization_router
 from .workflows import run_meltquench_workflow
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("glass_api.log")],
-)
+# Configure logging - use stream handler by default, file handler only if not in test
 logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 # Get amorphouspy version for project directory naming
 try:
