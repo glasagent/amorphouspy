@@ -15,6 +15,7 @@ Example usage:
     2. Check status: GET /check/{task_id} -> returns current status or results
 """
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -325,8 +326,8 @@ async def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
 
-        # Submit job via executorlib
-        job_status = submit_to_executor(request_data)
+        # Submit job via executorlib (run in thread to avoid blocking event loop)
+        job_status = await asyncio.to_thread(submit_to_executor, request_data)
 
         # Store task in database
         _task_store.set(
@@ -398,7 +399,7 @@ async def check(task_id: str) -> TaskResponse:
     if not request_data:
         raise HTTPException(status_code=500, detail="Task data missing")
 
-    job_status = submit_to_executor(request_data)
+    job_status = await asyncio.to_thread(submit_to_executor, request_data)
 
     # Update task store if job completed
     if job_status["state"] != "running":
