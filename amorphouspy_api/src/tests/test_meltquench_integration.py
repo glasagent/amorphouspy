@@ -82,7 +82,9 @@ def test_meltquench_api_integration() -> None:
                 pytest.fail(f"Meltquench task errored: {check_data.get('error')}")
             if time.time() - start > timeout:
                 logger.error(
-                    "Timeout: Meltquench task did not complete within %s seconds. Last status: %s", timeout, status
+                    "Timeout: Meltquench task did not complete within %s seconds. Last status: %s",
+                    timeout,
+                    status,
                 )
                 pytest.fail(f"Meltquench task did not complete within {timeout} seconds. Last status: {status}")
             time.sleep(poll_interval)
@@ -137,4 +139,7 @@ def test_meltquench_api_integration() -> None:
     logger.info("✓ Temperature: %.1f K", temp)
     logger.info("✓ Density: %.2f g/cm³", density)
     logger.info("✓ Steps: %s", steps)
-    logger.info("✓ Structural analysis: %s", {k: v for k, v in structural_analysis.items() if k != "error"})
+    logger.info(
+        "✓ Structural analysis: %s",
+        {k: v for k, v in structural_analysis.items() if k != "error"},
+    )

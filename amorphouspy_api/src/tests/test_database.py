@@ -14,7 +14,11 @@ def test_task_store_basic_operations() -> None:
         store = TaskStore(db_path)
 
         # Test set and get
-        task_data = {"state": "processing", "status": "Starting", "request_hash": "abc123def456"}
+        task_data = {
+            "state": "processing",
+            "status": "Starting",
+            "request_hash": "abc123def456",
+        }
 
         store.set("test_task_1", task_data)
         retrieved = store.get("test_task_1")
@@ -50,7 +54,11 @@ def test_task_store_cached_result_lookup() -> None:
             "structural_analysis": {
                 "density": 2.5,
                 "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
-                "network": {"connectivity": 3.0, "Qn_distribution": {}, "Qn_distribution_partial": {}},
+                "network": {
+                    "connectivity": 3.0,
+                    "Qn_distribution": {},
+                    "Qn_distribution_partial": {},
+                },
                 "distributions": {"bond_angles": {}, "rings": {}},
                 "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
                 "elements": {"formers": ["Si"], "modifiers": ["Na"], "cutoffs": {}},
@@ -115,7 +123,10 @@ def test_task_store_persistence() -> None:
 
         # Create store and add data
         store1 = TaskStore(db_path)
-        store1.set("persistent_task", {"state": "complete", "status": "Done", "request_hash": "persistent_hash"})
+        store1.set(
+            "persistent_task",
+            {"state": "complete", "status": "Done", "request_hash": "persistent_hash"},
+        )
 
         # Create new store instance with same database
         store2 = TaskStore(db_path)

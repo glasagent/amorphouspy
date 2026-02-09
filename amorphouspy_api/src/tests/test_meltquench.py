@@ -1,82 +1,25 @@
-"""Unit tests for meltquench API functionality."""
+"""Unit tests for meltquench API functionality.
+
+Tests insert tasks directly into the task store rather than mocking the executor,
+except for tests that specifically exercise the /submit endpoint.
+"""
 
 import time
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any, Self
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
-from amorphouspy_api.app import app
+from amorphouspy_api.app import app, get_meltquench_hash
+from amorphouspy_api.database import get_task_store
 from amorphouspy_api.models import MeltquenchRequest
 
 client = TestClient(app)
 
 
-class MockFuture:
-    """Mock future that returns completed result immediately."""
-
-    def __init__(self, result: dict[str, Any]) -> None:
-        """Initialize mock future with result."""
-        self._result = result
-
-    def done(self) -> bool:
-        """Return True to indicate job is complete."""
-        return True
-
-    def cancelled(self) -> bool:
-        """Return False to indicate job was not cancelled."""
-        return False
-
-    def result(self, _timeout: float | None = None) -> dict[str, Any]:
-        """Return the stored result (timeout is ignored for mock)."""
-        return self._result
-
-
-class MockExecutor:
-    """Mock executor that returns completed results immediately."""
-
-    def __init__(self, **_kwargs: object) -> None:
-        """Initialize mock executor (ignores all kwargs)."""
-
-    def __enter__(self) -> Self:
-        """Enter context manager."""
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        """Exit context manager."""
-
-    def submit(self, _fn: Callable[..., Any], **_kwargs: object) -> MockFuture:
-        """Submit a job and return a mock future with completed result."""
-        return MockFuture(
-            {
-                "composition": "0.6SiO2-0.25CaO-0.15Al2O3",
-                "final_structure": create_mock_structure_dict(),
-                "mean_temperature": 302.3333333333,
-                "simulation_steps": 3,
-                "structural_analysis": create_mock_structural_analysis_data(),
-            }
-        )
-
-
-# Singleton mock executor instance for tests
-_mock_executor = MockExecutor()
-
-
-@pytest.fixture(autouse=True)
-def _patch_executor(monkeypatch) -> None:
-    """Replace get_executor with a mock that returns a MockExecutor instance.
-
-    This keeps tests fully in-process and avoids spawning real executorlib jobs.
-    """
-    from amorphouspy_api import app as app_module
-
-    def mock_get_executor(cache_directory: Path) -> MockExecutor:
-        return _mock_executor
-
-    monkeypatch.setattr(app_module, "get_executor", mock_get_executor)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def create_mock_structure_dict() -> dict[str, Any]:
@@ -105,6 +48,64 @@ def create_mock_structural_analysis_data() -> dict[str, Any]:
     }
 
 
+def create_mock_result(composition: str = "0.6SiO2-0.25CaO-0.15Al2O3") -> dict[str, Any]:
+    """Create a complete mock meltquench result."""
+    return {
+        "composition": composition,
+        "final_structure": create_mock_structure_dict(),
+        "mean_temperature": 302.3333333333,
+        "simulation_steps": 3,
+        "structural_analysis": create_mock_structural_analysis_data(),
+    }
+
+
+def insert_completed_task(
+    task_id: str,
+    *,
+    request_hash: str = "test-hash",
+    composition: str = "0.6SiO2-0.25CaO-0.15Al2O3",
+    request_data: dict[str, Any] | None = None,
+) -> None:
+    """Insert a completed task into the task store."""
+    get_task_store().set(
+        task_id,
+        {
+            "state": "complete",
+            "request_hash": request_hash,
+            "request_data": request_data,
+            "result": create_mock_result(composition),
+        },
+    )
+
+
+def insert_running_task(
+    task_id: str,
+    *,
+    request_hash: str = "test-hash-running",
+    request_data: dict[str, Any] | None = None,
+) -> None:
+    """Insert a running task into the task store."""
+    if request_data is None:
+        request_data = {
+            "components": ["SiO2"],
+            "values": [100.0],
+            "unit": "wt",
+            "n_atoms": 3,
+            "potential_type": "pmmcs",
+            "heating_rate": 1e12,
+            "cooling_rate": 1e12,
+            "n_print": 100,
+        }
+    get_task_store().set(
+        task_id,
+        {
+            "state": "running",
+            "request_hash": request_hash,
+            "request_data": request_data,
+        },
+    )
+
+
 def validate_result_structure(result: dict[str, Any]) -> None:
     """Validate the structure of a meltquench result."""
     assert "composition" in result
@@ -113,9 +114,7 @@ def validate_result_structure(result: dict[str, Any]) -> None:
     assert "structural_analysis" in result
     assert "simulation_steps" in result
 
-    # Validate numerical values
     assert isinstance(result["mean_temperature"], float)
-    # Handle both dict and StructureData object cases
     if isinstance(result["structural_analysis"], dict):
         assert isinstance(result["structural_analysis"]["density"], float)
     else:
@@ -123,101 +122,87 @@ def validate_result_structure(result: dict[str, Any]) -> None:
     assert isinstance(result["simulation_steps"], int)
 
 
-def test_submit_meltquench_and_check() -> None:
-    """Test the complete meltquench workflow with mocked job manager."""
-    payload = {
-        "components": ["SiO2", "CaO", "Al2O3"],
-        "values": [60.0, 25.0, 15.0],
-        "unit": "wt",
-    }
-    response = client.post("/submit/meltquench", json=payload)
+# ---------------------------------------------------------------------------
+# /submit/meltquench tests
+# ---------------------------------------------------------------------------
+
+
+def test_submit_meltquench_new_task() -> None:
+    """Test submitting a new meltquench task via the executor."""
+    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
+        mock_submit.return_value = {
+            "state": "complete",
+            "result": create_mock_result(),
+        }
+        # Use a unique composition unlikely to be in the DB cache
+        payload = {
+            "components": ["SiO2", "CaO", "Al2O3"],
+            "values": [60.0, 25.0, 15.0],
+            "unit": "wt",
+        }
+        response = client.post("/submit/meltquench", json=payload)
+
     assert response.status_code == 200
     data = response.json()
     assert "task_id" in data
-    assert "status" in data
-
-    # Mock returns "completed" immediately
-    assert data["status"] in ["completed", "completed_from_cache"]
-    assert "result" in data
+    assert data["status"] == "completed"
+    assert data["result"] is not None
     validate_result_structure(data["result"])
+    mock_submit.assert_called_once()
 
 
-def test_check_running_then_complete() -> None:
-    """Test that a running task gets resolved to complete on check.
-
-    Since the mock executor always completes immediately, checking a
-    running task re-submits to the executor and resolves to complete.
-    """
-    from amorphouspy_api.database import get_task_store
-
-    task_store = get_task_store()
-    task_id = "test-running-to-complete-task"
-
-    # Insert a "running" task directly into the task store
-    task_store.set(
-        task_id,
-        {
-            "state": "running",
-            "request_data": {
-                "components": ["SiO2"],
-                "values": [100.0],
-                "unit": "wt",
-                "n_atoms": 3,
-                "potential_type": "test",
-                "heating_rate": 1e12,
-                "cooling_rate": 1e12,
-                "n_print": 100,
-            },
-            "request_hash": "test-hash-running",
-        },
+def test_submit_meltquench_returns_cached() -> None:
+    """Test that submitting a duplicate request returns the cached result."""
+    # Pre-insert a completed task with a known hash
+    request = MeltquenchRequest(
+        components=["SiO2", "BaO"],
+        values=[80.0, 20.0],
+        unit="wt",
     )
+    request_hash = get_meltquench_hash(request)
+    insert_completed_task("cached-task-1", request_hash=request_hash, composition="0.8SiO2-0.2BaO")
 
-    # Check re-submits to executor, which completes immediately with the mock
-    check_response = client.get(f"/check/{task_id}")
-    assert check_response.status_code == 200
-    check_data = check_response.json()
-    assert check_data["status"] == "completed"
-    assert check_data["result"] is not None
-    validate_result_structure(check_data["result"])
+    # Submit with the same parameters — should return cached, no executor call
+    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
+        response = client.post("/submit/meltquench", json=request.model_dump())
 
-
-def test_check_already_complete() -> None:
-    """Test that a completed task returns stored result without re-submitting."""
-    from amorphouspy_api.database import get_task_store
-
-    task_store = get_task_store()
-    task_id = "test-already-complete-task"
-
-    # Insert a completed task directly into the task store
-    task_store.set(
-        task_id,
-        {
-            "state": "complete",
-            "request_hash": "test-hash-already-complete",
-            "result": {
-                "composition": "1.0SiO2",
-                "final_structure": create_mock_structure_dict(),
-                "mean_temperature": 300.0,
-                "simulation_steps": 3,
-                "structural_analysis": create_mock_structural_analysis_data(),
-            },
-        },
-    )
-
-    # Check should return the stored result directly
-    check_response = client.get(f"/check/{task_id}")
-    assert check_response.status_code == 200
-    check_data = check_response.json()
-    assert check_data["status"] == "completed"
-    assert check_data["result"] is not None
-    validate_result_structure(check_data["result"])
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed_from_cache"
+    assert data["task_id"] == "cached-task-1"
+    mock_submit.assert_not_called()
 
 
-def test_check_nonexistent_task() -> None:
-    """Test checking a task that doesn't exist."""
-    response = client.get("/check/nonexistent-task-id")
-    assert response.status_code == 404
-    assert "Task not found" in response.json()["detail"]
+def test_submit_meltquench_started() -> None:
+    """Test that a still-running submission returns 'started' status."""
+    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
+        mock_submit.return_value = {"state": "running"}
+        payload = {
+            "components": ["SiO2", "ZnO"],
+            "values": [90.0, 10.0],
+            "unit": "wt",
+        }
+        response = client.post("/submit/meltquench", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "started"
+    assert data["result"] is None
+
+
+def test_submit_meltquench_error() -> None:
+    """Test that an executor error raises HTTP 500."""
+    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
+        mock_submit.return_value = {"state": "error", "error": "LAMMPS crashed"}
+        payload = {
+            "components": ["SiO2", "TiO2"],
+            "values": [95.0, 5.0],
+            "unit": "wt",
+        }
+        response = client.post("/submit/meltquench", json=payload)
+
+    assert response.status_code == 500
+    assert "LAMMPS crashed" in response.json()["detail"]
 
 
 def test_invalid_payload() -> None:
@@ -228,124 +213,125 @@ def test_invalid_payload() -> None:
         "unit": "wt",
     }
     response = client.post("/submit/meltquench", json=payload)
-    assert response.status_code == 422  # Validation error
+    assert response.status_code == 422
 
 
-def test_root_redirect() -> None:
-    """Test that root redirects to docs."""
-    # FastAPI TestClient follows redirects by default, so we need to check differently
-    # We can verify that accessing "/" eventually serves docs content
-    response = client.get("/")
+# ---------------------------------------------------------------------------
+# /check/{task_id} tests
+# ---------------------------------------------------------------------------
+
+
+def test_check_completed_task() -> None:
+    """Test that checking a completed task returns the stored result."""
+    insert_completed_task("check-complete-1", request_hash="hash-check-1")
+
+    response = client.get("/check/check-complete-1")
     assert response.status_code == 200
-    # The response should contain swagger/docs content when redirected
-    assert "swagger" in response.text.lower() or "openapi" in response.text.lower()
+    data = response.json()
+    assert data["status"] == "completed"
+    assert data["result"] is not None
+    validate_result_structure(data["result"])
 
 
-def validate_cached_result(data: dict[str, Any] | None) -> None:
-    """Validate cached result structure if it exists."""
-    if data is not None:
-        assert "composition" in data
-        assert "structural_analysis" in data
-        # Handle both dict and StructureData object cases
-        if isinstance(data["structural_analysis"], dict):
-            assert "density" in data["structural_analysis"]
-        else:
-            assert hasattr(data["structural_analysis"], "density")
-        assert "final_structure" in data
-        assert "mean_temperature" in data
-        assert "simulation_steps" in data
+def test_check_running_task() -> None:
+    """Test that checking a running task re-submits and returns updated status."""
+    insert_running_task("check-running-1", request_hash="hash-check-running-1")
 
+    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
+        # Simulate executor still running
+        mock_submit.return_value = {"state": "running"}
+        response = client.get("/check/check-running-1")
 
-def test_check_cached_result_found() -> None:
-    """Test checking for cached results with a specific composition."""
-    payload = {
-        "components": ["SiO2", "K2O"],  # Different from other tests
-        "values": [85.0, 15.0],
-        "unit": "wt",
-    }
-
-    response = client.post("/cache/meltquench", json=payload)
     assert response.status_code == 200
-    validate_cached_result(response.json())
+    data = response.json()
+    assert data["status"] == "running"
+    assert data["result"] is None
 
 
-def test_check_cached_result_not_found() -> None:
-    """Test checking for cached results with another unique composition."""
+def test_check_running_task_now_complete() -> None:
+    """Test that a running task transitions to complete on check."""
+    insert_running_task("check-running-2", request_hash="hash-check-running-2")
+
+    with patch("amorphouspy_api.app.submit_to_executor") as mock_submit:
+        mock_submit.return_value = {
+            "state": "complete",
+            "result": create_mock_result("1.0SiO2"),
+        }
+        response = client.get("/check/check-running-2")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    assert data["result"] is not None
+    validate_result_structure(data["result"])
+
+    # Verify the store was updated
+    stored = get_task_store().get("check-running-2")
+    assert stored is not None
+    assert stored["state"] == "complete"
+
+
+def test_check_nonexistent_task() -> None:
+    """Test checking a task that doesn't exist."""
+    response = client.get("/check/nonexistent-task-id")
+    assert response.status_code == 404
+    assert "Task not found" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# /cache/meltquench tests
+# ---------------------------------------------------------------------------
+
+
+def test_cache_hit() -> None:
+    """Test cache endpoint returns a result when one exists."""
+    request = MeltquenchRequest(
+        components=["SiO2", "K2O"],
+        values=[85.0, 15.0],
+        unit="wt",
+    )
+    request_hash = get_meltquench_hash(request)
+    insert_completed_task("cache-hit-1", request_hash=request_hash, composition="0.85SiO2-0.15K2O")
+
+    response = client.post("/cache/meltquench", json=request.model_dump())
+    assert response.status_code == 200
+    data = response.json()
+    assert data is not None
+    assert data["composition"] == "0.85SiO2-0.15K2O"
+
+
+def test_cache_miss() -> None:
+    """Test cache endpoint returns null when no result exists."""
     payload = {
-        "components": ["SiO2", "Li2O"],  # Different from other tests
+        "components": ["SiO2", "Li2O"],
         "values": [90.0, 10.0],
         "unit": "wt",
     }
-
     response = client.post("/cache/meltquench", json=payload)
     assert response.status_code == 200
-    validate_cached_result(response.json())
+    assert response.json() is None
 
 
-def test_caching_behavior() -> None:
-    """Test that caching actually works by submitting and then checking cache."""
-    unique_payload = {
-        "components": ["SiO2", "MgO"],
-        "values": [70.0, 30.0],
-        "unit": "wt",
-        "heating_rate": int(1e15),  # Fast for testing
-        "cooling_rate": int(1e15),
-        "n_print": 100,
-    }
-
-    # Check cache first
-    cache_response = client.post("/cache/meltquench", json=unique_payload)
-    assert cache_response.status_code == 200
-
-    # Submit the simulation (will be mocked by autouse fixture)
-    submit_response = client.post("/submit/meltquench", json=unique_payload)
-    assert submit_response.status_code == 200
-    submit_data = submit_response.json()
-
-    # Should either start a new task or return cached/completed result
-    assert "task_id" in submit_data
-    assert "status" in submit_data
-    assert submit_data["status"] in ["started", "completed", "completed_from_cache"]
+# ---------------------------------------------------------------------------
+# Visualization tests
+# ---------------------------------------------------------------------------
 
 
 @patch("amorphouspy.workflows.structural_analysis.plot_analysis_results_plotly")
 def test_visualization_endpoint(mock_plot_analysis_results_plotly: MagicMock) -> None:
-    """Test the visualization endpoint with mocked plot generation."""
-    # Create a mock figure for the plot
+    """Test the visualization endpoint returns HTML for a completed task."""
     mock_fig = MagicMock()
-    mock_fig.to_dict.return_value = {
-        "data": [],
-        "layout": {},
-    }  # Mock Plotly figure dict
+    mock_fig.to_dict.return_value = {"data": [], "layout": {}}
     mock_plot_analysis_results_plotly.return_value = mock_fig
 
-    # Submit task with unique payload to avoid caching
-    unique_suffix = str(int(time.time() * 1000))  # millisecond timestamp
-    payload = {
-        "components": ["SiO2", "Na2O"],
-        "values": [75.0, 25.0],
-        "unit": "wt",
-        "heating_rate": int(unique_suffix[-6:]),  # Use last 6 digits
-    }
-
-    submit_response = client.post("/submit/meltquench", json=payload)
-    assert submit_response.status_code == 200
-    submit_data = submit_response.json()
-    task_id = submit_data["task_id"]
-
-    # Overwrite task result directly to tailor the visualization data
-    from amorphouspy_api.database import get_task_store
-
+    task_id = f"viz-task-{int(time.time() * 1000)}"
     get_task_store().set(
         task_id,
         {
             "state": "complete",
-            "status": "Completed",
+            "request_hash": f"viz-hash-{task_id}",
             "result": {
-                "composition": "0.75SiO2-0.25Na2O",
-                "final_structure": create_mock_structure_dict(),
-                "mean_temperature": 300.0,
-                "simulation_steps": 3,
+                **create_mock_result("0.75SiO2-0.25Na2O"),
                 "structural_analysis": {
                     **create_mock_structural_analysis_data(),
                     "density": 2.65,
@@ -354,55 +340,41 @@ def test_visualization_endpoint(mock_plot_analysis_results_plotly: MagicMock) ->
         },
     )
 
-    # Test the visualization endpoint
-    viz_response = client.get(f"/visualize/meltquench/{task_id}")
-    assert viz_response.status_code == 200
+    response = client.get(f"/visualize/meltquench/{task_id}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
 
-    # Check that we get HTML content
-    assert viz_response.headers["content-type"] == "text/html; charset=utf-8"
-    html_content = viz_response.text
-
-    # Verify HTML contains expected elements
+    html_content = response.text
     assert "Melt-Quench Simulation Results" in html_content
     assert task_id in html_content
     assert "plotlyData" in html_content or "plotly-div" in html_content
-
-    # Verify the plot function was called
     mock_plot_analysis_results_plotly.assert_called_once()
 
 
-def test_visualization_endpoint_task_not_found() -> None:
+def test_visualization_task_not_found() -> None:
     """Test visualization endpoint with non-existent task."""
     response = client.get("/visualize/meltquench/nonexistent-task")
     assert response.status_code == 404
     assert "Task not found" in response.json()["detail"]
 
 
-def test_visualization_endpoint_incomplete_task() -> None:
-    """Test visualization endpoint with incomplete task."""
-    # Create a task manually in the database with 'running' state
-    from amorphouspy_api.app import get_meltquench_hash
-    from amorphouspy_api.database import get_task_store
+def test_visualization_incomplete_task() -> None:
+    """Test visualization endpoint with an incomplete task."""
+    task_id = "viz-incomplete-task"
+    insert_running_task(task_id, request_hash="viz-incomplete-hash")
 
-    task_store = get_task_store()
-    fake_task_id = "test-incomplete-task-123"
+    response = client.get(f"/visualize/meltquench/{task_id}")
+    assert response.status_code == 400
+    assert "not completed yet" in response.json()["detail"]
 
-    # Create a proper request to generate hash
-    request_data = {"components": ["SiO2"], "values": [100.0], "unit": "wt"}
-    request = MeltquenchRequest(**request_data)
-    request_hash = get_meltquench_hash(request)
 
-    # Add incomplete task to database
-    task_store.set(
-        fake_task_id,
-        {
-            "state": "running",
-            "request_data": request_data,
-            "request_hash": request_hash,
-        },
-    )
+# ---------------------------------------------------------------------------
+# General tests
+# ---------------------------------------------------------------------------
 
-    # Try to visualize incomplete task
-    viz_response = client.get(f"/visualize/meltquench/{fake_task_id}")
-    assert viz_response.status_code == 400
-    assert "not completed yet" in viz_response.json()["detail"]
+
+def test_root_redirect() -> None:
+    """Test that root redirects to docs."""
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "swagger" in response.text.lower() or "openapi" in response.text.lower()
