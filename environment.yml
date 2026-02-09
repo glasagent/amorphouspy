@@ -6,6 +6,7 @@ dependencies:
   - ase >=3.25.0
   - cryptography =45.0.7
   - executorlib >=1.8.0
+  - flux-core >=0.81.0
   - hatchling
   - jupyter
   - lammps =2024.08.29=*_openmpi_*
