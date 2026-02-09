@@ -107,41 +107,40 @@ def submit_to_executor(request_data: dict) -> dict:
     """
     try:
         # Create fresh executor to properly detect cached results
-        exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
+        with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
+            # Get LAMMPS-specific resource configuration
+            lammps_resource_dict = get_lammps_resource_dict()
 
-        # Get LAMMPS-specific resource configuration
-        lammps_resource_dict = get_lammps_resource_dict()
+            # Submit the workflow - this returns a future for the final result
+            future = run_meltquench_workflow(
+                executor=exe,
+                components=request_data["components"],
+                values=request_data["values"],
+                n_atoms=request_data["n_atoms"],
+                potential_type=request_data["potential_type"],
+                heating_rate=request_data["heating_rate"],
+                cooling_rate=request_data["cooling_rate"],
+                n_print=request_data["n_print"],
+                lammps_resource_dict=lammps_resource_dict,
+            )
 
-        # Submit the workflow - this returns a future for the final result
-        future = run_meltquench_workflow(
-            executor=exe,
-            components=request_data["components"],
-            values=request_data["values"],
-            n_atoms=request_data["n_atoms"],
-            potential_type=request_data["potential_type"],
-            heating_rate=request_data["heating_rate"],
-            cooling_rate=request_data["cooling_rate"],
-            n_print=request_data["n_print"],
-            lammps_resource_dict=lammps_resource_dict,
-        )
+            # Wait briefly for cache check to complete (happens in background thread)
+            # With wait=False, executorlib checks cache asynchronously
+            for _ in range(10):  # Up to 1 second
+                if future.done():
+                    break
+                time.sleep(0.1)
 
-        # Wait briefly for cache check to complete (happens in background thread)
-        # With wait=False, executorlib checks cache asynchronously
-        for _ in range(10):  # Up to 1 second
-            if future.done():
-                break
-            time.sleep(0.1)
-
-        # Check if result is already available (from cache or completed)
-        if future.done() and not future.cancelled():
-            try:
-                result = future.result()
-                # Serialize using MeltquenchResult to handle ASE Atoms objects
-                serialized_result = MeltquenchResult(**result).model_dump()
-                return {"state": "complete", "result": serialized_result}
-            except Exception as e:
-                logger.exception("Job failed with exception")
-                return {"state": "error", "error": str(e)}
+            # Check if result is already available (from cache or completed)
+            if future.done() and not future.cancelled():
+                try:
+                    result = future.result()
+                    # Serialize using MeltquenchResult to handle ASE Atoms objects
+                    serialized_result = MeltquenchResult(**result).model_dump()
+                    return {"state": "complete", "result": serialized_result}
+                except Exception as e:
+                    logger.exception("Job failed with exception")
+                    return {"state": "error", "error": str(e)}
 
         # Job is running in background
         return {"state": "running"}

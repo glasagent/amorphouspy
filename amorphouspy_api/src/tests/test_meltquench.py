@@ -21,10 +21,14 @@ class MockFuture:
     def __init__(self, result: dict[str, Any]) -> None:
         """Initialize mock future with result."""
         self._result = result
+        self._time = time.time()
 
     def done(self) -> bool:
         """Return True to indicate job is complete."""
-        return True
+        if time.time() - self._time > 5:
+            return True
+        else:
+            return False
 
     def cancelled(self) -> bool:
         """Return False to indicate job was not cancelled."""
@@ -154,7 +158,16 @@ def test_check_running_then_complete() -> None:
         task_id,
         {
             "state": "running",
-            "request_data": {"components": ["SiO2"], "values": [100.0], "unit": "wt"},
+            "request_data": {
+                "components": ["SiO2"],
+                "values": [100.0],
+                "unit": "wt",
+                "n_atoms": 3,
+                "potential_type": "test",
+                "heating_rate": 1e12,
+                "cooling_rate": 1e12,
+                "n_print": 100,
+            },
             "request_hash": "test-hash-running",
         },
     )
