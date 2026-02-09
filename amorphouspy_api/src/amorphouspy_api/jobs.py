@@ -105,6 +105,4 @@ def get_executor(cache_directory: Path) -> "TestClusterExecutor":
         cache_directory,
     )
 
-    executor = executor_class(cache_directory=cache_directory, **executor_config)
-
-    return executor
+    return executor_class(cache_directory=cache_directory, **executor_config)
