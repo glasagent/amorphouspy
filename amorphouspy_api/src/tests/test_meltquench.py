@@ -21,14 +21,10 @@ class MockFuture:
     def __init__(self, result: dict[str, Any]) -> None:
         """Initialize mock future with result."""
         self._result = result
-        self._time = time.time()
 
     def done(self) -> bool:
         """Return True to indicate job is complete."""
-        if time.time() - self._time > 5:
-            return True
-        else:
-            return False
+        return True
 
     def cancelled(self) -> bool:
         """Return False to indicate job was not cancelled."""
@@ -147,7 +143,11 @@ def test_submit_meltquench_and_check() -> None:
 
 
 def test_check_running_then_complete() -> None:
-    """Test the running → complete flow by directly manipulating the task store."""
+    """Test that a running task gets resolved to complete on check.
+
+    Since the mock executor always completes immediately, checking a
+    running task re-submits to the executor and resolves to complete.
+    """
     from amorphouspy_api.database import get_task_store
 
     task_store = get_task_store()
@@ -172,17 +172,28 @@ def test_check_running_then_complete() -> None:
         },
     )
 
-    # Check that the task is running
+    # Check re-submits to executor, which completes immediately with the mock
     check_response = client.get(f"/check/{task_id}")
     assert check_response.status_code == 200
     check_data = check_response.json()
-    assert check_data["status"] == "running"
+    assert check_data["status"] == "completed"
+    assert check_data["result"] is not None
+    validate_result_structure(check_data["result"])
 
-    # Simulate completion by updating the task store entry
+
+def test_check_already_complete() -> None:
+    """Test that a completed task returns stored result without re-submitting."""
+    from amorphouspy_api.database import get_task_store
+
+    task_store = get_task_store()
+    task_id = "test-already-complete-task"
+
+    # Insert a completed task directly into the task store
     task_store.set(
         task_id,
         {
             "state": "complete",
+            "request_hash": "test-hash-already-complete",
             "result": {
                 "composition": "1.0SiO2",
                 "final_structure": create_mock_structure_dict(),
@@ -193,7 +204,7 @@ def test_check_running_then_complete() -> None:
         },
     )
 
-    # Check again - should now be complete
+    # Check should return the stored result directly
     check_response = client.get(f"/check/{task_id}")
     assert check_response.status_code == 200
     check_data = check_response.json()

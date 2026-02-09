@@ -4,7 +4,7 @@ This module contains data validation models for various simulation types
 including meltquench simulations and other glass modeling workflows.
 """
 
-from enum import Enum
+from enum import StrEnum
 from io import StringIO
 from typing import Annotated, Literal
 
@@ -103,7 +103,7 @@ __all__ = [
 ]
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     """Status of a simulation task."""
 
     STARTED = "started"
