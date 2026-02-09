@@ -35,7 +35,7 @@ jobs:
       - name: Run integration test
         shell: bash -l {0}
         working-directory: amorphouspy_api
-        run: >
+        run: |
           flux start 
           flux resource info
           python -m uvicorn amorphouspy_api.app:app --port 8002 &
