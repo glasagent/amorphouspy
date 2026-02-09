@@ -37,10 +37,12 @@ jobs:
         working-directory: amorphouspy_api
         run: >
           flux start 
-          AMORPHOUSPY_INTEGRATION=1 uvicorn amorphouspy_api.app:app --port 8002 &
+          flux resource info
+          python -m uvicorn amorphouspy_api.app:app --port 8002 &
           pytest -m integration -s --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term --cov-append
         env:
           EXECUTOR_TYPE: "flux"
+          AMORPHOUSPY_INTEGRATION: "1"
 
       - name: Pytest coverage comment
         uses: MishaKav/pytest-coverage-comment@main
