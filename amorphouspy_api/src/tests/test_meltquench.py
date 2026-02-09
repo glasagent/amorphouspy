@@ -13,9 +13,10 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from amorphouspy_api.app import app, get_meltquench_hash
+from amorphouspy_api.app import app
 from amorphouspy_api.database import get_task_store
 from amorphouspy_api.models import MeltquenchRequest
+from amorphouspy_api.routers.meltquench import get_meltquench_hash
 
 client = TestClient(app)
 
@@ -139,9 +140,9 @@ def _mock_executor_context() -> Generator[SimpleNamespace, None, None]:
     mock_future.result.return_value = create_mock_result()
 
     with (
-        patch("amorphouspy_api.app.get_executor") as mock_get_exe,
+        patch("amorphouspy_api.routers.meltquench.get_executor") as mock_get_exe,
         patch(
-            "amorphouspy_api.app.run_meltquench_workflow",
+            "amorphouspy_api.routers.meltquench.run_meltquench_workflow",
             return_value=mock_future,
         ) as mock_workflow,
     ):
@@ -212,7 +213,7 @@ def test_submit_meltquench_stores_request_data() -> None:
 
 def test_submit_meltquench_executor_error_returns_500() -> None:
     """Test that an executor error returns HTTP 500 and stores the error."""
-    with patch("amorphouspy_api.app.get_executor", side_effect=RuntimeError("LAMMPS crashed")):
+    with patch("amorphouspy_api.routers.meltquench.get_executor", side_effect=RuntimeError("LAMMPS crashed")):
         payload = {
             "components": ["SiO2", "TiO2"],
             "values": [95.0, 5.0],
