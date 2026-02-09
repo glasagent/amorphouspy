@@ -37,6 +37,10 @@ def get_executor_class() -> type:
         from executorlib import SlurmClusterExecutor
 
         return SlurmClusterExecutor
+    elif executor_type == "flux":
+        from executorlib import FluxClusterExecutor
+
+        return FluxClusterExecutor
     else:
         # Use TestClusterExecutor for local - it supports wait=False
         # (SingleNodeExecutor does not support wait=False)
