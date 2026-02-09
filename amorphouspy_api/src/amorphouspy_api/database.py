@@ -252,6 +252,9 @@ class TaskStore:
         if task.error_message:
             task_dict["error"] = task.error_message
 
+        if task.request_data:
+            task_dict["request_data"] = task.request_data
+
         return task_dict
 
     def _update_task_from_dict(self, task: Task, task_data: dict[str, Any]) -> None:
