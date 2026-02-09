@@ -108,7 +108,6 @@ def submit_to_executor(request_data: dict) -> dict:
     try:
         # Create fresh executor to properly detect cached results
         with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
-
             # Get LAMMPS-specific resource configuration
             lammps_resource_dict = get_lammps_resource_dict()
 
