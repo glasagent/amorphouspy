@@ -151,7 +151,13 @@ def resolve_future(
     task_store = get_task_store()
 
     if not future.done():
-        return {"state": "running"}
+        meta = {
+            "state": "running",
+            "request_hash": request_hash,
+            "request_data": request_data,
+        }
+        task_store.set(task_id, meta)
+        return meta
 
     exc = future.exception()
     if exc is not None:
@@ -166,6 +172,7 @@ def resolve_future(
         task_store.set(task_id, meta)
         return meta
 
+    # calculation must have completed
     serialized = MeltquenchResult(**future.result()).model_dump()
     meta = {
         "state": "complete",
