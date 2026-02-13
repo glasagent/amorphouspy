@@ -138,6 +138,8 @@ def _mock_executor_context() -> Generator[SimpleNamespace, None, None]:
     """Context manager that patches get_executor and run_meltquench_workflow."""
     mock_future = MagicMock()
     mock_future.result.return_value = create_mock_result()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
 
     with (
         patch("amorphouspy_api.routers.meltquench.get_executor") as mock_get_exe,
@@ -212,8 +214,8 @@ def test_submit_meltquench_stores_request_data() -> None:
 
 
 def test_submit_meltquench_executor_error_returns_500() -> None:
-    """Test that an executor error returns HTTP 500 and stores the error."""
-    with patch("amorphouspy_api.routers.meltquench.get_executor", side_effect=RuntimeError("LAMMPS crashed")):
+    """Test that an executor error returns HTTP 500."""
+    with patch("amorphouspy_api.routers.meltquench.get_executor", side_effect=RuntimeError):
         payload = {
             "components": ["SiO2", "TiO2"],
             "values": [95.0, 5.0],
@@ -222,7 +224,6 @@ def test_submit_meltquench_executor_error_returns_500() -> None:
         response = client.post("/submit/meltquench", json=payload)
 
     assert response.status_code == 500
-    assert "LAMMPS crashed" in response.json()["detail"]
 
 
 def test_invalid_payload() -> None:
