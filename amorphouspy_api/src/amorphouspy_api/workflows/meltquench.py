@@ -23,13 +23,13 @@ from amorphouspy import (
 from amorphouspy.workflows.structural_analysis import analyze_structure
 
 if TYPE_CHECKING:
-    from executorlib.executor.single import TestClusterExecutor
+    from executorlib.executor.base import BaseExecutor
 
 logger = logging.getLogger(__name__)
 
 
 def run_meltquench_workflow(
-    executor: "TestClusterExecutor",
+    executor: "BaseExecutor",
     components: list[str],
     values: list[float],
     n_atoms: int,

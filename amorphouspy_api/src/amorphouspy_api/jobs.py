@@ -17,10 +17,9 @@ Configure via environment variables:
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from executorlib.api import TestClusterExecutor
+import executorlib
 
 logger = logging.getLogger(__name__)
 
@@ -29,27 +28,18 @@ def get_executor_class() -> type:
     """Get the appropriate executor class based on environment.
 
     Returns:
-        TestClusterExecutor (local) or SlurmClusterExecutor class.
+        BaseExecutor subclass based on environment.
     """
     executor_type = os.environ.get("EXECUTOR_TYPE", "local").lower()
 
-    if executor_type == "slurm":
-        from executorlib import SlurmClusterExecutor
+    executor_classes = {
+        "slurm": executorlib.SlurmClusterExecutor,
+        "flux": executorlib.FluxClusterExecutor,
+        "single": executorlib.SingleNodeExecutor,
+    }
 
-        return SlurmClusterExecutor
-    elif executor_type == "flux":
-        from executorlib import FluxClusterExecutor
-
-        return FluxClusterExecutor
-    else:
-        # Use TestClusterExecutor for local - it supports wait=False
-        # (SingleNodeExecutor does not support wait=False)
-        # from executorlib.api import TestClusterExecutor
-
-        # return TestClusterExecutor
-        from executorlib import SingleNodeExecutor
-
-        return SingleNodeExecutor
+    # Fall back to TestClusterExecutor for tests on CI
+    return executor_classes.get(executor_type, executorlib.api.TestClusterExecutor)
 
 
 def get_executor_config() -> dict[str, Any]:
@@ -83,7 +73,7 @@ def get_lammps_resource_dict() -> dict[str, Any]:
     return {"cores": cores}
 
 
-def get_executor(cache_directory: Path) -> "TestClusterExecutor":
+def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:
     """Create a fresh executor instance.
 
     A new executor is created for each call to properly detect cached results.
