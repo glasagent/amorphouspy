@@ -65,7 +65,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             melt_quench_simulation,
         )
         from amorphouspy.workflows.structural_analysis import analyze_structure
-        from executorlib import FluxClusterExecutor
+        from executorlib import FluxClusterExecutor, get_item_from_future
 
         # Create composition string from request
         comp_parts = []
@@ -89,23 +89,23 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
         # Create executor for caching workflow results
         with FluxClusterExecutor(cache_directory=project_path) as exe:
-            atoms_dict = exe.submit(
+            atoms_dict_future = exe.submit(
                 get_structure_dict,
                 composition=composition,
                 # n_molecules=5000,  # Default number of molecules
                 target_atoms=request.n_atoms,
-            ).result()
-            logger.info(f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms")
+            )
+            # logger.info(f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms")
 
             structure_future = exe.submit(
                 get_ase_structure,
-                atoms_dict=atoms_dict,
+                atoms_dict=atoms_dict_future,
             )
             logger.info(f"Task {task_id}: ASE structure created")
 
             potential_future = exe.submit(
                 generate_potential,
-                atoms_dict=atoms_dict,
+                atoms_dict=atoms_dict_future,
                 potential_type=request.potential_type,
             )
             logger.info(f"Task {task_id}: Potential generated")
@@ -123,7 +123,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
             # Run meltquench simulation
             logger.info(f"Task {task_id}: Executing simulation workflow")
-            result = exe.submit(
+            result_future = exe.submit(
                 melt_quench_simulation,
                 structure=structure_future,
                 potential=potential_future,
@@ -133,7 +133,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
                 cooling_rate=request.cooling_rate,
                 langevin=False,
                 server_kwargs={},
-            ).result()
+            )
             logger.info(f"Task {task_id}: Simulation completed successfully")
 
             # Update task status for structural analysis
@@ -143,15 +143,17 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             logger.info(f"Task {task_id}: Starting structural analysis")
 
             # Perform structural analysis on the final structure (includes density calculation)
-            final_structure = result["structure"]
-            logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
+            # final_structure = result["structure"]
+            # logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
             # Run structural analysis
-            structural_data = exe.submit(
+            structural_data_future = exe.submit(
                 analyze_structure,
-                atoms=final_structure,
-            ).result()
+                atoms=get_item_from_future(result_future, "structure")
+            )
             logger.info(f"Task {task_id}: Structural analysis completed successfully")
+            structural_data = structural_data_future.result()
+            result = result_future.result()
 
         # Debug: Check what fields are present in the structural_data object
         logger.info(f"Task {task_id}: StructureData type: {type(structural_data)}")
