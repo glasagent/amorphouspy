@@ -295,11 +295,11 @@ def check(task_id: str) -> TaskResponse:
         raise HTTPException(status_code=404, detail="Task not found")
     logger.info("check %s: state=%s", task_id, meta["state"])
 
-    if "request_data" not in meta:
-        raise HTTPException(status_code=500, detail="Task is missing request data")
-
     if meta["state"] != "running":
         return build_task_response(task_id, meta)
+
+    if "request_data" not in meta:
+        raise HTTPException(status_code=500, detail="Task is missing request data")
 
     # If the task is still marked as running, re-submit to the executor.
     # The executor's disk cache means a finished job returns immediately;
