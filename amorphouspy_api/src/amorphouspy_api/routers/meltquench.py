@@ -5,6 +5,7 @@ Endpoints for submitting, checking, and caching meltquench simulations.
 
 import hashlib
 import logging
+from concurrent.futures import Future
 from uuid import uuid4
 
 import cloudpickle
@@ -107,7 +108,7 @@ def build_task_response(
     )
 
 
-def submit_to_executor(request_data: dict) -> dict:
+def submit_to_executor(request_data: dict) -> Future:
     """Submit a meltquench job to the executor and return the raw result.
 
     This is the shared core that both ``submit_meltquench`` and ``check``
@@ -136,7 +137,7 @@ def submit_to_executor(request_data: dict) -> dict:
         lammps_resource_dict=lammps_resource_dict,
     )
     exe.shutdown(wait=False, cancel_futures=False)
-    return future.result()
+    return future
 
 
 # ---------------------------------------------------------------------------
@@ -221,24 +222,25 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
 
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
+        future = submit_to_executor(request_data)
 
-        # Store task as running (visible to /check while executor blocks)
-        task_store.set(
-            task_id,
-            {
-                "state": "running",
-                "request_hash": request_hash,
-                "request_data": request_data,
-            },
-        )
+        # Check if the future completed immediately (e.g. from executor cache)
+        if future.done():
+            if future.exception() is not None:
+                error_msg = str(future.exception())
+                logger.error("Task %s failed immediately: %s", task_id, error_msg)
+                task_store.set(
+                    task_id,
+                    {
+                        "state": "error",
+                        "request_hash": request_hash,
+                        "request_data": request_data,
+                        "error": error_msg,
+                    },
+                )
+                return build_task_response(task_id, {"state": "error", "error": error_msg})
 
-        # Run the executor — this blocks until done.
-        # FastAPI runs sync endpoints in a threadpool, so this won't
-        # block the event loop or other requests.
-        try:
-            result = submit_to_executor(request_data)
-
-            serialized = MeltquenchResult(**result).model_dump()
+            serialized = MeltquenchResult(**future.result()).model_dump()
             task_store.set(
                 task_id,
                 {
@@ -250,18 +252,17 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
             )
             return build_task_response(task_id, {"state": "complete", "result": serialized})
 
-        except Exception as exc:
-            logger.exception("Executor failed for task %s", task_id)
-            task_store.set(
-                task_id,
-                {
-                    "state": "error",
-                    "request_hash": request_hash,
-                    "request_data": request_data,
-                    "error": str(exc),
-                },
-            )
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # Still running — store as running and return immediately
+        task_store.set(
+            task_id,
+            {
+                "state": "running",
+                "request_hash": request_hash,
+                "request_data": request_data,
+            },
+        )
+        return build_task_response(task_id, {"state": "running"})
+
     except HTTPException:
         raise
     except Exception:
@@ -302,19 +303,38 @@ def check(task_id: str) -> TaskResponse:
         request_data = meta["request_data"]
         request_hash = meta.get("request_hash", "")
         try:
-            result = submit_to_executor(request_data)
+            future = submit_to_executor(request_data)
 
-            serialized = MeltquenchResult(**result).model_dump()
-            task_store.set(
-                task_id,
-                {
-                    "state": "complete",
-                    "request_hash": request_hash,
-                    "request_data": request_data,
-                    "result": serialized,
-                },
-            )
-            return build_task_response(task_id, {"state": "complete", "result": serialized})
+            if future.done():
+                if future.exception() is not None:
+                    error_msg = str(future.exception())
+                    logger.error("Task %s failed: %s", task_id, error_msg)
+                    task_store.set(
+                        task_id,
+                        {
+                            "state": "error",
+                            "request_hash": request_hash,
+                            "request_data": request_data,
+                            "error": error_msg,
+                        },
+                    )
+                    return build_task_response(task_id, {"state": "error", "error": error_msg})
+
+                serialized = MeltquenchResult(**future.result()).model_dump()
+                task_store.set(
+                    task_id,
+                    {
+                        "state": "complete",
+                        "request_hash": request_hash,
+                        "request_data": request_data,
+                        "result": serialized,
+                    },
+                )
+                return build_task_response(task_id, {"state": "complete", "result": serialized})
+
+            # Still running
+            return build_task_response(task_id, {"state": "running"})
+
         except Exception as exc:
             logger.exception("Re-submit failed for task %s", task_id)
             task_store.set(
