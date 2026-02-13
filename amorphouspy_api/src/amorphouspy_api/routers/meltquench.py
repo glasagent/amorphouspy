@@ -109,19 +109,16 @@ def build_task_response(
 
 
 def submit_to_executor(request_data: dict) -> Future:
-    """Submit a meltquench job to the executor and return the raw result.
-
-    This is the shared core that both ``submit_meltquench`` and ``check``
-    use so that the executor-submission logic is not duplicated.
+    """Submit a meltquench job to the executor and return the future.
 
     The executor's disk cache (``MELTQUENCH_PROJECT_DIR``) means that a
-    previously-completed job will return almost immediately.
+    previously-completed job will have ``done() == True`` immediately.
 
     Args:
         request_data: Dictionary with the meltquench request parameters.
 
     Returns:
-        The raw result dictionary produced by the workflow.
+        A Future for the workflow result.
     """
     exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
     lammps_resource_dict = get_lammps_resource_dict()
@@ -138,6 +135,46 @@ def submit_to_executor(request_data: dict) -> Future:
     )
     exe.shutdown(wait=False, cancel_futures=False)
     return future
+
+
+def resolve_future(
+    future: Future,
+    task_id: str,
+    request_hash: str,
+    request_data: dict,
+) -> dict:
+    """Inspect a future and persist its state in the task store.
+
+    Returns:
+        A job-status dict suitable for ``build_task_response``.
+    """
+    task_store = get_task_store()
+
+    if not future.done():
+        return {"state": "running"}
+
+    exc = future.exception()
+    if exc is not None:
+        error_msg = str(exc)
+        logger.error("Task %s failed: %s", task_id, error_msg)
+        meta = {
+            "state": "error",
+            "request_hash": request_hash,
+            "request_data": request_data,
+            "error": error_msg,
+        }
+        task_store.set(task_id, meta)
+        return meta
+
+    serialized = MeltquenchResult(**future.result()).model_dump()
+    meta = {
+        "state": "complete",
+        "request_hash": request_hash,
+        "request_data": request_data,
+        "result": serialized,
+    }
+    task_store.set(task_id, meta)
+    return meta
 
 
 # ---------------------------------------------------------------------------
@@ -223,45 +260,8 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
         future = submit_to_executor(request_data)
-
-        # Check if the future completed immediately (e.g. from executor cache)
-        if future.done():
-            if future.exception() is not None:
-                error_msg = str(future.exception())
-                logger.error("Task %s failed immediately: %s", task_id, error_msg)
-                task_store.set(
-                    task_id,
-                    {
-                        "state": "error",
-                        "request_hash": request_hash,
-                        "request_data": request_data,
-                        "error": error_msg,
-                    },
-                )
-                return build_task_response(task_id, {"state": "error", "error": error_msg})
-
-            serialized = MeltquenchResult(**future.result()).model_dump()
-            task_store.set(
-                task_id,
-                {
-                    "state": "complete",
-                    "request_hash": request_hash,
-                    "request_data": request_data,
-                    "result": serialized,
-                },
-            )
-            return build_task_response(task_id, {"state": "complete", "result": serialized})
-
-        # Still running — store as running and return immediately
-        task_store.set(
-            task_id,
-            {
-                "state": "running",
-                "request_hash": request_hash,
-                "request_data": request_data,
-            },
-        )
-        return build_task_response(task_id, {"state": "running"})
+        status = resolve_future(future, task_id, request_hash, request_data)
+        return build_task_response(task_id, status)
 
     except HTTPException:
         raise
@@ -293,66 +293,27 @@ def check(task_id: str) -> TaskResponse:
     meta = task_store.get(task_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Task not found")
-
     logger.info("check %s: state=%s", task_id, meta["state"])
+
+    if "request_data" not in meta:
+        raise HTTPException(status_code=500, detail="Task is missing request data")
+
+    if meta["state"] != "running":
+        return build_task_response(task_id, meta)
 
     # If the task is still marked as running, re-submit to the executor.
     # The executor's disk cache means a finished job returns immediately;
-    # if it's genuinely still running this will block until done.
-    if meta["state"] == "running" and "request_data" in meta:
-        request_data = meta["request_data"]
-        request_hash = meta.get("request_hash", "")
-        try:
-            future = submit_to_executor(request_data)
-
-            if future.done():
-                if future.exception() is not None:
-                    error_msg = str(future.exception())
-                    logger.error("Task %s failed: %s", task_id, error_msg)
-                    task_store.set(
-                        task_id,
-                        {
-                            "state": "error",
-                            "request_hash": request_hash,
-                            "request_data": request_data,
-                            "error": error_msg,
-                        },
-                    )
-                    return build_task_response(task_id, {"state": "error", "error": error_msg})
-
-                serialized = MeltquenchResult(**future.result()).model_dump()
-                task_store.set(
-                    task_id,
-                    {
-                        "state": "complete",
-                        "request_hash": request_hash,
-                        "request_data": request_data,
-                        "result": serialized,
-                    },
-                )
-                return build_task_response(task_id, {"state": "complete", "result": serialized})
-
-            # Still running
-            return build_task_response(task_id, {"state": "running"})
-
-        except Exception as exc:
-            logger.exception("Re-submit failed for task %s", task_id)
-            task_store.set(
-                task_id,
-                {
-                    "state": "error",
-                    "request_hash": request_hash,
-                    "request_data": request_data,
-                    "error": str(exc),
-                },
-            )
-            return build_task_response(task_id, {"state": "error", "error": str(exc)})
-
-    return build_task_response(
-        task_id,
-        {
-            "state": meta["state"],
-            "result": meta.get("result"),
-            "error": meta.get("error"),
-        },
-    )
+    request_data = meta["request_data"]
+    request_hash = meta.get("request_hash", "")
+    try:
+        future = submit_to_executor(request_data)
+        status = resolve_future(future, task_id, request_hash, request_data)
+    except Exception as exc:
+        logger.exception("Re-submit failed for task %s", task_id)
+        error_msg = str(exc)
+        status = {"state": "error", "error": error_msg}
+        task_store.set(
+            task_id,
+            {"state": "error", "request_hash": request_hash, "request_data": request_data, "error": error_msg},
+        )
+    return build_task_response(task_id, status)
