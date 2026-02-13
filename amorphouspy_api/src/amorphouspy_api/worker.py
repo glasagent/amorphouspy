@@ -152,8 +152,8 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             )
             logger.info(f"Task {task_id}: Structural analysis completed successfully")
         
-        result = result_future.result()
-        structural_data = structural_data_future.result()
+            result = result_future.result()
+            structural_data = structural_data_future.result()
 
         # Debug: Check what fields are present in the structural_data object
         logger.info(f"Task {task_id}: StructureData type: {type(structural_data)}")
