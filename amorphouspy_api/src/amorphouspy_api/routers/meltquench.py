@@ -122,20 +122,21 @@ def submit_to_executor(request_data: dict) -> dict:
     Returns:
         The raw result dictionary produced by the workflow.
     """
-    with get_executor(cache_directory=MELTQUENCH_PROJECT_DIR) as exe:
-        lammps_resource_dict = get_lammps_resource_dict()
-        future = run_meltquench_workflow(
-            executor=exe,
-            components=request_data["components"],
-            values=request_data["values"],
-            n_atoms=request_data["n_atoms"],
-            potential_type=request_data["potential_type"],
-            heating_rate=request_data["heating_rate"],
-            cooling_rate=request_data["cooling_rate"],
-            n_print=request_data["n_print"],
-            lammps_resource_dict=lammps_resource_dict,
-        )
-        return future.result()
+    exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
+    lammps_resource_dict = get_lammps_resource_dict()
+    future = run_meltquench_workflow(
+        executor=exe,
+        components=request_data["components"],
+        values=request_data["values"],
+        n_atoms=request_data["n_atoms"],
+        potential_type=request_data["potential_type"],
+        heating_rate=request_data["heating_rate"],
+        cooling_rate=request_data["cooling_rate"],
+        n_print=request_data["n_print"],
+        lammps_resource_dict=lammps_resource_dict,
+    )
+    exe.shutdown(wait=False, cancel_futures=False)
+    return future.result()
 
 
 # ---------------------------------------------------------------------------

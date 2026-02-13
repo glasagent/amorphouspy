@@ -36,14 +36,10 @@ jobs:
         shell: bash -l {0}
         working-directory: amorphouspy_api
         run: |
-          flux start bash -l '
-            flux resource info
-            python -m uvicorn amorphouspy_api.app:app --port 8002 &
-            sleep 3
-            pytest -m integration -s --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term --cov-append
-          '
+          uvicorn amorphouspy_api.app:app --port 8002 &
+          sleep 3
+          pytest -m integration -s --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term --cov-append
         env:
-          EXECUTOR_TYPE: "flux"
           AMORPHOUSPY_INTEGRATION: "1"
 
       - name: Pytest coverage comment
