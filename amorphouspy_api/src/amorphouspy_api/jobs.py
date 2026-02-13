@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import executorlib
+from executorlib.api import TestClusterExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ def get_executor_class() -> type:
     }
 
     # Fall back to TestClusterExecutor for tests on CI
-    return executor_classes.get(executor_type, executorlib.api.TestClusterExecutor)
+    return executor_classes.get(executor_type, TestClusterExecutor)
 
 
 def get_executor_config() -> dict[str, Any]:
