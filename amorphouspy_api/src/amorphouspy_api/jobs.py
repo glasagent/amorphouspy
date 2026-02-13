@@ -59,10 +59,6 @@ def get_executor_config() -> dict[str, Any]:
         Dictionary of executor configuration options.
     """
     config: dict[str, Any] = {}
-
-    # Common config: allow non-blocking exit (recommended by executorlib author)
-    config["wait"] = False
-
     cores = os.environ.get("EXECUTOR_CORES")
     if cores:
         config["cores_per_worker"] = int(cores)
