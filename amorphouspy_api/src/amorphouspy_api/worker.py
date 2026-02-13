@@ -65,7 +65,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             melt_quench_simulation,
         )
         from amorphouspy.workflows.structural_analysis import analyze_structure
-        from executorlib import SingleNodeExecutor
+        from executorlib import SingleNodeExecutor, get_item_from_future
 
         # Create composition string from request
         comp_parts = []
@@ -123,7 +123,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
         # Run meltquench simulation
         logger.info(f"Task {task_id}: Executing simulation workflow")
-        result = exe.submit(
+        result_future = exe.submit(
             melt_quench_simulation,
             structure=structure_future,
             potential=potential_future,
@@ -133,7 +133,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             cooling_rate=request.cooling_rate,
             langevin=False,
             server_kwargs={},
-        ).result()
+        )
         logger.info(f"Task {task_id}: Simulation completed successfully")
 
         # Update task status for structural analysis
@@ -143,16 +143,17 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Starting structural analysis")
 
         # Perform structural analysis on the final structure (includes density calculation)
-        final_structure = result["structure"]
-        logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
+        # final_structure = get_item_from_future(result_future, key="structure")
+        # logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
         # Run structural analysis
         structural_data_future = exe.submit(
             analyze_structure,
-            atoms=final_structure,
+            atoms=get_item_from_future(result_future, key="structure")
         )
         logger.info(f"Task {task_id}: Structural analysis completed successfully")
         exe.shutdown(wait=False, cancel_futures=False)
+        result = result_future.result()
         structural_data = structural_data_future.result()
 
         # Debug: Check what fields are present in the structural_data object
