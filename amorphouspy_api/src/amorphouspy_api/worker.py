@@ -65,7 +65,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
             melt_quench_simulation,
         )
         from amorphouspy.workflows.structural_analysis import analyze_structure
-        from executorlib.api import TestClusterExecutor
+        from executorlib import FluxClusterExecutor
 
         # Create composition string from request
         comp_parts = []
@@ -88,7 +88,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Using shared project directory: {project_path}")
 
         # Create executor for caching workflow results
-        with TestClusterExecutor(cache_directory=project_path) as exe:
+        with FluxClusterExecutor(cache_directory=project_path) as exe:
             atoms_dict = exe.submit(
                 get_structure_dict,
                 composition=composition,
