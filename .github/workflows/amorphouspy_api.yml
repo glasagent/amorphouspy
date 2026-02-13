@@ -36,8 +36,9 @@ jobs:
         shell: bash -l {0}
         working-directory: amorphouspy_api
         run: |
-          flux start amorphouspy_INTEGRATION=1 uvicorn amorphouspy_api.app:app --port 8002 &
-          pytest -m integration -s --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term --cov-append
+          echo "amorphouspy_INTEGRATION=1 uvicorn amorphouspy_api.app:app --port 8002 & pytest -m integration -s --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term --cov-append" > test.sh
+          chmod +x test.sh
+          flux start ./test.sh
 
       - name: Pytest coverage comment
         uses: MishaKav/pytest-coverage-comment@main
