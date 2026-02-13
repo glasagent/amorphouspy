@@ -151,7 +151,7 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
                 analyze_structure, atoms=get_item_from_future(result_future, key="structure")
             )
             logger.info(f"Task {task_id}: Structural analysis completed successfully")
-        
+
             result = result_future.result()
             structural_data = structural_data_future.result()
 
