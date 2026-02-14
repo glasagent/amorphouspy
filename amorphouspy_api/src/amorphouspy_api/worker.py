@@ -88,72 +88,73 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
         logger.info(f"Task {task_id}: Using shared project directory: {project_path}")
 
         # Create executor for caching workflow results
-        with FluxClusterExecutor(cache_directory=project_path) as exe:
-            atoms_dict_future = exe.submit(
-                get_structure_dict,
-                composition=composition,
-                # n_molecules=5000,  # Default number of molecules
-                target_atoms=request.n_atoms,
-            )
-            # logger.info(f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms")
+        exe = FluxClusterExecutor(cache_directory=project_path)
+        atoms_dict_future = exe.submit(
+            get_structure_dict,
+            composition=composition,
+            # n_molecules=5000,  # Default number of molecules
+            target_atoms=request.n_atoms,
+        )
+        # logger.info(f"Task {task_id}: Structure dictionary created with {len(atoms_dict['atoms'])} atoms")
 
-            structure_future = exe.submit(
-                get_ase_structure,
-                atoms_dict=atoms_dict_future,
-            )
-            logger.info(f"Task {task_id}: ASE structure created")
+        structure_future = exe.submit(
+            get_ase_structure,
+            atoms_dict=atoms_dict_future,
+        )
+        logger.info(f"Task {task_id}: ASE structure created")
 
-            potential_future = exe.submit(
-                generate_potential,
-                atoms_dict=atoms_dict_future,
-                potential_type=request.potential_type,
-            )
-            logger.info(f"Task {task_id}: Potential generated")
+        potential_future = exe.submit(
+            generate_potential,
+            atoms_dict=atoms_dict_future,
+            potential_type=request.potential_type,
+        )
+        logger.info(f"Task {task_id}: Potential generated")
 
-            # Update task status
-            current_task = task_store.get(task_id) or {"state": "processing"}
-            current_task["status"] = "Running meltquench simulation"
-            task_store.set(task_id, current_task)
-            logger.info(f"Task {task_id}: Starting meltquench simulation")
+        # Update task status
+        current_task = task_store.get(task_id) or {"state": "processing"}
+        current_task["status"] = "Running meltquench simulation"
+        task_store.set(task_id, current_task)
+        logger.info(f"Task {task_id}: Starting meltquench simulation")
 
-            # Use simulation parameters from the request
-            logger.info(
-                f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}"
-            )
+        # Use simulation parameters from the request
+        logger.info(
+            f"Task {task_id}: Using heating_rate={request.heating_rate}, cooling_rate={request.cooling_rate}, n_print={request.n_print}"
+        )
 
-            # Run meltquench simulation
-            logger.info(f"Task {task_id}: Executing simulation workflow")
-            result_future = exe.submit(
-                melt_quench_simulation,
-                structure=structure_future,
-                potential=potential_future,
-                n_print=request.n_print,
-                # tmp_working_directory=str(tmp_dir_base), # note: if provided needs to be static - or prevents caching at executor level
-                heating_rate=request.heating_rate,
-                cooling_rate=request.cooling_rate,
-                langevin=False,
-                server_kwargs={},
-            )
-            logger.info(f"Task {task_id}: Simulation completed successfully")
+        # Run meltquench simulation
+        logger.info(f"Task {task_id}: Executing simulation workflow")
+        result_future = exe.submit(
+            melt_quench_simulation,
+            structure=structure_future,
+            potential=potential_future,
+            n_print=request.n_print,
+            # tmp_working_directory=str(tmp_dir_base), # note: if provided needs to be static - or prevents caching at executor level
+            heating_rate=request.heating_rate,
+            cooling_rate=request.cooling_rate,
+            langevin=False,
+            server_kwargs={},
+        )
+        logger.info(f"Task {task_id}: Simulation completed successfully")
 
-            # Update task status for structural analysis
-            current_task = task_store.get(task_id) or {"state": "processing"}
-            current_task["status"] = "Running structural analysis"
-            task_store.set(task_id, current_task)
-            logger.info(f"Task {task_id}: Starting structural analysis")
+        # Update task status for structural analysis
+        current_task = task_store.get(task_id) or {"state": "processing"}
+        current_task["status"] = "Running structural analysis"
+        task_store.set(task_id, current_task)
+        logger.info(f"Task {task_id}: Starting structural analysis")
 
-            # Perform structural analysis on the final structure (includes density calculation)
-            # final_structure = result["structure"]
-            # logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
+        # Perform structural analysis on the final structure (includes density calculation)
+        # final_structure = result["structure"]
+        # logger.info(f"Task {task_id}: Analyzing structure with {len(final_structure)} atoms")
 
-            # Run structural analysis
-            structural_data_future = exe.submit(
-                analyze_structure,
-                atoms=get_item_from_future(result_future, key="structure"),
-            )
-            logger.info(f"Task {task_id}: Structural analysis submitted")
-            structural_data = structural_data_future.result()
-            result = result_future.result()
+        # Run structural analysis
+        structural_data_future = exe.submit(
+            analyze_structure,
+            atoms=get_item_from_future(result_future, key="structure"),
+        )
+        logger.info(f"Task {task_id}: Structural analysis submitted")
+        exe.shutdown(wait=True, cancel_futures=False)
+        structural_data = structural_data_future.result()
+        result = result_future.result()
 
         # Debug: Check what fields are present in the structural_data object
         logger.info(f"Task {task_id}: StructureData type: {type(structural_data)}")
