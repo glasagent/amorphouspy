@@ -148,9 +148,10 @@ def meltquench_worker(task_id: str, request_dict: dict[str, Any], db_path: str, 
 
             # Run structural analysis
             structural_data_future = exe.submit(
-                analyze_structure, atoms=get_item_from_future(result_future, "structure")
+                analyze_structure,
+                atoms=get_item_from_future(result_future, key="structure"),
             )
-            logger.info(f"Task {task_id}: Structural analysis completed successfully")
+            logger.info(f"Task {task_id}: Structural analysis submitted")
             structural_data = structural_data_future.result()
             result = result_future.result()
 
