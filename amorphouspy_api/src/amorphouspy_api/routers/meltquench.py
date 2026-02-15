@@ -9,6 +9,7 @@ from concurrent.futures import Future
 from uuid import uuid4
 
 import cloudpickle
+from executorlib import get_future_from_cache
 from fastapi import APIRouter, HTTPException
 
 from amorphouspy_api.config import API_BASE_URL, MELTQUENCH_PROJECT_DIR
@@ -108,7 +109,7 @@ def build_task_response(
     )
 
 
-def submit_to_executor(request_data: dict) -> Future:
+def submit_to_executor(request_data: dict, *, cache_key: str | None = None) -> Future:
     """Submit a meltquench job to the executor and return the future.
 
     The executor's disk cache (``MELTQUENCH_PROJECT_DIR``) means that a
@@ -116,6 +117,8 @@ def submit_to_executor(request_data: dict) -> Future:
 
     Args:
         request_data: Dictionary with the meltquench request parameters.
+        cache_key: Optional explicit cache key for the final workflow step,
+            enabling later retrieval via ``get_future_from_cache``.
 
     Returns:
         A Future for the workflow result.
@@ -132,6 +135,7 @@ def submit_to_executor(request_data: dict) -> Future:
         cooling_rate=request_data["cooling_rate"],
         n_print=request_data["n_print"],
         lammps_resource_dict=lammps_resource_dict,
+        cache_key=cache_key,
     )
     exe.shutdown(wait=False, cancel_futures=False)
     return future
@@ -266,7 +270,7 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
 
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
-        future = submit_to_executor(request_data)
+        future = submit_to_executor(request_data, cache_key=request_hash)
         status = resolve_future(future, task_id, request_hash, request_data)
         return build_task_response(task_id, status)
 
@@ -281,9 +285,9 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
 def check(task_id: str) -> TaskResponse:
     """Check the current status of a simulation task by its ID.
 
-    This endpoint re-submits the job parameters to check status.
-    If the job is complete, the cached result is returned.
-    If still running, the current status is returned.
+    Uses ``get_future_from_cache()`` to recreate the future from the
+    executor's disk cache, avoiding re-submission of the entire workflow.
+    See https://github.com/pyiron/executorlib/pull/915
 
     Note: When ready, visualize results at /visualize/meltquench/{task_id}
 
@@ -305,18 +309,27 @@ def check(task_id: str) -> TaskResponse:
     if meta["state"] != "running":
         return build_task_response(task_id, meta)
 
-    if "request_data" not in meta:
-        raise HTTPException(status_code=500, detail="Task is missing request data")
-
-    # If the task is still marked as running, re-submit to the executor.
-    # The executor's disk cache means a finished job returns immediately;
-    request_data = meta["request_data"]
     request_hash = meta.get("request_hash", "")
+    request_data = meta.get("request_data", {})
+
+    if not request_hash:
+        raise HTTPException(status_code=500, detail="Task is missing request hash")
+
+    # Recreate the future from the executor's disk cache instead of
+    # re-submitting the entire workflow.  See
+    # https://github.com/pyiron/executorlib/pull/915
     try:
-        future = submit_to_executor(request_data)
+        future = get_future_from_cache(
+            cache_directory=str(MELTQUENCH_PROJECT_DIR),
+            cache_key=request_hash,
+        )
         status = resolve_future(future, task_id, request_hash, request_data)
+    except FileNotFoundError:
+        # Cache files not yet written - job is still starting up
+        logger.info("Cache files not yet available for task %s", task_id)
+        status = {"state": "running", "request_hash": request_hash, "request_data": request_data}
     except Exception as exc:
-        logger.exception("Re-submit failed for task %s", task_id)
+        logger.exception("Failed to check task %s", task_id)
         error_msg = str(exc)
         status = {"state": "error", "error": error_msg}
         task_store.set(

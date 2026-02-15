@@ -38,6 +38,7 @@ def run_meltquench_workflow(
     cooling_rate: float,
     n_print: int,
     lammps_resource_dict: dict[str, Any] | None = None,
+    cache_key: str | None = None,
 ) -> Future[dict[str, Any]]:
     """Submit the complete meltquench workflow to the executor.
 
@@ -56,6 +57,9 @@ def run_meltquench_workflow(
         cooling_rate: Cooling rate in K/ps.
         n_print: Number of steps between output prints.
         lammps_resource_dict: Resource dict for LAMMPS (e.g., {"cores": 4}).
+        cache_key: Optional explicit cache key for the final workflow step.
+            When set, the result can later be retrieved via
+            ``get_future_from_cache(cache_directory, cache_key)``.
 
     Returns:
         Future that will resolve to the final result dictionary.
@@ -89,7 +93,15 @@ def run_meltquench_workflow(
     )
 
     # Step 5: Submit structural analysis and result assembly
-    return executor.submit(_assemble_results, composition=composition, meltquench_result=meltquench_future)
+    final_resource_dict = {}
+    if cache_key is not None:
+        final_resource_dict["cache_key"] = cache_key
+    return executor.submit(
+        _assemble_results,
+        composition=composition,
+        meltquench_result=meltquench_future,
+        resource_dict=final_resource_dict if final_resource_dict else {},
+    )
 
 
 def _assemble_results(composition: str, meltquench_result: dict[str, Any]) -> dict[str, Any]:

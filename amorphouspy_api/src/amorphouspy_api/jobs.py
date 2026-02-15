@@ -77,17 +77,11 @@ def get_lammps_resource_dict() -> dict[str, Any]:
 def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:
     """Create a fresh executor instance.
 
-    A new executor is created for each call to properly detect cached results.
-    With wait=False, futures from a previous executor instance don't update
-    their done() status when background jobs complete. Creating a fresh
-    executor allows it to check the disk cache and return done()=True
-    immediately if results are cached.
-
     Args:
         cache_directory: Directory for executor disk cache.
 
     Returns:
-        The executor instance (already entered via __enter__).
+        The executor instance.
     """
     # Create new executor each time to properly detect cached results
     executor_class = get_executor_class()
