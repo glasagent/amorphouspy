@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 def get_executor_class() -> type:
     """Get the appropriate executor class based on environment.
 
+    Note: the executor classes behave differently with respect to cache and `wait`ing:
+    - Only the SlurmClusterExecutor and the FluxClusterExecutor support cache and `wait`ing as expected
+    - SingleNodeExecutor: uses socket-based communication, so cache is created only once results are computed
+      and calling `get_future_from_cache` earlier results in `FileNotFoundError`
+    - TestClusterExecutor: uses Python's `subprocess` module which does not provide task dependency management.
+      When chaining futures, the next future is thus submitted only once the previous one is completed
+
     Returns:
         BaseExecutor subclass based on environment.
     """
@@ -37,10 +44,14 @@ def get_executor_class() -> type:
         "slurm": executorlib.SlurmClusterExecutor,
         "flux": executorlib.FluxClusterExecutor,
         "single": executorlib.SingleNodeExecutor,
+        "test": TestClusterExecutor,
     }
 
-    # Fall back to TestClusterExecutor for tests on CI
-    return executor_classes.get(executor_type, TestClusterExecutor)
+    if executor_type not in executor_classes:
+        msg = f"Unknown EXECUTOR_TYPE '{executor_type}'. Valid options are: {list(executor_classes.keys())}"
+        raise ValueError(msg)
+
+    return executor_classes[executor_type]
 
 
 def get_executor_config() -> dict[str, Any]:
