@@ -1,0 +1,102 @@
+site_name: amorphouspy
+site_description: Workflows for atomistic modeling of oxide glasses
+site_author: Achraf Atila
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.tabs
+    - navigation.top
+    - navigation.instant
+    - navigation.instant.progress
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - search.suggest
+    - toc.follow
+    - header.autohide
+
+nav:
+  - Home: index.md
+  - Structure Generation: structure.md
+  - Interatomic Potentials:
+    - Overview: potentials/index.md
+    - PMMCS (Pedone): potentials/pmmcs.md
+    - BJP (Bouhadja): potentials/bjp.md
+    - SHIK (Sundararaman): potentials/shik.md
+  - Simulation Workflows:
+    - Overview: workflows/index.md
+    - Melt-Quench: workflows/melt_quench.md
+    - Molecular Dynamics: workflows/md.md
+    - Elastic Moduli: workflows/elastic.md
+    - Viscosity: workflows/viscosity.md
+    - CTE: workflows/cte.md
+  - Structural Analysis:
+    - Overview: analysis/index.md
+    - RDF & Coordination: analysis/rdf.md
+    - Qn Distribution: analysis/qn.md
+    - Bond Angles: analysis/bond_angles.md
+    - Ring Statistics: analysis/rings.md
+    - Cavity Analysis: analysis/cavities.md
+    - CTE Analysis: analysis/cte_analysis.md
+  - API Reference: api_reference.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.mark
+  - pymdownx.keys
+  - admonition
+  - pymdownx.details
+  - tables
+  - attr_list
+  - md_in_html
+  - def_list
+  - footnotes
+  - toc:
+      permalink: true
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
