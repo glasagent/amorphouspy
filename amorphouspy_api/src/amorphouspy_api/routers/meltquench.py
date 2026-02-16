@@ -5,7 +5,6 @@ Endpoints for submitting, checking, and caching meltquench simulations.
 
 import hashlib
 import logging
-import threading
 from concurrent.futures import Future
 from uuid import uuid4
 
@@ -271,37 +270,9 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
 
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
-
-        # Persist as "running" immediately so /check can find it
-        meta = {
-            "state": "running",
-            "request_hash": request_hash,
-            "request_data": request_data,
-        }
-        task_store.set(task_id, meta)
-
-        # Fire off the executor submission in a background thread so the
-        # HTTP response returns instantly.  The /check endpoint picks up
-        # results via get_future_from_cache once the executor writes them
-        # to disk.
-        def _background_submit() -> None:
-            try:
-                submit_to_executor(request_data, cache_key=request_hash)
-            except Exception:
-                logger.exception("Background submit failed for task %s", task_id)
-                task_store.set(
-                    task_id,
-                    {
-                        "state": "error",
-                        "request_hash": request_hash,
-                        "request_data": request_data,
-                        "error": "Submission failed",
-                    },
-                )
-
-        threading.Thread(target=_background_submit, daemon=True).start()
-
-        return build_task_response(task_id, meta)
+        future = submit_to_executor(request_data, cache_key=request_hash)
+        status = resolve_future(future, task_id, request_hash, request_data)
+        return build_task_response(task_id, status)
 
     except HTTPException:
         raise
