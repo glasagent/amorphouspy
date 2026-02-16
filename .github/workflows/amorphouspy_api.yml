@@ -36,7 +36,16 @@ jobs:
         shell: bash -l {0}
         working-directory: amorphouspy_api
         run: |
-          echo "amorphouspy_INTEGRATION=1 uvicorn amorphouspy_api.app:app --port 8002 & pytest -m integration -s --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term --cov-append" > test.sh
+          cat > test.sh << 'EOF'
+          #!/bin/bash
+          uvicorn amorphouspy_api.app:app --port 8002 &
+          pytest -m integration -s \
+            --durations=0 \
+            --cov=src/amorphouspy_api \
+            --cov-report=xml \
+            --cov-report=term \
+            --cov-append
+          EOF
           chmod +x test.sh
           flux start ./test.sh
         env:
