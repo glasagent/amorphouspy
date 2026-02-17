@@ -45,13 +45,13 @@ def _create_logger() -> logging.Logger:
 def _run_lammps_md(
     structure: Atoms,
     potential: str,
-    temperature: float | list[float | int],
+    temperature: float,
     n_ionic_steps: int,
     timestep: float,
     n_dump: int,
     n_log: int,
     initial_temperature: float,
-    pressure: float | list | None = None,
+    pressure: float | list[int, float, None] | None = None,
     server_kwargs: dict | None = None,
     *,
     langevin: bool = False,
@@ -134,10 +134,11 @@ def _run_lammps_md(
     return new_structure, parsed_output
 
 
-def _initialize_intermediate_datadict() -> dict:
+def _initialize_datadict(*, with_CTE_keys: bool = False) -> dict:
     """Initialize dict to store data over multiple production runs."""
-    return {
-        "steps": 0,
+    init_dict = {
+        "run_index": np.array([]),
+        "steps": np.array([]),
         "T": np.array([]),
         "E_tot": np.array([]),
         "ptot": np.array([]),
@@ -150,31 +151,53 @@ def _initialize_intermediate_datadict() -> dict:
         "Lz": np.array([]),
     }
 
+    cte_dict = {"CTE_V": np.array([]), "CTE_x": np.array([]), "CTE_y": np.array([]), "CTE_z": np.array([])}
 
-def _collect_data(collected_data: dict, subresults: dict, run_key: str) -> dict:
-    """Collect data from a specific production run into the cumulative data dictionary."""
-    collected_data["steps"] += int(subresults[run_key]["steps"][-1])
-    collected_data["T"] = np.append(collected_data["T"], subresults[run_key]["temperature"])
-    collected_data["E_tot"] = np.append(collected_data["E_tot"], subresults[run_key]["energy_tot"])
+    if with_CTE_keys:
+        init_dict.update(cte_dict)
 
-    pxx = subresults[run_key]["pressures"][:, 0, 0] * 1e9  # in Pa
-    pyy = subresults[run_key]["pressures"][:, 1, 1] * 1e9  # in Pa
-    pzz = subresults[run_key]["pressures"][:, 2, 2] * 1e9  # in Pa
-    p_tot = (pxx + pyy + pzz) / 3  # hydrostatic pressure in Pa
-    collected_data["ptot"] = np.append(collected_data["ptot"], p_tot)
-    collected_data["pxx"] = np.append(collected_data["pxx"], pxx)
-    collected_data["pyy"] = np.append(collected_data["pyy"], pyy)
-    collected_data["pzz"] = np.append(collected_data["pzz"], pzz)
-
-    collected_data["V"] = np.append(collected_data["V"], subresults[run_key]["volume"])  # in Ang^3
-    collected_data["Lx"] = np.append(collected_data["Lx"], subresults[run_key]["Lx"])
-    collected_data["Ly"] = np.append(collected_data["Ly"], subresults[run_key]["Ly"])
-    collected_data["Lz"] = np.append(collected_data["Lz"], subresults[run_key]["Lz"])
-
-    return collected_data
+    return init_dict
 
 
-def _sanity_check_subresults(
+def _collect_sim_data(parsed_output: dict, counter_production_run: int) -> dict[str, Any]:
+    """Extract the data of interest from the parsed output of a LAMMPS MD run.
+
+    Args:
+        parsed_output: Output dictionary as returned by `lammps_function`.
+        counter_production_run: Index of the current production run.
+
+    Returns:
+        Parsed data dictionary with the relevant properties extracted and mapped to our keys:
+        { "run_index" : ..., "steps" : ..., "T" : ..., "E_tot" : ..., "ptot" : ..., "pxx" : ...,
+          "pyy" : ..., "pzz" : ..., "V" : ..., "Lx" : ..., "Ly" : ..., "Lz" : ... }
+
+    """
+    data = _initialize_datadict(with_CTE_keys=False)
+    data["run_index"] = np.array([counter_production_run])
+
+    # Map from the keys as given in lammps generic output to our keys
+    key_map = {"steps": "steps", "temperature": "T", "energy_tot": "E_tot", "volume": "V"}
+    for simkey, propkey in key_map.items():
+        data[propkey] = np.array(parsed_output["generic"][simkey])
+
+    # Pressure needs extra care
+    pxx = np.array(parsed_output["generic"]["pressures"][:, 0, 0])  # in GPa
+    pyy = np.array(parsed_output["generic"]["pressures"][:, 1, 1])  # in GPa
+    pzz = np.array(parsed_output["generic"]["pressures"][:, 2, 2])  # in GPa
+    p_tot = (pxx + pyy + pzz) / 3  # hydrostatic pressure in GPa
+    data["ptot"] = p_tot
+    data["pxx"] = pxx
+    data["pyy"] = pyy
+    data["pzz"] = pzz
+
+    # Use the lammps output for box lengths from log file
+    for key in ["Lx", "Ly", "Lz"]:
+        data[key] = np.array(parsed_output["lammps"][key])
+
+    return data
+
+
+def _sanity_check_sim_data(
     T_target: float,
     T_actual: float,
     p_target: float,
@@ -227,221 +250,44 @@ def _sanity_check_subresults(
         logger.warning(msg)
 
 
-def _cte_fluctuation_workflow_analysis(
-    subresults: dict,
-    temperature: float,
-    p_in_GPa: float,
-    T_key: str,
-    N_points: int = 1000,
-    *,
-    use_running_mean: bool = False,
+def _fluctuation_simulation_input_checker(
+    production_steps: int,
+    min_production_runs: int,
+    max_production_runs: int,
+    n_log: int,
+    timestep: float,
+    n_dump: int,
     logger: logging.Logger,
-) -> dict:
-    """Parse the specific collected output from cte_simulation workflow.
-
-    This function extracts and computes the "instantaneous enthalpy" and volume data from
-    the different production runs and computes the isotropic CTE based on the H-V fluctuations.
-    This is done in a fashion to be able to check for convergence in the workflow.
-    E.g., if multiple production runs are available, the CTE is first calculated for only
-    the first run, then for the combined data of the first two runs, etc.
-
-    Args:
-        subresults: Parsed output dictionary from `cte_simulation` workflow for a specific temperature.
-            Structure of the dictionary is:
-            {   "run01" : {"pressure" : ..., "volume" : ..., "temperature" : ..., etc},
-                "run02" : {"pressure" : ..., "volume" : ..., "temperature" : ..., etc},
-                ...
-            }
-        temperature: Target temperature in K. If not specified the average temperature from the data is used.
-        p_in_GPa: Target pressure in GPa. Will be converted to Pa internally.
-            If not specified, the average pressure from the data is used.
-        T_key: Key name for temperature in the subresults dictionary. Needed for warning messages to identify
-            the specific temperature step.
-        N_points: Window size for running mean calculation if use_running_mean is True. (default 1000) If
-            use_running_mean is False, this parameter is ignored.
-        use_running_mean: Conventionally, fluctuations are calculated as difference from the mean of the
-            whole trajectory. If use_running_mean is True, running mean values are used to determine
-            fluctuations. This can be useful for non-stationary data where drift in volume and energy
-            is still observed. (default False)
-        logger: Logger for warning messages.
-
-    Returns:
-        Nested dictionary with run_key "run01", "run02, ... as main keys. Under every key, the dictionary
-        contains the collected and computed CTE values and other thermodynamic averages calculated up to
-        the specific production run. Structure is:
-        {   "run01" : { "CTE_V" : ...,     # Isotropic CTE based on volume fluctuations in 1/K
-                        "CTE_x" : ...,     # Anisotropic CTE based on cell length x in 1/K
-                        "CTE_y" : ...,     # Anisotropic CTE based on cell length y in 1/K
-                        "CTE_z" : ...,     # Anisotropic CTE based on cell length z in 1/K
-                        "steps" : ...,     # Total number of steps collected up to this run
-                        "T" : ...,         # Temperature in K
-                        "ptot" : ...,      # Total pressure in GPa
-                        "pxx" : ...,       # Pressure xx component in GPa
-                        "pyy" : ...,       # Pressure yy component in GPa
-                        "pzz" : ...,       # Pressure zz component in GPa
-                        "E_tot" : ...,     # Average total energy in eV
-                        "V" : ...,         # Average volume
-                        "Lx" : ...,        # Average cell length in x
-                        "Ly" : ...,        # Average cell length in y
-                        "Lz" : ...,        # Average cell length in z
-                        },
-            "run02" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-            ...
-        }
-
-    Notes:
-        - Care needs to be taken to ensure the correct "enthalpy" is used. In Lammps, the enthalpy
-          is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
-          the required property here is better reflected if the pressure that defines the ensemble is used:
-          H_ens = E_inst + p_target * V_inst.
-        - If isotropic NPT simulations are performed (see "iso" keyword in lammps), the apparent hydrostatic
-          pressure = (pxx+pyy+pzz)/3 will be close to the user-specified pressure, but individual pxx, pyy
-          and pzz components can deviate significantly if the structure is not fully relaxed or shows anisotropic
-          features. In this case, it is not entirely clear if the hydrostatic pressure or the actual individual
-          pressures should be used to calculate the 1D CTE components. Therefore, we perform anisotropic NPT
-          simulations (see "aniso" keyword in lammps) per default and the user-specified pressure is applied to all
-          individual components.
-
-    """
-    # collect final output here
-    cte_data = {}
-
-    # Initialize dict to collect data over multiple production runs
-    collected_data = _initialize_intermediate_datadict()
-
-    # convert GPa to Pa
-    p = p_in_GPa * 1e9
-
-    for run_key in sorted(subresults.keys()):
-        cte_data[run_key] = {}
-
-        # Update collected_data with data from this production run
-        collected_data = _collect_data(collected_data, subresults, run_key)
-
-        # Print warning if significant deviations between target and actual T and p are observed
-        _sanity_check_subresults(
-            T_target=temperature,
-            T_actual=float(np.mean(collected_data["T"])),
-            p_target=p,
-            ptot_actual=float(np.mean(collected_data["ptot"])),
-            pxx_actual=float(np.mean(collected_data["pxx"])),
-            pyy_actual=float(np.mean(collected_data["pyy"])),
-            pzz_actual=float(np.mean(collected_data["pzz"])),
-            T_key=T_key,
-            run_key=run_key,
-            logger=logger,
-        )
-
-        # Conversion from Pa*Ang^3 to eV
-        PaAng3_to_eV = 6.2415e-12
-
-        # compute CTE based on H-V fluctuations
-        cte_data[run_key]["CTE_V"] = cte_from_npt_fluctuations(
-            temperature=temperature,
-            enthalpy=collected_data["E_tot"] + p * collected_data["V"] * PaAng3_to_eV,
-            volume=collected_data["V"],
-            use_running_mean=use_running_mean,
-            N_points=N_points,
-        )
-        cte_data[run_key]["CTE_x"] = cte_from_npt_fluctuations(
-            temperature=temperature,
-            enthalpy=collected_data["E_tot"] + p * collected_data["Lx"] * PaAng3_to_eV,
-            volume=collected_data["Lx"],
-            use_running_mean=use_running_mean,
-            N_points=N_points,
-        )
-        cte_data[run_key]["CTE_y"] = cte_from_npt_fluctuations(
-            temperature=temperature,
-            enthalpy=collected_data["E_tot"] + p * collected_data["Ly"] * PaAng3_to_eV,
-            volume=collected_data["Ly"],
-            use_running_mean=use_running_mean,
-            N_points=N_points,
-        )
-        cte_data[run_key]["CTE_z"] = cte_from_npt_fluctuations(
-            temperature=temperature,
-            enthalpy=collected_data["E_tot"] + p * collected_data["Lz"] * PaAng3_to_eV,
-            volume=collected_data["Lz"],
-            use_running_mean=use_running_mean,
-            N_points=N_points,
-        )
-
-        # Also keep other averaged properties to easily check for drift or convergence
-        cte_data[run_key]["steps"] = collected_data["steps"]
-        cte_data[run_key]["T"] = float(np.mean(collected_data["T"]))
-        cte_data[run_key]["ptot"] = float(np.mean(collected_data["ptot"])) * 10**-9  # export in GPa
-        cte_data[run_key]["pxx"] = float(np.mean(collected_data["pxx"])) * 10**-9
-        cte_data[run_key]["pyy"] = float(np.mean(collected_data["pyy"])) * 10**-9
-        cte_data[run_key]["pzz"] = float(np.mean(collected_data["pzz"])) * 10**-9
-        cte_data[run_key]["E_tot"] = float(np.mean(collected_data["E_tot"]))
-        cte_data[run_key]["V"] = float(np.mean(collected_data["V"]))
-        cte_data[run_key]["Lx"] = float(np.mean(collected_data["Lx"]))
-        cte_data[run_key]["Ly"] = float(np.mean(collected_data["Ly"]))
-        cte_data[run_key]["Lz"] = float(np.mean(collected_data["Lz"]))
-    return cte_data
-
-
-def _is_converged(data: dict, criterion: float) -> bool:
-    """Check for convergence of CTE values over multiple production runs.
-
-    This function compares the CTE values computed with all data up to the previous production
-    run to the CTE values computed with all data up to current production run. It computes the
-    absolute difference and checks if it is below the specified convergence criterion.
-    The check is performed for all CTE components (CTE_V, CTE_x, CTE_y, CTE_z) individually.
-
-    Args:
-        data: Dictionary containing CTE values from multiple production runs at the current temperature.
-            Structure of the dictionary is assumed to be:
-            {   "run01" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., ...},
-                "run02" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., ...},
-                ...
-            }
-        criterion: Convergence criterion for the CTE values.
-
-    Returns:
-        True if all the CTE values are converged within the specified criterion, False otherwise.
-
-    """
-    bools = []
-    current_run_key = list(data.keys())[-1]
-    previous_run_key = list(data.keys())[-2]
-    for cte_key in ["CTE_V", "CTE_x", "CTE_y", "CTE_z"]:
-        current_value = data[current_run_key][cte_key]
-        previous_value = data[previous_run_key][cte_key]
-        if cte_key == "CTE_V":
-            if abs(current_value - previous_value) / 3 >= criterion:
-                bools.append(False)
-            else:
-                bools.append(True)
-        elif abs(current_value - previous_value) >= criterion:
-            bools.append(False)
-        else:
-            bools.append(True)
-    return all(bools)
-
-
-def _input_checker(
-    production_steps: int, max_production_runs: int, n_log: int, timestep: float, logger: logging.Logger
-) -> tuple[int, int, int]:
-    """Check and adjust input parameters for cte_simulation workflow."""
+) -> tuple[int, int, int, int, int]:
+    """Check and adjust input parameters for cte_from_fluctuations_simulation workflow."""
     # Minimum choices for a working CTE calculation. For reliable results, use considreably higher values!
     MIN_PRODUCTION_RUNS = 2
     AVERAGING_TIME_IN_PS = 10
     MIN_PRODUCTION_STEPS = int(2 * AVERAGING_TIME_IN_PS * 1000 / timestep)
     MIN_RUNNING_MEAN_POINTS = 1000
 
-    if max_production_runs < MIN_PRODUCTION_RUNS:
+    if min_production_runs < MIN_PRODUCTION_RUNS:
         msg = "\n  At least 2 individual production runs are needed to check for CTE convergence."
-        msg += f"\n  However, a value of {max_production_runs} was provided."
-        msg += f"\n  Automatically setting max_production_runs to {MIN_PRODUCTION_RUNS} and continue."
+        msg += f"\n  However, a value of {min_production_runs} was provided."
+        msg += f"\n  Automatically setting min_production_runs to {MIN_PRODUCTION_RUNS} and continue."
+        msg += "\n  Consider increasing min_production_runs even further if convergence is not reached."
+        logger.warning(msg)
+        min_production_runs = MIN_PRODUCTION_RUNS
+
+    if max_production_runs < min_production_runs:
+        msg = "\n  Maximum number of production runs needs to be at least the minimum number of production runs."
+        msg += f"\n  However, min_production_runs is {min_production_runs} and {max_production_runs} was"
+        msg += " provided for max_production_runs."
+        msg += f"\n  Automatically setting max_production_runs to {min_production_runs} and continue."
         msg += "\n  Consider increasing max_production_runs even further if convergence is not reached."
         logger.warning(msg)
-        max_production_runs = MIN_PRODUCTION_RUNS
+        max_production_runs = min_production_runs
 
     if production_steps < MIN_PRODUCTION_STEPS:
         msg = "\n  For calculating fluctuations based on running averages, sufficient data is needed."
         msg += f"\n  With currently averaging over {AVERAGING_TIME_IN_PS} ps, production runs are too short "
         msg += f"and we recommend at least {2 * AVERAGING_TIME_IN_PS} ps."
-        msg += f"\n  Automatically setting the user-specified production_steps of {production_steps} "
+        msg += f"\n  Automatically re-setting the user-specified production_steps of {production_steps} "
         msg += f"to {MIN_PRODUCTION_STEPS} and continue."
         msg += "\n  Consider increasing production_steps even further to get more reliable results."
         logger.warning(msg)
@@ -456,59 +302,195 @@ def _input_checker(
         msg += "\n  Continuing regardless."
         logger.warning(msg)
 
-    return production_steps, max_production_runs, N_for_averaging
+    if n_dump > production_steps:
+        msg = "\n  Dump frequency n_dump is larger than the total number of production steps."
+        msg += f"\n  Currently, n_dump = {n_dump} and production_steps = {production_steps}."
+        msg += f"\n  Automatically setting n_dump to production_steps ({production_steps}) and continue."
+        logger.warning(msg)
+        n_dump = production_steps
+
+    return production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump
 
 
-def _set_initial_temperature(T_count: int, T: float, seed: int | None) -> None:
-    """Determine initial temperature and seed for velocity initialization.
+def _fluctuation_simulation_cte_calculation(
+    sim_data: dict,
+    temperature: float,
+    p: float,
+    N_points: int = 1000,
+    *,
+    use_running_mean: bool = False,
+) -> dict[str, float]:
+    """Parse the specific collected output from cte_simulation workflow.
 
-    Only the very first simulation should initialize the velocity field based on the target
-    temperature and a random seed. All subsequent simulations should continue from the previous
-    velocity field and therefore set initial_temperature to 0 and seed to None.
-
-    Args:
-        T_count: Current temperature step count in the workflow.
-        T: Target temperature for the current simulation.
-        seed: Random seed for velocity initialization.
-
-    Returns:
-        Initial temperature for velocity initialization. None if velocities should be initialized
-        based on target temperature, 0 if previous velocities should be used.
-
-    """
-    if T_count == 1:
-        return T, seed
-    return 0, None
-
-
-def _temperature_checker(temperature: float | list[int | float]) -> list[int | float]:
-    """Check and prepare temperature list for cte_simulation workflow.
-
-    Makes sure that all temperatures are positive. If only specified as a single value, it
-    converts it to a list as required for the workflow.
+    This function extracts and computes the "instantaneous enthalpy" and volume data from
+    the different production runs and computes the isotropic CTE based on the H-V fluctuations.
+    This is done in a fashion to be able to check for convergence in the workflow.
+    E.g., if multiple production runs are available, the CTE is first calculated for only
+    the first run, then for the combined data of the first two runs, etc.
 
     Args:
-        temperature: Simulation temperature in Kelvin.
+        sim_data: Parsed output dictionary from `cte_simulation` workflow for a specific temperature.
+        temperature: Target temperature in K.
+        p: Target pressure in GPa (for consistent usage of pyiron units).
+        N_points: Window size if running mean approach is used, ignored otherwise. (default 1000)
+        use_running_mean: If False, fluctuations are calculated using the mean of the whole trajecotry.
+            If True, fluctuations are calculated based on running mean values (helpful if non-stationary
+            systems with drifts in energy and volume are observed). Note that this does not guarantee
+            correct results for strongly non-equilibrium systems. (default False)
 
     Returns:
-        Prepared list of temperatures for the workflow.
+        Dictionary containing the calculated CTE values of the current production run:
+        { "CTE_V": ..., "CTE_x": ..., "CTE_y": ..., "CTE_z": ... }
 
-    Raises:
-        ValueError: If any temperature is non-positive.
+    Notes:
+        - Care needs to be taken to ensure the correct "enthalpy" is used. In Lammps, the enthalpy
+        is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
+        the required property here is better reflected if the pressure that defines the ensemble is used:
+        H_ens = E_inst + p_target * V_inst.
+        - If isotropic NPT simulations are performed (see "iso" keyword in lammps), the apparent hydrostatic
+        pressure = (pxx+pyy+pzz)/3 will breflect the user-specified pressure. Hoever, individual pxx, pyy
+        and pzz components can deviate significantly if the structure is not fully relaxed or shows anisotropic
+        features. In this case, it is not entirely clear if the hydrostatic pressure or the actual individual
+        pressures should be used to calculate the 1D CTE components. Therefore, we perform anisotropic NPT
+        simulations (see "aniso" keyword in lammps) per default and the user-specified pressure is applied to all
+        individual components.
 
     """
-    if isinstance(temperature, (int, float)):
-        temperature_sim = [temperature]
+    # collect final output here
+    cte_data = {}
 
-    for T in temperature_sim:
-        if T <= 0:
-            msg = "All Temperatures must be positive for CTE simulations."
+    # convert GPa to Pa, Pa*Ang^3 to eV, and compute enthalpy
+    p_in_Pa = p * 1e9
+    PaAng3_to_eV = 6.2415e-12
+    H = sim_data["E_tot"] + p_in_Pa * sim_data["V"] * PaAng3_to_eV
+
+    # compute CTE based on H-V fluctuations
+    cte_data["CTE_V"] = cte_from_npt_fluctuations(
+        temperature=temperature,
+        enthalpy=H,
+        volume=sim_data["V"],
+        use_running_mean=use_running_mean,
+        N_points=N_points,
+    )
+    cte_data["CTE_x"] = cte_from_npt_fluctuations(
+        temperature=temperature,
+        enthalpy=H,
+        volume=sim_data["Lx"],
+        use_running_mean=use_running_mean,
+        N_points=N_points,
+    )
+    cte_data["CTE_y"] = cte_from_npt_fluctuations(
+        temperature=temperature,
+        enthalpy=H,
+        volume=sim_data["Ly"],
+        use_running_mean=use_running_mean,
+        N_points=N_points,
+    )
+    cte_data["CTE_z"] = cte_from_npt_fluctuations(
+        temperature=temperature,
+        enthalpy=H,
+        volume=sim_data["Lz"],
+        use_running_mean=use_running_mean,
+        N_points=N_points,
+    )
+
+    return cte_data
+
+
+def _fluctuation_simulation_uncertainty_check(data: dict, criterion: float) -> tuple[bool, dict]:
+    """Check for convergence of CTE values over multiple production runs.
+
+    This function uses the CTE values that have been collected in all previous productions runs.
+    It computes the current uncertainty as the standard deviation divided by the square root of
+    the number of values. This is done individually for CTE_V, CTE_x, CTE_y, CTE_z. The uncertainty
+    is then compared to the given criterion. The criterion of the volumetric CTE should be sqrt(3)
+    times the user-specified criterion for an isotropic system with uncorrelated linear components.
+    If all four values are within the specified tolerance, convergence is reached and True is
+    returned along with a dict of the mean CTE values and their uncertainties. Otherwise, False is
+    returned along with a dict of the mean CTE values and their uncertainties.
+
+    Args:
+        data: Dictionary with the collected data from the previous production runs containing
+        criterion: Convergence criterion for the uncertainty CTE values.
+
+    Returns:
+        Tuple of False or True and dictionary with the mean CTE values and their uncertainties:
+        { "CTE_V_mean": ..., "CTE_x_mean": ..., "CTE_y_mean": ..., "CTE_z_mean": ...,
+        "CTE_V_uncertainty": ..., "CTE_x_uncertainty": ...,
+        "CTE_y_uncertainty": ..., "CTE_z_uncertainty": ... }
+
+    """
+
+    def _uncertainty(values: np.ndarray) -> float:
+        """Calculate the uncertainty of the given values."""
+        return np.std(values, ddof=1) / np.sqrt(len(values))
+
+    # Ensure data is not empty before calculating uncertainty or mean
+    for cte_key in ["CTE_V", "CTE_x", "CTE_y", "CTE_z"]:
+        if len(data[cte_key]) <= 1:
+            msg = f"Data for '{cte_key}' must contain more than one value. Cannot calculate uncertainty from this."
             raise ValueError(msg)
 
-    return temperature_sim
+    # Check for each CTE value if its uncertainty is within criterion
+    bools = []
+
+    # Volume CTE uses sqrt(3) times the criterion
+    if _uncertainty(data["CTE_V"]) <= criterion * np.sqrt(3):
+        bools.append(True)
+    else:
+        bools.append(False)
+
+    # The linear CTEs use the given criterion
+    for cte_key in ["CTE_x", "CTE_y", "CTE_z"]:
+        if _uncertainty(data[cte_key]) <= criterion:
+            bools.append(True)
+        else:
+            bools.append(False)
+
+    # Return True/False if converged/not converged and the data
+    return all(bools), {
+        "CTE_V_mean": float(np.mean(data["CTE_V"])),
+        "CTE_x_mean": float(np.mean(data["CTE_x"])),
+        "CTE_y_mean": float(np.mean(data["CTE_y"])),
+        "CTE_z_mean": float(np.mean(data["CTE_z"])),
+        "CTE_V_uncertainty": float(_uncertainty(data["CTE_V"])),
+        "CTE_x_uncertainty": float(_uncertainty(data["CTE_x"])),
+        "CTE_y_uncertainty": float(_uncertainty(data["CTE_y"])),
+        "CTE_z_uncertainty": float(_uncertainty(data["CTE_z"])),
+    }
 
 
-def cte_simulation(
+def _fluctuation_simulation_merge_results(
+    previous_data: dict, new_sim_data: dict, new_cte_data: dict
+) -> dict[str, Any]:
+    """Merge the newly collected simulation data to the previously collected data.
+
+    Args:
+        previous_data: Dictionary containing previously collected results.
+        new_sim_data: Dictionary containing new simulation data, whose averages will be added.
+        new_cte_data: Dictionary containing new CTE data to be added.
+
+    Returns:
+        Updated dictionary with averaged simulation data and CTE data.
+
+    """
+    merged_data = {}
+    # Collect the average of the simulation data
+    for key, values in new_sim_data.items():
+        if key == "steps":
+            merged_data[key] = np.append(previous_data[key], values[-1])
+        elif key == "run_index":
+            merged_data[key] = np.append(previous_data[key], values)
+        else:
+            merged_data[key] = np.append(previous_data[key], np.mean(values))
+    # Collect all CTE data
+    for key, values in new_cte_data.items():
+        merged_data[key] = np.append(previous_data[key], values)
+
+    return merged_data
+
+
+def cte_from_fluctuations_simulation(
     structure: Atoms,
     potential: str,
     temperature: float | list[int | float] = 300,
@@ -516,8 +498,9 @@ def cte_simulation(
     timestep: float = 1.0,
     equilibration_steps: int = 100_000,
     production_steps: int = 200_000,
+    min_production_runs: int = 2,
     max_production_runs: int = 25,
-    CTE_convergence_criterion: float = 1e-6,
+    CTE_uncertainty_criterion: float = 1e-6,
     n_dump: int = 100000,
     n_log: int = 10,
     server_kwargs: dict[str, Any] | None = None,
@@ -526,7 +509,7 @@ def cte_simulation(
     seed: int | None = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict[Any, Any]:  # pylint: disable=too-many-positional-arguments
-    """Perform a LAMMPS-based cte simulation protocol.
+    """Perform a LAMMPS-based cte simulation protocol based on fluctuations.
 
     This workflow equilibrates a structure at a target temperature and performs a
     production MD run to collect the instantaneous total energy, pressure and volume,
@@ -535,6 +518,299 @@ def cte_simulation(
 
     The number of steps used here is only for testing purposes.
     It is assumed in this workflow that the given in structure is pre-quilibrated.
+
+    Args:
+        structure: Input structure (assumed pre-equilibrated).
+        potential: LAMMPS potential file.
+        temperature: Simulation temperature in Kelvin (default 300 K).
+        pressure: Target pressure in GPa (use pyiron units here!) for NPT simulations
+            (default 10-4 GPa = 10^5 Pa = 1 bar).
+        timestep: MD integration timestep in femtoseconds (default 1.0 fs).
+        equilibration_steps: Number of MD steps for the equilibration run (default 100,000).
+        production_steps: Number of MD steps for the production runs (default 200,000).
+        min_production_runs: Minimum number of production runs to perform before checking for
+            convergence (default 2).
+        max_production_runs: Maximum number of production runs to perform before checking for
+            convergence (default 10).
+        CTE_uncertainty_criterion: Convergence criterion for the uncertainty of the linear CTE (default 1e-6/K).
+        n_dump: Dump output frequency of the production runs (default 100,000).
+        n_log: Log output frequency (default 10).
+        server_kwargs: Additional server configuration arguments for pyiron.
+        aniso: If false, an isotropic NPT calculation is performed and the simulation box is
+            scaled uniformly. If True, anisotropic NPT calculation is performed and the simulation
+            box can change shape and size independently along each axis (default True).
+        seed: Random seed for velocity initialization (default 12345). If
+        tmp_working_directory: Temporary directory for job execution.
+
+    Returns:
+        Nested dictionary containing the "summary" and "data" keys. In the "summary" section the CTE
+        values and their uncertainties are returned together with info whether convergence was reached
+        within the max_production_runs and the convergence criterion.
+        The "data" holds the collected data from all individual production runs. "run_index" is to
+        clearly identify which production run the data belongs to. "steps" contains the number of steps
+        for each run. Thermodynamic and structural data are averaged over each production run and these
+        averages are listed under the respective key. Finally, also the structure after the simulation
+        has finished is stored for further use or analysis. Example:
+        { 'summary' : {"CTE_V_mean" : ..., "CTE_x_mean" : ...,
+                       "CTE_y_mean" : ..., "CTE_z_mean" : ...,
+                       "CTE_V_uncertainty" : ..., "CTE_x_uncertainty" : ...,
+                       "CTE_y_uncertainty" : ..., "CTE_z_uncertainty" : ...,
+                       "is_converged" : "True" or "False",
+                       "convergence_criterion" : float
+                       },
+          'data':  {"run_index" : [1, 2, 3, ...],
+                    "steps" : [...],
+                    "T" : [...],
+                    "E_tot" : [...],
+                    "ptot" : [...],
+                    "pxx" : [...],
+                    "pyy" : [...],
+                    "pzz" : [...],
+                    "V" : [...],
+                    "Lx" : [...],
+                    "Ly" : [...],
+                    "Lz" : [...],
+                    "CTE_V" : [...],
+                    "CTE_x" : [...],
+                    "CTE_y" : [...],
+                    "CTE_z" : [...],
+                    "structure_final" : Atoms
+                    }
+        }
+
+    Notes:
+        - How to chose the uncertainty criterion for the volumetric CTE? Should it be the same as the defined
+          CTE_uncertainty_criterion applied to the linear CTEs? The volumetric CTE is approximately
+          the sum of the linear CTEs along x, y, and z. If three variables x, y and z were uncorrelated and
+          have known uncertainties sigma_x, sigma_y, and sigma_z, the uncertainty of the sum of those them
+          would be: sigma_V = sqrt( sigma_x**2 + sigma_y**2 + sigma_z**2 ). If we assume that the uncertainty
+          criterion is reached at roughly the same time for all three variables, the uncertainty of the
+          volumetric CTE can be approximated as sqrt(3)*CTE_uncertainty_criterion. However, x, y and z are
+          typically not uncorrelated. If calculated from the actual simulation data, the uncertainty of CTE_V
+          is found to be approximately the same as the individual uncertainties of the linear CTEs. Therefore,
+          a sqrt(3)*CTE_uncertainty_criterion is likely to be on the safe side for the volumetric CTE, with
+          the actual uncertainty of CTE_V being smaller than that.
+        - The structure is first pre-equilibrated with a short, hard-coded 10 ps NVT run. Only then
+          follows the user-defined NPT equilibration and production runs.
+
+    """
+    # Logging setup
+    logger = _create_logger()
+
+    # Check and adjust input parameters if necessary
+    production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump = (
+        _fluctuation_simulation_input_checker(
+            production_steps, min_production_runs, max_production_runs, n_log, timestep, n_dump, logger
+        )
+    )
+
+    # Set pressure to anisotropic if requested
+    sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
+
+    # initial structure used. Afterwards, it is updated after each temperature
+    structure0 = structure
+
+    logger.info("Starting 10 ps (hardcoded) NVT equilibration at %.2f K.", temperature)
+
+    # Stage 1: Short equilibration in NVT at T for 10 ps
+    structure1, _ = _run_lammps_md(
+        structure=structure0,
+        potential=potential,
+        tmp_working_directory=tmp_working_directory,
+        temperature=temperature,
+        n_ionic_steps=10_000,
+        timestep=timestep,
+        n_dump=10_000,
+        n_log=100,
+        initial_temperature=temperature,
+        langevin=False,
+        seed=seed,
+        server_kwargs=server_kwargs,
+    )
+
+    equilibration_time = equilibration_steps / timestep / 1000
+    logger.info("Starting %.1f ps NVT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, pressure)
+
+    # Stage 2: NPT equilibration runs at T,p.
+    structure2, _ = _run_lammps_md(
+        structure=structure1,
+        potential=potential,
+        tmp_working_directory=tmp_working_directory,
+        temperature=temperature,
+        pressure=sim_pressure,
+        n_ionic_steps=equilibration_steps,
+        timestep=timestep,
+        n_dump=equilibration_steps,
+        n_log=100,
+        initial_temperature=0,
+        langevin=True,
+        server_kwargs=server_kwargs,
+    )
+
+    # Stage 3: NPT production runs (loop) at T,p.
+    results = _initialize_datadict(with_CTE_keys=True)
+    counter_production_run = 1
+    production_time = production_steps / timestep / 1000
+    while counter_production_run <= max_production_runs:
+        # to keep track of multiple production runs, print status message
+        logger.info(
+            "Starting %.1f ps NPT production run #%03d at %.2f K and %.2e GPa.",
+            production_time,
+            counter_production_run,
+            temperature,
+            pressure,
+        )
+
+        # actual production run
+        structure_production, parsed_output = _run_lammps_md(
+            structure=structure2,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature,
+            pressure=sim_pressure,
+            n_ionic_steps=production_steps,
+            timestep=timestep,
+            n_dump=n_dump,
+            n_log=n_log,
+            initial_temperature=0,
+            langevin=True,
+            server_kwargs=server_kwargs,
+        )
+
+        # parse and check the output of the production run
+        _sim_data = _collect_sim_data(parsed_output, counter_production_run)
+        _sanity_check_sim_data(sim_data=_sim_data, T_target=temperature, p_target=pressure, logger=logger)
+
+        # Calculate cte based on the data of the current production run
+        _cte_results = _fluctuation_simulation_cte_calculation(
+            sim_data=_sim_data,
+            temperature=temperature,
+            p=pressure,
+            use_running_mean=True,
+            N_points=N_for_averaging,
+        )
+
+        # merge results to have the averages over all production runs so far
+        results = _fluctuation_simulation_merge_results(
+            previous_data=results, new_sim_data=_sim_data, new_cte_data=_cte_results
+        )
+
+        # start checking for convergence once the min number of production runs have been executed
+        if counter_production_run >= min_production_runs:
+            converge_bool, cte_summary = _fluctuation_simulation_uncertainty_check(results, CTE_uncertainty_criterion)
+            logger.info(
+                "Production run #%03d finished. Current CTE_V = %.4e +/- %.4e 1/K.",
+                counter_production_run,
+                cte_summary["CTE_V_mean"],
+                cte_summary["CTE_V_uncertainty"],
+            )
+
+            # If converged, break the loop and update the summary accordingly
+            if converge_bool:
+                cte_summary.update({"is_converged": "True", "convergence_criterion": CTE_uncertainty_criterion})
+                msg = f"All CTEs converged after production run #{counter_production_run:03d}."
+                msg += "\nFINISHED SUCCESSFULLY."
+                logger.info(msg)
+                break
+
+            # Also break the loop if max number of production runs is reached without convergence and update summary
+            if counter_production_run == max_production_runs:
+                cte_summary.update({"is_converged": "False", "convergence_criterion": CTE_uncertainty_criterion})
+                msg = f"Maximum number of production runs ({max_production_runs}) reached without CTE convergence."
+                msg += "\nFINISHED WITHOUT CONVERGENCE."
+                logger.info(msg)
+                break
+
+        # In all other cases, continue with the next production run
+        counter_production_run += 1
+        structure2 = structure_production
+
+    results.update({"structure_final": structure_production})
+    return {"summary": cte_summary, "data": results}
+
+
+def _temperature_scan_input_checker(
+    temperature: list[int | float], production_steps: int, n_dump: int, logger: logging.Logger
+) -> int:
+    """Check and adjust input parameters for cte_from_temperature_scan_simulation workflow."""
+    MIN_TEMP_ENTRIES = 2
+    if len(set(temperature)) < MIN_TEMP_ENTRIES:
+        msg = "\n  At least two different temperatures are needed to compute CTE from temperature scan."
+        msg += "\n  Please provide at least two non identical temperatures and continue."
+        logger.error(msg)
+        raise ValueError(msg)
+
+    if len(set(temperature)) != len(temperature):
+        msg = "\n  There are duplicates in the provided temperatures. This can influence the results. "
+        msg += "\n  I hope you know what you are doing. Continuing with the provided temperatures."
+        logger.warning(msg)
+
+    if n_dump > production_steps:
+        msg = "\n  Dump frequency n_dump is larger than the total number of production steps."
+        msg += f"\n  Currently, n_dump = {n_dump} and production_steps = {production_steps}."
+        msg += f"\n  Automatically setting n_dump to production_steps ({production_steps}) and continue."
+        logger.warning(msg)
+        n_dump = production_steps
+
+    return n_dump
+
+
+def _temperature_scan_merge_results(previous_data: dict, new_sim_data: dict) -> dict[str, Any]:
+    """Merge the newly collected simulation data to the previously collected data.
+
+    Args:
+        previous_data: Dictionary containing previously collected results.
+        new_sim_data: Dictionary containing new simulation data, whose averages will be added.
+
+    Returns:
+        Updated dictionary with averaged simulation data and CTE data.
+
+    """
+    merged_data = {}
+    # Collect the average of the simulation data, except for steps and run_index
+    for key, values in new_sim_data.items():
+        if key == "steps":
+            merged_data[key] = np.append(previous_data[key], values[-1])
+        elif key == "run_index":
+            merged_data[key] = np.append(previous_data[key], values)
+        else:
+            merged_data[key] = np.append(previous_data[key], np.mean(values))
+
+    return merged_data
+
+
+def temperature_scan_simulation(
+    structure: Atoms,
+    potential: str,
+    temperature: list[int | float] | None = None,
+    pressure: float = 1e-4,
+    timestep: float = 1.0,
+    equilibration_steps: int = 100_000,
+    production_steps: int = 200_000,
+    n_dump: int = 100000,
+    n_log: int = 10,
+    server_kwargs: dict[str, Any] | None = None,
+    *,
+    aniso: bool = True,
+    seed: int | None = 12345,
+    tmp_working_directory: str | Path | None = None,
+) -> dict[Any, Any]:  # pylint: disable=too-many-positional-arguments
+    """Perform a temperature scan and collect structural data.
+
+    This workflow performs a temperature scan at the given list of temperatures. For each temperature, it
+    equilibrates the structure at the target temperature and pressure and then performs a production MD
+    run to collect the average volume and box lengths, needed to compute the CTE via V-T data.
+    There differen CTEs often discussed, for example:
+    - CTE20-300: Computed between solely as the slope from the two datapoints at 20°C and 300°C.
+    - CTE20-600: Computed between solely as the slope from the two datapoints at 20°C and 600°C.
+    - CTE over other arbitrary temperature range
+    - CTE at a specific temperature based on the slope of the V-T curve at this temperature. This is often
+      doen by fitting a linear model or higher polynomials fit to the V-T data and then taking the derivative
+      at the temperature of interest.
+    Because of the various options and methods to compute the CTE from V-T data, and because the actual CTE
+    calculation is rather straightforward once the data is collected, we do not compute it directly in this
+    workflow, but rather return the collected data for each temperature and leave the actual CTE calculation
+    to the user.
 
     Args:
         structure: Input structure (assumed pre-equilibrated).
@@ -600,31 +876,25 @@ def cte_simulation(
     # Logging setup
     logger = _create_logger()
 
-    # Check and adjust input parameters if needed
-    production_steps, max_production_runs, N_for_averaging = _input_checker(
-        production_steps, max_production_runs, n_log, timestep, logger
-    )
-
-    # Prepare temperature list
-    temperature = _temperature_checker(temperature)
+    # Check and adjust input parameters if necessary
+    n_dump = _temperature_scan_input_checker(temperature, production_steps, n_dump, logger)
 
     # Set pressure to anisotropic if requested
     sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
 
-    # Collect all results here
-    cte_results = {}
-
     # initial structure used. Afterwards, it is updated after each temperature
     structure0 = structure.copy()
 
-    # Loop over all temperatures to perform the cte simulation protocol
-    for T_count, T in enumerate(temperature, start=1):
-        T_key = f"{T_count:02d}_{int(T)}K"
+    # Initialize results dictionary. CTE values will be calculated later
+    results = _initialize_datadict(with_CTE_keys=False)
 
-        # Determine initial temperature and seed for velocity initialization
-        initial_temperature, seed = _set_initial_temperature(T_count, T, seed)
+    # Loop over all temperatures
+    for counter_run, T in enumerate(temperature, start=1):
+        # Stage 1: Short equilibration in NVT at T for 10,000 steps
+        nvt_equilibration_time = 10_000 / timestep / 1000
+        msg = f"Starting {nvt_equilibration_time:.1f} ps (10,000 steps hardcoded) NVT equilibration at {T:.2f} K."
+        logger.info(msg)
 
-        # Stage 1: Short equilibration in NVT at T for 10 ps
         structure1, _ = _run_lammps_md(
             structure=structure0,
             potential=potential,
@@ -634,13 +904,17 @@ def cte_simulation(
             timestep=timestep,
             n_dump=10_000,
             n_log=100,
-            initial_temperature=initial_temperature,
+            initial_temperature=T,
             langevin=False,
             seed=seed,
             server_kwargs=server_kwargs,
         )
 
         # Stage 2: NPT equilibration runs at T,p.
+        equilibration_time = equilibration_steps / timestep / 1000
+        msg = f"Starting {equilibration_time:.1f} ps NPT equilibration at {T:.2f} K and {pressure:.2e} GPa."
+        logger.info(msg)
+
         structure2, _ = _run_lammps_md(
             structure=structure1,
             potential=potential,
@@ -650,76 +924,44 @@ def cte_simulation(
             n_ionic_steps=equilibration_steps,
             timestep=timestep,
             n_dump=equilibration_steps,
-            n_log=100,
+            n_log=n_log,
             initial_temperature=0,
             langevin=True,
             server_kwargs=server_kwargs,
         )
 
-        # Stage 3: NPT production runs at T,p.
-        cte_results[T_key] = {}
-        _results = {}
-        counter_production_run = 1
+        # Stage 3: NPT production run
+        production_time = production_steps / timestep / 1000
+        msg = f"Starting {production_time:.1f} ps NPT production run at {T:.2f} K and {pressure:.2e} GPa."
+        logger.info(msg)
 
-        # Loop over production runs until convergence or max number of runs is reached
-        while counter_production_run <= max_production_runs:
-            run_key = f"run{counter_production_run:02d}"
-            cte_results[T_key][run_key] = {}
-            _results[run_key] = {}
+        structure_production, parsed_output = _run_lammps_md(
+            structure=structure2,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=T,
+            pressure=sim_pressure,
+            n_ionic_steps=production_steps,
+            timestep=timestep,
+            n_dump=n_dump,
+            n_log=n_log,
+            initial_temperature=0,
+            langevin=True,
+            server_kwargs=server_kwargs,
+        )
 
-            # to keep track of multiple production runs, print status message
-            msg = f"Starting production {run_key} at {T_key}."
-            logger.info(msg)
+        # parse and check the output of the production run
+        _sim_data = _collect_sim_data(parsed_output, counter_run)
 
-            # actual production run
-            structure_production, parsed_output = _run_lammps_md(
-                structure=structure2,
-                potential=potential,
-                tmp_working_directory=tmp_working_directory,
-                temperature=T,
-                pressure=sim_pressure,
-                n_ionic_steps=production_steps,
-                timestep=timestep,
-                n_dump=n_dump,
-                n_log=n_log,
-                initial_temperature=0,
-                langevin=True,
-                server_kwargs=server_kwargs,
-            )
+        _sanity_check_sim_data(sim_data=_sim_data, T_target=T, p_target=pressure, logger=logger)
 
-            # Collect the intermediate results. kick out unneeded info to save memory
-            for propkey in ["steps", "temperature", "energy_tot", "pressures", "volume"]:
-                _results[run_key][propkey] = parsed_output.get("generic", None).get(propkey, None)
-            _results[run_key].update(parsed_output.get("lammps", None))
+        # Collect results
+        results = _temperature_scan_merge_results(previous_data=results, new_sim_data=_sim_data)
 
-            # Calculate and collect cte results
-            cte_results[T_key] = _cte_fluctuation_workflow_analysis(
-                subresults=_results,
-                temperature=T,
-                p_in_GPa=pressure,
-                T_key=T_key,
-                use_running_mean=True,
-                N_points=N_for_averaging,
-                logger=logger,
-            )
+        # Use this structure as starting point for next temperature
+        structure0 = structure_production
 
-            # check for convergence or if max number of production runs is reached
-            if counter_production_run > 1:
-                if _is_converged(cte_results[T_key], CTE_convergence_criterion):
-                    cte_results[T_key]["is_converged"] = "True"
-                    cte_results[T_key]["convergence_criterion"] = CTE_convergence_criterion
-                    cte_results[T_key]["structure_final"] = structure_production.copy()
-                    structure0 = structure_production.copy()
-                    break
-                if counter_production_run >= max_production_runs:
-                    cte_results[T_key]["is_converged"] = "False"
-                    cte_results[T_key]["convergence_criterion"] = CTE_convergence_criterion
-                    cte_results[T_key]["structure_final"] = structure_production.copy()
-                    structure0 = structure_production.copy()
-                    break
-
-            # continue with this in next production run
-            counter_production_run += 1
-            structure2 = structure_production.copy()
-
-    return cte_results
+    results.update({"structure_final": structure_production})
+    msg = "FINISHED SUCCESSFULLY."
+    logger.info(msg)
+    return {"data": results}
