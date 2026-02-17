@@ -9,6 +9,7 @@ Author: Marcel Sadowski (github.com/Gitdowski)
 """
 
 import numpy as np
+from scipy.stats import linregress
 
 
 def cte_from_npt_fluctuations(
@@ -95,6 +96,7 @@ def cte_from_npt_fluctuations(
 def cte_from_volume_temperature_data(
     temperature: list | np.ndarray,
     volume: list | np.ndarray,
+    reference_volume: float | None = None,
 ) -> float:
     """Compute the CTE from slope of volume-temperature.
 
@@ -104,14 +106,19 @@ def cte_from_volume_temperature_data(
     If specified, the volume-temperature plot is shown and the fitted line is overlaid.
 
     Args:
-        temperature: Target or averaged temperatures in K of different NPT simulations. One entry for every simulation.
-        volume: Averaged volumes in Ang^3 of different NPT simulations. One entry for every simulation.
+        temperature: Temperature in K.
+        volume: Volume in Angstrom^3 or other structural quantity of interest. E.g., for anisotropic CTE
+            calculations, one can also use individual cell lengths in Angstroms here.
+        reference_volume (optional): Reference of the volume (or structural quantity of interest) the CTE
+            will be calculated from. If not otherwise specified, the volume corresponding to the lowest
+            temperature is used as reference.
 
     Returns:
-        The calculated CTE value in 1/K.
+        The calculated CTE value in 1/K and the R^2 value of the linear fit.
 
     Note:
-        This function is currently not in use in the workflows. But it might be used for cross-checking.
+        - This function is currently not in use in the workflows. But it might be used for cross-checking.
+        - If volume-temperature data is used, the CTE needs to be divided by 3 to obtain the linear CTE.
 
     Example:
         >>> cte = cte_from_volume_temperature_data(
@@ -120,13 +127,14 @@ def cte_from_volume_temperature_data(
         ... )
 
     """
-    # make sure to order lists by increasing temperature
-    sorted_indices = np.argsort(temperature)
-    temperature = np.array(temperature)[sorted_indices]
-    volume = np.array(volume)[sorted_indices]
+    # Set reference volume corresponding to the lowest temperature if not provided.
+    if reference_volume is None:
+        index_lowest_T = np.argmin(temperature)
+        reference_volume = volume[index_lowest_T]
 
     # fit and calculate CTE
-    slope, _intercept = np.polyfit(temperature, volume, 1)
-    CTE = slope / volume[0]
+    slope, intercept, r_value, p_value, std_err = linregress(temperature, volume)
+    CTE = slope / reference_volume
+    R2 = r_value**2
 
-    return float(CTE)
+    return float(CTE), float(R2)
