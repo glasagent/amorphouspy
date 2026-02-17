@@ -124,7 +124,27 @@ def bjp_protocol(
     server_kwargs: dict | None,
     tmp_working_directory: str | None,
 ) -> tuple[Atoms, dict]:
-    """Execute the simulation BJP protocol."""
+    """Execute the simulation BJP protocol.
+
+    Args:
+        runner: The function to run LAMMPS MD simulations.
+        structure: Initial atomic structure.
+        potential: Potential parameters.
+        temperature_high: High temperature for melting.
+        temperature_low: Low temperature for quenching.
+        heating_steps: Number of steps for heating phase.
+        cooling_steps: Number of steps for cooling phase.
+        timestep: MD timestep.
+        n_print: Print frequency.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed.
+        server_kwargs: Server configuration.
+        tmp_working_directory: Temporary directory path.
+
+    Returns:
+        Final structure and parsed output.
+
+    """
     # Bind common parameters to runner
     run = partial(
         runner,
@@ -202,7 +222,27 @@ def shik_protocol(
     server_kwargs: dict | None,
     tmp_working_directory: str | None,
 ) -> tuple[Atoms, dict]:
-    """Execute the simulation SHIK protocol."""
+    """Execute the simulation SHIK protocol.
+
+    Args:
+        runner: The function to run LAMMPS MD simulations.
+        structure: Initial atomic structure.
+        potential: Potential parameters.
+        temperature_high: High temperature for melting.
+        temperature_low: Low temperature for quenching.
+        heating_steps: Number of steps for heating phase.
+        cooling_steps: Number of steps for cooling phase.
+        timestep: MD timestep.
+        n_print: Print frequency.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed.
+        server_kwargs: Server configuration.
+        tmp_working_directory: Temporary directory path.
+
+    Returns:
+        Final structure and parsed output.
+
+    """
     # Bind common parameters to runner
     run = partial(
         runner,

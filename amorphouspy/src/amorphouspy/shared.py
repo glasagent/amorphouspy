@@ -14,12 +14,14 @@ def get_element_types_dict(atoms_dict: dict) -> dict[str, int]:
     a unique identifier (not to be confused with the position in the periodic table).
 
     Args:
-        atoms_dict (dict): A dictionary containing atom information,
-        typically with a key "atoms" that is a list
-        of atom dictionaries.
+        atoms_dict: A dictionary containing atom information,
+            typically with a key "atoms" that is a list of atom dictionaries.
 
     Returns:
-        dict: A dictionary mapping element symbols to unique integer types.
+        A dictionary mapping element symbols to unique integer types.
+
+    Example:
+        >>> types = get_element_types_dict(struct_dict)
 
     """
     atoms = atoms_dict["atoms"]
@@ -31,10 +33,13 @@ def count_distribution(coord_numbers: dict[int, int]) -> dict[int, int]:
     """Convert coordination numbers to a histogram distribution.
 
     Args:
-        coord_numbers (Dict[int, int]): Mapping from atom ID to coordination number.
+        coord_numbers: Mapping from atom ID to coordination number.
 
     Returns:
-        Dict[int, int]: Coordination number frequency histogram.
+        Coordination number frequency histogram.
+
+    Example:
+        >>> dist = count_distribution({1: 4, 2: 4, 3: 3})
 
     """
     dist = {}
@@ -46,15 +51,14 @@ def count_distribution(coord_numbers: dict[int, int]) -> dict[int, int]:
 def type_to_dict(types: np.array) -> dict[int, str]:
     """Generate a dictionary mapping atomic numbers (types) to element symbols from an ASE Atoms structure.
 
-    Parameters
-    ----------
-    types : np.array
-        array containing atom types in the simulation.
+    Args:
+        types: Array containing atom types in the simulation.
 
-    Returns
-    -------
-    type_dict : dict[int, str]
+    Returns:
         Dictionary mapping atomic numbers to corresponding element symbols.
+
+    Example:
+        >>> type_map = type_to_dict(np.array([14, 8]))
 
     """
     # Extract unique atomic types from structure

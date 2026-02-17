@@ -2,9 +2,7 @@
 
 Implementations of melt-quench simulation workflows for glass systems using LAMMPS.
 
-Author
-------
-Achraf Atila (achraf.atila@bam.de)
+Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 import tempfile
@@ -36,45 +34,25 @@ def _run_lammps_md(
 ) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
     """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
-    Parameters
-    ----------
-    structure : Atoms
-        The atomic structure to simulate.
-    potential : str
-        The potential file to be used for the simulation.
-    temperature : float or list
-        The target temperature for the MD run. Can be a single value or a list [start, end].
-    n_ionic_steps : int
-        Number of MD steps to run.
-    timestep : float
-        Time step for integration in femtoseconds.
-    n_print : int
-        Frequency of output writing in simulation steps.
-    initial_temperature : None or float
-        Initial temperature according to which the initial velocity field is created. If None, the initial
-        temperature will be twice the target temperature (which would go immediately down to the target temperature
-        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
-        initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-    temperature_end : float, optional
-        Final temperature for ramping. If None, no temperature ramp is applied.
-    pressure : float, optional
-        Target pressure for NPT simulations. If None, NVT is used.
-    server_kwargs : dict | None, optional
-        Additional keyword arguments for the server.
-    langevin : bool, optional
-        Whether to use Langevin dynamics
-    seed : int, optional
-        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
-    tmp_working_directory : str | Path | None
-        Specifies the location of the temporary directory to run the simulations. Per default (None), the
-        directory is located in the operating systems location for temperary files. With the specification
-        of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
-        tmp_working_directory needs to exist beforehand.
+    Args:
+        structure: The atomic structure to simulate.
+        potential: The potential file to be used for the simulation.
+        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
+        n_ionic_steps: Number of MD steps to run.
+        timestep: Time step for integration in femtoseconds.
+        n_print: Frequency of output writing in simulation steps.
+        initial_temperature: Initial temperature for velocity initialization. If None, the initial
+            temperature will be twice the target temperature (which would go immediately down to the target temperature
+            as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
+            initial velocity given in structure will be used and seed to initialize velocities will be ignored).
+        temperature_end: Final temperature for ramping. If None, no temperature ramp is applied.
+        pressure: Target pressure for NPT simulations. If None, NVT is used.
+        server_kwargs: Additional keyword arguments for the server.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
 
-
-    Returns
-    -------
-    tuple
+    Returns:
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
@@ -182,40 +160,33 @@ def melt_quench_simulation(
     and then cools it down to a low temperature, simulating a melt-quench process.
     The heating and cooling rates are given in K/s, and the conversion into simulation steps is done automatically.
 
-    Parameters
-    ----------
-    structure : Atoms
-        The initial atomic structure to be melted and quenched.
-    potential : str
-        The potential file to be used for the simulation.
-    temperature_high : float, optional
-        The high temperature to which the structure will be heated (default is 5000.0 K).
-    temperature_low : float, optional
-        The low temperature to which the structure will be cooled (default is 300.0 K).
-    timestep : float, optional
-        Time step for integration in femtoseconds (default is 1.0 fs).
-    heating_rate : float, optional
-        The rate at which the temperature is increased during the heating phase, in K/s (default is 1e12 K/s).
-    cooling_rate : float, optional
-        The rate at which the temperature is decreased during the cooling phase, in K/s (default is 1e12 K/s).
-    n_print : int, optional
-        The frequency of output during the simulation (default is 1000).
-    server_kwargs : dict | None, optional
-        Additional keyword arguments for the server.
-    langevin : bool, optional
-        Whether to use Langevin dynamics.
-    seed : int, optional
-        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
-    tmp_working_directory : str | Path | None
-        Specifies the location of the temporary directory to run the simulations. Per default (None), the
-        directory is located in the operating systems location for temperary files. With the specification
-        of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
-        tmp_working_directory needs to exist beforehand.
+    Args:
+        structure: The initial atomic structure to be melted and quenched.
+        potential: The potential file to be used for the simulation.
+        temperature_high: The high temperature to which the structure will be heated (default is 5000.0 K).
+        temperature_low: The low temperature to which the structure will be cooled (default is 300.0 K).
+        timestep: Time step for integration in femtoseconds (default is 1.0 fs).
+        heating_rate: The rate at which the temperature is increased during the heating phase,
+            in K/s (default is 1e12 K/s).
+        cooling_rate: The rate at which the temperature is decreased during the cooling phase,
+            in K/s (default is 1e12 K/s).
+        n_print: The frequency of output during the simulation (default is 1000).
+        server_kwargs: Additional keyword arguments for the server.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
 
-    Returns
-    -------
-    dict
+    Returns:
         A dictionary containing the simulation steps and temperature data.
+
+    Example:
+        >>> result = melt_quench_simulation(
+        ...     structure=my_atoms,
+        ...     potential=my_potential,
+        ...     temperature_high=5000.0,
+        ...     temperature_low=300.0,
+        ...     cooling_rate=1e12
+        ... )
 
     """
     seconds_to_femtos = 1e15
