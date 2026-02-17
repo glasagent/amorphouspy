@@ -60,57 +60,37 @@ def _run_lammps_md(
 ) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
     """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
-    Parameters
-    ----------
-    structure : Atoms
-        The atomic structure to simulate.
-    potential : str
-        The potential file to be used for the simulation.
-    temperature : float, int or list[float | int]
-        The target temperature for the MD run. Can be a single value or a list [start, end].
-    n_ionic_steps : int
-        Number of MD steps to run.
-    timestep : float
-        Time step for integration in femtoseconds.
-    n_dump : int
-        Frequency of dump output writing in simulation steps.
-    n_log : int
-        Frequency of log output writing in simulation steps.
-    initial_temperature : None or float
-        Initial temperature according to which the initial velocity field is created. If None, the initial
-        temperature will be twice the target temperature (which would go immediately down to the target temperature
-        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
-        initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-    temperature_end : float, optional
-        Final temperature for ramping. If None, no temperature ramp is applied.
-    pressure : float | list | None, optional
-        Target pressure. If None, NVT is used. If a float or int is provided, isotropic NPT is used. If a list
-        of 6 values is provided, anisotropic or tricilinic NPT is used.
-    server_kwargs : dict | None, optional
-        Additional keyword arguments for the server.
-    langevin : bool, optional
-        Whether to use Langevin dynamics
-    seed : int, optional
-        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
-    tmp_working_directory : str | Path | None
-        Specifies the location of the temporary directory to run the simulations. Per default (None), the
-        directory is located in the operating systems location for temperary files. With the specification
-        of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
-        tmp_working_directory needs to exist beforehand.
+    Args:
+        structure: The atomic structure to simulate.
+        potential: The potential file to be used for the simulation.
+        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
+        n_ionic_steps: Number of MD steps to run.
+        timestep: Time step for integration in femtoseconds.
+        n_dump: Frequency of dump output writing in simulation steps.
+        n_log: Frequency of log output writing in simulation steps.
+        initial_temperature: Initial temperature for velocity initialization. If None, the initial
+            temperature will be twice the target temperature (which would go immediately down to the target temperature
+            as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
+            initial velocity given in structure will be used and seed to initialize velocities will be ignored).
+        pressure: Target pressure. If None, NVT is used. If a float or int is provided, isotropic NPT is used. If a list
+            of 6 values is provided, anisotropic or tricilinic NPT is used.
+        server_kwargs: Additional keyword arguments for the server.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
+            Per default (None), the directory is located in the operating systems location for temperary files.
+            With the specification of tmp_working_directory, the temporary directory is created in the specified
+            location. Therefore, tmp_working_directory needs to exist beforehand.
 
+    Returns:
+        A tuple containing:
+            - structure_final: Final atomic structure from the simulation.
+            - parsed_output: Parsed output dictionary returned by `lammps_function`.
 
-    Returns
-    -------
-    structure_final : Atoms
-        Final atomic structure from the simulation.
-    parsed_output : dict
-        Parsed output dictionary returned by `lammps_function`.
-
-    Notes
-    -----
-    - Automatically manages a temporary working directory and cleans it after execution.
-    - Uses `lammpsparser.compatibility.file.lammps_file_interface_function` as the backend.
-    - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
+    Notes:
+        - Automatically manages a temporary working directory and cleans it after execution.
+        - Uses `lammpsparser.compatibility.file.lammps_file_interface_function` as the backend.
+        - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
 
     """
     # Creates a temporary directory for the simulation in the specified working directory.
@@ -265,36 +245,27 @@ def _cte_fluctuation_workflow_analysis(
     E.g., if multiple production runs are available, the CTE is first calculated for only
     the first run, then for the combined data of the first two runs, etc.
 
-    Parameters
-    ----------
-    subresults : dict
-        Parsed output dictionary from `cte_simulation` workflow for a specific temperature.
-        Structure of the dictionary is:
-        {   "run01" : {"pressure" : ..., "volume" : ..., "temperature" : ..., etc},
-            "run02" : {"pressure" : ..., "volume" : ..., "temperature" : ..., etc},
-            ...
-        }
-    temperature : int | float
-        Target temperature in K. If not specified the average temperature from the data is used.
-    p_in_GPa : float
-        Target pressure in GPa. Will be converted to Pa internally.
-        If not specified, the average pressure from the data is used.
-    T_key : str
-        Key name for temperature in the subresults dictionary. Needed for warning messages to identify
-        the specific temperature step.
-    N_points: int
-        Window size for running mean calculation if use_running_mean is True. (default 1000) If
-        use_running_mean is False, this parameter is ignored.
-    use_running_mean: bool
-        Conventionally, fluctuations are calculated as difference from the mean of the whole trajectory. If
-        use_running_mean is True, running mean values are used to determine fluctuations. This can be useful for
-        non-stationary data where drift in volume and energy is still observed. (default False)
-    logger : logging.Logger
-        Logger for warning messages.
+    Args:
+        subresults: Parsed output dictionary from `cte_simulation` workflow for a specific temperature.
+            Structure of the dictionary is:
+            {   "run01" : {"pressure" : ..., "volume" : ..., "temperature" : ..., etc},
+                "run02" : {"pressure" : ..., "volume" : ..., "temperature" : ..., etc},
+                ...
+            }
+        temperature: Target temperature in K. If not specified the average temperature from the data is used.
+        p_in_GPa: Target pressure in GPa. Will be converted to Pa internally.
+            If not specified, the average pressure from the data is used.
+        T_key: Key name for temperature in the subresults dictionary. Needed for warning messages to identify
+            the specific temperature step.
+        N_points: Window size for running mean calculation if use_running_mean is True. (default 1000) If
+            use_running_mean is False, this parameter is ignored.
+        use_running_mean: Conventionally, fluctuations are calculated as difference from the mean of the
+            whole trajectory. If use_running_mean is True, running mean values are used to determine
+            fluctuations. This can be useful for non-stationary data where drift in volume and energy
+            is still observed. (default False)
+        logger: Logger for warning messages.
 
-    Returns
-    -------
-    dict
+    Returns:
         Nested dictionary with run_key "run01", "run02, ... as main keys. Under every key, the dictionary
         contains the collected and computed CTE values and other thermodynamic averages calculated up to
         the specific production run. Structure is:
@@ -318,8 +289,7 @@ def _cte_fluctuation_workflow_analysis(
             ...
         }
 
-    Notes
-    -----
+    Notes:
         - Care needs to be taken to ensure the correct "enthalpy" is used. In Lammps, the enthalpy
           is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
           the required property here is better reflected if the pressure that defines the ensemble is used:
@@ -418,21 +388,16 @@ def _is_converged(data: dict, criterion: float) -> bool:
     absolute difference and checks if it is below the specified convergence criterion.
     The check is performed for all CTE components (CTE_V, CTE_x, CTE_y, CTE_z) individually.
 
-    Parameters
-    ----------
-    data : dict
-        Dictionary containing CTE values from multiple production runs at the current temperature.
-        Structure of the dictionary is assumed to be:
-        {   "run01" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., ...},
-            "run02" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., ...},
-            ...
-        }
-    criterion : float
-        Convergence criterion for the CTE values.
+    Args:
+        data: Dictionary containing CTE values from multiple production runs at the current temperature.
+            Structure of the dictionary is assumed to be:
+            {   "run01" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., ...},
+                "run02" : {"CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., ...},
+                ...
+            }
+        criterion: Convergence criterion for the CTE values.
 
-    Returns
-    -------
-    bool
+    Returns:
         True if all the CTE values are converged within the specified criterion, False otherwise.
 
     """
@@ -501,18 +466,12 @@ def _set_initial_temperature(T_count: int, T: float, seed: int | None) -> None:
     temperature and a random seed. All subsequent simulations should continue from the previous
     velocity field and therefore set initial_temperature to 0 and seed to None.
 
-    Parameters
-    ----------
-    T_count : int
-        Current temperature step count in the workflow.
-    T : float
-        Target temperature for the current simulation.
-    seed : int | None
-        Random seed for velocity initialization.
+    Args:
+        T_count: Current temperature step count in the workflow.
+        T: Target temperature for the current simulation.
+        seed: Random seed for velocity initialization.
 
-    Returns
-    -------
-    initial_temperature : float | int
+    Returns:
         Initial temperature for velocity initialization. None if velocities should be initialized
         based on target temperature, 0 if previous velocities should be used.
 
@@ -528,20 +487,14 @@ def _temperature_checker(temperature: float | list[int | float]) -> list[int | f
     Makes sure that all temperatures are positive. If only specified as a single value, it
     converts it to a list as required for the workflow.
 
-    Parameters
-    ----------
-    temperature : float | list[int | float]
-        Simulation temperature in Kelvin.
+    Args:
+        temperature: Simulation temperature in Kelvin.
 
-    Returns
-    -------
-    list[int | float]
+    Returns:
         Prepared list of temperatures for the workflow.
 
-    Raises
-    ------
-    ValueError
-        If any temperature is non-positive.
+    Raises:
+        ValueError: If any temperature is non-positive.
 
     """
     if isinstance(temperature, (int, float)):
@@ -583,48 +536,30 @@ def cte_simulation(
     The number of steps used here is only for testing purposes.
     It is assumed in this workflow that the given in structure is pre-quilibrated.
 
-    Parameters
-    ----------
-    structure : Atoms
-        Input structure (assumed pre-equilibrated).
-    potential : str
-        LAMMPS potential file.
-    temperature : float | list[int | float], optional
-        Simulation temperature in Kelvin (default 300 K).
-    pressure : float, optional
-        Target pressure in GPa for NPT simulations.
-        (default 10-4 GPa = 10^5 Pa = 1 bar).
-    timestep : float, optional
-        MD integration timestep in femtoseconds (default 1.0 fs).
-    equilibration_steps : int, optional
-        Number of MD steps for the equilibration runs (default 100,000).
-    production_steps : int, optional
-        Number of MD steps for the production runs (default 200,000).
-    max_production_runs : int, optional
-        Maximum number of production runs to perform (default 10). If max number of
-        production runs is reached without convergence, a warning is printed and the
-        next temperature is started.
-    CTE_convergence_criterion : float, optional
-        Convergence criterion for the CTE value calculated based on H-V fluctuations
-        calculated over subsequent production runs (default 1e-6).
-    n_dump : int, optional
-        Dump output frequency of the production runs (default 100,000).
-    n_log : int, optional
-        Log output frequency (default 10).
-    server_kwargs : dict, optional
-        Additional server configuration arguments.
-    aniso : bool, optional
-        If false, an isotropic NPT calculation is performed and the simulation box is scaled uniformly.
-        If True, anisotropic NPT calculation is performed and the simulation box can change shape and
-        size independently along each axis (default False).
-    seed : int, None, optional
-        Random seed for velocity initialization (default 12345). If
-    tmp_working_directory : str or Path, optional
-        Temporary directory for job execution.
+    Args:
+        structure: Input structure (assumed pre-equilibrated).
+        potential: LAMMPS potential file.
+        temperature: Simulation temperature in Kelvin (default 300 K).
+        pressure: Target pressure in GPa for NPT simulations.
+            (default 10-4 GPa = 10^5 Pa = 1 bar).
+        timestep: MD integration timestep in femtoseconds (default 1.0 fs).
+        equilibration_steps: Number of MD steps for the equilibration runs (default 100,000).
+        production_steps: Number of MD steps for the production runs (default 200,000).
+        max_production_runs: Maximum number of production runs to perform (default 10). If max number of
+            production runs is reached without convergence, a warning is printed and the
+            next temperature is started.
+        CTE_convergence_criterion: Convergence criterion for the CTE value calculated based on H-V fluctuations
+            calculated over subsequent production runs (default 1e-6).
+        n_dump: Dump output frequency of the production runs (default 100,000).
+        n_log: Log output frequency (default 10).
+        server_kwargs: Additional server configuration arguments.
+        aniso: If false, an isotropic NPT calculation is performed and the simulation box is scaled uniformly.
+            If True, anisotropic NPT calculation is performed and the simulation box can change shape and
+            size independently along each axis (default False).
+        seed: Random seed for velocity initialization (default 12345).
+        tmp_working_directory: Temporary directory for job execution.
 
-    Returns
-    -------
-    dict
+    Returns:
         Nested dictionary containing collected output of the simulations. The main keys are the
         temperature steps in the format "01_300K", "02_400K", etc. Under each temperature key,
         the dictionary contains another dictionary with keys "run01", "run02", ... for each
@@ -647,12 +582,19 @@ def cte_simulation(
         "convergence_criterion" : float  # The convergence criterion
         "structure_final" : Atoms        # Final structure at this temperature
 
-    Notes
-    -----
-    - For every temperature, the structure is first pre-equilibrated with short (10 ps) NVT.
-    - Simulation settings for the NVT equilibration run are hard-coded
-    - CTEs are calculated sequentially if a list of temperatures is provided. Alternatively, multiple
-      jobs with independent temperatures can be submitted to achieve parallelization.
+    Notes:
+        - For every temperature, the structure is first pre-equilibrated with short (10 ps) NVT.
+        - Simulation settings for the NVT equilibration run are hard-coded
+        - CTEs are calculated sequentially if a list of temperatures is provided. Alternatively, multiple
+          jobs with independent temperatures can be submitted to achieve parallelization.
+
+    Example:
+        >>> result = cte_simulation(
+        ...     structure=my_atoms,
+        ...     potential=my_potential,
+        ...     temperature=[300, 400, 500],
+        ...     production_steps=500000
+        ... )
 
     """
     # Logging setup

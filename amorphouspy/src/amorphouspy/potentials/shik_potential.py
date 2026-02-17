@@ -63,7 +63,19 @@ shik_params = {
 def potential_and_force(
     r: np.ndarray, A: float, B: float, C: float, D: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute V(r) and F(r) for the SHIK (Buckingham + r^-24) potential."""
+    """Compute V(r) and F(r) for the SHIK (Buckingham + r^-24) potential.
+
+    Args:
+        r: Interatomic distance array.
+        A: Parameter A (eV).
+        B: Parameter B (Å^-1).
+        C: Parameter C (eV·Å^6).
+        D: Parameter D (eV·Å^24).
+
+    Returns:
+        Tuple containing distance array r, potential V, and force F.
+
+    """
     exp_term = np.exp(-B * r)
     inv_r6 = r**-6
     inv_r24 = inv_r6**4
@@ -76,7 +88,20 @@ def potential_and_force(
 def write_table_file(
     pair: str, params: dict, rmin: float = 0.1, rmax: float = 10.5, npoints: int = 50000, output_dir: str = "."
 ) -> Path:
-    """Write a LAMMPS table file for a given atomic pair in the specified output directory."""
+    """Write a LAMMPS table file for a given atomic pair in the specified output directory.
+
+    Args:
+        pair: Name of the atomic pair (e.g., "Si-O").
+        params: Tuple of parameters (A, B, C, D).
+        rmin: Minimum distance for table (default 0.1).
+        rmax: Maximum distance for table (default 10.5).
+        npoints: Number of points in table (default 50000).
+        output_dir: Directory to save the table file definition.
+
+    Returns:
+        Path to the generated table file.
+
+    """
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -101,11 +126,11 @@ def compute_oxygen_charge(atoms_dict: dict, shik_charges: dict) -> float:
     qO = -sum(qx * Nx) / NO.
 
     Args:
-        atoms_dict: dictionary of atoms and counts
-        shik_charges: dictionary of atomic charges from the potential model
+        atoms_dict: Dictionary of atoms and counts.
+        shik_charges: Dictionary of atomic charges from the potential model.
 
     Returns:
-        q_O: composition dependent oxygen charge
+        Composition dependent oxygen charge.
 
     """
     counts = Counter(atom["element"] for atom in atoms_dict["atoms"])
@@ -124,7 +149,19 @@ def compute_oxygen_charge(atoms_dict: dict, shik_charges: dict) -> float:
 
 
 def generate_shik_potential(atoms_dict: dict, output_dir: str = ".") -> pd.DataFrame:
-    """Generate SHIK LAMMPS input configuration with absolute table paths."""
+    """Generate SHIK LAMMPS input configuration with absolute table paths.
+
+    Args:
+        atoms_dict: Dictionary containing atomic structure information.
+        output_dir: Directory to save the table file definition.
+
+    Returns:
+        DataFrame containing potential configuration.
+
+    Example:
+        >>> shik_pot = generate_shik_potential(struct_dict, output_dir="./potentials")
+
+    """
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
