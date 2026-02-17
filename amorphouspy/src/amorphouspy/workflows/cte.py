@@ -164,7 +164,6 @@ def _collect_sim_data(parsed_output: dict, counter_production_run: int) -> dict[
 
     Parameters
     ----------
-    ----------:
     parsed_output : dict
         Output dictionary as returned by `lammps_function`.
     counter_production_run : int
