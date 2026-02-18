@@ -315,8 +315,6 @@ def check(task_id: str) -> TaskResponse:
     # re-submitting the entire workflow.  See
     # https://github.com/pyiron/executorlib/pull/915
     try:
-        # Need an active executor to resolve the future
-        exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
         future = get_future_from_cache(
             cache_directory=str(MELTQUENCH_PROJECT_DIR),
             cache_key=request_hash,
@@ -329,7 +327,6 @@ def check(task_id: str) -> TaskResponse:
         }
 
         task_store.set(task_id, status)
-        exe.shutdown(wait=False, cancel_futures=False)
     except FileNotFoundError:
         # Cache files not yet written - job is still starting up
         logger.info("Cache files not yet available for task %s", task_id)
