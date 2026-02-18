@@ -30,7 +30,7 @@ def get_properties_for_structure_analysis(
     """Based on an atoms object, extract atom IDs, types, coordinates, and box size.
 
     Args:
-        atoms (Atoms): ASE Atoms object containing atomic information.
+        atoms: ASE Atoms object containing atomic information.
 
     Returns:
         Tuple containing:
@@ -38,6 +38,9 @@ def get_properties_for_structure_analysis(
             - types (np.ndarray): Array of atom types.
             - coords (np.ndarray): Wrapped coordinates.
             - cell (np.ndarray): Dimensions of the simulation box.
+
+    Example:
+        >>> ids, types, coords, box = get_properties_for_structure_analysis(atoms)
 
     """
     # Use a copy to avoid that the original atoms object is modified by wrap()
@@ -66,11 +69,14 @@ def write_distribution_to_file(
     """Write a coordination/Qn histogram to a text file.
 
     Args:
-        composition (float): Composition value to label row.
-        filepath (str): Output filepath.
-        dist (Dict[int, int]): Histogram data.
-        label (str): Prefix for headers (e.g., Si or Q).
-        append (bool): Append mode; writes header only if file does not exist.
+        composition: Composition value to label row.
+        filepath: Output filepath.
+        dist: Histogram data.
+        label: Prefix for headers (e.g., Si or Q).
+        append: Append mode; writes header only if file does not exist.
+
+    Example:
+        >>> write_distribution_to_file(0.5, "qn.txt", qn_dist, "Q")
 
     """
     max_n = max(dist.keys(), default=0)
@@ -96,11 +102,14 @@ def write_angle_distribution(
     """Write angle distribution to a text file.
 
     Args:
-        bin_centers (np.ndarray): Angle bin centers in degrees.
-        angle_hist (np.ndarray): Normalized angle histogram.
-        composition (float): Composition value (e.g., % modifier).
-        filepath (str): Output filepath.
-        append (bool): Whether to append to file.
+        bin_centers: Angle bin centers in degrees.
+        angle_hist: Normalized angle histogram.
+        composition: Composition value (e.g., % modifier).
+        filepath: Output filepath.
+        append: Whether to append to file.
+
+    Example:
+        >>> write_angle_distribution(centers, hist, 0.5, "angles.txt")
 
     """
     mode = "a" if append else "w"
@@ -114,21 +123,18 @@ def write_angle_distribution(
 def structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict, *, wrap: bool = False) -> Atoms:
     """Construct an `Atoms` object from parsed output data.
 
-    Parameters
-    ----------
-    initial_structure : Atoms
-        The initial atomic structure to use as a template.
-    parsed_output : dict
-        Parsed output containing atomic positions, cell, and indices.
-    wrap : bool, optional
-        Whether to wrap the atomic positions to the simulation cell (default is False).
-        Keeping the unwrapped positions is more beneficial if structures are passed between
-        different LAMMPS simulations in one workflow to ensure continuity.
+    Args:
+        initial_structure: The initial atomic structure to use as a template.
+        parsed_output: Parsed output containing atomic positions, cell, and indices.
+        wrap: Whether to wrap the atomic positions to the simulation cell (default is False).
+            Keeping the unwrapped positions is more beneficial if structures are passed between
+            different LAMMPS simulations in one workflow to ensure continuity.
 
-    Returns
-    -------
-    Atoms
+    Returns:
         An `Atoms` object with updated positions and cell.
+
+    Example:
+        >>> new_atoms = structure_from_parsed_output(atoms, lammps_output)
 
     """
     # Take a copy of the initial structure as template and update the relevant properties
@@ -153,18 +159,15 @@ def write_xyz(
 ) -> None:
     """Write atomic configuration to an XYZ file.
 
-    Parameters
-    ----------
-    filename : str
-        Output XYZ file name.
-    coords : np.ndarray, shape (N, 3)
-        Atomic coordinates.
-    types : np.ndarray, shape (N,)
-        Atomic types as integers.
-    box_size : array-like of float, shape (3,), optional
-        Simulation box size in x, y, z.
-    type_dict : dict[int, str], optional
-        Dictionary mapping atomic type integers to element symbols.
+    Args:
+        filename: Output XYZ file name.
+        coords: Atomic coordinates.
+        types: Atomic types as integers.
+        box_size: Simulation box size in x, y, z.
+        type_dict: Dictionary mapping atomic type integers to element symbols.
+
+    Example:
+        >>> write_xyz("output.xyz", coords, types, box, {14: "Si", 8: "O"})
 
     """
     if type_dict is None:

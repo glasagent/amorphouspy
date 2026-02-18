@@ -31,15 +31,11 @@ bjp_params = {
 def generate_bjp_potential(atoms_dict: dict) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for CAS glass simulations (Bouhadja et al. 2013).
 
-    Parameters
-    ----------
-    atoms_dict : dict
-        Dictionary containing atomic structure information
+    Args:
+        atoms_dict: Dictionary containing atomic structure information.
 
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame containing potential configuration
+    Returns:
+        DataFrame containing potential configuration.
 
     """
     types = get_element_types_dict(atoms_dict)

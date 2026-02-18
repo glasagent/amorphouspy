@@ -1,23 +1,25 @@
 name: amorphouspy
 channels:
-- conda-forge
+  - conda-forge
 dependencies:
-- python =3.13
-- ase >=3.25.0
-- cryptography =45.0.7
-- executorlib =1.7.4
-- hatchling
-- jupyter
-- lammps =2024.08.29=*_openmpi_*
-- networkx ~=3.4
-- pandas =2.3.3
-- numpy =2.3.3
-- pygraphviz =1.14
-- lammpsparser =0.0.1
-- pymatgen =2025.10.07
-- scipy =1.16.2
-- sqlalchemy
-- numba
-- uvicorn
-- fastapi-mcp =0.4.0
-- sovapy =0.8.3
+  - python =3.13
+  - ase >=3.25.0
+  - cryptography =45.0.7
+  - executorlib >=1.8.2
+  - flux-core >=0.81.0
+  - pysqa >=0.3.4
+  - hatchling
+  - jupyter
+  - lammps =2024.08.29=*_openmpi_*
+  - networkx ~=3.4
+  - pandas =2.3.3
+  - numpy =2.3.3
+  - pygraphviz =1.14
+  - lammpsparser =0.0.1
+  - pymatgen =2025.10.07
+  - scipy =1.16.2
+  - sqlalchemy
+  - numba
+  - uvicorn
+  - fastapi-mcp =0.4.0
+  - sovapy =0.8.3

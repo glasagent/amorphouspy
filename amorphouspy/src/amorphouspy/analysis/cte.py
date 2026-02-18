@@ -5,9 +5,7 @@ specifically from constant pressure (NPT) simulations. The CTE can be computed b
 fluctuations in enthalpy and volume, or from volume-temperature data obtained from multiple
 NPT simulations at different temperatures.
 
-Author
-------
-Marcel Sadowski (github.com/Gitdowski)
+Author: Marcel Sadowski (github.com/Gitdowski)
 """
 
 import numpy as np
@@ -128,7 +126,7 @@ def cte_from_volume_temperature_data(
     volume = np.array(volume)[sorted_indices]
 
     # fit and calculate CTE
-    slope, intercept = np.polyfit(temperature, volume, 1)
+    slope, _intercept = np.polyfit(temperature, volume, 1)
     CTE = slope / volume[0]
 
     return float(CTE)

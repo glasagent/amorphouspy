@@ -116,7 +116,7 @@ def compute_rdf(
         >>> r, rdfs, cn = compute_rdf(structure, r_max=10.0, n_bins=500)
 
     """
-    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    _ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
     # Input validation and type conversion
     coords = np.asarray(coords, dtype=np.float64)
     types = np.asarray(types, dtype=np.int64)
@@ -155,6 +155,9 @@ def compute_rdf(
 
         pair_dists = distances[pair_mask]
         hist, _ = np.histogram(pair_dists, bins=bin_edges)
+        if t1 == t2:
+            hist = hist * 2
+
         rdfs[(t1, t2)] = hist
         cn_cumulative[(t1, t2)] = np.cumsum(hist)
 

@@ -1,6 +1,7 @@
 """Test database functionality for the task store."""
 
 import tempfile
+import threading
 from pathlib import Path
 
 from amorphouspy_api.database import TaskStore
@@ -14,7 +15,11 @@ def test_task_store_basic_operations() -> None:
         store = TaskStore(db_path)
 
         # Test set and get
-        task_data = {"state": "processing", "status": "Starting", "request_hash": "abc123def456"}
+        task_data = {
+            "state": "processing",
+            "status": "Starting",
+            "request_hash": "abc123def456",
+        }
 
         store.set("test_task_1", task_data)
         retrieved = store.get("test_task_1")
@@ -23,6 +28,8 @@ def test_task_store_basic_operations() -> None:
         assert retrieved["state"] == "processing"
         assert retrieved["status"] == "Starting"
         assert retrieved["request_hash"] == "abc123def456"
+
+        store.close()
 
 
 def test_task_store_cached_result_lookup() -> None:
@@ -48,7 +55,11 @@ def test_task_store_cached_result_lookup() -> None:
             "structural_analysis": {
                 "density": 2.5,
                 "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
-                "network": {"connectivity": 3.0, "Qn_distribution": {}, "Qn_distribution_partial": {}},
+                "network": {
+                    "connectivity": 3.0,
+                    "Qn_distribution": {},
+                    "Qn_distribution_partial": {},
+                },
                 "distributions": {"bond_angles": {}, "rings": {}},
                 "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
                 "elements": {"formers": ["Si"], "modifiers": ["Na"], "cutoffs": {}},
@@ -82,6 +93,8 @@ def test_task_store_cached_result_lookup() -> None:
         no_result = store.find_cached_result("nonexistent_hash")
         assert no_result is None
 
+        store.close()
+
 
 def test_task_store_items() -> None:
     """Test getting all tasks."""
@@ -101,6 +114,8 @@ def test_task_store_items() -> None:
         assert "task1" in task_ids
         assert "task2" in task_ids
 
+        store.close()
+
 
 def test_task_store_persistence() -> None:
     """Test that data persists across TaskStore instances."""
@@ -109,7 +124,10 @@ def test_task_store_persistence() -> None:
 
         # Create store and add data
         store1 = TaskStore(db_path)
-        store1.set("persistent_task", {"state": "complete", "status": "Done", "request_hash": "persistent_hash"})
+        store1.set(
+            "persistent_task",
+            {"state": "complete", "status": "Done", "request_hash": "persistent_hash"},
+        )
 
         # Create new store instance with same database
         store2 = TaskStore(db_path)
@@ -119,3 +137,113 @@ def test_task_store_persistence() -> None:
         assert retrieved["state"] == "complete"
         assert retrieved["status"] == "Done"
         assert retrieved["request_hash"] == "persistent_hash"
+
+        store1.close()
+        store2.close()
+
+
+def test_task_store_concurrent_writes() -> None:
+    """Test that multiple threads can write to the task store simultaneously."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = Path(temp_dir) / "test_tasks.db"
+        store = TaskStore(db_path)
+
+        errors: list[Exception] = []
+        n_threads = 10
+
+        def write_task(i: int) -> None:
+            try:
+                store.set(
+                    f"thread-task-{i}",
+                    {"state": "processing", "request_hash": f"hash-{i}"},
+                )
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=write_task, args=(i,)) for i in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Concurrent writes failed: {errors}"
+
+        # Verify all tasks were written
+        items = store.items()
+        assert len(items) == n_threads
+
+        store.close()
+
+
+def test_task_store_concurrent_cache_lookup() -> None:
+    """Test that find_cached_result works correctly from multiple threads.
+
+    This simulates the pattern where FastAPI runs sync endpoints in a
+    threadpool — multiple /check or /cache requests hitting the DB at once.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = Path(temp_dir) / "test_tasks.db"
+        store = TaskStore(db_path)
+
+        mock_structure = {
+            "numbers": [14, 8, 8],
+            "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+            "pbc": [True, True, True],
+        }
+
+        store.set(
+            "cached-task",
+            {
+                "state": "complete",
+                "request_hash": "shared-hash",
+                "result": {
+                    "composition": "SiO2",
+                    "final_structure": mock_structure,
+                    "mean_temperature": 300.0,
+                    "simulation_steps": 100,
+                    "structural_analysis": {
+                        "density": 2.2,
+                        "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
+                        "network": {
+                            "connectivity": 4.0,
+                            "Qn_distribution": {},
+                            "Qn_distribution_partial": {},
+                        },
+                        "distributions": {"bond_angles": {}, "rings": {}},
+                        "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
+                        "elements": {"formers": ["Si"], "modifiers": [], "cutoffs": {}},
+                    },
+                },
+            },
+        )
+
+        errors: list[Exception] = []
+        results: list[tuple | None] = []
+        lock = threading.Lock()
+        n_threads = 10
+
+        def lookup() -> None:
+            try:
+                result = store.find_cached_result("shared-hash")
+                with lock:
+                    results.append(result)
+            except Exception as e:
+                with lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=lookup) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Concurrent cache lookups failed: {errors}"
+        assert len(results) == n_threads
+        for r in results:
+            assert r is not None
+            task_id, mq_result = r
+            assert task_id == "cached-task"
+            assert mq_result.composition == "SiO2"
+
+        store.close()

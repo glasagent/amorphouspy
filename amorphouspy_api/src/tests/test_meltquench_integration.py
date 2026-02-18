@@ -1,6 +1,7 @@
 """Integration tests for meltquench API with live server."""
 
 import logging
+import os
 import time
 
 import pytest
@@ -29,15 +30,20 @@ def is_api_server_running(url: str) -> bool:
 @pytest.mark.integration
 def test_meltquench_api_integration() -> None:
     """Full integration test for the meltquench API using a running server.
-    Requires: API server running in main thread with amorphouspy_INTEGRATION=1
+    Requires: API server running in main thread with AMORPHOUSPY_INTEGRATION=1
     Example:
-        amorphouspy_INTEGRATION=1 uvicorn amorphouspy_api.src.amorphouspy_api.app:app --port 8002
+        AMORPHOUSPY_INTEGRATION=1 uvicorn amorphouspy_api.src.amorphouspy_api.app:app --port 8002
         pytest -m integration.
     """
     API_URL = "http://127.0.0.1:8002"
     root_url = f"{API_URL}/"
     logger.info("Checking API server status...")
     if not is_api_server_running(root_url):
+        if os.environ.get("AMORPHOUSPY_INTEGRATION"):
+            pytest.fail(
+                "API server not running at http://127.0.0.1:8002/ "
+                "but AMORPHOUSPY_INTEGRATION is set — the server should have started"
+            )
         pytest.skip("API server not running at http://127.0.0.1:8002/")
 
     # Use faster rates for integration testing
@@ -71,20 +77,22 @@ def test_meltquench_api_integration() -> None:
             r = requests.get(f"{API_URL}/check/{task_id}", timeout=30)
             r.raise_for_status()
             check_data = r.json()
-            state = check_data["state"]
-            logger.info("Polling: state=%s", state)
-            if state == "complete":
+            status = check_data["status"]
+            logger.info("Polling: status=%s", status)
+            if status == "completed":
                 logger.info("Result: %s", check_data["result"])
                 result = check_data["result"]
                 break
-            if state == "error":
+            if status == "error":
                 logger.error("Meltquench task errored: %s", check_data.get("error"))
                 pytest.fail(f"Meltquench task errored: {check_data.get('error')}")
             if time.time() - start > timeout:
                 logger.error(
-                    "Timeout: Meltquench task did not complete within %s seconds. Last state: %s", timeout, state
+                    "Timeout: Meltquench task did not complete within %s seconds. Last status: %s",
+                    timeout,
+                    status,
                 )
-                pytest.fail(f"Meltquench task did not complete within {timeout} seconds. Last state: {state}")
+                pytest.fail(f"Meltquench task did not complete within {timeout} seconds. Last status: {status}")
             time.sleep(poll_interval)
 
     assert result is not None
@@ -137,4 +145,7 @@ def test_meltquench_api_integration() -> None:
     logger.info("✓ Temperature: %.1f K", temp)
     logger.info("✓ Density: %.2f g/cm³", density)
     logger.info("✓ Steps: %s", steps)
-    logger.info("✓ Structural analysis: %s", {k: v for k, v in structural_analysis.items() if k != "error"})
+    logger.info(
+        "✓ Structural analysis: %s",
+        {k: v for k, v in structural_analysis.items() if k != "error"},
+    )

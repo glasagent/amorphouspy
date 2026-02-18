@@ -30,45 +30,27 @@ def _run_lammps_md(
 ) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
     """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
-    Parameters
-    ----------
-    structure : Atoms
-        The atomic structure to simulate.
-    potential : str
-        The potential file to be used for the simulation.
-    temperature : float or list
-        The target temperature for the MD run. Can be a single value or a list [start, end].
-    n_ionic_steps : int
-        Number of MD steps to run.
-    timestep : float
-        Time step for integration in femtoseconds.
-    n_print : int
-        Frequency of output writing in simulation steps.
-    initial_temperature : None or float
-        Initial temperature according to which the initial velocity field is created. If None, the initial
-        temperature will be twice the target temperature (which would go immediately down to the target temperature
-        as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
-        initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-    temperature_end : float, optional
-        Final temperature for ramping. If None, no temperature ramp is applied.
-    pressure : float, optional
-        Target pressure for NPT simulations. If None, NVT is used.
-    server_kwargs : dict | None, optional
-        Additional keyword arguments for the server.
-    langevin : bool, optional
-        Whether to use Langevin dynamics
-    seed : int, optional
-        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
-    tmp_working_directory : str | Path | None
-        Specifies the location of the temporary directory to run the simulations. Per default (None), the
-        directory is located in the operating systems location for temperary files. With the specification
-        of tmp_working_directory, the temporary directory is created in the specified location. Therefore,
-        tmp_working_directory needs to exist beforehand.
+    Args:
+        structure: The atomic structure to simulate.
+        potential: The potential file to be used for the simulation.
+        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
+        n_ionic_steps: Number of MD steps to run.
+        timestep: Time step for integration in femtoseconds.
+        n_print: Frequency of output writing in simulation steps.
+        initial_temperature: Initial temperature for velocity initialization. If None, the initial
+            temperature will be twice the target temperature (which would go immediately down to the target temperature
+            as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
+            initial velocity given in structure will be used and seed to initialize velocities will be ignored).
+        pressure: Target pressure for NPT simulations. If None, NVT is used.
+        server_kwargs: Additional keyword arguments for the server.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
+            Per default (None), the directory is located in the operating systems location for temperary files.
+            With the specification of tmp_working_directory, the temporary directory is created in the specified
+            location. Therefore, tmp_working_directory needs to exist beforehand.
 
-
-    Returns
-    -------
-    tuple
+    Returns:
         A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
 
     """
@@ -132,34 +114,20 @@ def md_simulation(
     This function equilibrate a structure at predefined temperature and pressure.
     The number of steps used here is only for testing purposes.
 
-    Parameters
-    ----------
-    structure : Atoms
-        The initial atomic structure to be melted and quenched.
-    potential : str
-        The potential file to be used for the simulation.
-    tmp_working_directory : str
-        The directory where the simulation files will be stored.
-    temperature_sim : float, optional
-        The temperature at which the structure will be equilibrated (default is 5000.0 K).
-    timestep : float, optional
-        Time step for integration in femtoseconds (default is 1.0 fs).
-    production_steps : float, optional
-        The number of steps for the production.
-    n_print : int, optional
-        The frequency of output during the simulation (default is 1000).
-    server_kwargs : dict | None, optional
-        Additional arguments for the server.
-    pressure : float | None, optional
-        The pressure at which the structure will be equilibrated (default is None).
-    langevin : bool, optional
-        Whether to use Langevin dynamics.
-    seed : int, optional
-        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+    Args:
+        structure: The initial atomic structure to be melted and quenched.
+        potential: The potential file to be used for the simulation.
+        temperature_sim: The temperature at which the structure will be equilibrated (default is 5000.0 K).
+        timestep: Time step for integration in femtoseconds (default is 1.0 fs).
+        production_steps: The number of steps for the production.
+        n_print: The frequency of output during the simulation (default is 1000).
+        server_kwargs: Additional arguments for the server.
+        pressure: The pressure at which the structure will be equilibrated (default is None).
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        tmp_working_directory: The directory where the simulation files will be stored.
 
-    Returns
-    -------
-    dict
+    Returns:
         A dictionary containing the simulation steps and temperature data.
 
     """

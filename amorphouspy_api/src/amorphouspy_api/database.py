@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import JSON, Column, DateTime, Index, String, Text, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from .models import MeltquenchResult, serialize_atoms
 
@@ -46,7 +47,11 @@ class Task(Base):
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
     # Index for efficient cache lookups
     __table_args__ = (Index("ix_request_hash_state", "request_hash", "state"),)
@@ -72,10 +77,11 @@ class TaskStore:
         self.db_url = f"sqlite:///{db_path}"
 
         # Create engine with SQLite-specific settings
+        # Use NullPool to disable connection pooling - ensures connections are properly closed
         self.engine = create_engine(
             self.db_url,
             echo=False,  # Set to True for SQL debugging
-            pool_pre_ping=True,  # Verify connections before use
+            poolclass=NullPool,  # Disable connection pooling for better cleanup
             connect_args={
                 "check_same_thread": False,  # Allow use from multiple threads
                 "timeout": 30,  # 30 second timeout for busy database
@@ -98,6 +104,12 @@ class TaskStore:
         except SQLAlchemyError:
             logger.exception("Error creating database tables")
             raise
+
+    def close(self) -> None:
+        """Close the database engine and dispose of all connections."""
+        if self.engine:
+            self.engine.dispose()
+            logger.info("Closed task store database connection")
 
     def get_session(self) -> Session:
         """Get a new database session."""
@@ -179,12 +191,20 @@ class TaskStore:
             with self.get_session() as session:
                 task = (
                     session.query(Task)
-                    .filter(Task.request_hash == request_hash, Task.state == "complete", Task.result_data.isnot(None))
+                    .filter(
+                        Task.request_hash == request_hash,
+                        Task.state == "complete",
+                        Task.result_data.isnot(None),
+                    )
                     .first()
                 )
 
                 if task and task.result_data:
-                    logger.info("Found cached result for hash %s in task %s", request_hash, task.task_id)
+                    logger.info(
+                        "Found cached result for hash %s in task %s",
+                        request_hash,
+                        task.task_id,
+                    )
                     return (task.task_id, MeltquenchResult(**task.result_data))
 
                 return None
@@ -208,7 +228,10 @@ class TaskStore:
             with self.get_session() as session:
                 deleted_count = (
                     session.query(Task)
-                    .filter(Task.state.in_(["complete", "error"]), Task.updated_at < cutoff_date)
+                    .filter(
+                        Task.state.in_(["complete", "error"]),
+                        Task.updated_at < cutoff_date,
+                    )
                     .delete()
                 )
 
@@ -237,6 +260,9 @@ class TaskStore:
         if task.error_message:
             task_dict["error"] = task.error_message
 
+        if task.request_data:
+            task_dict["request_data"] = task.request_data
+
         return task_dict
 
     def _update_task_from_dict(self, task: Task, task_data: dict[str, Any]) -> None:
@@ -251,15 +277,19 @@ class TaskStore:
             task.request_hash = task_data["request_hash"]
 
         if "result" in task_data:
-            # Handle ASE Atoms serialization in final_structure
-            result_data = task_data["result"].copy()
-            if "final_structure" in result_data:
-                from ase import Atoms
+            result = task_data["result"]
+            if result is not None:
+                # Handle ASE Atoms serialization in final_structure
+                result_data = result.copy()
+                if "final_structure" in result_data:
+                    from ase import Atoms
 
-                if isinstance(result_data["final_structure"], Atoms):
-                    # Serialize ASE Atoms to JSON string for storage
-                    result_data["final_structure"] = serialize_atoms(result_data["final_structure"])
-            task.result_data = result_data
+                    if isinstance(result_data["final_structure"], Atoms):
+                        # Serialize ASE Atoms to JSON string for storage
+                        result_data["final_structure"] = serialize_atoms(result_data["final_structure"])
+                task.result_data = result_data
+            else:
+                task.result_data = None
 
         if "error" in task_data:
             task.error_message = task_data["error"]
@@ -297,3 +327,11 @@ def init_task_store(db_path: Path | None = None) -> TaskStore:
     global _task_store_instance
     _task_store_instance = TaskStore(db_path)
     return _task_store_instance
+
+
+def close_task_store() -> None:
+    """Close and reset the global task store instance."""
+    global _task_store_instance
+    if _task_store_instance is not None:
+        _task_store_instance.close()
+        _task_store_instance = None

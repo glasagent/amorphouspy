@@ -209,7 +209,7 @@ def viscosity_simulation(
     )
 
     # Stage 2: Production simulation for viscosity at T
-    structure_final, parsed_output = _run_lammps_md(
+    _structure_final, parsed_output = _run_lammps_md(
         structure=structure1,
         potential=potential,
         tmp_working_directory=tmp_working_directory,
@@ -389,20 +389,13 @@ def auto_cutoff(  # noqa: C901, PLR0912, PLR0915
 def vft_model(T: ArrayLike, log10_eta0: float, B: float, T0: float) -> NDArray[np.float64]:
     """Vogel-Fulcher-Tammann (VFT) model for viscosity.
 
-    Parameters
-    ----------
-    T : array_like
-        Temperatures in Kelvin.
-    log10_eta0 : float
-        Log10 of pre-exponential viscosity factor.
-    B : float
-        Activation parameter in Kelvin.
-    T0 : float
-        Vogel temperature (Kelvin).
+    Args:
+        T: Temperatures in Kelvin.
+        log10_eta0: Log10 of pre-exponential viscosity factor.
+        B: Activation parameter in Kelvin.
+        T0: Vogel temperature (Kelvin).
 
-    Returns
-    -------
-    log10_eta_vft : ndarray
+    Returns:
         log10(viscosity) evaluated at T.
 
     """
