@@ -209,7 +209,7 @@ def viscosity_simulation(
     )
 
     # Stage 2: Production simulation for viscosity at T
-    structure_final, parsed_output = _run_lammps_md(
+    _structure_final, parsed_output = _run_lammps_md(
         structure=structure1,
         potential=potential,
         tmp_working_directory=tmp_working_directory,

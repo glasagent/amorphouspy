@@ -49,7 +49,7 @@ def compute_angles(
         >>> bins, hist = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)
 
     """
-    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    _ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
 
     neighbors = get_neighbors(
         coords,

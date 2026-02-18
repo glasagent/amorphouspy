@@ -68,7 +68,7 @@ def compute_guttmann_rings(
         ... )
 
     """
-    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    _ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
     type_dict = type_to_dict(types)
     with tempfile.NamedTemporaryFile("w+", suffix=".xyz", delete=True) as tmp:
         write_xyz(filename=tmp.name, coords=coords, types=types, box_size=box_size, type_dict=type_dict)

@@ -56,7 +56,7 @@ def compute_cavities(
 
     """
     # Extract properties using the provided helper
-    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    _ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
     type_dict = type_to_dict(types)
 
     # Use a context manager to ensure the temporary file is cleaned up

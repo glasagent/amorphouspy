@@ -116,7 +116,7 @@ def compute_rdf(
         >>> r, rdfs, cn = compute_rdf(structure, r_max=10.0, n_bins=500)
 
     """
-    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    _ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
     # Input validation and type conversion
     coords = np.asarray(coords, dtype=np.float64)
     types = np.asarray(types, dtype=np.int64)

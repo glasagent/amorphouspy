@@ -6,8 +6,8 @@ This module tests that:
 3. The caching logic can be imported and executed without errors
 """
 
-from amorphouspy_api.app import get_meltquench_hash
 from amorphouspy_api.models import MeltquenchRequest
+from amorphouspy_api.routers.meltquench import get_meltquench_hash
 
 
 def test_hash_consistency() -> None:

@@ -126,7 +126,7 @@ def cte_from_volume_temperature_data(
     volume = np.array(volume)[sorted_indices]
 
     # fit and calculate CTE
-    slope, intercept = np.polyfit(temperature, volume, 1)
+    slope, _intercept = np.polyfit(temperature, volume, 1)
     CTE = slope / volume[0]
 
     return float(CTE)

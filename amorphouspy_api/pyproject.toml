@@ -32,7 +32,7 @@ markers = [
 addopts = ["-m", "not integration"]
 filterwarnings = [
     "ignore::DeprecationWarning:defusedxml.*",
-    "ignore:.*__get_pydantic_core_schema__.*",
+    "ignore::pydantic.PydanticDeprecatedSince211",
     "ignore:.*multi-threaded.*fork.*",
 ]
 
