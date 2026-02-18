@@ -3,9 +3,7 @@
 Implements molecular dynamics workflows and post-processing utilities for
 CTE calculations based on H-V fluctuations with NPT simulations.
 
-Author
-------
-Marcel Sadowski (github.com/Gitdowski)
+Author: Marcel Sadowski (github.com/Gitdowski)
 """
 
 import logging
@@ -162,16 +160,11 @@ def _initialize_datadict(*, with_CTE_keys: bool = False) -> dict:
 def _collect_sim_data(parsed_output: dict, counter_production_run: int) -> dict[str, Any]:
     """Extract the data of interest from the parsed output of a LAMMPS MD run.
 
-    Parameters
-    ----------
-    parsed_output : dict
-        Output dictionary as returned by `lammps_function`.
-    counter_production_run : int
-        Index of the current production run.
+    Args:
+        parsed_output: Output dictionary as returned by `lammps_function`.
+        counter_production_run: Index of the current production run.
 
-    Returns
-    -------
-    dict[str, Any]
+    Returns:
         Parsed data dictionary with the relevant properties extracted and mapped to our keys:
         { "run_index" : ..., "steps" : ..., "T" : ..., "E_tot" : ..., "ptot" : ..., "pxx" : ...,
           "pyy" : ..., "pzz" : ..., "V" : ..., "Lx" : ..., "Ly" : ..., "Lz" : ... }
@@ -333,41 +326,32 @@ def _fluctuation_simulation_cte_calculation(
     E.g., if multiple production runs are available, the CTE is first calculated for only
     the first run, then for the combined data of the first two runs, etc.
 
-    Parameters
-    ----------
-    sim_data : dict
-        Parsed output dictionary from `cte_simulation` workflow for a specific temperature.
-    temperature : float
-        Target temperature in K.
-    p : float
-        Target pressure in GPa (for consistent usage of pyiron units).
-    N_points : int, optional
-        Window size if running mean approach is used, ignored otherwise. (default 1000)
-    use_running_mean : bool, optional
-        If False, fluctuations are calculated using the mean of the whole trajecotry.
-        If True, fluctuations are calculated based on running mean values (helpful if non-stationary
-        systems with drifts in energy and volume are observed). Note that this does not guarantee
-        correct results for strongly non-equilibrium systems. (default False)
+    Args:
+        sim_data: Parsed output dictionary from `cte_simulation` workflow for a specific temperature.
+        temperature: Target temperature in K.
+        p: Target pressure in GPa (for consistent usage of pyiron units).
+        N_points: Window size if running mean approach is used, ignored otherwise. (default 1000)
+        use_running_mean: If False, fluctuations are calculated using the mean of the whole trajecotry.
+            If True, fluctuations are calculated based on running mean values (helpful if non-stationary
+            systems with drifts in energy and volume are observed). Note that this does not guarantee
+            correct results for strongly non-equilibrium systems. (default False)
 
-    Returns
-    -------
-    dict[str, float]
+    Returns:
         Dictionary containing the calculated CTE values of the current production run:
         { "CTE_V": ..., "CTE_x": ..., "CTE_y": ..., "CTE_z": ... }
 
-    Notes
-    -----
+    Notes:
         - Care needs to be taken to ensure the correct "enthalpy" is used. In Lammps, the enthalpy
-        is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
-        the required property here is better reflected if the pressure that defines the ensemble is used:
-        H_ens = E_inst + p_target * V_inst.
+          is calculated based on the instantaneous properties, H_inst = E_inst + p_inst * V_inst. However,
+          the required property here is better reflected if the pressure that defines the ensemble is used:
+          H_ens = E_inst + p_target * V_inst.
         - If isotropic NPT simulations are performed (see "iso" keyword in lammps), the apparent hydrostatic
-        pressure = (pxx+pyy+pzz)/3 will breflect the user-specified pressure. Hoever, individual pxx, pyy
-        and pzz components can deviate significantly if the structure is not fully relaxed or shows anisotropic
-        features. In this case, it is not entirely clear if the hydrostatic pressure or the actual individual
-        pressures should be used to calculate the 1D CTE components. Therefore, we perform anisotropic NPT
-        simulations (see "aniso" keyword in lammps) per default and the user-specified pressure is applied to all
-        individual components.
+          pressure = (pxx+pyy+pzz)/3 will breflect the user-specified pressure. Hoever, individual pxx, pyy
+          and pzz components can deviate significantly if the structure is not fully relaxed or shows anisotropic
+          features. In this case, it is not entirely clear if the hydrostatic pressure or the actual individual
+          pressures should be used to calculate the 1D CTE components. Therefore, we perform anisotropic NPT
+          simulations (see "aniso" keyword in lammps) per default and the user-specified pressure is applied to all
+          individual components.
 
     """
     # collect final output here
@@ -423,17 +407,14 @@ def _fluctuation_simulation_uncertainty_check(data: dict, criterion: float) -> t
     returned along with a dict of the mean CTE values and their uncertainties. Otherwise, False is
     returned along with a dict of the mean CTE values and their uncertainties.
 
-    Parameters
-    ----------
-    data : dict
-        Dictionary with the collected data from the previous production runs containing
-    criterion : float
-        Convergence criterion for the uncertainty CTE values.
+    Args:
+        data: Dictionary with the collected data from the previous production runs containing
+        CTE values.
+        criterion: Convergence criterion for the uncertainty CTE values.
 
-    Returns
-    -------
-    tuple[bool, dict]
-        Tuple of False or True and dictionary with the mean CTE values and their uncertainties:
+    Returns:
+        Tuple of one boolean (False or True) and dictionary with the mean CTE values and their
+        uncertainties:
         { "CTE_V_mean": ..., "CTE_x_mean": ..., "CTE_y_mean": ..., "CTE_z_mean": ...,
         "CTE_V_uncertainty": ..., "CTE_x_uncertainty": ...,
         "CTE_y_uncertainty": ..., "CTE_z_uncertainty": ... }
@@ -484,18 +465,12 @@ def _fluctuation_simulation_merge_results(
 ) -> dict[str, Any]:
     """Merge the newly collected simulation data to the previously collected data.
 
-    Parameters
-    ----------
-    previous_data : dict
-        Dictionary containing previously collected results.
-    new_sim_data : dict
-        Dictionary containing new simulation data, whose averages will be added.
-    new_cte_data : dict
-        Dictionary containing new CTE data to be added.
+    Args:
+        previous_data: Dictionary containing previously collected results.
+        new_sim_data: Dictionary containing new simulation data, whose averages will be added.
+        new_cte_data: Dictionary containing new CTE data to be added.
 
-    Returns
-    -------
-    dict[str, Any]
+    Returns:
         Updated dictionary with averaged simulation data and CTE data.
 
     """
@@ -544,49 +519,34 @@ def cte_from_fluctuations_simulation(
     The number of steps used here is only for testing purposes.
     It is assumed in this workflow that the given in structure is pre-equilibrated.
 
-    Parameters
-    ----------
-    structure : Atoms
-        Input structure (assumed pre-equilibrated).
-    potential : str
-        LAMMPS potential file.
-    temperature : float | list[int | float]
-        Simulation temperature in Kelvin (default 300 K).
-    pressure : float
-        Target pressure in GPa (use pyiron units here!) for NPT simulations (default 10-4 GPa = 10^5 Pa = 1 bar).
-    timestep : float
-        MD integration timestep in femtoseconds (default 1.0 fs).
-    equilibration_steps : int
-        Number of MD steps for the equilibration run (default 100,000).
-    production_steps : int
-        Number of MD steps for the production runs (default 200,000).
-    min_production_runs : int
-        Minimum number of production runs to perform before checking for convergence (default 2).
-    max_production_runs : int
-        Maximum number of production runs to perform before checking for convergence (default 10).
-    CTE_uncertainty_criterion : float
-        Convergence criterion for the uncertainty of the linear CTE (default 1e-6/K).
-    n_dump : int
-        Dump output frequency of the production runs (default 100,000).
-    n_log : int
-        Log output frequency (default 10).
-    server_kwargs : dict[str, Any] | None
-        Additional server configuration arguments for pyiron.
-    aniso : bool
-        If false, an isotropic NPT calculation is performed and the simulation box is
-        scaled uniformly. If True, anisotropic NPT calculation is performed and the simulation
-        box can change shape and size independently along each axis (default True).
-    seed : int | None
-        Random seed for velocity initialization (default 12345). If None, a random seed is used.
-    tmp_working_directory : str | Path | None
-        Temporary directory for job execution.
+    Args:
+        structure: Input structure (assumed pre-equilibrated).
+        potential: LAMMPS potential file.
+        temperature: Simulation temperature in Kelvin (default 300 K).
+        pressure: Target pressure in GPa (use pyiron units here!) for NPT simulations
+            (default: 10-4 GPa = 10^5 Pa = 1 bar).
+        timestep: MD integration timestep in femtoseconds (default 1.0 fs).
+        equilibration_steps: Number of MD steps for the equilibration run (default 100,000).
+        production_steps: Number of MD steps for the production runs (default 200,000).
+        min_production_runs: Minimum number of production runs to perform before checking for
+            convergence (default 2).
+        max_production_runs: Maximum number of production runs to perform before checking for
+            convergence (default 10).
+        CTE_uncertainty_criterion: Convergence criterion for the uncertainty of the linear
+            CTE (default 1e-6/K).
+        n_dump: Dump output frequency of the production runs (default 100,000).
+        n_log: Log output frequency (default 10).
+        server_kwargs: Additional server configuration arguments for pyiron.
+        aniso: If false, an isotropic NPT calculation is performed and the simulation box is
+              scaled uniformly. If True, anisotropic NPT calculation is performed and the simulation
+              box can change shape and size independently along each axis (default True).
+        seed: Random seed for velocity initialization (default 12345). If None, a random seed is used.
+        tmp_working_directory: Temporary directory for job execution.
 
-    Returns
-    -------
-    dict[str, Any]
+    Returns:
         Nested dictionary containing the "summary" and "data" keys. In the "summary" section the CTE
-        values and their uncertainties are returned together with info whether convergence was reached
-        within the max_production_runs and the convergence criterion.
+        values and their uncertainties are returned together with info whether CTE_uncertainty_criterion was
+        reached within the max_production_runs.
         The "data" holds the collected data from all individual production runs. "run_index" is to
         clearly identify which production run the data belongs to. "steps" contains the number of steps
         for each run. Thermodynamic and structural data are averaged over each production run and these
@@ -619,21 +579,35 @@ def cte_from_fluctuations_simulation(
                     }
         }
 
-    Notes
-    -----
+    Notes:
+        - The structure is first pre-equilibrated with a short, hard-coded 10 ps NVT run. Only then
+          follows the user-defined NPT equilibration and production runs.
+        - The simulation is only marked as converged if the uncertainty criterion is reached for all four CTE
+          values (CTE_V, CTE_x, CTE_y, CTE_z) at the same time. The CTE_uncertainty_criterion is applied to
+          as-is to the linear CTEs. How this is treated for the CTE_V, see next point.
         - How to chose the uncertainty criterion for the volumetric CTE? Should it be the same as the defined
-          CTE_uncertainty_criterion applied to the linear CTEs? The volumetric CTE is approximately
+          CTE_uncertainty_criterion applied to the linear CTEs? Consider this: The volumetric CTE is approximately
           the sum of the linear CTEs along x, y, and z. If three variables x, y and z were uncorrelated and
-          have known uncertainties sigma_x, sigma_y, and sigma_z, the uncertainty of the sum of those them
-          would be: sigma_V = sqrt( sigma_x**2 + sigma_y**2 + sigma_z**2 ). If we assume that the uncertainty
+          have known uncertainties sigma_x, sigma_y, and sigma_z, the uncertainty of the sum of them would
+          be: sigma_V = sqrt( sigma_x**2 + sigma_y**2 + sigma_z**2 ). If we assume that the uncertainty
           criterion is reached at roughly the same time for all three variables, the uncertainty of the
           volumetric CTE can be approximated as sqrt(3)*CTE_uncertainty_criterion. However, x, y and z are
           typically not uncorrelated. If calculated from the actual simulation data, the uncertainty of CTE_V
-          is found to be approximately the same as the individual uncertainties of the linear CTEs. Therefore,
-          a sqrt(3)*CTE_uncertainty_criterion is likely to be on the safe side for the volumetric CTE, with
-          the actual uncertainty of CTE_V being smaller than that.
-        - The structure is first pre-equilibrated with a short, hard-coded 10 ps NVT run. Only then
-          follows the user-defined NPT equilibration and production runs.
+          is found to be approximately the same as the individual uncertainties of the linear CTEs. To be not
+          too strict here, we keep the sqrt(3)*CTE_uncertainty_criterion for CTE_V.
+
+
+    Example:
+        >>> result = cte_from_fluctuations_simulation(
+        ...     structure=my_atoms,
+        ...     potential=my_potential,
+        ...     temperature=300,
+        ...     equilibration_steps=500_000,
+        ...     production_steps=200_000,
+        ...     min_production_runs=10,
+        ...     max_production_runs=50,
+        ...     CTE_uncertainty_criterion=1e-6,
+        ... )
 
     """
     # Logging setup
@@ -800,16 +774,11 @@ def _temperature_scan_input_checker(
 def _temperature_scan_merge_results(previous_data: dict, new_sim_data: dict) -> dict[str, Any]:
     """Merge the newly collected simulation data to the previously collected data.
 
-    Parameters
-    ----------
-    previous_data : dict[str, Any]
-        Dictionary containing previously collected results.
-    new_sim_data : dict[str, Any]
-        Dictionary containing new simulation data, whose averages will be added.
+    Args:
+        previous_data: Dictionary containing previously collected results.
+        new_sim_data: Dictionary containing new simulation data, whose averages will be added.
 
-    Returns
-    -------
-    dict[str, Any]
+    Returns:
         Updated dictionary with averaged simulation data and CTE data.
 
     """
