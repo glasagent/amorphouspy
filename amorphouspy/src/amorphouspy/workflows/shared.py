@@ -7,14 +7,10 @@ This module contains shared functionality which is reused in the individual work
 def get_lammps_command(server_kwargs: dict | None = None) -> str:
     """Generate a LAMMPS command, by default this function returns: "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in".
 
-    Parameters
-    ----------
-    server_kwargs: dict
-        Server dictionary for example: {"cores": 2}.
+    Args:
+        server_kwargs: Server dictionary for example: {"cores": 2}.
 
-    Returns
-    -------
-    lammps_command: str
+    Returns:
         LAMMPS command as a string.
 
     """

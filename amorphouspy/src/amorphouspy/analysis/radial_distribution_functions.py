@@ -155,6 +155,9 @@ def compute_rdf(
 
         pair_dists = distances[pair_mask]
         hist, _ = np.histogram(pair_dists, bins=bin_edges)
+        if t1 == t2:
+            hist = hist * 2
+
         rdfs[(t1, t2)] = hist
         cn_cumulative[(t1, t2)] = np.cumsum(hist)
 

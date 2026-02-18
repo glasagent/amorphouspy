@@ -5,9 +5,7 @@ specifically from constant pressure (NPT) simulations. The CTE can be computed b
 fluctuations in enthalpy and volume, or from volume-temperature data obtained from multiple
 NPT simulations at different temperatures.
 
-Author
-------
-Marcel Sadowski (github.com/Gitdowski)
+Author: Marcel Sadowski (github.com/Gitdowski)
 """
 
 import numpy as np

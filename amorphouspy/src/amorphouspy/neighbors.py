@@ -21,15 +21,18 @@ def compute_cell_list(
     """Construct a cell list to accelerate neighbor search.
 
     Args:
-        coords (np.ndarray): Atom coordinates.
-        box_size (np.ndarray): Box size.
-        cutoff (float): Cutoff distance for neighbor searching.
+        coords: Atom coordinates.
+        box_size: Box size.
+        cutoff: Cutoff distance for neighbor searching.
 
     Returns:
-        Tuple containing:
-            - cells (Dict[Tuple[int, int, int], List[int]]): Cell to atom index mapping.
-            - n_cells (np.ndarray): Number of cells in each dimension.
-            - inv_cell_size (np.ndarray): Inverse of the cell size in each dimension.
+        A tuple containing:
+            - cells: Cell to atom index mapping.
+            - n_cells: Number of cells in each dimension.
+            - inv_cell_size: Inverse of the cell size in each dimension.
+
+    Example:
+        >>> cells, n_cells, inv_size = compute_cell_list(coords, box, 5.0)
 
     """
     cells = defaultdict(list)
@@ -45,11 +48,14 @@ def get_neighbor_cells(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
     """Generate neighboring cell indices for a given cell index in a 3D grid.
 
     Args:
-        ci (np.ndarray): Current cell index as a 3-element array.
-        n_cells (np.ndarray): Total number of cells in each dimension.
+        ci: Current cell index as a 3-element array.
+        n_cells: Total number of cells in each dimension.
 
     Returns:
-        np.ndarray: Array of neighboring cell indices.
+        Array of neighboring cell indices.
+
+    Example:
+        >>> neighbor_cells = get_neighbor_cells(np.array([1, 1, 1]), n_cells)
 
     """
     return (ci + SHIFT_GRID_3D) % n_cells
@@ -64,6 +70,9 @@ def compute_distance(rij: np.ndarray, box_size: np.ndarray) -> float:
 
     Returns:
         Minimum image distance
+
+    Example:
+        >>> dist = compute_distance(coords[0] - coords[1], box_size)
 
     """
     rij -= box_size * np.round(rij / box_size)
@@ -81,15 +90,18 @@ def get_neighbors(
     """Find neighbors of specified type(s) using a cell list.
 
     Args:
-        coords (np.ndarray): Atom coordinates.
-        types (np.ndarray): Atom types.
-        box_size (np.ndarray): Simulation box dimensions.
-        cutoff (float): Cutoff distance for neighbor searching.
-        target_types (List[int]): Types of atoms to find neighbors for.
-        neighbor_types (List[int] or None): Acceptable neighbor types (None for all).
+        coords: Atom coordinates.
+        types: Atom types.
+        box_size: Simulation box dimensions.
+        cutoff: Cutoff distance for neighbor searching.
+        target_types: Types of atoms to find neighbors for.
+        neighbor_types: Acceptable neighbor types (None for all).
 
     Returns:
-        List[List[int]]: Neighbor indices for each atom.
+        Neighbor indices for each atom.
+
+    Example:
+        >>> neighbors = get_neighbors(coords, types, box, 3.0, target_types=[14])
 
     """
     number_of_atoms = len(coords)

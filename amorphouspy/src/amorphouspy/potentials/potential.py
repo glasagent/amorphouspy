@@ -11,18 +11,16 @@ from . import shik_potential as shik
 def generate_potential(atoms_dict: dict, potential_type: str = "pmmcs") -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 
-    Parameters
-    ----------
-    atoms_dict : dict
-        Dictionary containing atomic structure information
-    potential_type : str
-        Type of potential to generate. Options are "pmmcs", "bjp", or "shik".
-        (default is "pmmcs")
+    Args:
+        atoms_dict: Dictionary containing atomic structure information.
+        potential_type: Type of potential to generate. Options are "pmmcs", "bjp", or "shik".
+            (default is "pmmcs").
 
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame containing potential configuration
+    Returns:
+        DataFrame containing potential configuration.
+
+    Example:
+        >>> potential = generate_potential(struct_dict, potential_type="shik")
 
     """
     if potential_type.lower() == "pmmcs":

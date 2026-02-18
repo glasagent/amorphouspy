@@ -38,46 +38,30 @@ def _run_lammps_md(
 ) -> tuple[Atoms, dict[str, Any]]:  # pylint: disable=too-many-positional-arguments
     """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
 
-    Parameters
-    ----------
-    structure : Atoms
-        The atomic structure to simulate.
-    potential : str
-        The potential file to be used for the simulation.
-    temperature : float or list[float]
-        The target temperature for the MD run. Can be a single value or a list [start, end].
-    n_ionic_steps : int
-        Number of MD steps to run.
-    timestep : float
-        Time step for integration in femtoseconds.
-    n_print : int
-        Frequency of output writing in simulation steps.
-    initial_temperature : float
-        Initial temperature according to which the initial velocity field is created. If 0, the
-        velocity field is not initialized (the initial velocity given in structure will be used
-        and seed will be ignored).
-    pressure : float, optional
-        Target pressure for NPT simulations. If None, NVT is used.
-    server_kwargs : dict, optional
-        Additional keyword arguments for the server.
-    langevin : bool, optional
-        Whether to use Langevin dynamics.
-    seed : int, optional
-        Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
-    tmp_working_directory : str or Path, optional
-        Specifies the location of the temporary directory to run the simulations.
+    Args:
+        structure: The atomic structure to simulate.
+        potential: The potential file to be used for the simulation.
+        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
+        n_ionic_steps: Number of MD steps to run.
+        timestep: Time step for integration in femtoseconds.
+        n_print: Frequency of output writing in simulation steps.
+        initial_temperature: Initial temperature for velocity initialization. If 0, the
+            velocity field is not initialized (the initial velocity given in structure will be used
+            and seed will be ignored).
+        pressure: Target pressure for NPT simulations. If None, NVT is used.
+        server_kwargs: Additional keyword arguments for the server.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
 
-    Returns
-    -------
-    structure_final : Atoms
-        Final atomic structure from the simulation.
-    parsed_output : dict
-        Parsed output dictionary returned by `lammps_function`.
+    Returns:
+        A tuple containing:
+            - structure_final: Final atomic structure from the simulation.
+            - parsed_output: Parsed output dictionary returned by `lammps_function`.
 
-    Notes
-    -----
-    - Automatically manages a temporary working directory and cleans it after execution.
-    - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
+    Notes:
+        - Automatically manages a temporary working directory and cleans it after execution.
+        - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
 
     """
     # Creates a temporary directory for the simulation in the specified working directory.
@@ -127,16 +111,11 @@ def _run_lammps_md(
 def apply_strain(atoms: Atoms, eps: np.ndarray) -> Atoms:
     """Apply a strain tensor to an atomic structure.
 
-    Parameters
-    ----------
-    atoms : Atoms
-        The input atomic structure.
-    eps : np.ndarray
-        A 3x3 strain tensor to apply to the cell.
+    Args:
+        atoms: The input atomic structure.
+        eps: A 3x3 strain tensor to apply to the cell.
 
-    Returns
-    -------
-    Atoms
+    Returns:
         A new Atoms object with the strained cell and scaled atomic positions.
 
     """
@@ -159,30 +138,24 @@ def _run_strained_md(structure: Atoms, strain_tensor: np.ndarray, base_kwargs: d
     simulations: one with the applied strain tensor and one with the inverse
     (negative) strain tensor.
 
-    Parameters
-    ----------
-    structure : ase.atoms.Atoms
-        The base atomic structure to which the strain is applied.
-    strain_tensor : np.ndarray
-        A 3x3 matrix representing the infinitesimal strain tensor to be applied.
-    base_kwargs : dict
-        A dictionary containing the simulation parameters for `_run_lammps_md`.
-        Must include:
-        - "n_ionic_steps" (int): Total MD steps.
-        - "potential" (str): Path to the LAMMPS potential.
-        - "temperature" (float): Target temperature.
-        - "timestep" (float): Integration time step.
-        - "tmp_working_directory" (str | Path | None): Temporary working directory.
-        - "n_print" (int): Frequency of output during the simulation.
-        - "initial_temperature" (float): Initial temperature for the simulation.
-        - "pressure" (float | None): Target pressure for NPT simulations.
-        - "langevin" (bool): Whether to use Langevin dynamics.
-        - "seed" (int): Random seed for velocity initialization.
-        - "server_kwargs" (dict | None): Additional keyword arguments for the server.
+    Args:
+        structure: The base atomic structure to which the strain is applied.
+        strain_tensor: A 3x3 matrix representing the infinitesimal strain tensor to be applied.
+        base_kwargs: A dictionary containing the simulation parameters for `_run_lammps_md`.
+            Must include:
+            - "n_ionic_steps" (int): Total MD steps.
+            - "potential" (str): Path to the LAMMPS potential.
+            - "temperature" (float): Target temperature.
+            - "timestep" (float): Integration time step.
+            - "tmp_working_directory" (str | Path | None): Temporary working directory.
+            - "n_print" (int): Frequency of output during the simulation.
+            - "initial_temperature" (float): Initial temperature for the simulation.
+            - "pressure" (float | None): Target pressure for NPT simulations.
+            - "langevin" (bool): Whether to use Langevin dynamics.
+            - "seed" (int): Random seed for velocity initialization.
+            - "server_kwargs" (dict | None): Additional keyword arguments for the server.
 
-    Returns
-    -------
-    np.ndarray
+    Returns:
         The difference in the mean stress tensors (stress_plus - stress_minus).
         The stress is calculated as the negative of the pressure tensor and
         averaged over the second half of the production run to ensure
@@ -212,14 +185,10 @@ def isotropic_moduli_from_Cij(cij: np.ndarray) -> dict[str, float]:
 
     Assumes the material system is cubic.
 
-    Parameters
-    ----------
-    cij : np.ndarray
-        6x6 Elastic stiffness matrix (Voigt notation).
+    Args:
+        cij: 6x6 Elastic stiffness matrix (Voigt notation).
 
-    Returns
-    -------
-    dict
+    Returns:
         Dictionary containing:
         - "B": Bulk modulus
         - "G": Shear modulus
@@ -265,47 +234,38 @@ def elastic_simulation(
     It equilibrates the structure, applies small normal and shear strains, and measures
     the resulting stress response to determine the elastic constants.
 
-    Parameters
-    ----------
-    structure : Atoms
-        Input structure (assumed pre-equilibrated).
-    potential : str
-        LAMMPS potential file.
-    temperature_sim : float, optional
-        Simulation temperature in Kelvin (default 5000.0 K).
-    pressure : float, optional
-        Target pressure for equilibration (default None, i.e., NVT).
-    timestep : float, optional
-        MD integration timestep in femtoseconds (default 1.0 fs).
-    equilibration_steps : int, optional
-        Number of steps for the initial equilibration phase (default 1,000,000).
-    production_steps : int, optional
-        Number of MD steps for the production run (default 10,000).
-    n_print : int, optional
-        Thermodynamic output frequency (default 1).
-    strain : float, optional
-        Magnitude of the strain applied for finite differences (default 1e-3).
-    server_kwargs : dict, optional
-        Additional server configuration arguments.
-    langevin : bool, optional
-        Whether to use Langevin dynamics (default False).
-    seed : int, optional
-        Random seed for velocity initialization (default 12345).
-    tmp_working_directory : str or Path, optional
-        Temporary directory for job execution.
+    Args:
+        structure: Input structure (assumed pre-equilibrated).
+        potential: LAMMPS potential file.
+        temperature_sim: Simulation temperature in Kelvin (default 5000.0 K).
+        pressure: Target pressure for equilibration (default None, i.e., NVT).
+        timestep: MD integration timestep in femtoseconds (default 1.0 fs).
+        equilibration_steps: Number of steps for the initial equilibration phase (default 1,000,000).
+        production_steps: Number of MD steps for the production run (default 10,000).
+        n_print: Thermodynamic output frequency (default 1).
+        strain: Magnitude of the strain applied for finite differences (default 1e-3).
+        server_kwargs: Additional server configuration arguments.
+        langevin: Whether to use Langevin dynamics (default False).
+        seed: Random seed for velocity initialization (default 12345).
+        tmp_working_directory: Temporary directory for job execution.
 
-    Returns
-    -------
-    dict
+    Returns:
         Dictionary containing the results. Key "result" contains the "Cij" 6x6 matrix.
 
-    Notes
-    -----
-    - The structure is first equilibrated (NPT/NVT).
-    - Positive and negative strains are applied to cancel lower-order errors (central difference).
-    - Calculated Cij values assume Voigt notation.
-    - For production simulations, system size, cooling rate, equilibration time,
-    and strain magnitude should be tested to ensure the robustness of the results.
+    Notes:
+        - The structure is first equilibrated (NPT/NVT).
+        - Positive and negative strains are applied to cancel lower-order errors (central difference).
+        - Calculated Cij values assume Voigt notation.
+        - For production simulations, system size, cooling rate, equilibration time,
+        and strain magnitude should be tested to ensure the robustness of the results.
+
+    Example:
+        >>> result = elastic_simulation(
+        ...     structure=my_atoms,
+        ...     potential=my_potential,
+        ...     temperature_sim=300.0,
+        ...     strain=0.001
+        ... )
 
     """
     potential_name = potential.at[0, "Name"]
