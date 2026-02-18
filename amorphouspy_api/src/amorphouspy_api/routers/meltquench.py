@@ -5,7 +5,6 @@ Endpoints for submitting, checking, and caching meltquench simulations.
 
 import hashlib
 import logging
-from concurrent.futures import Future
 from uuid import uuid4
 
 import cloudpickle
@@ -109,19 +108,27 @@ def build_task_response(
     )
 
 
-def submit_to_executor(request_data: dict, *, cache_key: str | None = None) -> Future:
-    """Submit a meltquench job to the executor and return the future.
+def submit_to_executor(
+    request_data: dict,
+    task_id: str,
+    request_hash: str,
+    *,
+    cache_key: str | None = None,
+) -> dict:
+    """Submit a meltquench job to the executor and resolve its status.
 
     The executor's disk cache (``MELTQUENCH_PROJECT_DIR``) means that a
     previously-completed job will have ``done() == True`` immediately.
 
     Args:
         request_data: Dictionary with the meltquench request parameters.
+        task_id: The unique task identifier.
+        request_hash: Hash of the request for caching.
         cache_key: Optional explicit cache key for the final workflow step,
             enabling later retrieval via ``get_future_from_cache``.
 
     Returns:
-        A Future for the workflow result.
+        A job-status dict with 'state', 'result', and 'error' keys.
     """
     exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
     lammps_resource_dict = get_lammps_resource_dict()
@@ -137,54 +144,33 @@ def submit_to_executor(request_data: dict, *, cache_key: str | None = None) -> F
         lammps_resource_dict=lammps_resource_dict,
         cache_key=cache_key,
     )
-    exe.shutdown(wait=False, cancel_futures=False)
-    return future
 
-
-def resolve_future(
-    future: Future,
-    task_id: str,
-    request_hash: str,
-    request_data: dict,
-) -> dict:
-    """Inspect a future and persist its state in the task store.
-
-    Returns:
-        A job-status dict suitable for ``build_task_response``.
-    """
+    # Resolve the future while the executor is still active
     task_store = get_task_store()
 
-    if not future.done():
-        meta = {
-            "state": "running",
-            "request_hash": request_hash,
-            "request_data": request_data,
-        }
-        task_store.set(task_id, meta)
-        return meta
-
-    exc = future.exception()
-    if exc is not None:
-        error_msg = str(exc)
-        logger.error("Task %s failed: %s", task_id, error_msg)
-        meta = {
-            "state": "error",
-            "request_hash": request_hash,
-            "request_data": request_data,
-            "error": error_msg,
-        }
-        task_store.set(task_id, meta)
-        return meta
-
-    # calculation must have completed
-    serialized = MeltquenchResult(**future.result()).model_dump()
+    # Build metadata based on future state
     meta = {
-        "state": "complete",
         "request_hash": request_hash,
         "request_data": request_data,
-        "result": serialized,
     }
+
+    if not future.done():
+        meta["state"] = "running"
+    else:
+        exc = future.exception()
+        if exc is not None:
+            error_msg = str(exc)
+            logger.error("Task %s failed: %s", task_id, error_msg)
+            meta["state"] = "error"
+            meta["error"] = error_msg
+        else:
+            # calculation must have completed
+            serialized = MeltquenchResult(**future.result()).model_dump()
+            meta["state"] = "complete"
+            meta["result"] = serialized
+
     task_store.set(task_id, meta)
+    exe.shutdown(wait=False, cancel_futures=False)
     return meta
 
 
@@ -270,8 +256,7 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
 
         task_id = str(uuid4())
         logger.info("Submitting meltquench task with ID: %s, hash: %s", task_id, request_hash)
-        future = submit_to_executor(request_data, cache_key=request_hash)
-        status = resolve_future(future, task_id, request_hash, request_data)
+        status = submit_to_executor(request_data, task_id, request_hash, cache_key=request_hash)
         return build_task_response(task_id, status)
 
     except HTTPException:
@@ -319,11 +304,36 @@ def check(task_id: str) -> TaskResponse:
     # re-submitting the entire workflow.  See
     # https://github.com/pyiron/executorlib/pull/915
     try:
+        # Need an active executor to resolve the future
+        exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
         future = get_future_from_cache(
             cache_directory=str(MELTQUENCH_PROJECT_DIR),
             cache_key=request_hash,
         )
-        status = resolve_future(future, task_id, request_hash, request_data)
+
+        # Resolve the future while the executor is active
+        status = {
+            "request_hash": request_hash,
+            "request_data": request_data,
+        }
+
+        if not future.done():
+            status["state"] = "running"
+        else:
+            exc = future.exception()
+            if exc is not None:
+                error_msg = str(exc)
+                logger.error("Task %s failed: %s", task_id, error_msg)
+                status["state"] = "error"
+                status["error"] = error_msg
+            else:
+                # calculation must have completed
+                serialized = MeltquenchResult(**future.result()).model_dump()
+                status["state"] = "complete"
+                status["result"] = serialized
+
+        task_store.set(task_id, status)
+        exe.shutdown(wait=False, cancel_futures=False)
     except FileNotFoundError:
         # Cache files not yet written - job is still starting up
         logger.info("Cache files not yet available for task %s", task_id)
