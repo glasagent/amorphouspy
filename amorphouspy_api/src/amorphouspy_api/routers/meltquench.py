@@ -334,9 +334,6 @@ def check(task_id: str) -> TaskResponse:
     except Exception as exc:
         logger.exception("Failed to check task %s", task_id)
         error_msg = str(exc)
-        status = {"state": "error", "error": error_msg}
-        task_store.set(
-            task_id,
-            {"state": "error", "request_hash": request_hash, "request_data": request_data, "error": error_msg},
-        )
+        status = {"state": "error", "error": error_msg, "request_hash": request_hash, "request_data": request_data}
+        task_store.set(task_id, status)
     return build_task_response(task_id, status)
