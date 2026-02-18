@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .config import DB_PATH, PROJECTS_FOLDER
-from .database import init_task_store
+from .database import close_task_store, init_task_store
 from .routers.meltquench import router as meltquench_router
 from .visualization import router as visualization_router
 
@@ -63,6 +63,13 @@ app.include_router(visualization_router, tags=["visualization"])
 
 mcp = FastApiMCP(app, include_tags=["tool"])
 mcp.mount_http(mount_path="/mcp")
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    """Close database connections on app shutdown."""
+    logger.info("Closing task store database connection")
+    close_task_store()
 
 
 @app.get("/")
