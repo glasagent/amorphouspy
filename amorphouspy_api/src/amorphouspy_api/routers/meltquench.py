@@ -71,6 +71,29 @@ def get_visualization_url(task_id: str) -> str:
     return relative_path
 
 
+def resolve_future(future, task_id: str) -> dict:
+    """Extract state, result, and error from a resolved or pending future.
+
+    Args:
+        future: A concurrent.futures.Future-like object.
+        task_id: The task identifier (used for logging).
+
+    Returns:
+        A dict with 'state' and optionally 'result' or 'error' keys.
+    """
+    if not future.done():
+        return {"state": "running"}
+
+    exc = future.exception()
+    if exc is not None:
+        error_msg = str(exc)
+        logger.error("Task %s failed: %s", task_id, error_msg)
+        return {"state": "error", "error": error_msg}
+
+    serialized = MeltquenchResult(**future.result()).model_dump()
+    return {"state": "complete", "result": serialized}
+
+
 def build_task_response(
     task_id: str,
     job_status: dict,
@@ -148,29 +171,19 @@ def submit_to_executor(
     # Resolve the future while the executor is still active
     task_store = get_task_store()
 
-    # Build metadata based on future state
     meta = {
         "request_hash": request_hash,
         "request_data": request_data,
+        **resolve_future(future, task_id),
     }
-
-    if not future.done():
-        meta["state"] = "running"
-    else:
-        exc = future.exception()
-        if exc is not None:
-            error_msg = str(exc)
-            logger.error("Task %s failed: %s", task_id, error_msg)
-            meta["state"] = "error"
-            meta["error"] = error_msg
-        else:
-            # calculation must have completed
-            serialized = MeltquenchResult(**future.result()).model_dump()
-            meta["state"] = "complete"
-            meta["result"] = serialized
 
     task_store.set(task_id, meta)
     exe.shutdown(wait=False, cancel_futures=False)
+
+    # Note: after shutdown of executor, do not touch the future anymore
+    # E.g. the FluxClusterExecutor will cancel the Future object (while not cancelling the underlying job)
+    # See https://github.com/pyiron/executorlib/issues/921#issuecomment-3919953044
+
     return meta
 
 
@@ -247,11 +260,10 @@ def submit_meltquench(request: MeltquenchRequest) -> TaskResponse:
         if cached_result:
             cached_task_id, cached_meltquench_result = cached_result
             logger.info("Returning cached result from task %s", cached_task_id)
-            return TaskResponse(
-                task_id=cached_task_id,
-                status=TaskStatus.COMPLETED_FROM_CACHE,
-                visualization_url=get_visualization_url(cached_task_id),
-                result=cached_meltquench_result,
+            return build_task_response(
+                cached_task_id,
+                {"state": "complete", "result": cached_meltquench_result.model_dump()},
+                from_cache=True,
             )
 
         task_id = str(uuid4())
@@ -272,7 +284,6 @@ def check(task_id: str) -> TaskResponse:
 
     Uses ``get_future_from_cache()`` to recreate the future from the
     executor's disk cache, avoiding re-submission of the entire workflow.
-    See https://github.com/pyiron/executorlib/pull/915
 
     Note: When ready, visualize results at /visualize/meltquench/{task_id}
 
@@ -311,26 +322,11 @@ def check(task_id: str) -> TaskResponse:
             cache_key=request_hash,
         )
 
-        # Resolve the future while the executor is active
         status = {
             "request_hash": request_hash,
             "request_data": request_data,
+            **resolve_future(future, task_id),
         }
-
-        if not future.done():
-            status["state"] = "running"
-        else:
-            exc = future.exception()
-            if exc is not None:
-                error_msg = str(exc)
-                logger.error("Task %s failed: %s", task_id, error_msg)
-                status["state"] = "error"
-                status["error"] = error_msg
-            else:
-                # calculation must have completed
-                serialized = MeltquenchResult(**future.result()).model_dump()
-                status["state"] = "complete"
-                status["result"] = serialized
 
         task_store.set(task_id, status)
         exe.shutdown(wait=False, cancel_futures=False)
