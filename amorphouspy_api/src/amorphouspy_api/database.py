@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import JSON, Column, DateTime, Index, String, Text, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from .models import MeltquenchResult, serialize_atoms
 
@@ -76,9 +77,11 @@ class TaskStore:
         self.db_url = f"sqlite:///{db_path}"
 
         # Create engine with SQLite-specific settings
+        # Use NullPool to disable connection pooling - ensures connections are properly closed
         self.engine = create_engine(
             self.db_url,
             echo=False,  # Set to True for SQL debugging
+            poolclass=NullPool,  # Disable connection pooling for better cleanup
             connect_args={
                 "check_same_thread": False,  # Allow use from multiple threads
                 "timeout": 30,  # 30 second timeout for busy database

@@ -5,6 +5,7 @@ Routers handle the individual simulation types (meltquench, etc.).
 """
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -31,16 +32,25 @@ logger.info("Using project directory: %s", PROJECTS_FOLDER)
 # Ensure the projects directory exists
 PROJECTS_FOLDER.mkdir(parents=True, exist_ok=True)
 
-# Initialize persistent task store
-logger.info("Task store database path: %s", DB_PATH)
-init_task_store(DB_PATH)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan - startup and shutdown."""
+    # Startup: Initialize persistent task store
+    logger.info("Task store database path: %s", DB_PATH)
+    init_task_store(DB_PATH)
+    yield
+    # Shutdown: Close database connections
+    logger.info("Closing task store database connection")
+    close_task_store()
 
 
-# Create FastAPI app
+# Create FastAPI app with lifespan manager
 app = FastAPI(
     title="amorphouspy Simulation API",
     description="API for managing long-running glass simulation tasks using amorphouspy",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Enable CORS for all origins (customize as needed)
@@ -63,13 +73,6 @@ app.include_router(visualization_router, tags=["visualization"])
 
 mcp = FastApiMCP(app, include_tags=["tool"])
 mcp.mount_http(mount_path="/mcp")
-
-
-@app.on_event("shutdown")
-def shutdown_event() -> None:
-    """Close database connections on app shutdown."""
-    logger.info("Closing task store database connection")
-    close_task_store()
 
 
 @app.get("/")
