@@ -497,6 +497,13 @@ def create_random_atoms(
         ValueError: If composition sum is invalid or target mode is ambiguous.
         RuntimeError: If atom placement fails due to overcrowding (max attempts reached).
 
+    Example:
+        >>> atoms_list, atom_counts = create_random_atoms(
+        ...     composition="0.8SiO2-0.2Na2O",
+        ...     target_atoms=500,
+        ...     box_length=20.0
+        ... )
+
     """
     rng = np.random.default_rng(seed)
 
@@ -579,6 +586,9 @@ def get_glass_density_from_model(composition_string: str) -> float:
     Raises:
         ValueError: If the composition contains components unsupported by the model
             or if the format is invalid.
+
+    Example:
+        >>> density = get_glass_density_from_model("0.75SiO2-0.25Na2O")
 
     """
     COEFFICIENTS = {
@@ -833,19 +843,18 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
     atoms_dict is expected to specify a cubic box.
     Triclinic boxes are not supported.
 
-    Parameters
-    ----------
-    atoms_dict : dict
-        Dictionary that must contain the atom counts and box dimensions under the
-        keys "atoms" and "box".
-    replicate : tuple of int, optional
-        Replication factors for the box in x, y, and z directions.
-        Default is (1, 1, 1), meaning no replication.
+    Args:
+        atoms_dict: Dictionary that must contain the atom counts and box dimensions under the
+            keys "atoms" and "box".
+        replicate: Replication factors for the box in x, y, and z directions.
+            Default is (1, 1, 1), meaning no replication.
 
-    Returns
-    -------
-    ase.Atoms
+    Returns:
         ASE Atoms object of the specified structure.
+
+    Example:
+        >>> struct_dict = get_structure_dict("0.25CaO-0.25Al2O3-0.5SiO2", target_atoms=1000)
+        >>> atoms = get_ase_structure(struct_dict)
 
     """
     atoms = atoms_dict["atoms"]
@@ -918,32 +927,30 @@ def get_structure_dict(
     Now supports both n_molecules and target_atoms input modes,
     and both molar and weight composition modes.
 
-    Parameters
-    ----------
-    composition : str
-        Composition string, e.g. "0.25CaO-0.25Al2O3-0.5SiO2" or "79SiO2-13B2O3-3Al2O3-4Na2O-1K2O"
-    n_molecules : int, optional
-        Total number of molecules (traditional mode)
-    target_atoms : int, optional
-        Target number of atoms (new mode)
-    mode : str, default "molar"
-        Composition mode: "molar" for mol%, "weight" for weight%
-    density : float, optional
-        Density in g/cm^3, default is calculated from model
-    min_distance : float
-        Minimum distance between any two atoms in angstroms, default is 1.6 Å
-    max_attempts_per_atom : int
-        Maximum attempts to place an atom before giving up, default is 10000
+    Args:
+        composition: Composition string, e.g. "0.25CaO-0.25Al2O3-0.5SiO2" or "79SiO2-13B2O3-3Al2O3-4Na2O-1K2O"
+        n_molecules: Total number of molecules (traditional mode)
+        target_atoms: Target number of atoms (new mode)
+        mode: Composition mode: "molar" for mol%, "weight" for weight%
+        density: Density in g/cm^3, default is calculated from model
+        min_distance: Minimum distance between any two atoms in angstroms, default is 1.6 Å
+        max_attempts_per_atom: Maximum attempts to place an atom before giving up, default is 10000
 
-    Returns
-    -------
-    dict: A dictionary containing:
-        - "atoms": A list of atom dictionaries with keys "element" and "position"
-        - "box": The length of the cubic box in angstroms
-        - "formula_units": Dictionary of oxide formula units
-        - "total_atoms": Total number of atoms
-        - "element_counts": Dictionary of element counts (if target_atoms mode)
-        - "mol_fraction": Dictionary of molar fractions (if target_atoms mode)
+    Returns:
+        A dictionary containing:
+            - "atoms": A list of atom dictionaries with keys "element" and "position"
+            - "box": The length of the cubic box in angstroms
+            - "formula_units": Dictionary of oxide formula units
+            - "total_atoms": Total number of atoms
+            - "element_counts": Dictionary of element counts (if target_atoms mode)
+            - "mol_fraction": Dictionary of molar fractions (if target_atoms mode)
+
+    Example:
+        >>> struct_dict = get_structure_dict(
+        ...     composition="0.25CaO-0.25Al2O3-0.5SiO2",
+        ...     target_atoms=1000,
+        ...     mode="molar"
+        ... )
 
     """
     validate_target_mode(n_molecules, target_atoms)

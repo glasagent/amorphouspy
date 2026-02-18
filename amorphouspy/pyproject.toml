@@ -57,6 +57,9 @@ ignore   = [
 ]
 fixable  = ["ALL"]           # allow --fix to touch everything
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 [tool.uv.workspace]
 members = [
     "amorphouspy",
