@@ -98,7 +98,7 @@ def cte_from_volume_temperature_data(
     volume: list | np.ndarray,
     reference_volume: float | None = None,
 ) -> float:
-    """Compute the CTE from slope of volume-temperature.
+    """Compute the CTE from slope of a linear fit to volume-temperature data.
 
     This can be done from by performing various constant pressure, constant temperature NPT simulation
     at different temperatures. Afterwards, collect the averaged volume and fit linearly to the temperature.
