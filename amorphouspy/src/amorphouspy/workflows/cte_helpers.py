@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from amorphouspy.src.amorphouspy.analysis.cte import cte_from_npt_fluctuations
+from amorphouspy.analysis.cte import cte_from_npt_fluctuations
 
 
 def _create_logger() -> logging.Logger:
@@ -98,52 +98,55 @@ def _collect_sim_data(parsed_output: dict, counter_production_run: int) -> dict[
 
 
 def _sanity_check_sim_data(
+    sim_data: dict,
     T_target: float,
-    T_actual: float,
     p_target: float,
-    ptot_actual: float,
-    pxx_actual: float,
-    pyy_actual: float,
-    pzz_actual: float,
-    T_key: str,
-    run_key: str,
     logger: logging.Logger,
 ) -> None:
     """Perform sanity checks on actual vs target temperature and pressure values."""
-    REL_TOL = 0.05  # 5 %
-    ABS_TEMP_TOL = 10  # K
-    ABS_PRESS_TOL = 1e7  # Pa
+    REL_TOL = 0.02  # 2 % relative tolerance
+    ABS_TEMP_TOL = 5  # 5 K absolute tolerance
+    ABS_PRESS_TOL = 0.05  # 0.05 GPa = 50 MPa absolute tolerance
 
-    if abs(T_target - T_actual) > REL_TOL * T_target and abs(T_target - T_actual) > ABS_TEMP_TOL:
-        msg = f"\n  Temperature differences (>5% and > 10 K) are observed at {T_key}, {run_key}:\n"
+    run_index = int(sim_data["run_index"][0])
+    T_actual = np.mean(sim_data["T"])
+    ptot_actual = np.mean(sim_data["ptot"])
+    pxx_actual = np.mean(sim_data["pxx"])
+    pyy_actual = np.mean(sim_data["pyy"])
+    pzz_actual = np.mean(sim_data["pzz"])
+
+    if abs(T_target - T_actual) > (ABS_TEMP_TOL + REL_TOL * T_target):
+        msg = f"\n  Temperature differences (>5% and > 10 K) are observed during production run {run_index:02d}:\n"
         msg += f"  Specified target temperature = {T_target:.2f} K\n"
         msg += f"  Actual average temperature   = {T_actual:.2f} K.\n"
         msg += "  Using target temperature for CTE calculation."
         logger.warning(msg)
 
-    if abs(p_target - ptot_actual) > REL_TOL * p_target and abs(p_target - ptot_actual) > ABS_PRESS_TOL:
-        msg = f"\n  Pressure (ptot) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+    if abs(p_target - ptot_actual) > (ABS_PRESS_TOL + REL_TOL * p_target):
+        msg = (
+            f"\n  Pressure (ptot) differences (>5% and > 10 MPa) are observed during production run {run_index:02d}:\n"
+        )
         msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f"  Actual average pressure   = {ptot_actual / 1e6:.2e} MPa.\n"
         msg += "  Using target pressure for CTE calculation."
         logger.warning(msg)
 
-    if abs(p_target - pxx_actual) > REL_TOL * p_target and abs(p_target - pxx_actual) > ABS_PRESS_TOL:
-        msg = f"\n  Pressure (pxx) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+    if abs(p_target - pxx_actual) > (ABS_PRESS_TOL + REL_TOL * p_target):
+        msg = f"\n  Pressure (pxx) differences (>5% and > 10 MPa) are observed during production run {run_index:02d}:\n"
         msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f"  Actual average pressure   = {pxx_actual / 1e6:.2e} MPa.\n"
         msg += "  Using target pressure for CTE calculation."
         logger.warning(msg)
 
-    if abs(p_target - pyy_actual) > REL_TOL * p_target and abs(p_target - pyy_actual) > ABS_PRESS_TOL:
-        msg = f"\n  Pressure (pyy) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+    if abs(p_target - pyy_actual) > (ABS_PRESS_TOL + REL_TOL * p_target):
+        msg = f"\n  Pressure (pyy) differences (>5% and > 10 MPa) are observed during production run {run_index:02d}:\n"
         msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f"  Actual average pressure   = {pyy_actual / 1e6:.2e} MPa.\n"
         msg += "  Using target pressure for CTE calculation."
         logger.warning(msg)
 
-    if abs(p_target - pzz_actual) > REL_TOL * p_target and abs(p_target - pzz_actual) > ABS_PRESS_TOL:
-        msg = f"\n  Pressure (pzz) differences (>5% and > 10 MPa) are observed at {T_key}, {run_key}:\n"
+    if abs(p_target - pzz_actual) > (ABS_PRESS_TOL + REL_TOL * p_target):
+        msg = f"\n  Pressure (pzz) differences (>5% and > 10 MPa) are observed during production run {run_index:02d}:\n"
         msg += f"  Specified target pressure = {p_target / 1e6:.2e} MPa\n"
         msg += f"  Actual average pressure   = {pzz_actual / 1e6:.2e} MPa.\n"
         msg += "  Using target pressure for CTE calculation."
