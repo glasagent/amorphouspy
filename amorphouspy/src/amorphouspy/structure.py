@@ -172,7 +172,7 @@ def _integer_fu_from_total(Nfu_target: int, mol_frac: dict[str, float]) -> dict[
     n = {ox: int(np.floor(w[ox])) for ox in x}
     rem = Nfu_target - sum(n.values())
     if rem > 0:
-        order = sorted(x.keys(), key=lambda k: (w[k] - n[k]), reverse=True)
+        order = sorted(x.keys(), key=lambda k: w[k] - n[k], reverse=True)
         for i in range(rem):
             n[order[i % len(order)]] += 1
     return n

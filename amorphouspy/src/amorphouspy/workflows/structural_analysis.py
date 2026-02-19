@@ -203,7 +203,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     total_mass_g = atoms.get_masses().sum() / avogadro_number  # Convert amu to g
     density = total_mass_g / volume_cm3
 
-    type_map, network_formers, modifiers, oxygen_present = _classify_elements(unique_z)
+    type_map, network_formers, modifiers, _oxygen_present = _classify_elements(unique_z)
     former_types = [z for z, sym in type_map.items() if sym in network_formers]
     modifier_types = [z for z, sym in type_map.items() if sym in modifiers]
     O_type = [z for z, sym in type_map.items() if sym == "O"]
