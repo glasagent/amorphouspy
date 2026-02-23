@@ -170,7 +170,7 @@ def cte_from_fluctuations_simulation(
         server_kwargs: Additional server configuration arguments for pyiron.
         aniso: If false, an isotropic NPT calculation is performed and the simulation box is
               scaled uniformly. If True, anisotropic NPT calculation is performed and the simulation
-              box can change shape and size independently along each axis (default True).
+              box can change shape and size independently along each axis (default False).
         seed: Random seed for velocity initialization (default 12345). If None, a random seed is used.
         tmp_working_directory: Temporary directory for job execution.
 
@@ -388,7 +388,7 @@ def temperature_scan_simulation(
     n_log: int = 10,
     server_kwargs: dict[str, Any] | None = None,
     *,
-    aniso: bool = True,
+    aniso: bool = False,
     seed: int | None = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict[Any, Any]:  # pylint: disable=too-many-positional-arguments
@@ -418,11 +418,6 @@ def temperature_scan_simulation(
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
         equilibration_steps: Number of MD steps for the equilibration runs (default 100,000).
         production_steps: Number of MD steps for the production runs (default 200,000).
-        max_production_runs: Maximum number of production runs to perform (default 10). If max number of
-            production runs is reached without convergence, a warning is printed and the
-            next temperature is started.
-        CTE_convergence_criterion: Convergence criterion for the CTE value calculated based on H-V fluctuations
-            calculated over subsequent production runs (default 1e-6).
         n_dump: Dump output frequency of the production runs (default 100,000).
         n_log: Log output frequency (default 10).
         server_kwargs: Additional server configuration arguments.
