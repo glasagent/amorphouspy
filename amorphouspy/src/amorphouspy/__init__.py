@@ -19,7 +19,7 @@ from amorphouspy.io_utils import (
 from amorphouspy.neighbors import get_neighbors
 from amorphouspy.potentials import potential
 from amorphouspy.potentials.potential import generate_potential
-from amorphouspy.shared import count_distribution, type_to_dict
+from amorphouspy.shared import count_distribution, running_mean, type_to_dict
 from amorphouspy.structure import (
     check_neutral_oxide,
     create_random_atoms,
@@ -62,6 +62,7 @@ __all__ = [
     "md_simulation",
     "melt_quench_simulation",
     "potential",
+    "running_mean",
     "structure_from_parsed_output",
     "temperature_scan_simulation",
     "type_to_dict",
