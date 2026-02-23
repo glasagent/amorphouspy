@@ -111,7 +111,7 @@ def cte_from_npt_fluctuations(
         return None, None
 
     # if use_running_mean = False, padL and padR will both be None
-    padL, padR = _input_checks(enthalpy, volume, temperature, N_points, use_running_mean)
+    padL, padR = _input_checks(enthalpy, volume, temperature, N_points, use_running_mean=use_running_mean)
 
     if use_running_mean:
         H_fluctuations = np.array(np.array(enthalpy) - running_mean(enthalpy, N_points))[padL:-padR]
