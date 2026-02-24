@@ -38,7 +38,7 @@ def _run_lammps_md(
     n_dump: int,
     n_log: int,
     initial_temperature: float,
-    pressure: float | list[int, float, None] | None = None,
+    pressure: float | list[int | float | None] | None = None,
     server_kwargs: dict | None = None,
     *,
     langevin: bool = False,
