@@ -9,6 +9,9 @@ Author: Marcel Sadowski (github.com/Gitdowski)
 """
 
 import numpy as np
+from scipy.stats import linregress
+
+from amorphouspy.shared import running_mean
 
 
 def cte_from_npt_fluctuations(
@@ -50,53 +53,87 @@ def cte_from_npt_fluctuations(
         ...     volume=volume_array
         ... )
 
+    Notes:
+        - If temperature is provided as int/float, it will be used as-is for the target temperature to compute the CTE.
+        - If temperature is provided as list/array-like, the mean of the temperature data will be used as target
+          temperature for the CTE calculation. See below how this is slightly changed if running mean is used.
+        - If running_mean is set to True used, a part of the volume and enthalpy data at the beginning and end of the
+          arrays cannot be used because it is required to calculate the running mean values. To ensure that the data for
+          the calculation of the fluctuations is consistent with the mean volume and target temperature (in case this
+          was provided as list/array-like), also this data will be trimmed correspondingly.
     """
 
-    def _running_mean(data: list | np.ndarray, N: int) -> np.ndarray:
-        """Calculate running mean of an array-like dataset.
-
-        The initial and final values of the returned array are NaN, as the running mean is not defined
-        for those points.
+    def _input_checks(
+        enthalpy: list | np.ndarray,
+        volume: list | np.ndarray,
+        temperature: float | list | np.ndarray,
+        N_points: int,
+        *,
+        use_running_mean: bool,
+    ) -> tuple[int | None, int | None]:
+        """Checks the input beyond simple type checks and determines the padding for the running mean if required.
 
         Args:
-            data: Input data for which the running mean should be calculated.
-            N: Width of the averaging window.
+            enthalpy: See main function.
+            volume: See main function.
+            temperature: See main function.
+            N_points: See main function.
+            use_running_mean: See main function.
 
         Returns:
-            Array of same size as input data containing the running mean values.
-
+            padL: Number of points to be trimmed at the beginning of the enthalpy and volume arrays if use_running_mean
+                is True. None otherwise. Will also be used for trimming the temperature if provided as list or
+                array-like to ensure consistency with the mean volume and target temperature.
+            padR: Number of points to be trimmed at the end of the enthalpy and volume arrays if use_running_mean is
+                True. None otherwise. Will also be used for trimming the temperature if provided as list or array-like
+                to ensure consistency with the mean volume and target temperature.
         """
-        data = np.asarray(data)
-        if N == 1:
-            return data
-        retArray = np.zeros(data.size) * np.nan
-        padL = int(N / 2)
-        padR = N - padL - 1
-        retArray[padL:-padR] = np.convolve(data, np.ones((N,)) / N, mode="valid")
-        return retArray
+        if isinstance(temperature, (int, float)):
+            if len(enthalpy) != len(volume):
+                msg = (
+                    "If temperature is provided as int or float, enthalpy and volume arrays must have the same length."
+                )
+                raise ValueError(msg)
+        elif len(temperature) != len(enthalpy) or len(enthalpy) != len(volume):
+            msg = "If temperature is provided as list or array-like,"
+            msg += " it must have the same length as the enthalpy and volume arrays."
+            raise ValueError(msg)
 
-    kB = 8.617333262145e-5  # eV/K
-    T_target = np.mean(temperature)
+        if use_running_mean:
+            if N_points < 1:
+                msg = "N_points must be a positive integer >= 1."
+                raise ValueError(msg)
+            if N_points >= len(enthalpy):
+                msg = "N_points must be smaller than the length of the enthalpy and volume arrays."
+                raise ValueError(msg)
+            padL, padR = int(N_points / 2), N_points - int(N_points / 2) - 1
+            return padL, padR
+        return None, None
 
-    if not use_running_mean:
+    # if use_running_mean = False, padL and padR will both be None
+    padL, padR = _input_checks(enthalpy, volume, temperature, N_points, use_running_mean=use_running_mean)
+
+    if use_running_mean:
+        H_fluctuations = np.array(np.array(enthalpy) - running_mean(enthalpy, N_points))[padL:-padR]
+        V_fluctuations = np.array(np.array(volume) - running_mean(volume, N_points))[padL:-padR]
+    else:
         H_fluctuations = np.array(enthalpy) - np.mean(enthalpy)
         V_fluctuations = np.array(volume) - np.mean(volume)
-    elif use_running_mean:
-        H_fluctuations = np.array(enthalpy) - _running_mean(enthalpy, N_points)
-        V_fluctuations = np.array(volume) - _running_mean(volume, N_points)
-        # Remove NaN values at beginning and end that resulted from running_mean
-        H_fluctuations = H_fluctuations[~np.isnan(H_fluctuations)]
-        V_fluctuations = V_fluctuations[~np.isnan(V_fluctuations)]
 
-    CTE = (np.mean(H_fluctuations * V_fluctuations)) / (np.mean(volume) * kB * T_target**2)
+    V_mean = np.mean(volume[padL:-padR])
+    T_target = temperature if isinstance(temperature, (int, float)) else np.mean(temperature[padL:-padR])
+
+    kB = 8.617333262145e-5  # eV/K
+    CTE = (np.mean(H_fluctuations * V_fluctuations)) / (V_mean * kB * T_target**2)
     return float(CTE)
 
 
 def cte_from_volume_temperature_data(
     temperature: list | np.ndarray,
     volume: list | np.ndarray,
+    reference_volume: float | None = None,
 ) -> float:
-    """Compute the CTE from slope of volume-temperature.
+    """Compute the CTE from slope of a linear fit to volume-temperature data.
 
     This can be done from by performing various constant pressure, constant temperature NPT simulation
     at different temperatures. Afterwards, collect the averaged volume and fit linearly to the temperature.
@@ -104,14 +141,19 @@ def cte_from_volume_temperature_data(
     If specified, the volume-temperature plot is shown and the fitted line is overlaid.
 
     Args:
-        temperature: Target or averaged temperatures in K of different NPT simulations. One entry for every simulation.
-        volume: Averaged volumes in Ang^3 of different NPT simulations. One entry for every simulation.
+        temperature: Temperature in K.
+        volume: Volume in Angstrom^3 or other structural quantity of interest. E.g., for anisotropic CTE
+            calculations, one can also use individual cell lengths in Angstroms here.
+        reference_volume (optional): Reference of the volume (or structural quantity of interest) the CTE
+            will be calculated from. If not otherwise specified, the volume corresponding to the lowest
+            temperature is used as reference.
 
     Returns:
-        The calculated CTE value in 1/K.
+        The calculated CTE value in 1/K and the R^2 value of the linear fit.
 
     Note:
-        This function is currently not in use in the workflows. But it might be used for cross-checking.
+        - This function is currently not in use in the workflows. But it might be used for cross-checking.
+        - If volume-temperature data is used, the CTE needs to be divided by 3 to obtain the linear CTE.
 
     Example:
         >>> cte = cte_from_volume_temperature_data(
@@ -120,13 +162,14 @@ def cte_from_volume_temperature_data(
         ... )
 
     """
-    # make sure to order lists by increasing temperature
-    sorted_indices = np.argsort(temperature)
-    temperature = np.array(temperature)[sorted_indices]
-    volume = np.array(volume)[sorted_indices]
+    # Set reference volume corresponding to the lowest temperature if not provided.
+    if reference_volume is None:
+        index_lowest_T = np.argmin(temperature)
+        reference_volume = volume[index_lowest_T]
 
     # fit and calculate CTE
-    slope, _intercept = np.polyfit(temperature, volume, 1)
-    CTE = slope / volume[0]
+    slope, intercept, r_value, p_value, std_err = linregress(temperature, volume)
+    CTE = slope / reference_volume
+    R2 = r_value**2
 
-    return float(CTE)
+    return float(CTE), float(R2)

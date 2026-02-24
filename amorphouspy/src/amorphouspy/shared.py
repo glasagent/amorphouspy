@@ -71,3 +71,27 @@ def type_to_dict(types: np.array) -> dict[int, str]:
     type_dict: dict[int, str] = dict(zip(unique_types, element_symbols, strict=False))
 
     return type_dict
+
+
+def running_mean(data: list | np.ndarray, N: int) -> np.ndarray:
+    """Calculate running mean of an array-like dataset.
+
+    The initial and final values of the returned array are NaN, as the running mean is not defined
+    for those points.
+
+    Args:
+        data: Input data for which the running mean should be calculated.
+        N: Width of the averaging window.
+
+    Returns:
+        Array of same size as input data containing the running mean values.
+
+    """
+    data = np.asarray(data)
+    if N == 1:
+        return data
+    retArray = np.zeros(data.size) * np.nan
+    padL = int(N / 2)
+    padR = N - padL - 1
+    retArray[padL:-padR] = np.convolve(data, np.ones((N,)) / N, mode="valid")
+    return retArray
