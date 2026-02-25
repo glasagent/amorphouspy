@@ -15,6 +15,6 @@ jobs:
         with:
           python-version: 3.x
       - name: Install dependencies
-        run: pip install mkdocs-material
+        run: pip install mkdocs-material mkdocs-jupyter pymdown-extensions
       - name: Build with strict mode
         run: mkdocs build --strict --verbose
