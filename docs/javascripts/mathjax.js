@@ -8,9 +8,17 @@ window.MathJax = {
     options: {
         ignoreHtmlClass: ".*|",
         processHtmlClass: "arithmatex"
+    },
+    startup: {
+        ready: () => {
+            MathJax.startup.defaultReady();
+        }
     }
 };
 
 document$.subscribe(() => {
-    MathJax.typesetPromise()
+    MathJax.startup.output.clearCache();
+    MathJax.typesetClear();
+    MathJax.texReset();
+    MathJax.typesetPromise();
 })
