@@ -19,7 +19,7 @@ from amorphouspy.io_utils import (
 from amorphouspy.neighbors import get_neighbors
 from amorphouspy.potentials import potential
 from amorphouspy.potentials.potential import generate_potential
-from amorphouspy.shared import count_distribution, type_to_dict
+from amorphouspy.shared import count_distribution, running_mean, type_to_dict
 from amorphouspy.structure import (
     check_neutral_oxide,
     create_random_atoms,
@@ -27,7 +27,7 @@ from amorphouspy.structure import (
     get_glass_density_from_model,
     get_structure_dict,
 )
-from amorphouspy.workflows.cte import cte_simulation
+from amorphouspy.workflows.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 from amorphouspy.workflows.elastic_mod import elastic_simulation
 from amorphouspy.workflows.md import md_simulation
 from amorphouspy.workflows.meltquench import melt_quench_simulation
@@ -46,9 +46,9 @@ __all__ = [
     "compute_rdf",
     "count_distribution",
     "create_random_atoms",
+    "cte_from_fluctuations_simulation",
     "cte_from_npt_fluctuations",
     "cte_from_volume_temperature_data",
-    "cte_simulation",
     "elastic_simulation",
     "find_rdf_minimum",
     "generate_bond_length_dict",
@@ -62,7 +62,9 @@ __all__ = [
     "md_simulation",
     "melt_quench_simulation",
     "potential",
+    "running_mean",
     "structure_from_parsed_output",
+    "temperature_scan_simulation",
     "type_to_dict",
     "viscosity_simulation",
     "write_angle_distribution",
