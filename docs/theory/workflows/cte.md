@@ -38,23 +38,25 @@ The fluctuation method (default in `amorphouspy`) is generally preferred for sin
 
 ## Usage
 
-### `cte_simulation(structure, potential, ...)`
+### `cte_from_fluctuations_simulation(structure, potential, ...)`
 
 ```python
-from amorphouspy import cte_simulation
+from amorphouspy import cte_from_fluctuations_simulation
 
-result = cte_simulation(
+result = cte_from_fluctuations_simulation(
     structure=glass_structure,
     potential=potential,
     temperature=300.0,           # K
-    n_steps=500_000,             # Long run for convergence
-    equilibration_steps=50_000,  # Equilibrate at T
+    production_steps=200_000,    # Default production steps
+    equilibration_steps=100_000, # Default equilibration steps
     timestep=1.0,                # fs
-    pressure=0.0,                # bar
+    pressure=1e-4,               # 1 bar in GPa
 )
 
-print(f"Volumetric CTE: {result['alpha_v']:.2e} K⁻¹")
-print(f"Linear CTE: {result['alpha_l']:.2e} K⁻¹")
+# Extract results from nested summary
+summary = result["summary"]
+print(f"Volumetric CTE: {summary['CTE_V_mean']:.2e} K⁻¹")
+print(f"Linear CTE: {summary['CTE_x_mean']:.2e} K⁻¹")
 ```
 
 **Parameters:**
@@ -62,52 +64,38 @@ print(f"Linear CTE: {result['alpha_l']:.2e} K⁻¹")
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `structure` | `Atoms` | — | Equilibrated glass structure |
-| `potential` | `DataFrame` | — | Potential configuration |
-| `temperature` | `float` | — | Simulation temperature (K) |
-| `n_steps` | `int` | `500_000` | Number of production NPT steps |
-| `equilibration_steps` | `int` | `50_000` | Equilibration steps |
+| `potential` | `str` | — | Path to LAMMPS potential file |
+| `temperature` | `float` | `300.0` | Simulation temperature (K) |
+| `pressure` | `float` | `1e-4` | Target pressure (GPa) |
+| `production_steps` | `int` | `200_000` | Steps for individual production runs |
+| `equilibration_steps` | `int` | `100_000` | Equilibration steps |
 | `timestep` | `float` | `1.0` | MD timestep (fs) |
-| `pressure` | `float` | `0.0` | Target pressure (bar) |
 
 **Returns:**
 
-| Key | Type | Description |
-|---|---|---|
-| `"alpha_v"` | `float` | Volumetric CTE (K⁻¹) |
-| `"alpha_l"` | `float` | Linear CTE (K⁻¹) |
-| `"mean_volume"` | `float` | Mean volume (ų) |
-| `"mean_enthalpy"` | `float` | Mean enthalpy (eV) |
-| `"structure"` | `Atoms` | Final structure after simulation |
+Returns a nested dictionary with `"summary"` and `"data"` keys. The `"summary"` contains averaged values and uncertainties.
 
 ---
 
-## Multi-Temperature CTE Study
+### `temperature_scan_simulation(structure, potential, ...)`
 
-For a complete thermal expansion study, run CTE simulations at multiple temperatures:
+For a complete thermal expansion study across a temperature range, use `temperature_scan_simulation`:
 
 ```python
 import numpy as np
+from amorphouspy import temperature_scan_simulation
 
-temperatures = np.arange(100, 1200, 100)  # 100 to 1100 K
-cte_values = []
-volumes = []
+temperatures = np.arange(100, 1200, 100).tolist()  # 100 to 1100 K
 
-for T in temperatures:
-    result = cte_simulation(
-        glass_structure, potential,
-        temperature=T,
-        n_steps=500_000,
-    )
-    cte_values.append(result["alpha_l"])
-    volumes.append(result["mean_volume"])
+result = temperature_scan_simulation(
+    glass_structure, 
+    potential,
+    temperature=temperatures,
+    production_steps=200_000,
+)
 
-# Plot V(T) to identify glass transition
-import plotly.graph_objects as go
-
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=temperatures, y=volumes, mode="lines+markers"))
-fig.update_layout(xaxis_title="Temperature (K)", yaxis_title="Volume (ų)")
-fig.show()
+# Access data for each temperature
+# Result structure: result["data"]["01_100K"]["run01"]...
 ```
 
 The glass transition temperature ($T_g$) appears as a change in slope of the $V(T)$ curve:

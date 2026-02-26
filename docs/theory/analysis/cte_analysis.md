@@ -41,7 +41,7 @@ This approach is statistically more efficient than directly fitting volume vs. t
 
 ## Usage
 
-### `cte_from_npt_fluctuations(enthalpies, volumes, temperature)`
+### `cte_from_npt_fluctuations(temperature, enthalpy, volume, ...)`
 
 This is the analysis function that computes CTE from pre-collected time series data.
 
@@ -49,35 +49,32 @@ This is the analysis function that computes CTE from pre-collected time series d
 from amorphouspy.analysis.cte import cte_from_npt_fluctuations
 import numpy as np
 
-# enthalpies and volumes are 1D arrays from NPT simulation output
+# enthalpy and volume are 1D arrays from NPT simulation output
 # (e.g., from LAMMPS thermo output)
 
 cte = cte_from_npt_fluctuations(
-    enthalpies=enthalpy_array,    # Shape: (n_steps,), units: eV
-    volumes=volume_array,         # Shape: (n_steps,), units: ų
     temperature=300.0,            # K
+    enthalpy=enthalpy_array,      # Shape: (n_steps,), units: eV
+    volume=volume_array,          # Shape: (n_steps,), units: ų
 )
 
-print(f"Volumetric CTE: {cte['alpha_v']:.2e} K⁻¹")
-print(f"Linear CTE: {cte['alpha_l']:.2e} K⁻¹")
+print(f"Volumetric CTE: {cte:.2e} K⁻¹")
+print(f"Linear CTE: {cte/3:.2e} K⁻¹")
 ```
 
 **Parameters:**
 
 | Parameter | Type | Description |
 |---|---|---|
-| `enthalpies` | `np.ndarray` | Time series of enthalpy values (eV) |
-| `volumes` | `np.ndarray` | Time series of volume values (ų) |
 | `temperature` | `float` | Simulation temperature (K) |
+| `enthalpy` | `np.ndarray` | Time series of enthalpy values (eV) |
+| `volume` | `np.ndarray` | Time series of volume values (ų) |
 
 **Returns:**
 
-| Key | Type | Description |
-|---|---|---|
-| `"alpha_v"` | `float` | Volumetric CTE ($K^{-1}$) |
-| `"alpha_l"` | `float` | Linear CTE ($K^{-1}$) |
-| `"mean_volume"` | `float` | Mean volume (ų) |
-| `"hv_correlation"` | `float` | $\langle \delta H \cdot \delta V \rangle$ |
+| Type | Description |
+|---|---|
+| `float` | Volumetric CTE ($K^{-1}$) |
 
 ---
 

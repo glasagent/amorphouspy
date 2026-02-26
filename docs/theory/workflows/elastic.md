@@ -51,20 +51,19 @@ from amorphouspy import elastic_simulation
 result = elastic_simulation(
     structure=glass_structure,
     potential=potential,
-    temperature=300.0,          # K
+    temperature_sim=300.0,      # K
     strain=1e-3,                # Applied strain magnitude
     production_steps=10_000,    # MD steps per strain state
-    equilibration_steps=5_000,  # Equilibration before measurement
+    equilibration_steps=1_000_000, # Initial equilibration
     timestep=1.0,               # fs
 )
 
-print(f"C11 = {result['C11']:.1f} GPa")
-print(f"C12 = {result['C12']:.1f} GPa")
-print(f"C44 = {result['C44']:.1f} GPa")
-print(f"Young's modulus E = {result['E']:.1f} GPa")
-print(f"Bulk modulus B = {result['B']:.1f} GPa")
-print(f"Shear modulus G = {result['G']:.1f} GPa")
-print(f"Poisson's ratio ν = {result['nu']:.3f}")
+# Results are in result['moduli']
+moduli = result['moduli']
+print(f"Young's modulus E = {moduli['E']:.1f} GPa")
+print(f"Bulk modulus B = {moduli['B']:.1f} GPa")
+print(f"Shear modulus G = {moduli['G']:.1f} GPa")
+print(f"Poisson's ratio ν = {moduli['nu']:.3f}")
 ```
 
 **Parameters:**
@@ -72,22 +71,16 @@ print(f"Poisson's ratio ν = {result['nu']:.3f}")
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `structure` | `Atoms` | — | Equilibrated glass structure |
-| `potential` | `DataFrame` | — | Potential configuration |
-| `temperature` | `float` | `300.0` | Temperature (K) |
+| `potential` | `str` | — | Path to LAMMPS potential file |
+| `temperature_sim` | `float` | `300.0` | Temperature (K) |
 | `strain` | `float` | `1e-3` | Strain magnitude (dimensionless) |
 | `production_steps` | `int` | `10_000` | Steps per deformed state for stress averaging |
-| `equilibration_steps` | `int` | `5_000` | Steps to equilibrate after applying strain |
+| `equilibration_steps` | `int` | `1_000_000` | Initial equilibration phase steps |
 | `timestep` | `float` | `1.0` | MD timestep (fs) |
 
 **Returns:**
 
-| Key | Type | Description |
-|---|---|---|
-| `"C11"`, `"C12"`, `"C44"` | `float` | Elastic constants (GPa) |
-| `"B"` | `float` | Bulk modulus (GPa) |
-| `"G"` | `float` | Shear modulus (GPa) |
-| `"E"` | `float` | Young's modulus (GPa) |
-| `"nu"` | `float` | Poisson's ratio |
+Returns a dictionary with `"Cij"` (6x6 matrix) and `"moduli"` (dictionary of engineering constants).
 
 ---
 

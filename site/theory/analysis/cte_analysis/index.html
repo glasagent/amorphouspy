@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
@@ -602,7 +602,7 @@
   <span class="md-ellipsis">
     
   
-    CTE analysis
+    CTE analysis - Jupyter Notebook
   
 
     
@@ -1481,10 +1481,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cte_from_npt_fluctuationsenthalpies-volumes-temperature" class="md-nav__link">
+  <a href="#cte_from_npt_fluctuationstemperature-enthalpy-volume" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cte_from_npt_fluctuations(enthalpies, volumes, temperature)
+        cte_from_npt_fluctuations(temperature, enthalpy, volume, ...)
       
     </span>
   </a>
@@ -1729,10 +1729,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cte_from_npt_fluctuationsenthalpies-volumes-temperature" class="md-nav__link">
+  <a href="#cte_from_npt_fluctuationstemperature-enthalpy-volume" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cte_from_npt_fluctuations(enthalpies, volumes, temperature)
+        cte_from_npt_fluctuations(temperature, enthalpy, volume, ...)
       
     </span>
   </a>
@@ -1834,22 +1834,22 @@
 - It avoids the need for multiple simulations at slightly different temperatures</p>
 <hr />
 <h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
-<h3 id="cte_from_npt_fluctuationsenthalpies-volumes-temperature"><code>cte_from_npt_fluctuations(enthalpies, volumes, temperature)</code><a class="headerlink" href="#cte_from_npt_fluctuationsenthalpies-volumes-temperature" title="Permanent link">&para;</a></h3>
+<h3 id="cte_from_npt_fluctuationstemperature-enthalpy-volume"><code>cte_from_npt_fluctuations(temperature, enthalpy, volume, ...)</code><a class="headerlink" href="#cte_from_npt_fluctuationstemperature-enthalpy-volume" title="Permanent link">&para;</a></h3>
 <p>This is the analysis function that computes CTE from pre-collected time series data.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">amorphouspy.analysis.cte</span><span class="w"> </span><span class="kn">import</span> <span class="n">cte_from_npt_fluctuations</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># enthalpies and volumes are 1D arrays from NPT simulation output</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># enthalpy and volume are 1D arrays from NPT simulation output</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># (e.g., from LAMMPS thermo output)</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="n">cte</span> <span class="o">=</span> <span class="n">cte_from_npt_fluctuations</span><span class="p">(</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">enthalpies</span><span class="o">=</span><span class="n">enthalpy_array</span><span class="p">,</span>    <span class="c1"># Shape: (n_steps,), units: eV</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">volumes</span><span class="o">=</span><span class="n">volume_array</span><span class="p">,</span>         <span class="c1"># Shape: (n_steps,), units: ų</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">temperature</span><span class="o">=</span><span class="mf">300.0</span><span class="p">,</span>            <span class="c1"># K</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">temperature</span><span class="o">=</span><span class="mf">300.0</span><span class="p">,</span>            <span class="c1"># K</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">enthalpy</span><span class="o">=</span><span class="n">enthalpy_array</span><span class="p">,</span>      <span class="c1"># Shape: (n_steps,), units: eV</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">volume</span><span class="o">=</span><span class="n">volume_array</span><span class="p">,</span>          <span class="c1"># Shape: (n_steps,), units: ų</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">)</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Volumetric CTE: </span><span class="si">{</span><span class="n">cte</span><span class="p">[</span><span class="s1">&#39;alpha_v&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Linear CTE: </span><span class="si">{</span><span class="n">cte</span><span class="p">[</span><span class="s1">&#39;alpha_l&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Volumetric CTE: </span><span class="si">{</span><span class="n">cte</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Linear CTE: </span><span class="si">{</span><span class="n">cte</span><span class="o">/</span><span class="mi">3</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
 </span></code></pre></div>
 <p><strong>Parameters:</strong></p>
 <table>
@@ -1862,19 +1862,19 @@
 </thead>
 <tbody>
 <tr>
-<td><code>enthalpies</code></td>
+<td><code>temperature</code></td>
+<td><code>float</code></td>
+<td>Simulation temperature (K)</td>
+</tr>
+<tr>
+<td><code>enthalpy</code></td>
 <td><code>np.ndarray</code></td>
 <td>Time series of enthalpy values (eV)</td>
 </tr>
 <tr>
-<td><code>volumes</code></td>
+<td><code>volume</code></td>
 <td><code>np.ndarray</code></td>
 <td>Time series of volume values (ų)</td>
-</tr>
-<tr>
-<td><code>temperature</code></td>
-<td><code>float</code></td>
-<td>Simulation temperature (K)</td>
 </tr>
 </tbody>
 </table>
@@ -1882,31 +1882,14 @@
 <table>
 <thead>
 <tr>
-<th>Key</th>
 <th>Type</th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>"alpha_v"</code></td>
 <td><code>float</code></td>
 <td>Volumetric CTE (<span class="arithmatex">\(K^{-1}\)</span>)</td>
-</tr>
-<tr>
-<td><code>"alpha_l"</code></td>
-<td><code>float</code></td>
-<td>Linear CTE (<span class="arithmatex">\(K^{-1}\)</span>)</td>
-</tr>
-<tr>
-<td><code>"mean_volume"</code></td>
-<td><code>float</code></td>
-<td>Mean volume (ų)</td>
-</tr>
-<tr>
-<td><code>"hv_correlation"</code></td>
-<td><code>float</code></td>
-<td><span class="arithmatex">\(\langle \delta H \cdot \delta V \rangle\)</span></td>
 </tr>
 </tbody>
 </table>

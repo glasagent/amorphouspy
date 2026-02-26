@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
     
     
       
@@ -602,7 +602,7 @@
   <span class="md-ellipsis">
     
   
-    CTE analysis
+    CTE analysis - Jupyter Notebook
   
 
     
@@ -1230,10 +1230,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cte_simulationstructure-potential" class="md-nav__link">
+  <a href="#cte_from_fluctuations_simulationstructure-potential" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cte_simulation(structure, potential, ...)
+        cte_from_fluctuations_simulation(structure, potential, ...)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#temperature_scan_simulationstructure-potential" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        temperature_scan_simulation(structure, potential, ...)
       
     </span>
   </a>
@@ -1242,17 +1253,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#multi-temperature-cte-study" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Multi-Temperature CTE Study
-      
-    </span>
-  </a>
   
 </li>
       
@@ -1729,10 +1729,21 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#cte_simulationstructure-potential" class="md-nav__link">
+  <a href="#cte_from_fluctuations_simulationstructure-potential" class="md-nav__link">
     <span class="md-ellipsis">
       
-        cte_simulation(structure, potential, ...)
+        cte_from_fluctuations_simulation(structure, potential, ...)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#temperature_scan_simulationstructure-potential" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        temperature_scan_simulation(structure, potential, ...)
       
     </span>
   </a>
@@ -1741,17 +1752,6 @@
         
       </ul>
     </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#multi-temperature-cte-study" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Multi-Temperature CTE Study
-      
-    </span>
-  </a>
   
 </li>
       
@@ -1806,21 +1806,23 @@
 <p>The fluctuation method (default in <code>amorphouspy</code>) is generally preferred for single-point calculations, while the direct method is useful for identifying the glass transition temperature from the <span class="arithmatex">\(V(T)\)</span> plot.</p>
 <hr />
 <h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
-<h3 id="cte_simulationstructure-potential"><code>cte_simulation(structure, potential, ...)</code><a class="headerlink" href="#cte_simulationstructure-potential" title="Permanent link">&para;</a></h3>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">amorphouspy</span><span class="w"> </span><span class="kn">import</span> <span class="n">cte_simulation</span>
+<h3 id="cte_from_fluctuations_simulationstructure-potential"><code>cte_from_fluctuations_simulation(structure, potential, ...)</code><a class="headerlink" href="#cte_from_fluctuations_simulationstructure-potential" title="Permanent link">&para;</a></h3>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">amorphouspy</span><span class="w"> </span><span class="kn">import</span> <span class="n">cte_from_fluctuations_simulation</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cte_simulation</span><span class="p">(</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">result</span> <span class="o">=</span> <span class="n">cte_from_fluctuations_simulation</span><span class="p">(</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">structure</span><span class="o">=</span><span class="n">glass_structure</span><span class="p">,</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">potential</span><span class="o">=</span><span class="n">potential</span><span class="p">,</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">temperature</span><span class="o">=</span><span class="mf">300.0</span><span class="p">,</span>           <span class="c1"># K</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">n_steps</span><span class="o">=</span><span class="mi">500_000</span><span class="p">,</span>             <span class="c1"># Long run for convergence</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">equilibration_steps</span><span class="o">=</span><span class="mi">50_000</span><span class="p">,</span>  <span class="c1"># Equilibrate at T</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">production_steps</span><span class="o">=</span><span class="mi">200_000</span><span class="p">,</span>    <span class="c1"># Default production steps</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">equilibration_steps</span><span class="o">=</span><span class="mi">100_000</span><span class="p">,</span> <span class="c1"># Default equilibration steps</span>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">timestep</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>                <span class="c1"># fs</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">pressure</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>                <span class="c1"># bar</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">pressure</span><span class="o">=</span><span class="mf">1e-4</span><span class="p">,</span>               <span class="c1"># 1 bar in GPa</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="p">)</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Volumetric CTE: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;alpha_v&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Linear CTE: </span><span class="si">{</span><span class="n">result</span><span class="p">[</span><span class="s1">&#39;alpha_l&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># Extract results from nested summary</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">summary</span> <span class="o">=</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;summary&quot;</span><span class="p">]</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Volumetric CTE: </span><span class="si">{</span><span class="n">summary</span><span class="p">[</span><span class="s1">&#39;CTE_V_mean&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Linear CTE: </span><span class="si">{</span><span class="n">summary</span><span class="p">[</span><span class="s1">&#39;CTE_x_mean&#39;</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2"> K⁻¹&quot;</span><span class="p">)</span>
 </span></code></pre></div>
 <p><strong>Parameters:</strong></p>
 <table>
@@ -1841,26 +1843,32 @@
 </tr>
 <tr>
 <td><code>potential</code></td>
-<td><code>DataFrame</code></td>
+<td><code>str</code></td>
 <td>—</td>
-<td>Potential configuration</td>
+<td>Path to LAMMPS potential file</td>
 </tr>
 <tr>
 <td><code>temperature</code></td>
 <td><code>float</code></td>
-<td>—</td>
+<td><code>300.0</code></td>
 <td>Simulation temperature (K)</td>
 </tr>
 <tr>
-<td><code>n_steps</code></td>
+<td><code>pressure</code></td>
+<td><code>float</code></td>
+<td><code>1e-4</code></td>
+<td>Target pressure (GPa)</td>
+</tr>
+<tr>
+<td><code>production_steps</code></td>
 <td><code>int</code></td>
-<td><code>500_000</code></td>
-<td>Number of production NPT steps</td>
+<td><code>200_000</code></td>
+<td>Steps for individual production runs</td>
 </tr>
 <tr>
 <td><code>equilibration_steps</code></td>
 <td><code>int</code></td>
-<td><code>50_000</code></td>
+<td><code>100_000</code></td>
 <td>Equilibration steps</td>
 </tr>
 <tr>
@@ -1869,76 +1877,27 @@
 <td><code>1.0</code></td>
 <td>MD timestep (fs)</td>
 </tr>
-<tr>
-<td><code>pressure</code></td>
-<td><code>float</code></td>
-<td><code>0.0</code></td>
-<td>Target pressure (bar)</td>
-</tr>
 </tbody>
 </table>
 <p><strong>Returns:</strong></p>
-<table>
-<thead>
-<tr>
-<th>Key</th>
-<th>Type</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>"alpha_v"</code></td>
-<td><code>float</code></td>
-<td>Volumetric CTE (K⁻¹)</td>
-</tr>
-<tr>
-<td><code>"alpha_l"</code></td>
-<td><code>float</code></td>
-<td>Linear CTE (K⁻¹)</td>
-</tr>
-<tr>
-<td><code>"mean_volume"</code></td>
-<td><code>float</code></td>
-<td>Mean volume (ų)</td>
-</tr>
-<tr>
-<td><code>"mean_enthalpy"</code></td>
-<td><code>float</code></td>
-<td>Mean enthalpy (eV)</td>
-</tr>
-<tr>
-<td><code>"structure"</code></td>
-<td><code>Atoms</code></td>
-<td>Final structure after simulation</td>
-</tr>
-</tbody>
-</table>
+<p>Returns a nested dictionary with <code>"summary"</code> and <code>"data"</code> keys. The <code>"summary"</code> contains averaged values and uncertainties.</p>
 <hr />
-<h2 id="multi-temperature-cte-study">Multi-Temperature CTE Study<a class="headerlink" href="#multi-temperature-cte-study" title="Permanent link">&para;</a></h2>
-<p>For a complete thermal expansion study, run CTE simulations at multiple temperatures:</p>
+<h3 id="temperature_scan_simulationstructure-potential"><code>temperature_scan_simulation(structure, potential, ...)</code><a class="headerlink" href="#temperature_scan_simulationstructure-potential" title="Permanent link">&para;</a></h3>
+<p>For a complete thermal expansion study across a temperature range, use <code>temperature_scan_simulation</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">temperatures</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">1200</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>  <span class="c1"># 100 to 1100 K</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">cte_values</span> <span class="o">=</span> <span class="p">[]</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">volumes</span> <span class="o">=</span> <span class="p">[]</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="k">for</span> <span class="n">T</span> <span class="ow">in</span> <span class="n">temperatures</span><span class="p">:</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">result</span> <span class="o">=</span> <span class="n">cte_simulation</span><span class="p">(</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>        <span class="n">glass_structure</span><span class="p">,</span> <span class="n">potential</span><span class="p">,</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>        <span class="n">temperature</span><span class="o">=</span><span class="n">T</span><span class="p">,</span>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>        <span class="n">n_steps</span><span class="o">=</span><span class="mi">500_000</span><span class="p">,</span>
-</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    <span class="p">)</span>
-</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>    <span class="n">cte_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;alpha_l&quot;</span><span class="p">])</span>
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    <span class="n">volumes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;mean_volume&quot;</span><span class="p">])</span>
-</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
-</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="c1"># Plot V(T) to identify glass transition</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="kn">import</span><span class="w"> </span><span class="nn">plotly.graph_objects</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">go</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="n">fig</span> <span class="o">=</span> <span class="n">go</span><span class="o">.</span><span class="n">Figure</span><span class="p">()</span>
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="n">fig</span><span class="o">.</span><span class="n">add_trace</span><span class="p">(</span><span class="n">go</span><span class="o">.</span><span class="n">Scatter</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">temperatures</span><span class="p">,</span> <span class="n">y</span><span class="o">=</span><span class="n">volumes</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;lines+markers&quot;</span><span class="p">))</span>
-</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="n">fig</span><span class="o">.</span><span class="n">update_layout</span><span class="p">(</span><span class="n">xaxis_title</span><span class="o">=</span><span class="s2">&quot;Temperature (K)&quot;</span><span class="p">,</span> <span class="n">yaxis_title</span><span class="o">=</span><span class="s2">&quot;Volume (ų)&quot;</span><span class="p">)</span>
-</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="n">fig</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">amorphouspy</span><span class="w"> </span><span class="kn">import</span> <span class="n">temperature_scan_simulation</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">temperatures</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="mi">1200</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>  <span class="c1"># 100 to 1100 K</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">result</span> <span class="o">=</span> <span class="n">temperature_scan_simulation</span><span class="p">(</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">glass_structure</span><span class="p">,</span> 
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="n">potential</span><span class="p">,</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="n">temperature</span><span class="o">=</span><span class="n">temperatures</span><span class="p">,</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    <span class="n">production_steps</span><span class="o">=</span><span class="mi">200_000</span><span class="p">,</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="p">)</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c1"># Access data for each temperature</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="c1"># Result structure: result[&quot;data&quot;][&quot;01_100K&quot;][&quot;run01&quot;]...</span>
 </span></code></pre></div>
 <p>The glass transition temperature (<span class="arithmatex">\(T_g\)</span>) appears as a change in slope of the <span class="arithmatex">\(V(T)\)</span> curve:
 - <strong>Below <span class="arithmatex">\(T_g\)</span></strong>: lower CTE (glassy state)<br />

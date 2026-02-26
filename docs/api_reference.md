@@ -129,13 +129,14 @@ Generate LAMMPS potential configuration. `potential_type` is `"pmmcs"`, `"bjp"`,
 ```python
 melt_quench_simulation(
     structure: Atoms,
-    potential: pd.DataFrame,
+    potential: str,
     temperature_high: float = 5000.0,
     temperature_low: float = 300.0,
     timestep: float = 1.0,
     heating_rate: float = 1e12,
     cooling_rate: float = 1e12,
     n_print: int = 1000,
+    *,
     server_kwargs: dict | None = None,
     langevin: bool = False,
     seed: int = 12345,
@@ -151,12 +152,13 @@ Multi-stage melt-quench simulation with potential-specific protocols.
 ```python
 md_simulation(
     structure: Atoms,
-    potential: pd.DataFrame,
+    potential: str,
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     production_steps: int = 10_000_000,
     n_print: int = 1000,
     server_kwargs: dict | None = None,
+    *,
     pressure: float | None = None,
     langevin: bool = False,
     seed: int = 12345,
@@ -172,18 +174,20 @@ Single-point constant-T/P molecular dynamics simulation.
 ```python
 elastic_simulation(
     structure: Atoms,
-    potential: pd.DataFrame,
-    temperature: float = 300.0,
+    potential: str,
+    temperature_sim: float = 300.0,
+    pressure: float | None = None,
     timestep: float = 1.0,
-    equilibration_steps: int = 5000,
+    equilibration_steps: int = 1_000_000,
     production_steps: int = 10_000,
     n_print: int = 1,
     strain: float = 1e-3,
-    server_kwargs: dict | None = None,
+    server_kwargs: dict[str, Any] | None = None,
+    *,
     langevin: bool = False,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
-) -> dict
+) -> dict[str, Any]
 ```
 Elastic stiffness tensor via stress-strain finite differences.
 
@@ -194,16 +198,17 @@ Elastic stiffness tensor via stress-strain finite differences.
 ```python
 viscosity_simulation(
     structure: Atoms,
-    potential: pd.DataFrame,
-    temperature_sim: float = 3000.0,
+    potential: str,
+    temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     production_steps: int = 10_000_000,
     n_print: int = 1,
-    server_kwargs: dict | None = None,
+    server_kwargs: dict[str, Any] | None = None,
+    *,
     langevin: bool = False,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
-) -> dict
+) -> dict[str, Any]
 ```
 Run MD for viscosity computation via Green-Kubo formalism.
 
@@ -234,25 +239,49 @@ Fit viscosity-temperature data to the Vogel-Fulcher-Tammann model.
 ### `amorphouspy.workflows.cte`
 
 ```python
-cte_simulation(
+cte_from_fluctuations_simulation(
     structure: Atoms,
-    potential: pd.DataFrame,
-    temperature: float | list,
-    pressure: float = 0.0,
+    potential: str,
+    temperature: float | list[int | float] = 300,
+    pressure: float = 1e-4,
     timestep: float = 1.0,
-    equilibration_steps: int = 50_000,
-    production_steps: int = 5_000_000,
-    max_production_runs: int = 5,
-    CTE_convergence_criterion: float = 1e-6,
-    n_dump: int = 100_000,
+    equilibration_steps: int = 100_000,
+    production_steps: int = 200_000,
+    min_production_runs: int = 2,
+    max_production_runs: int = 25,
+    CTE_uncertainty_criterion: float = 1e-6,
+    n_dump: int = 100000,
     n_log: int = 10,
-    server_kwargs: dict | None = None,
+    server_kwargs: dict[str, Any] | None = None,
+    *,
     aniso: bool = False,
     seed: int | None = 12345,
     tmp_working_directory: str | Path | None = None,
-) -> dict
+) -> dict[str, Any]
 ```
-CTE simulation with iterative convergence checking.
+CTE simulation via H-V fluctuations with iterative convergence checking.
+
+---
+
+```python
+temperature_scan_simulation(
+    structure: Atoms,
+    potential: str,
+    temperature: list[int | float] | None = None,
+    pressure: float = 1e-4,
+    timestep: float = 1.0,
+    equilibration_steps: int = 100_000,
+    production_steps: int = 200_000,
+    n_dump: int = 100000,
+    n_log: int = 10,
+    server_kwargs: dict[str, Any] | None = None,
+    *,
+    aniso: bool = False,
+    seed: int | None = 12345,
+    tmp_working_directory: str | Path | None = None,
+) -> dict[Any, Any]
+```
+Temperature scan to collect structural data for CTE calculations via V-T curves.
 
 ---
 
@@ -406,9 +435,10 @@ CTE from enthalpy-volume cross-correlations in a single NPT run.
 cte_from_volume_temperature_data(
     temperature: list | np.ndarray,
     volume: list | np.ndarray,
-) -> float
+    reference_volume: float | None = None,
+) -> tuple[float, float]
 ```
-CTE from linear fit of volume vs. temperature across multiple NPT runs.
+CTE and R² from linear fit of volume vs. temperature across multiple NPT runs.
 
 ---
 
@@ -445,6 +475,13 @@ Convert per-atom coordination numbers to a frequency histogram.
 type_to_dict(types: np.array) -> dict[int, str]
 ```
 Map atomic numbers to element symbols.
+
+---
+
+```python
+running_mean(data: list | np.ndarray, N: int) -> np.ndarray
+```
+Calculate running mean of an array-like dataset.
 
 ---
 
@@ -487,3 +524,31 @@ write_xyz(
 ) -> None
 ```
 Write atomic configuration to an XYZ file.
+
+---
+
+```python
+write_distribution_to_file(
+    composition: float,
+    filepath: str,
+    dist: dict[int, int],
+    label: str,
+    *,
+    append: bool = False,
+) -> None
+```
+Write a coordination or Qⁿ histogram to a text file.
+
+---
+
+```python
+write_angle_distribution(
+    bin_centers: np.ndarray,
+    angle_hist: np.ndarray,
+    composition: float,
+    filepath: str,
+    *,
+    append: bool = False,
+) -> None
+```
+Write angle distribution to a text file.
