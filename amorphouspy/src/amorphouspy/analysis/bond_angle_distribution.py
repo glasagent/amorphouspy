@@ -89,9 +89,9 @@ def compute_angles(
             vecs -= box * np.round(vecs / box)
         else:
             inv_cell = np.linalg.inv(cell)
-            df = (inv_cell @ vecs.T).T
-            df -= np.round(df)
-            vecs = (cell.T @ df.T).T
+            delta_frac = (inv_cell @ vecs.T).T
+            delta_frac -= np.round(delta_frac)
+            vecs = (cell.T @ delta_frac.T).T
 
         # Normalise all vectors at once
         norms = np.linalg.norm(vecs, axis=1)  # (k,)

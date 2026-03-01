@@ -52,12 +52,9 @@ def compute_coordination(
     # Precompute the set of real IDs that belong to target_type once,
     # avoiding a per-atom np.where search inside the comprehension.
     types = structure.get_atomic_numbers()
-    if "id" in structure.arrays:
-        raw_ids = structure.arrays["id"]
-    else:
-        raw_ids = np.arange(1, len(structure) + 1)
+    raw_ids = structure.arrays["id"] if "id" in structure.arrays else np.arange(1, len(structure) + 1)
     target_id_set: set[int] = {
-        int(aid) for aid, t in zip(raw_ids, types) if int(t) == target_type
+        int(aid) for aid, t in zip(raw_ids, types, strict=False) if int(t) == target_type
     }
 
     # coord_numbers is keyed by real atom ID (matches OVITO IDs)
@@ -82,11 +79,6 @@ def _compute_distances(structure: Atoms, r_max: float) -> tuple:
     Returns:
         A tuple of (distances, i_indices, j_indices).
     """
-    from amorphouspy.neighbors import (
-        compute_cell_list_orthogonal,
-        compute_cell_list_triclinic,
-    )
-
     structure_wrapped = structure.copy()
     structure_wrapped.wrap()
     coords = structure_wrapped.get_positions()
@@ -130,7 +122,6 @@ def _compute_distances(structure: Atoms, r_max: float) -> tuple:
                             i_list.extend([i] * int(mask.sum()))
                             j_list.extend(js[mask].tolist())
     else:
-        inv_cell = np.linalg.inv(cell)
         coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(
             coords, cell, r_max
         )
@@ -150,9 +141,9 @@ def _compute_distances(structure: Atoms, r_max: float) -> tuple:
                         js = js[js > i]
                         if len(js) == 0:
                             continue
-                        df = coords_frac[i] - coords_frac[js]
-                        df -= np.round(df)
-                        rij = df @ cell
+                        delta_frac = coords_frac[i] - coords_frac[js]
+                        delta_frac -= np.round(delta_frac)
+                        rij = delta_frac @ cell
                         dsq = np.einsum("ij,ij->i", rij, rij)
                         mask = dsq <= r_max_sq
                         if mask.any():
