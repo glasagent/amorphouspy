@@ -8,9 +8,13 @@ from itertools import combinations_with_replacement
 
 import numpy as np
 from ase import Atoms
-from numba import jit
 
-from amorphouspy.neighbors import cell_perpendicular_heights, get_neighbors
+from amorphouspy.neighbors import (
+    cell_perpendicular_heights,
+    compute_cell_list_orthogonal,
+    compute_cell_list_triclinic,
+    get_neighbors,
+)
 from amorphouspy.shared import count_distribution
 
 
@@ -45,111 +49,121 @@ def compute_coordination(
         neighbor_types=neighbor_types,
     )
 
-    # get_neighbors now returns List[Tuple[central_id, List[neighbor_ids]]]
+    # Precompute the set of real IDs that belong to target_type once,
+    # avoiding a per-atom np.where search inside the comprehension.
+    types = structure.get_atomic_numbers()
+    if "id" in structure.arrays:
+        raw_ids = structure.arrays["id"]
+    else:
+        raw_ids = np.arange(1, len(structure) + 1)
+    target_id_set: set[int] = {
+        int(aid) for aid, t in zip(raw_ids, types) if int(t) == target_type
+    }
+
     # coord_numbers is keyed by real atom ID (matches OVITO IDs)
     coord_numbers = {
         central_id: len(nn_ids)
         for central_id, nn_ids in neighbors
-        if len(nn_ids) > 0 or _atom_is_target(structure, central_id, target_type)
+        if len(nn_ids) > 0 or central_id in target_id_set
     }
 
     coord_numbers_distribution = count_distribution(coord_numbers)
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
 
 
-def _atom_is_target(structure: Atoms, atom_id: int, target_type: int) -> bool:
-    """Check whether a given atom ID belongs to the target type.
-
-    Looks up the atom by its real ID from atoms.arrays['id'] if present,
-    otherwise falls back to treating atom_id as a 1-based index.
-    """
-    types = structure.get_atomic_numbers()
-    if "id" in structure.arrays:
-        ids = structure.arrays["id"]
-        matches = np.where(ids == atom_id)[0]
-        if len(matches) == 0:
-            return False
-        return int(types[matches[0]]) == target_type
-    # 1-based sequential fallback
-    idx = atom_id - 1
-    if idx < 0 or idx >= len(types):
-        return False
-    return int(types[idx]) == target_type
-
-
-# ============================================================================
-# Numba-accelerated distance kernel — supports triclinic via fractional coords
-# ============================================================================
-
-
-@jit(nopython=True, cache=True)
-def _compute_distances_triclinic(
-    coords_frac: np.ndarray,
-    cell: np.ndarray,
-    r_max: float,
-) -> tuple:
-    """Numba-accelerated all-pairs distance computation for triclinic boxes.
-
-    Works in fractional coordinates so the minimum-image convention is a
-    simple round() in every case (orthogonal and triclinic alike).
-
-    Args:
-        coords_frac: Fractional coordinates (N, 3).
-        cell:        Cell matrix, lattice vectors as rows (3, 3).
-        r_max:       Maximum distance to collect.
-
-    Returns:
-        distances:  1-D array of pair distances ≤ r_max.
-        i_indices:  Corresponding i atom indices.
-        j_indices:  Corresponding j atom indices.
-    """
-    n = len(coords_frac)
-    r_max_sq = r_max * r_max
-
-    max_pairs = n * (n - 1) // 2
-    distances = np.empty(max_pairs, dtype=np.float64)
-    i_indices = np.empty(max_pairs, dtype=np.int32)
-    j_indices = np.empty(max_pairs, dtype=np.int32)
-    count = 0
-
-    for i in range(n):
-        for j in range(i + 1, n):
-            dfx = coords_frac[i, 0] - coords_frac[j, 0]
-            dfy = coords_frac[i, 1] - coords_frac[j, 1]
-            dfz = coords_frac[i, 2] - coords_frac[j, 2]
-
-            dfx -= round(dfx)
-            dfy -= round(dfy)
-            dfz -= round(dfz)
-
-            dx = dfx * cell[0, 0] + dfy * cell[1, 0] + dfz * cell[2, 0]
-            dy = dfx * cell[0, 1] + dfy * cell[1, 1] + dfz * cell[2, 1]
-            dz = dfx * cell[0, 2] + dfy * cell[1, 2] + dfz * cell[2, 2]
-
-            dist_sq = dx * dx + dy * dy + dz * dz
-            if dist_sq <= r_max_sq:
-                distances[count] = np.sqrt(dist_sq)
-                i_indices[count] = i
-                j_indices[count] = j
-                count += 1
-
-    return distances[:count], i_indices[:count], j_indices[:count]
-
 
 def _compute_distances(structure: Atoms, r_max: float) -> tuple:
-    """Wrap the Numba kernel: convert to fractional coords and call kernel."""
+    """Collect all pairwise distances up to r_max using a cell list.
+
+    Replaces the O(N²) all-pairs Numba kernel with the cell-list
+    infrastructure from amorphouspy.neighbors, reducing complexity to
+    approximately O(N) for uniform density systems.
+
+    Returns arrays of distances, i-indices, and j-indices (array indices,
+    not real atom IDs) for all pairs within r_max.
+    """
+    from amorphouspy.neighbors import (
+        compute_cell_list_orthogonal,
+        compute_cell_list_triclinic,
+    )
+
     structure_wrapped = structure.copy()
     structure_wrapped.wrap()
-
+    coords = structure_wrapped.get_positions()
     cell = structure_wrapped.get_cell().array
-    inv_cell = np.linalg.inv(cell)
-    coords_frac = (inv_cell @ structure_wrapped.get_positions().T).T
-    coords_frac = coords_frac % 1.0
+    n = len(coords)
+    is_orthogonal = np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-10)
+    r_max_sq = r_max * r_max
 
-    return _compute_distances_triclinic(
-        coords_frac.astype(np.float64),
-        cell.astype(np.float64),
-        float(r_max),
+    # Pre-allocate output lists; typical fill is O(N * avg_neighbors)
+    dist_list: list[float] = []
+    i_list: list[int] = []
+    j_list: list[int] = []
+
+    if is_orthogonal:
+        box_size = np.diag(cell)
+        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(
+            coords, box_size, r_max
+        )
+
+        for i in range(n):
+            ci = atom_cells[i]
+            for dix in range(-1, 2):
+                cjx = int((ci[0] + dix) % n_cells[0])
+                for diy in range(-1, 2):
+                    cjy = int((ci[1] + diy) % n_cells[1])
+                    for diz in range(-1, 2):
+                        cjz = int((ci[2] + diz) % n_cells[2])
+                        flat_id = cjx * int(n_cells[1]) * int(n_cells[2]) + cjy * int(n_cells[2]) + cjz
+                        start = cell_start[flat_id]
+                        end = cell_start[flat_id + 1]
+                        js = cell_atoms[start:end]
+                        js = js[js > i]  # only i < j pairs to avoid duplicates
+                        if len(js) == 0:
+                            continue
+                        rij = coords[i] - coords[js]
+                        rij -= box_size * np.round(rij / box_size)
+                        dsq = np.einsum("ij,ij->i", rij, rij)
+                        mask = dsq <= r_max_sq
+                        if mask.any():
+                            dist_list.extend(np.sqrt(dsq[mask]).tolist())
+                            i_list.extend([i] * int(mask.sum()))
+                            j_list.extend(js[mask].tolist())
+    else:
+        inv_cell = np.linalg.inv(cell)
+        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(
+            coords, cell, r_max
+        )
+
+        for i in range(n):
+            ci = atom_cells[i]
+            for dix in range(-1, 2):
+                cjx = int((ci[0] + dix) % n_cells[0])
+                for diy in range(-1, 2):
+                    cjy = int((ci[1] + diy) % n_cells[1])
+                    for diz in range(-1, 2):
+                        cjz = int((ci[2] + diz) % n_cells[2])
+                        flat_id = cjx * int(n_cells[1]) * int(n_cells[2]) + cjy * int(n_cells[2]) + cjz
+                        start = cell_start[flat_id]
+                        end = cell_start[flat_id + 1]
+                        js = cell_atoms[start:end]
+                        js = js[js > i]
+                        if len(js) == 0:
+                            continue
+                        df = coords_frac[i] - coords_frac[js]
+                        df -= np.round(df)
+                        rij = df @ cell
+                        dsq = np.einsum("ij,ij->i", rij, rij)
+                        mask = dsq <= r_max_sq
+                        if mask.any():
+                            dist_list.extend(np.sqrt(dsq[mask]).tolist())
+                            i_list.extend([i] * int(mask.sum()))
+                            j_list.extend(js[mask].tolist())
+
+    return (
+        np.array(dist_list, dtype=np.float64),
+        np.array(i_list, dtype=np.int32),
+        np.array(j_list, dtype=np.int32),
     )
 
 
