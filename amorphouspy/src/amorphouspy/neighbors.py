@@ -86,7 +86,20 @@ def compute_cell_list_orthogonal(
     box_size: np.ndarray,
     cutoff: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Construct a flat cell list for orthogonal boxes."""
+    """Construct a flat cell list for orthogonal boxes.
+
+    Args:
+        coords: Cartesian coordinates of atoms.
+        box_size: Lengths of the cubic simulation box.
+        cutoff: Neighbor cutoff distance.
+
+    Returns:
+        Tuple containing:
+            - atom_cells: Cell indices for each atom.
+            - n_cells: Number of cells along each axis.
+            - cell_start: Starting index of each cell in cell_atoms.
+            - cell_atoms: Atom indices sorted by cell.
+    """
     n_cells = np.maximum(1, np.floor(box_size / cutoff)).astype(np.int32)
     inv_cell_size = n_cells / box_size
 
@@ -114,7 +127,21 @@ def compute_cell_list_triclinic(
     cell: np.ndarray,
     cutoff: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Construct a skewed cell list for triclinic boxes in fractional coordinates."""
+    """Construct a skewed cell list for triclinic boxes in fractional coordinates.
+
+    Args:
+        coords: Cartesian coordinates of atoms.
+        cell: (3, 3) matrix of lattice vectors.
+        cutoff: Neighbor cutoff distance.
+
+    Returns:
+        Tuple containing:
+            - coords_frac: Fractional coordinates of atoms.
+            - atom_cells: Cell indices for each atom.
+            - n_cells: Number of cells along each axis.
+            - cell_start: Starting index of each cell in cell_atoms.
+            - cell_atoms: Atom indices sorted by cell.
+    """
     inv_cell = np.linalg.inv(cell)
     coords_frac = (inv_cell @ coords.T).T % 1.0
 
@@ -195,7 +222,26 @@ def _build_nl_ortho_numba(  # noqa: PLR0912, C901
     use_neighbor_filter: bool,  # noqa: FBT001
     max_neighbors: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Build neighbor list for an orthogonal box using Numba."""
+    """Build neighbor list for an orthogonal box using Numba.
+
+    Args:
+        coords: Cartesian coordinates of atoms.
+        types: Atomic numbers of atoms.
+        box_size: Lengths of the simulation box.
+        atom_cells: Cell indices for each atom.
+        n_cells: Number of cells along each axis.
+        cell_start: Starting indices for cells.
+        cell_atoms: Atom indices sorted by cell.
+        cutoff_sq: Squared cutoff distance.
+        target_types: Atomic numbers to find neighbors for.
+        neighbor_types: Atomic numbers allowed as neighbors.
+        use_target_filter: Whether to filter by target type.
+        use_neighbor_filter: Whether to filter by neighbor type.
+        max_neighbors: Initial size of neighbor array.
+
+    Returns:
+        Tuple containing the fixed-size neighbor list array and counts array.
+    """
     n_atoms = len(coords)
     ny = n_cells[1]
     nz = n_cells[2]
@@ -267,7 +313,26 @@ def _build_nl_tri_numba(  # noqa: PLR0912, C901
     use_neighbor_filter: bool,  # noqa: FBT001
     max_neighbors: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Build neighbor list for a triclinic box using Numba."""
+    """Build neighbor list for a triclinic box using Numba.
+
+    Args:
+        coords_frac: Fractional coordinates of atoms.
+        types: Atomic numbers of atoms.
+        cell: Lattice vector matrix.
+        atom_cells: Cell indices for each atom.
+        n_cells: Number of cells along each axis.
+        cell_start: Starting indices for cells.
+        cell_atoms: Atom indices sorted by cell.
+        cutoff_sq: Squared cutoff distance.
+        target_types: Atomic numbers to find neighbors for.
+        neighbor_types: Atomic numbers allowed as neighbors.
+        use_target_filter: Whether to filter by target type.
+        use_neighbor_filter: Whether to filter by neighbor type.
+        max_neighbors: Initial size of neighbor array.
+
+    Returns:
+        Tuple containing the fixed-size neighbor list array and counts array.
+    """
     n_atoms = len(coords_frac)
     ny = n_cells[1]
     nz = n_cells[2]

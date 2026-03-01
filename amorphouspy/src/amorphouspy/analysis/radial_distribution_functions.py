@@ -79,8 +79,8 @@ def _compute_distances(structure: Atoms, r_max: float) -> tuple:
     infrastructure from amorphouspy.neighbors, reducing complexity to
     approximately O(N) for uniform density systems.
 
-    Returns arrays of distances, i-indices, and j-indices (array indices,
-    not real atom IDs) for all pairs within r_max.
+    Returns:
+        A tuple of (distances, i_indices, j_indices).
     """
     from amorphouspy.neighbors import (
         compute_cell_list_orthogonal,
@@ -182,7 +182,23 @@ def _compute_rdf_histograms(
     bin_edges: np.ndarray,
     shell_volumes: np.ndarray,
 ) -> tuple[dict[tuple[int, int], np.ndarray], dict[tuple[int, int], np.ndarray]]:
-    """Compute normalised g(r) and directed histograms for each type pair."""
+    """Compute normalised g(r) and directed histograms for each type pair.
+
+    Args:
+        unordered_pairs: List of canonical type pairs.
+        type_i: Array of types for the first atom in each pair.
+        type_j: Array of types for the second atom in each pair.
+        distances: Array of pairwise distances.
+        type_counts: Dictionary mapping types to their total counts.
+        volume: Volume of the simulation box.
+        bin_edges: Edges of the radial bins.
+        shell_volumes: Volume of each radial shell.
+
+    Returns:
+        Tuple containing:
+            - rdfs: Dictionary of normalized g(r) arrays.
+            - hist_directed: Dictionary of raw directed histograms.
+    """
     rdfs: dict[tuple[int, int], np.ndarray] = {}
     hist_directed: dict[tuple[int, int], np.ndarray] = {}
 
@@ -214,7 +230,16 @@ def _compute_cn_cumulative(
     hist_directed: dict[tuple[int, int], np.ndarray],
     type_counts: dict[int, int],
 ) -> dict[tuple[int, int], np.ndarray]:
-    """Compute cumulative coordination numbers from directed histograms."""
+    """Compute cumulative coordination numbers from directed histograms.
+
+    Args:
+        requested_ordered: List of ordered type pairs.
+        hist_directed: Dictionary of directed histograms.
+        type_counts: Dictionary of atom type counts.
+
+    Returns:
+        Dictionary mapping ordered pairs to cumulative coordination arrays.
+    """
     cn_cumulative: dict[tuple[int, int], np.ndarray] = {}
     for t1, t2 in requested_ordered:
         canonical = (min(t1, t2), max(t1, t2))
