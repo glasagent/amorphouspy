@@ -79,35 +79,35 @@ def compute_angles(
         ci = id_to_idx[central_id]
         center_coord = coords[ci]
 
-        # Resolve neighbor coordinates by real ID
-        nn_indices = [id_to_idx[nid] for nid in nn_ids]
+        # Resolve neighbor coordinates by real ID — shape (k, 3)
+        nn_indices = np.array([id_to_idx[nid] for nid in nn_ids], dtype=np.int32)
+        vecs = coords[nn_indices] - center_coord  # (k, 3)
 
-        for j_pos, j_idx in enumerate(nn_indices):
-            for k_idx in nn_indices[j_pos + 1 :]:
-                v1 = coords[j_idx] - center_coord
-                v2 = coords[k_idx] - center_coord
+        # Minimum-image correction — vectorized for all neighbor vectors at once
+        if is_orthogonal:
+            box = np.diag(cell)
+            vecs -= box * np.round(vecs / box)
+        else:
+            inv_cell = np.linalg.inv(cell)
+            df = (inv_cell @ vecs.T).T
+            df -= np.round(df)
+            vecs = (cell.T @ df.T).T
 
-                # Minimum-image correction
-                if is_orthogonal:
-                    box = np.diag(cell)
-                    v1 -= box * np.round(v1 / box)
-                    v2 -= box * np.round(v2 / box)
-                else:
-                    inv_cell = np.linalg.inv(cell)
-                    df1 = inv_cell @ v1
-                    df1 -= np.round(df1)
-                    v1 = cell.T @ df1
-                    df2 = inv_cell @ v2
-                    df2 -= np.round(df2)
-                    v2 = cell.T @ df2
+        # Normalise all vectors at once
+        norms = np.linalg.norm(vecs, axis=1)  # (k,)
+        valid = norms > 0
+        if valid.sum() < MIN_NEIGHBORS_FOR_ANGLE:
+            continue
+        vecs = vecs[valid]
+        norms = norms[valid]
+        unit_vecs = vecs / norms[:, np.newaxis]  # (k, 3)
 
-                norm_v1 = np.linalg.norm(v1)
-                norm_v2 = np.linalg.norm(v2)
-                if norm_v1 == 0 or norm_v2 == 0:
-                    continue
-
-                cos_theta = np.clip(np.dot(v1, v2) / (norm_v1 * norm_v2), -1.0, 1.0)
-                angles.append(np.degrees(np.arccos(cos_theta)))
+        # Compute all unique pair cosines via matrix multiply: (k, k)
+        # Upper triangle gives each unique i<j pair
+        cos_mat = np.clip(unit_vecs @ unit_vecs.T, -1.0, 1.0)
+        i_idx, j_idx = np.triu_indices(len(unit_vecs), k=1)
+        cos_angles = cos_mat[i_idx, j_idx]
+        angles.extend(np.degrees(np.arccos(cos_angles)).tolist())
 
     angle_hist, bin_edges = np.histogram(
         angles,
