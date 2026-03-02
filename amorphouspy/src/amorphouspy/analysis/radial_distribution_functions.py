@@ -33,9 +33,9 @@ def compute_coordination(
         neighbor_types: Valid neighbor atomic numbers. None means all types.
 
     Returns:
-        Tuple containing:
-            - coordination number distribution (dict): coordination number → count
-            - per-atom coordination numbers (dict): atom_id → coordination number
+        A tuple containing:
+            coordination_distribution: Mapping from coordination number to count.
+            per_atom_coordination: Mapping from atom ID to coordination number.
 
     Example:
         >>> structure = read('glass.xyz')
@@ -75,6 +75,10 @@ def _compute_distances(structure: Atoms, r_max: float) -> tuple:
     Replaces the O(N²) all-pairs Numba kernel with the cell-list
     infrastructure from amorphouspy.neighbors, reducing complexity to
     approximately O(N) for uniform density systems.
+
+    Args:
+        structure: The atomic structure.
+        r_max: Maximum distance for pair collection.
 
     Returns:
         A tuple of (distances, i_indices, j_indices).
@@ -258,17 +262,14 @@ def compute_rdf(
         r_max:      Maximum distance in Å (default 10.0).
         n_bins:     Number of radial bins (default 500).
         type_pairs: List of (atomic_number_1, atomic_number_2) pairs.
-                    None → all unique unordered combinations of present types
+                    None -> all unique unordered combinations of present types
                     plus all same-type pairs.
 
     Returns:
-        r (np.ndarray):
-            Radial bin centres in Å, shape (n_bins,).
-        rdfs (dict[(int,int), np.ndarray]):
-            Normalised g(r) for each *unordered* type pair, shape (n_bins,).
-        cn_cumulative (dict[(int,int), np.ndarray]):
-            Mean number of neighbours of the *second* type within radius r
-            around an atom of the *first* type, shape (n_bins,).
+        r: Radial bin centres in Å, shape (n_bins,).
+        rdfs: Normalised g(r) for each type pair, shape (n_bins,).
+        cn_cumulative: Mean number of neighbours of the second type within radius r
+            around an atom of the first type, shape (n_bins,).
 
     Raises:
         ValueError: If r_max exceeds half the smallest perpendicular cell height.
@@ -302,7 +303,7 @@ def compute_rdf(
             f"breaks down beyond this limit, producing incorrect RDF and CN "
             f"values. Reduce r_max or use a larger simulation box.\n"
             f"Perpendicular heights: {heights[0]:.4f}, {heights[1]:.4f}, "
-            f"{heights[2]:.4f} Å  →  limits: {heights[0] / 2:.4f}, "
+            f"{heights[2]:.4f} Å  ->  limits: {heights[0] / 2:.4f}, "
             f"{heights[1] / 2:.4f}, {heights[2] / 2:.4f} Å"
         )
         raise ValueError(msg)

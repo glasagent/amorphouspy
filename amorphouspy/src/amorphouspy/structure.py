@@ -791,6 +791,17 @@ def get_box_from_density(
     """Calculate the cubic box length in angstroms needed for a given composition.
 
     Now supports both n_molecules and target_atoms input modes.
+
+    Args:
+        composition: The composition string.
+        n_molecules: Total number of molecules.
+        target_atoms: Target total number of atoms.
+        mode: Composition mode ("molar" or "weight"). Defaults to "molar".
+        density: Optional density in g/cm^3. If None, calculated from model.
+        stoichiometry: Optional pre-calculated stoichiometry dictionary.
+
+    Returns:
+        The side length of the cubic box in Angstroms.
     """
     validate_target_mode(n_molecules, target_atoms)
 
