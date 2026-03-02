@@ -41,8 +41,8 @@ def compute_angles(
 
     Returns:
         A tuple containing:
-            - bin_centers: Bin centers (degrees).
-            - angle_hist: Normalized angle histogram.
+            bin_centers: Bin centers (degrees).
+            angle_hist: Normalized angle histogram.
 
     Example:
         >>> bins, hist = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)

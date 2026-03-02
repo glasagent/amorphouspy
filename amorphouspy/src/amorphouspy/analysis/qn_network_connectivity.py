@@ -37,8 +37,8 @@ def compute_qn(
 
     Returns:
         A tuple containing:
-            - dict[int, int]: Total Qn distribution
-            - dict[int, dict[int, int]]: Partial Qn per former type
+            total_qn: Total Qn distribution (mapping from n to count).
+            partial_qn: Partial Qn (mapping from former type to Qn distribution).
 
     Example:
         >>> structure = read('glass.xyz')

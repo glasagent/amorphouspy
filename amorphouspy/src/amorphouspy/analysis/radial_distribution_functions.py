@@ -4,6 +4,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 """
 
+import math
 from itertools import combinations_with_replacement
 
 import numpy as np
@@ -271,10 +272,12 @@ def compute_rdf(
         cn_cumulative: Mean number of neighbours of the second type within radius r
             around an atom of the first type, shape (n_bins,).
 
-    Raises:
-        ValueError: If r_max exceeds half the smallest perpendicular cell height.
-
     Notes:
+        - If r_max exceeds half the smallest perpendicular cell height, it is
+          automatically reduced to the largest integer value that does not
+          exceed that limit, and a warning message is printed.
+        - If the adjusted r_max would be zero or negative (cell too small),
+          a ValueError is raised instead.
         - This function operates on array indices internally (not atom IDs)
           because it only needs type information and distances, not ID lookup.
         - Periodic boundaries are handled via the minimum-image convention in
@@ -297,16 +300,19 @@ def compute_rdf(
     heights = cell_perpendicular_heights(cell)
     r_max_allowed = float(heights.min()) / 2.0
     if r_max > r_max_allowed:
-        msg = (
-            f"r_max={r_max:.4f} Å exceeds half the smallest perpendicular cell "
-            f"height ({r_max_allowed:.4f} Å). The minimum-image convention "
-            f"breaks down beyond this limit, producing incorrect RDF and CN "
-            f"values. Reduce r_max or use a larger simulation box.\n"
-            f"Perpendicular heights: {heights[0]:.4f}, {heights[1]:.4f}, "
-            f"{heights[2]:.4f} Å  ->  limits: {heights[0] / 2:.4f}, "
-            f"{heights[1] / 2:.4f}, {heights[2] / 2:.4f} Å"
+        r_max_adjusted = float(math.floor(r_max_allowed))
+        if r_max_adjusted <= 0.0:
+            raise ValueError(
+                f"r_max_allowed={r_max_allowed:.4f} Å is less than 1 Å; no valid "
+                "integer cutoff exists. Use a larger simulation box."
+            )
+        print(
+            f"Warning: r_max={r_max:.4f} Å exceeds half the smallest perpendicular "
+            f"cell height ({r_max_allowed:.4f} Å). r_max has been automatically "
+            f"adjusted to {r_max_adjusted:.1f} Å (largest integer not exceeding "
+            f"the limit)."
         )
-        raise ValueError(msg)
+        r_max = r_max_adjusted
 
     if type_pairs is None:
         unordered_pairs = [(int(a), int(b)) for a, b in combinations_with_replacement(unique_types, 2)]

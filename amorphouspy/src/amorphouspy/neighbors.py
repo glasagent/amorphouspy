@@ -665,7 +665,7 @@ def _extract_atom_ids(atoms: Atoms | tuple) -> np.ndarray:
 # ============================================================================
 
 
-def get_neighbors(  # noqa: C901, PLR0912, PLR0915
+def get_neighbors(
     atoms: Atoms | tuple[np.ndarray, np.ndarray, np.ndarray],
     cutoff: float | dict[tuple[int, int], float],
     target_types: list[int] | None = None,
@@ -774,16 +774,16 @@ def get_neighbors(  # noqa: C901, PLR0912, PLR0915
             coords, box_size, max_cutoff
         )
         if use_numba and NUMBA_AVAILABLE:
-            kwargs: dict[str, Any] = dict(
-                coords=coords, types=types, box_size=box_size,
-                atom_cells=atom_cells, n_cells=n_cells,
-                cell_start=cell_start, cell_atoms=cell_atoms,
-                cutoff_sq=cutoff_sq, target_types=target_arr,
-                neighbor_types=neigh_arr, use_target_filter=use_tf,
-                use_neighbor_filter=use_nf, max_neighbors=_initial_max_neighbors,
-                pair_types=pair_types, pair_cutoffs_sq=pair_cutoffs_sq,
-                use_pair_cutoffs=use_pair_cutoffs, return_vectors=return_vectors,
-            )
+            kwargs = {
+                "coords": coords, "types": types, "box_size": box_size,
+                "atom_cells": atom_cells, "n_cells": n_cells,
+                "cell_start": cell_start, "cell_atoms": cell_atoms,
+                "cutoff_sq": cutoff_sq, "target_types": target_arr,
+                "neighbor_types": neigh_arr, "use_target_filter": use_tf,
+                "use_neighbor_filter": use_nf, "max_neighbors": _initial_max_neighbors,
+                "pair_types": pair_types, "pair_cutoffs_sq": pair_cutoffs_sq,
+                "use_pair_cutoffs": use_pair_cutoffs, "return_vectors": return_vectors,
+            }
             nl, nc, vl = _build_nl_ortho_numba(**kwargs)
             idx_neighbors, vec_neighbors = _numba_to_list(
                 nl, nc, vl, n_atoms, _initial_max_neighbors,
@@ -804,16 +804,16 @@ def get_neighbors(  # noqa: C901, PLR0912, PLR0915
             coords, cell, max_cutoff
         )
         if use_numba and NUMBA_AVAILABLE:
-            kwargs = dict(
-                coords_frac=coords_frac, types=types, cell=cell,
-                atom_cells=atom_cells, n_cells=n_cells,
-                cell_start=cell_start, cell_atoms=cell_atoms,
-                cutoff_sq=cutoff_sq, target_types=target_arr,
-                neighbor_types=neigh_arr, use_target_filter=use_tf,
-                use_neighbor_filter=use_nf, max_neighbors=_initial_max_neighbors,
-                pair_types=pair_types, pair_cutoffs_sq=pair_cutoffs_sq,
-                use_pair_cutoffs=use_pair_cutoffs, return_vectors=return_vectors,
-            )
+            kwargs = {
+                "coords_frac": coords_frac, "types": types, "cell": cell,
+                "atom_cells": atom_cells, "n_cells": n_cells,
+                "cell_start": cell_start, "cell_atoms": cell_atoms,
+                "cutoff_sq": cutoff_sq, "target_types": target_arr,
+                "neighbor_types": neigh_arr, "use_target_filter": use_tf,
+                "use_neighbor_filter": use_nf, "max_neighbors": _initial_max_neighbors,
+                "pair_types": pair_types, "pair_cutoffs_sq": pair_cutoffs_sq,
+                "use_pair_cutoffs": use_pair_cutoffs, "return_vectors": return_vectors,
+            }
             nl, nc, vl = _build_nl_tri_numba(**kwargs)
             idx_neighbors, vec_neighbors = _numba_to_list(
                 nl, nc, vl, n_atoms, _initial_max_neighbors,
