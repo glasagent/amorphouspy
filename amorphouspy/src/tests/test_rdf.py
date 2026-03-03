@@ -14,7 +14,6 @@ from amorphouspy.analysis.radial_distribution_functions import (
 
 from . import DATA_DIR
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -66,7 +65,7 @@ def test_compute_distances_triclinic() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_histogram_inputs(same_type: bool) -> dict:
+def _make_histogram_inputs(same_type: bool) -> dict:  # noqa: FBT001
     """Build minimal inputs for _compute_rdf_histograms."""
     bin_edges = np.linspace(0, 5, 51)
     r = 0.5 * (bin_edges[1:] + bin_edges[:-1])
@@ -181,7 +180,7 @@ def test_compute_rdf_returns_correct_shapes() -> None:
         assert arr.shape == (100,)
 
 
-def test_compute_rdf_rmax_clamping(capsys) -> None:
+def test_compute_rdf_rmax_clamping(capsys: pytest.CaptureFixture[str]) -> None:
     """r_max larger than half the box height is clamped with a printed warning."""
     atoms = _simple_sio2_atoms()  # 10 Å box → max allowed = 5 Å
     r, rdfs, cn = compute_rdf(atoms, r_max=8.0, n_bins=50)

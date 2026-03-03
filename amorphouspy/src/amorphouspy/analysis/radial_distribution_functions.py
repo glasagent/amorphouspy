@@ -70,7 +70,7 @@ def compute_coordination(
 
 
 
-def _compute_distances(structure: Atoms, r_max: float) -> tuple:
+def _compute_distances(structure: Atoms, r_max: float) -> tuple:  # noqa: C901, PLR0912, PLR0915
     """Collect all pairwise distances up to r_max using a cell list.
 
     Replaces the O(N²) all-pairs Numba kernel with the cell-list
@@ -302,11 +302,12 @@ def compute_rdf(
     if r_max > r_max_allowed:
         r_max_adjusted = float(math.floor(r_max_allowed))
         if r_max_adjusted <= 0.0:
-            raise ValueError(
+            msg = (
                 f"r_max_allowed={r_max_allowed:.4f} Å is less than 1 Å; no valid "
                 "integer cutoff exists. Use a larger simulation box."
             )
-        print(
+            raise ValueError(msg)
+        print(  # noqa: T201
             f"Warning: r_max={r_max:.4f} Å exceeds half the smallest perpendicular "
             f"cell height ({r_max_allowed:.4f} Å). r_max has been automatically "
             f"adjusted to {r_max_adjusted:.1f} Å (largest integer not exceeding "

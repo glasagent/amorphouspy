@@ -14,7 +14,6 @@ from amorphouspy.neighbors import (
     get_neighbors,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -243,7 +242,7 @@ def test_get_neighbors_return_vectors_norms_match_distances() -> None:
     """Bond vector norms match the scalar distances."""
     atoms = _ortho_atoms()
     result = get_neighbors(atoms, cutoff=1.5, return_vectors=True)
-    for cid, nn_ids, vecs in result:
+    for _cid, nn_ids, vecs in result:
         if nn_ids:
             norms = np.linalg.norm(vecs, axis=1)
             assert all(n <= 1.5 + 1e-6 for n in norms)
@@ -262,7 +261,7 @@ def test_get_neighbors_numpy_fallback_with_vectors() -> None:
     """NumPy fallback with return_vectors gives consistent norms."""
     atoms = _ortho_atoms()
     result = get_neighbors(atoms, cutoff=1.5, return_vectors=True, use_numba=False)
-    for cid, nn_ids, vecs in result:
+    for _cid, nn_ids, vecs in result:
         if nn_ids:
             norms = np.linalg.norm(vecs, axis=1)
             assert all(n <= 1.5 + 1e-6 for n in norms)
@@ -286,7 +285,7 @@ def test_get_neighbors_triclinic_finds_neighbor() -> None:
     """Neighbor search works for a triclinic (sheared) cell."""
     atoms = _triclinic_atoms()
     result = get_neighbors(atoms, cutoff=1.5)
-    nl = {cid: nn for cid, nn in result}
+    nl = dict(result)
     # Two atoms are ~1 Å apart; each should find the other
     assert len(nl[1]) >= 1
     assert len(nl[2]) >= 1

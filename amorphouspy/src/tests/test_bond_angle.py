@@ -6,7 +6,6 @@ from ase import Atoms
 
 from amorphouspy.analysis.bond_angle_distribution import compute_angles
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -32,7 +31,7 @@ def _atoms_with_known_angle(angle_deg: float) -> Atoms:
 
 
 def test_compute_angles_90deg_peak() -> None:
-    """90° geometry → histogram peak in the 85–95° range."""
+    """90° geometry → histogram peak in the 85-95° range."""
     atoms = _atoms_with_known_angle(90.0)
     bin_centers, hist = compute_angles(atoms, center_type=14, neighbor_type=8, cutoff=2.0)
     peak_angle = bin_centers[np.argmax(hist)]
@@ -40,11 +39,11 @@ def test_compute_angles_90deg_peak() -> None:
 
 
 def test_compute_angles_180deg_peak() -> None:
-    """180° (linear) geometry → histogram peak in the 175–180° range."""
+    """180° (linear) geometry → histogram peak in the 175-180° range."""
     # Si at center, two O along ±x axis
     center = np.array([5.0, 5.0, 5.0])
     r = 1.6
-    coords = np.array([center, center + [r, 0, 0], center + [-r, 0, 0]])
+    coords = np.array([center, center + [r, 0, 0], center + [-r, 0, 0]])  # noqa: RUF005
     types = np.array([14, 8, 8])
     cell = np.diag([10.0, 10.0, 10.0])
     atoms = Atoms(numbers=types, positions=coords, cell=cell, pbc=True)
@@ -90,7 +89,7 @@ def test_compute_angles_single_neighbor_skipped() -> None:
     """Atoms with only one neighbor do not contribute angles."""
     # Only one O near the Si center
     center = np.array([5.0, 5.0, 5.0])
-    coords = np.array([center, center + [1.6, 0, 0]])
+    coords = np.array([center, center + [1.6, 0, 0]])  # noqa: RUF005
     types = np.array([14, 8])
     cell = np.diag([10.0, 10.0, 10.0])
     atoms = Atoms(numbers=types, positions=coords, cell=cell, pbc=True)

@@ -492,7 +492,7 @@ def _numba_to_list(
     max_neighbors: int,
     build_fn: Callable,
     build_kwargs: dict[str, Any],
-    return_vectors: bool,
+    return_vectors: bool,  # noqa: FBT001
 ) -> tuple[list[list[int]], list[np.ndarray]]:
     """Convert Numba output arrays to Python lists, retrying on buffer overflow."""
     overflow = int(neighbor_counts.max()) if n_atoms > 0 else 0
@@ -531,9 +531,9 @@ def _dist_vec_ortho(coord_i: np.ndarray, coords_j: np.ndarray, box_size: np.ndar
 
 def _dist_vec_tri(frac_i: np.ndarray, frac_j: np.ndarray, cell: np.ndarray) -> tuple:
     """Vectorised minimum-image displacements and squared distances, triclinic box."""
-    df = frac_i - frac_j
-    df -= np.round(df)
-    rij = df @ cell
+    delta_frac = frac_i - frac_j
+    delta_frac -= np.round(delta_frac)
+    rij = delta_frac @ cell
     return np.einsum("ij,ij->i", rij, rij), rij
 
 
@@ -558,14 +558,14 @@ def _numpy_fallback(
     cutoff_sq: float,
     pair_types: np.ndarray,
     pair_cutoffs_sq: np.ndarray,
-    use_pair_cutoffs: bool,
-    use_tf: bool,
-    use_nf: bool,
+    use_pair_cutoffs: bool,  # noqa: FBT001
+    use_tf: bool,  # noqa: FBT001
+    use_nf: bool,  # noqa: FBT001
     target_types: list[int] | None,
     neighbor_types: list[int] | None,
     n_atoms: int,
-    return_vectors: bool,
-    is_orthogonal: bool,
+    return_vectors: bool,  # noqa: FBT001
+    is_orthogonal: bool,  # noqa: FBT001
 ) -> tuple[list[list[int]], list[np.ndarray]]:
     """Shared NumPy fallback for both orthogonal and triclinic boxes."""
     cells: defaultdict[tuple, list[int]] = defaultdict(list)
@@ -648,7 +648,7 @@ def get_neighbors(
     cutoff: float | dict[tuple[int, int], float],
     target_types: list[int] | None = None,
     neighbor_types: list[int] | None = None,
-    return_vectors: bool = False,
+    return_vectors: bool = False,  # noqa: FBT001
     use_numba: bool | None = None,
 ) -> list[tuple]:
     """Find all neighbors within cutoff for each atom.

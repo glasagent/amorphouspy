@@ -57,6 +57,12 @@ ignore   = [
 ]
 fixable  = ["ALL"]           # allow --fix to touch everything
 
+[tool.ruff.lint.per-file-ignores]
+"src/tests/**" = [
+  "PLR2004",  # Magic values are intentional in test assertions
+  "ANN",      # Type annotations not required in tests
+]
+
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
