@@ -54,20 +54,15 @@ def compute_coordination(
     # avoiding a per-atom np.where search inside the comprehension.
     types = structure.get_atomic_numbers()
     raw_ids = structure.arrays["id"] if "id" in structure.arrays else np.arange(1, len(structure) + 1)
-    target_id_set: set[int] = {
-        int(aid) for aid, t in zip(raw_ids, types, strict=False) if int(t) == target_type
-    }
+    target_id_set: set[int] = {int(aid) for aid, t in zip(raw_ids, types, strict=False) if int(t) == target_type}
 
     # coord_numbers is keyed by real atom ID (matches OVITO IDs)
     coord_numbers = {
-        central_id: len(nn_ids)
-        for central_id, nn_ids in neighbors
-        if len(nn_ids) > 0 or central_id in target_id_set
+        central_id: len(nn_ids) for central_id, nn_ids in neighbors if len(nn_ids) > 0 or central_id in target_id_set
     }
 
     coord_numbers_distribution = count_distribution(coord_numbers)
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
-
 
 
 def _compute_distances(structure: Atoms, r_max: float) -> tuple:  # noqa: C901, PLR0912, PLR0915
@@ -99,9 +94,7 @@ def _compute_distances(structure: Atoms, r_max: float) -> tuple:  # noqa: C901, 
 
     if is_orthogonal:
         box_size = np.diag(cell)
-        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(
-            coords, box_size, r_max
-        )
+        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, r_max)
 
         for i in range(n):
             ci = atom_cells[i]
@@ -127,9 +120,7 @@ def _compute_distances(structure: Atoms, r_max: float) -> tuple:  # noqa: C901, 
                             i_list.extend([i] * int(mask.sum()))
                             j_list.extend(js[mask].tolist())
     else:
-        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(
-            coords, cell, r_max
-        )
+        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, r_max)
 
         for i in range(n):
             ci = atom_cells[i]

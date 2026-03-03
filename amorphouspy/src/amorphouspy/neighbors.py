@@ -181,9 +181,7 @@ def compute_cell_list_orthogonal(
     atom_cells = np.floor(coords * inv_cell_size).astype(np.int64) % n_cells
     n_total = int(n_cells[0]) * int(n_cells[1]) * int(n_cells[2])
     flat_ids = (
-        atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2])
-        + atom_cells[:, 1] * int(n_cells[2])
-        + atom_cells[:, 2]
+        atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2]) + atom_cells[:, 1] * int(n_cells[2]) + atom_cells[:, 2]
     ).astype(np.int32)
     order = np.argsort(flat_ids, kind="stable")
     sorted_flat = flat_ids[order]
@@ -215,9 +213,7 @@ def compute_cell_list_triclinic(
     n_total = int(n_cells[0]) * int(n_cells[1]) * int(n_cells[2])
     atom_cells = (np.floor(coords_frac * n_cells).astype(np.int64) % n_cells).astype(np.int32)
     flat_ids = (
-        atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2])
-        + atom_cells[:, 1] * int(n_cells[2])
-        + atom_cells[:, 2]
+        atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2]) + atom_cells[:, 1] * int(n_cells[2]) + atom_cells[:, 2]
     ).astype(np.int32)
     order = np.argsort(flat_ids, kind="stable")
     sorted_flat = flat_ids[order]
@@ -359,8 +355,7 @@ def _build_nl_ortho_numba(  # noqa: PLR0912, C901
                                 continue
 
                         rc_sq = (
-                            _lookup_cutoff_sq(ti, tj, pair_types, pair_cutoffs_sq)
-                            if use_pair_cutoffs else cutoff_sq
+                            _lookup_cutoff_sq(ti, tj, pair_types, pair_cutoffs_sq) if use_pair_cutoffs else cutoff_sq
                         )
 
                         dx, dy, dz, dist_sq = _dist_and_vec_ortho(coords[i], coords[j], box_size)
@@ -459,8 +454,7 @@ def _build_nl_tri_numba(  # noqa: PLR0912, C901
                                 continue
 
                         rc_sq = (
-                            _lookup_cutoff_sq(ti, tj, pair_types, pair_cutoffs_sq)
-                            if use_pair_cutoffs else cutoff_sq
+                            _lookup_cutoff_sq(ti, tj, pair_types, pair_cutoffs_sq) if use_pair_cutoffs else cutoff_sq
                         )
 
                         dx, dy, dz, dist_sq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
@@ -510,8 +504,7 @@ def _numba_to_list(
         c = int(neighbor_counts[i])
         idx_neighbors.append(neighbor_list[i, :c].tolist())
         vec_neighbors.append(
-            vector_list[i, :c].astype(np.float64) if return_vectors
-            else np.empty((0, 3), dtype=np.float64)
+            vector_list[i, :c].astype(np.float64) if return_vectors else np.empty((0, 3), dtype=np.float64)
         )
 
     return idx_neighbors, vec_neighbors
@@ -748,64 +741,112 @@ def get_neighbors(
     # ------------------------------------------------------------------
     if is_orthogonal:
         box_size = np.diag(cell)
-        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(
-            coords, box_size, max_cutoff
-        )
+        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, max_cutoff)
         if use_numba and NUMBA_AVAILABLE:
             kwargs = {
-                "coords": coords, "types": types, "box_size": box_size,
-                "atom_cells": atom_cells, "n_cells": n_cells,
-                "cell_start": cell_start, "cell_atoms": cell_atoms,
-                "cutoff_sq": cutoff_sq, "target_types": target_arr,
-                "neighbor_types": neigh_arr, "use_target_filter": use_tf,
-                "use_neighbor_filter": use_nf, "max_neighbors": _initial_max_neighbors,
-                "pair_types": pair_types, "pair_cutoffs_sq": pair_cutoffs_sq,
-                "use_pair_cutoffs": use_pair_cutoffs, "return_vectors": return_vectors,
+                "coords": coords,
+                "types": types,
+                "box_size": box_size,
+                "atom_cells": atom_cells,
+                "n_cells": n_cells,
+                "cell_start": cell_start,
+                "cell_atoms": cell_atoms,
+                "cutoff_sq": cutoff_sq,
+                "target_types": target_arr,
+                "neighbor_types": neigh_arr,
+                "use_target_filter": use_tf,
+                "use_neighbor_filter": use_nf,
+                "max_neighbors": _initial_max_neighbors,
+                "pair_types": pair_types,
+                "pair_cutoffs_sq": pair_cutoffs_sq,
+                "use_pair_cutoffs": use_pair_cutoffs,
+                "return_vectors": return_vectors,
             }
             nl, nc, vl = _build_nl_ortho_numba(**kwargs)
             idx_neighbors, vec_neighbors = _numba_to_list(
-                nl, nc, vl, n_atoms, _initial_max_neighbors,
-                _build_nl_ortho_numba, kwargs, return_vectors,
+                nl,
+                nc,
+                vl,
+                n_atoms,
+                _initial_max_neighbors,
+                _build_nl_ortho_numba,
+                kwargs,
+                return_vectors,
             )
         else:
             idx_neighbors, vec_neighbors = _numpy_fallback(
-                coords=coords, coords_frac=None, types=types, cell=cell,
-                box_size=box_size, atom_cells=atom_cells, n_cells=n_cells,
-                cutoff_sq=cutoff_sq, pair_types=pair_types,
-                pair_cutoffs_sq=pair_cutoffs_sq, use_pair_cutoffs=use_pair_cutoffs,
-                use_tf=use_tf, use_nf=use_nf, target_types=target_types,
-                neighbor_types=neighbor_types, n_atoms=n_atoms,
-                return_vectors=return_vectors, is_orthogonal=True,
+                coords=coords,
+                coords_frac=None,
+                types=types,
+                cell=cell,
+                box_size=box_size,
+                atom_cells=atom_cells,
+                n_cells=n_cells,
+                cutoff_sq=cutoff_sq,
+                pair_types=pair_types,
+                pair_cutoffs_sq=pair_cutoffs_sq,
+                use_pair_cutoffs=use_pair_cutoffs,
+                use_tf=use_tf,
+                use_nf=use_nf,
+                target_types=target_types,
+                neighbor_types=neighbor_types,
+                n_atoms=n_atoms,
+                return_vectors=return_vectors,
+                is_orthogonal=True,
             )
     else:
-        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(
-            coords, cell, max_cutoff
-        )
+        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, max_cutoff)
         if use_numba and NUMBA_AVAILABLE:
             kwargs = {
-                "coords_frac": coords_frac, "types": types, "cell": cell,
-                "atom_cells": atom_cells, "n_cells": n_cells,
-                "cell_start": cell_start, "cell_atoms": cell_atoms,
-                "cutoff_sq": cutoff_sq, "target_types": target_arr,
-                "neighbor_types": neigh_arr, "use_target_filter": use_tf,
-                "use_neighbor_filter": use_nf, "max_neighbors": _initial_max_neighbors,
-                "pair_types": pair_types, "pair_cutoffs_sq": pair_cutoffs_sq,
-                "use_pair_cutoffs": use_pair_cutoffs, "return_vectors": return_vectors,
+                "coords_frac": coords_frac,
+                "types": types,
+                "cell": cell,
+                "atom_cells": atom_cells,
+                "n_cells": n_cells,
+                "cell_start": cell_start,
+                "cell_atoms": cell_atoms,
+                "cutoff_sq": cutoff_sq,
+                "target_types": target_arr,
+                "neighbor_types": neigh_arr,
+                "use_target_filter": use_tf,
+                "use_neighbor_filter": use_nf,
+                "max_neighbors": _initial_max_neighbors,
+                "pair_types": pair_types,
+                "pair_cutoffs_sq": pair_cutoffs_sq,
+                "use_pair_cutoffs": use_pair_cutoffs,
+                "return_vectors": return_vectors,
             }
             nl, nc, vl = _build_nl_tri_numba(**kwargs)
             idx_neighbors, vec_neighbors = _numba_to_list(
-                nl, nc, vl, n_atoms, _initial_max_neighbors,
-                _build_nl_tri_numba, kwargs, return_vectors,
+                nl,
+                nc,
+                vl,
+                n_atoms,
+                _initial_max_neighbors,
+                _build_nl_tri_numba,
+                kwargs,
+                return_vectors,
             )
         else:
             idx_neighbors, vec_neighbors = _numpy_fallback(
-                coords=coords, coords_frac=coords_frac, types=types, cell=cell,
-                box_size=None, atom_cells=atom_cells, n_cells=n_cells,
-                cutoff_sq=cutoff_sq, pair_types=pair_types,
-                pair_cutoffs_sq=pair_cutoffs_sq, use_pair_cutoffs=use_pair_cutoffs,
-                use_tf=use_tf, use_nf=use_nf, target_types=target_types,
-                neighbor_types=neighbor_types, n_atoms=n_atoms,
-                return_vectors=return_vectors, is_orthogonal=False,
+                coords=coords,
+                coords_frac=coords_frac,
+                types=types,
+                cell=cell,
+                box_size=None,
+                atom_cells=atom_cells,
+                n_cells=n_cells,
+                cutoff_sq=cutoff_sq,
+                pair_types=pair_types,
+                pair_cutoffs_sq=pair_cutoffs_sq,
+                use_pair_cutoffs=use_pair_cutoffs,
+                use_tf=use_tf,
+                use_nf=use_nf,
+                target_types=target_types,
+                neighbor_types=neighbor_types,
+                n_atoms=n_atoms,
+                return_vectors=return_vectors,
+                is_orthogonal=False,
             )
 
     # ------------------------------------------------------------------
@@ -813,13 +854,9 @@ def get_neighbors(
     # ------------------------------------------------------------------
     if return_vectors:
         return [
-            (int(atom_ids[i]), [int(atom_ids[j]) for j in idx_neighbors[i]], vec_neighbors[i])
-            for i in range(n_atoms)
+            (int(atom_ids[i]), [int(atom_ids[j]) for j in idx_neighbors[i]], vec_neighbors[i]) for i in range(n_atoms)
         ]
-    return [
-        (int(atom_ids[i]), [int(atom_ids[j]) for j in idx_neighbors[i]])
-        for i in range(n_atoms)
-    ]
+    return [(int(atom_ids[i]), [int(atom_ids[j]) for j in idx_neighbors[i]]) for i in range(n_atoms)]
 
 
 # ============================================================================
