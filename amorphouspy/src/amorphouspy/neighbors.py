@@ -641,7 +641,8 @@ def get_neighbors(
     cutoff: float | dict[tuple[int, int], float],
     target_types: list[int] | None = None,
     neighbor_types: list[int] | None = None,
-    return_vectors: bool = False,  # noqa: FBT001
+    *,
+    return_vectors: bool = False,
     use_numba: bool | None = None,
 ) -> list[tuple]:
     """Find all neighbors within cutoff for each atom.
