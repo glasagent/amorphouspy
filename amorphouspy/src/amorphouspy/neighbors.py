@@ -275,28 +275,6 @@ def _dist_and_vec_tri(
     return dx, dy, dz, dx * dx + dy * dy + dz * dz
 
 
-# Scalar-only aliases preserved for backward compatibility with the RDF module
-@jit(nopython=True, fastmath=True, cache=True)
-def _dist_sq_ortho(ci: np.ndarray, cj: np.ndarray, box: np.ndarray) -> float:
-    """Minimum-image squared distance, orthogonal box."""
-    dx = ci[0] - cj[0];  dx -= box[0] * round(dx / box[0])
-    dy = ci[1] - cj[1];  dy -= box[1] * round(dy / box[1])
-    dz = ci[2] - cj[2];  dz -= box[2] * round(dz / box[2])
-    return dx * dx + dy * dy + dz * dz
-
-
-@jit(nopython=True, fastmath=True, cache=True)
-def _dist_sq_tri(fi: np.ndarray, fj: np.ndarray, cell: np.ndarray) -> float:
-    """Minimum-image squared distance, triclinic box."""
-    dfx = fi[0] - fj[0];  dfx -= round(dfx)
-    dfy = fi[1] - fj[1];  dfy -= round(dfy)
-    dfz = fi[2] - fj[2];  dfz -= round(dfz)
-    dx = dfx * cell[0, 0] + dfy * cell[1, 0] + dfz * cell[2, 0]
-    dy = dfx * cell[0, 1] + dfy * cell[1, 1] + dfz * cell[2, 1]
-    dz = dfx * cell[0, 2] + dfy * cell[1, 2] + dfz * cell[2, 2]
-    return dx * dx + dy * dy + dz * dz
-
-
 # ============================================================================
 # Numba kernel — orthogonal box
 # ============================================================================
