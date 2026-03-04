@@ -149,7 +149,7 @@ def viscosity_simulation(
         tmp_working_directory: Temporary directory.
 
     Returns:
-        A dictionary containing the parsed `result` section from LAMMPS output.
+        A dictionary containing the parsed generic results from LAMMPS output.
 
     Raises:
         KeyError: If `"generic"` key is missing from the parsed output.
@@ -299,7 +299,7 @@ def auto_cutoff(  # noqa: C901, PLR0912, PLR0915
         return_index: If True, also return index of the cutoff point.
 
     Returns:
-        Detected cutoff time, and optionally the cutoff index.
+        Detected cutoff time, and optionally the cutoff index if return_index is True.
 
     Raises:
         ValueError: If input validation fails or no valid cutoff is detected.

@@ -56,9 +56,8 @@ def compute_guttmann_rings(
 
     Returns:
         A tuple containing:
-            - hist (dict[int, int]): Dictionary mapping ring size to frequency (number of occurrences).
-            - mean_ring_size (float): Mean ring size computed as sum over (s / 2) * p(s),
-              where s is ring size and p(s) is its probability.
+            hist: Mapping from ring size to frequency.
+            mean_ring_size: Mean ring size.
 
     Example:
         >>> structure = read('glass.xyz')

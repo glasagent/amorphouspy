@@ -34,10 +34,10 @@ def get_properties_for_structure_analysis(
 
     Returns:
         Tuple containing:
-            - ids (np.ndarray): Array of atom IDs.
-            - types (np.ndarray): Array of atom types.
-            - coords (np.ndarray): Wrapped coordinates.
-            - cell (np.ndarray): Dimensions of the simulation box.
+            - ids: Array of atom IDs.
+            - types: Array of atom types.
+            - coords: Wrapped coordinates.
+            - cell: Dimensions of the simulation box.
 
     Example:
         >>> ids, types, coords, box = get_properties_for_structure_analysis(atoms)

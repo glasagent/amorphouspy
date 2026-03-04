@@ -210,17 +210,20 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
 
     r, rdfs, cumcn = compute_rdf(atoms, r_max=10, n_bins=2000)
 
+    def _canonical(a: int, b: int) -> tuple[int, int]:
+        return (min(a, b), max(a, b))
+
     cutoff_map: dict[str, float] = {}
     for z in unique_z:
         symbol = type_map[z]
         if symbol == "O":
             if former_types:
-                pair = (O_type[0], former_types[0])
+                pair = _canonical(O_type[0], former_types[0])
                 if pair in rdfs:
                     r_min = find_rdf_minimum(r, rdfs[pair])
                     cutoff_map[symbol] = r_min if r_min is not None else 2.0
         else:
-            pair = (z, O_type[0]) if O_type else None
+            pair = _canonical(z, O_type[0]) if O_type else None
             if pair and pair in rdfs:
                 r_min = find_rdf_minimum(r, rdfs[pair])
                 if r_min is not None:
@@ -248,7 +251,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     O_coord = {}
     if O_type:
         O_cutoff = cutoff_map.get("O", 2.0)
-        O_coord_raw, _ = compute_coordination(atoms, O_type, O_cutoff, former_types + modifier_types)
+        O_coord_raw, _ = compute_coordination(atoms, O_type[0], O_cutoff, former_types + modifier_types)
         # Convert integer keys to strings for HDF5 compatibility
         O_coord = {str(k): v for k, v in O_coord_raw.items()}
 
@@ -256,7 +259,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     for former in network_formers:
         z = next(k for k, v in type_map.items() if v == former)
         if O_type:
-            coord_raw, _ = compute_coordination(atoms, [z], cutoff_map[former], O_type)
+            coord_raw, _ = compute_coordination(atoms, z, cutoff_map[former], O_type)
             # Convert integer keys to strings for HDF5 compatibility
             former_coords[former] = {str(k): v for k, v in coord_raw.items()}
 
@@ -264,7 +267,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     for mod in modifiers:
         z = next(k for k, v in type_map.items() if v == mod)
         if O_type:
-            coord_raw, _ = compute_coordination(atoms, [z], cutoff_map[mod], O_type)
+            coord_raw, _ = compute_coordination(atoms, z, cutoff_map[mod], O_type)
             # Convert integer keys to strings for HDF5 compatibility
             modifier_coords[mod] = {str(k): v for k, v in coord_raw.items()}
 
@@ -272,7 +275,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     Qn_dist_partial = {}
     network_connectivity = 0.0
     if network_formers and O_type:
-        Qn_dist_raw, Qn_dist_partial_raw = compute_qn(atoms, cutoff_map["O"], former_types, O_type)
+        Qn_dist_raw, Qn_dist_partial_raw = compute_qn(atoms, cutoff_map["O"], former_types, O_type[0])
 
         # Convert integer keys to strings for Pydantic compatibility
         Qn_dist = {str(k): v for k, v in Qn_dist_raw.items()} if Qn_dist_raw else {}
@@ -291,7 +294,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
         z = next(k for k, v in type_map.items() if v == former)
         if O_type:
             bond_angle_distributions[former] = compute_angles(
-                atoms, center_type=[z], neighbor_type=O_type, cutoff=cutoff_map[former], bins=180
+                atoms, center_type=z, neighbor_type=O_type[0], cutoff=cutoff_map[former], bins=180
             )
 
     ring_statistics_data = {}
