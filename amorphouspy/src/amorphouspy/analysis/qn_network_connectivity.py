@@ -10,10 +10,9 @@ distribution.
 
 from collections import defaultdict
 
+import numpy as np
 from ase import Atoms
 
-from amorphouspy.analysis.radial_distribution_functions import compute_coordination
-from amorphouspy.io_utils import get_properties_for_structure_analysis
 from amorphouspy.neighbors import get_neighbors
 
 MIN_COORDINATION_FOR_BRIDGING = 2
@@ -38,8 +37,8 @@ def compute_qn(
 
     Returns:
         A tuple containing:
-            - dict[int, int]: Total Qn distribution
-            - dict[int, dict[int, int]]: Partial Qn per former type
+            total_qn: Total Qn distribution (mapping from n to count).
+            partial_qn: Partial Qn (mapping from former type to Qn distribution).
 
     Example:
         >>> structure = read('glass.xyz')
@@ -48,32 +47,46 @@ def compute_qn(
         ... )
 
     """
-    ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    # Build real-ID -> atom type map
+    types = structure.get_atomic_numbers()
+    if "id" in structure.arrays:
+        raw_ids = structure.arrays["id"].astype(np.int64)
+    else:
+        raw_ids = np.arange(1, len(structure) + 1, dtype=np.int64)
+    id_to_type = {int(aid): int(t) for aid, t in zip(raw_ids, types, strict=False)}
 
-    neighbors = dict(enumerate(get_neighbors(coords, types, box_size, cutoff, former_types, [o_type])))
+    # --- Step 1: identify bridging oxygens ----------------------------------
+    # An O is bridging if it is bonded to >= MIN_COORDINATION_FOR_BRIDGING formers.
+    bridging_o_ids: set[int] = {
+        cid
+        for cid, nns in get_neighbors(
+            structure,
+            cutoff=cutoff,
+            target_types=[o_type],
+            neighbor_types=former_types,
+        )
+        if id_to_type.get(cid) == o_type and len(nns) >= MIN_COORDINATION_FOR_BRIDGING
+    }
 
-    _, coord_numbers_o = compute_coordination(
-        structure,
-        o_type,
-        cutoff,
-        neighbor_types=former_types,
-    )
-
+    # --- Step 2: count bridging O per former --------------------------------
     total_qn_counts = defaultdict(int)
     partial_qn_counts = {f_type: defaultdict(int) for f_type in former_types}
 
-    for idx, atom_type in enumerate(types):
-        if atom_type in former_types:
-            bridging_count = 0
-            for neigh_idx in neighbors.get(idx, []):
-                if (
-                    types[neigh_idx] == o_type
-                    and coord_numbers_o.get(ids[neigh_idx], 0) >= MIN_COORDINATION_FOR_BRIDGING
-                ):
-                    bridging_count += 1
-            total_qn_counts[bridging_count] += 1
-            partial_qn_counts[atom_type][bridging_count] += 1
+    for central_id, nn_ids in get_neighbors(
+        structure,
+        cutoff=cutoff,
+        target_types=former_types,
+        neighbor_types=[o_type],
+    ):
+        atom_type = id_to_type.get(central_id)
+        if atom_type not in former_types:
+            continue
 
+        bridging_count = sum(1 for nid in nn_ids if nid in bridging_o_ids)
+        total_qn_counts[bridging_count] += 1
+        partial_qn_counts[atom_type][bridging_count] += 1
+
+    # Normalise to Q0-Q6 keys
     total_qn_counts = {n: total_qn_counts.get(n, 0) for n in range(7)}
     for f_type in former_types:
         partial_qn_counts[f_type] = {n: partial_qn_counts[f_type].get(n, 0) for n in range(7)}
@@ -100,7 +113,7 @@ def compute_network_connectivity(qn_dist: dict[int, int]) -> float:
     """
     total_formers = sum(qn_dist.values())
     if total_formers == 0:
-        error_msg = "total_formers is zero, cannot compute network connectivity."
-        raise ValueError(error_msg)
+        msg = "total_formers is zero, cannot compute network connectivity."
+        raise ValueError(msg)
 
     return sum(n * (count / total_formers) for n, count in qn_dist.items())

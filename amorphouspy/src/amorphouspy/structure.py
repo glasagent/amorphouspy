@@ -63,7 +63,7 @@ def parse_formula(formula: str) -> dict[str, int]:
         formula: A string representing the chemical formula (e.g., "Al2O3").
 
     Returns:
-        A dictionary mapping element symbols (str) to their counts (int).
+        A dictionary mapping element symbols to their counts.
         Example: {"Al": 2, "O": 3} for "Al2O3".
 
     """
@@ -82,7 +82,7 @@ def formula_mass_g_per_mol(formula: str) -> float:
         formula: A string representing the chemical formula (e.g., "SiO2").
 
     Returns:
-        The molar mass of the compound in grams per mole (float).
+        The molar mass of the compound in grams per mole.
 
     """
     return sum(get_atomic_mass(el) * cnt for el, cnt in parse_formula(formula).items())
@@ -150,6 +150,14 @@ def get_composition(comp_str: str, mode: str = "molar") -> dict[str, float]:
 
 
 def _atoms_per_fu_map(mol_frac: dict[str, float]) -> dict[str, int]:
+    """Calculate the number of atoms per formula unit for each oxide.
+
+    Args:
+        mol_frac: A dictionary mapping oxide formulas to their target molar fractions.
+
+    Returns:
+        A dictionary mapping oxide formulas to the total number of atoms in one formula unit.
+    """
     return {ox: sum(parse_formula(ox).values()) for ox in mol_frac}
 
 
@@ -160,7 +168,7 @@ def _integer_fu_from_total(Nfu_target: int, mol_frac: dict[str, float]) -> dict[
     while best approximating the target molar fractions.
 
     Args:
-        Nfu_target: The target total number of formula units (int).
+        Nfu_target: The target total number of formula units.
         mol_frac: A dictionary mapping oxide formulas to their target molar fractions.
 
     Returns:
@@ -783,6 +791,17 @@ def get_box_from_density(
     """Calculate the cubic box length in angstroms needed for a given composition.
 
     Now supports both n_molecules and target_atoms input modes.
+
+    Args:
+        composition: The composition string.
+        n_molecules: Total number of molecules.
+        target_atoms: Target total number of atoms.
+        mode: Composition mode ("molar" or "weight"). Defaults to "molar".
+        density: Optional density in g/cm^3. If None, calculated from model.
+        stoichiometry: Optional pre-calculated stoichiometry dictionary.
+
+    Returns:
+        The side length of the cubic box in Angstroms.
     """
     validate_target_mode(n_molecules, target_atoms)
 

@@ -112,7 +112,7 @@ def test_compute_network_connectivity() -> None:
         atoms,
         cutoff_map["O"],
         former_types,
-        [O_type],
+        O_type[0],
     )
 
     net_conn = compute_network_connectivity(qn_dist)
@@ -152,7 +152,7 @@ def test_compute_network_connectivity_multi() -> None:
         atoms,
         cutoff_map["O"],
         former_types,
-        [O_type_multi],
+        O_type_multi[0],
     )
 
     net_conn = compute_network_connectivity(qn_dist)

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amorphouspy"
-version = "0.0.12"
+version = "0.0.13"
 description = "Workflows for atomistic modeling of oxide glasses"
 authors = [
   { name = "Achraf Atila", email = "achraf.atila@bam.de" },
@@ -56,6 +56,12 @@ ignore   = [
   "COM812",
 ]
 fixable  = ["ALL"]           # allow --fix to touch everything
+
+[tool.ruff.lint.per-file-ignores]
+"src/tests/**" = [
+  "PLR2004",  # Magic values are intentional in test assertions
+  "ANN",      # Type annotations not required in tests
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

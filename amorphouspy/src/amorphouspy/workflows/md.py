@@ -51,7 +51,7 @@ def _run_lammps_md(
             location. Therefore, tmp_working_directory needs to exist beforehand.
 
     Returns:
-        A tuple (structure, parsed_output) with the final structure and the simulation output dictionary.
+        A tuple containing the final structure and the simulation output dictionary.
 
     """
     # Creates a temporary directory for the simulation in the specified working directory.
