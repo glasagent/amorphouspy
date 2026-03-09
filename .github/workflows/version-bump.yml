@@ -1,0 +1,118 @@
+name: Version Bump
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+jobs:
+  bump-version:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Check PR labels and bump version
+      env:
+        PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
+      run: |
+        import json
+        import re
+        import sys
+
+        # Get PR labels
+        labels_json = """${{ env.PR_LABELS }}"""
+        if not labels_json or labels_json.strip() == '':
+            print("No labels found on PR")
+            sys.exit(0)
+
+        labels = json.loads(labels_json)
+        label_names = [label.get('name', '') for label in labels if isinstance(label, dict)]
+
+        print(f"PR Labels: {label_names}")
+
+        # Check for version bump label
+        bump_type = None
+        if 'major' in label_names:
+            bump_type = 'major'
+        elif 'minor' in label_names:
+            bump_type = 'minor'
+        elif 'patch' in label_names:
+            bump_type = 'patch'
+        else:
+            print("No version bump label (major/minor/patch) found on PR. Skipping version bump.")
+            sys.exit(0)
+
+        print(f"Detected bump type: {bump_type}")
+
+        # Read current version from amorphouspy/pyproject.toml
+        with open('amorphouspy/pyproject.toml', 'r') as f:
+            content = f.read()
+
+        match = re.search(r'version = "(\d+)\.(\d+)\.(\d+)"', content)
+        if not match:
+            print("Could not find version in amorphouspy/pyproject.toml")
+            sys.exit(1)
+
+        major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
+        print(f"Current version: {major}.{minor}.{patch}")
+
+        # Bump version based on label
+        if bump_type == 'major':
+            major += 1
+            minor = 0
+            patch = 0
+        elif bump_type == 'minor':
+            minor += 1
+            patch = 0
+        elif bump_type == 'patch':
+            patch += 1
+
+        new_version = f"{major}.{minor}.{patch}"
+        print(f"New version: {new_version}")
+
+        # Update amorphouspy/pyproject.toml
+        new_content = re.sub(
+            r'version = "\d+\.\d+\.\d+"',
+            f'version = "{new_version}"',
+            content
+        )
+
+        with open('amorphouspy/pyproject.toml', 'w') as f:
+            f.write(new_content)
+
+        print("Updated amorphouspy/pyproject.toml")
+
+        # Save new version for next step
+        with open('new_version.txt', 'w') as f:
+            f.write(new_version)
+
+      shell: python
+
+    - name: Create commit, tag, and push
+      if: hashFiles('new_version.txt') != ''
+      run: |
+        NEW_VERSION=$(cat new_version.txt)
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        git add amorphouspy/pyproject.toml
+
+        git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
+
+        git tag "v$NEW_VERSION"
+
+        git push origin main
+        git push origin "v$NEW_VERSION"
