@@ -78,55 +78,55 @@ def _parse_cutoff(
         return float(cutoff), np.empty((0, 2), dtype=np.int32), np.empty(0, dtype=np.float64), False
 
     unique_types = np.unique(types).tolist()
-    max_rc = float(max(cutoff.values()))
+    max_cutoff = float(max(cutoff.values()))
 
-    # Build a dict covering all ordered pairs, defaulting to max_rc
+    # Build a dict covering all ordered pairs, defaulting to max_cutoff
     pair_dict: dict[tuple[int, int], float] = {}
-    for ti in unique_types:
-        for tj in unique_types:
-            pair_dict[(ti, tj)] = max_rc
+    for type_i in unique_types:
+        for type_j in unique_types:
+            pair_dict[(type_i, type_j)] = max_cutoff
 
     # Override with user-specified values (both orderings)
-    for (ti, tj), rc in cutoff.items():
-        pair_dict[(int(ti), int(tj))] = float(rc)
-        pair_dict[(int(tj), int(ti))] = float(rc)
+    for (type_i, type_j), rc in cutoff.items():
+        pair_dict[(int(type_i), int(type_j))] = float(rc)
+        pair_dict[(int(type_j), int(type_i))] = float(rc)
 
     pairs = list(pair_dict.keys())
-    cutoffs_sq = [pair_dict[p] ** 2 for p in pairs]
+    per_pair_cutoffs_sq = [pair_dict[p] ** 2 for p in pairs]
 
     pair_types = np.array(pairs, dtype=np.int32)
-    pair_cutoffs_sq = np.array(cutoffs_sq, dtype=np.float64)
-    return max_rc, pair_types, pair_cutoffs_sq, True
+    pair_cutoffs_sq = np.array(per_pair_cutoffs_sq, dtype=np.float64)
+    return max_cutoff, pair_types, pair_cutoffs_sq, True
 
 
 @jit(nopython=True, fastmath=True, cache=True)
 def _lookup_cutoff_sq(
-    ti: int,
-    tj: int,
+    type_i: int,
+    type_j: int,
     pair_types: np.ndarray,
     pair_cutoffs_sq: np.ndarray,
 ) -> float:
-    """Return squared cutoff for (ti, tj) via linear search through pair table.
+    """Return squared cutoff for (type_i, type_j) via linear search through pair table.
 
     Linear search is optimal here: the number of unique type pairs in a
     typical glass is <=10, the entire table fits in L1 cache, and hashing
     is not available in Numba nopython mode.
     """
     for k in range(len(pair_types)):
-        if pair_types[k, 0] == ti and pair_types[k, 1] == tj:
+        if pair_types[k, 0] == type_i and pair_types[k, 1] == type_j:
             return pair_cutoffs_sq[k]
     return pair_cutoffs_sq[0]  # fallback, should not be reached
 
 
 def _get_pair_cutoff_sq_python(
-    ti: int,
-    tj: int,
+    type_i: int,
+    type_j: int,
     pair_types: np.ndarray,
     pair_cutoffs_sq: np.ndarray,
 ) -> float:
     """Python equivalent of _lookup_cutoff_sq for the NumPy fallback path."""
     for k in range(len(pair_types)):
-        if pair_types[k, 0] == ti and pair_types[k, 1] == tj:
+        if pair_types[k, 0] == type_i and pair_types[k, 1] == type_j:
             return float(pair_cutoffs_sq[k])
     return float(pair_cutoffs_sq[0])
 
@@ -150,10 +150,10 @@ def cell_perpendicular_heights(cell: np.ndarray) -> np.ndarray:
     """
     a, b, c = cell[0], cell[1], cell[2]
     volume = abs(np.dot(a, np.cross(b, c)))
-    ha = volume / np.linalg.norm(np.cross(b, c))
-    hb = volume / np.linalg.norm(np.cross(a, c))
-    hc = volume / np.linalg.norm(np.cross(a, b))
-    return np.array([ha, hb, hc])
+    height_a = volume / np.linalg.norm(np.cross(b, c))
+    height_b = volume / np.linalg.norm(np.cross(a, c))
+    height_c = volume / np.linalg.norm(np.cross(a, b))
+    return np.array([height_a, height_b, height_c])
 
 
 # ============================================================================
@@ -180,13 +180,13 @@ def compute_cell_list_orthogonal(
     inv_cell_size = n_cells / box_size
     atom_cells = np.floor(coords * inv_cell_size).astype(np.int64) % n_cells
     n_total = int(n_cells[0]) * int(n_cells[1]) * int(n_cells[2])
-    flat_ids = (
+    flat_cell_ids = (
         atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2]) + atom_cells[:, 1] * int(n_cells[2]) + atom_cells[:, 2]
     ).astype(np.int32)
-    order = np.argsort(flat_ids, kind="stable")
-    sorted_flat = flat_ids[order]
+    order = np.argsort(flat_cell_ids, kind="stable")
+    sorted_flat_cell_ids = flat_cell_ids[order]
     cell_start = np.zeros(n_total + 1, dtype=np.int32)
-    np.add.at(cell_start[1:], sorted_flat, 1)
+    np.add.at(cell_start[1:], sorted_flat_cell_ids, 1)
     np.cumsum(cell_start, out=cell_start)
     return atom_cells.astype(np.int32), n_cells, cell_start, order.astype(np.int32)
 
@@ -212,13 +212,13 @@ def compute_cell_list_triclinic(
     n_cells = np.maximum(1, np.floor(heights / cutoff)).astype(np.int32)
     n_total = int(n_cells[0]) * int(n_cells[1]) * int(n_cells[2])
     atom_cells = (np.floor(coords_frac * n_cells).astype(np.int64) % n_cells).astype(np.int32)
-    flat_ids = (
+    flat_cell_ids = (
         atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2]) + atom_cells[:, 1] * int(n_cells[2]) + atom_cells[:, 2]
     ).astype(np.int32)
-    order = np.argsort(flat_ids, kind="stable")
-    sorted_flat = flat_ids[order]
+    order = np.argsort(flat_cell_ids, kind="stable")
+    sorted_flat_cell_ids = flat_cell_ids[order]
     cell_start = np.zeros(n_total + 1, dtype=np.int32)
-    np.add.at(cell_start[1:], sorted_flat, 1)
+    np.add.at(cell_start[1:], sorted_flat_cell_ids, 1)
     np.cumsum(cell_start, out=cell_start)
     return coords_frac, atom_cells, n_cells, cell_start, order.astype(np.int32)
 
@@ -250,8 +250,8 @@ def _dist_and_vec_ortho(
 
 @jit(nopython=True, fastmath=True, cache=True)
 def _dist_and_vec_tri(
-    fi: np.ndarray,
-    fj: np.ndarray,
+    frac_i: np.ndarray,
+    frac_j: np.ndarray,
     cell: np.ndarray,
 ) -> tuple[float, float, float, float]:
     """Minimum-image displacement vector and squared distance, triclinic box.
@@ -259,15 +259,15 @@ def _dist_and_vec_tri(
     Returns:
         (dx, dy, dz, dist_sq) — Cartesian displacement i->j and its squared length.
     """
-    dfx = fi[0] - fj[0]
-    dfx -= round(dfx)
-    dfy = fi[1] - fj[1]
-    dfy -= round(dfy)
-    dfz = fi[2] - fj[2]
-    dfz -= round(dfz)
-    dx = dfx * cell[0, 0] + dfy * cell[1, 0] + dfz * cell[2, 0]
-    dy = dfx * cell[0, 1] + dfy * cell[1, 1] + dfz * cell[2, 1]
-    dz = dfx * cell[0, 2] + dfy * cell[1, 2] + dfz * cell[2, 2]
+    delta_frac_x = frac_i[0] - frac_j[0]
+    delta_frac_x -= round(delta_frac_x)
+    delta_frac_y = frac_i[1] - frac_j[1]
+    delta_frac_y -= round(delta_frac_y)
+    delta_frac_z = frac_i[2] - frac_j[2]
+    delta_frac_z -= round(delta_frac_z)
+    dx = delta_frac_x * cell[0, 0] + delta_frac_y * cell[1, 0] + delta_frac_z * cell[2, 0]
+    dy = delta_frac_x * cell[0, 1] + delta_frac_y * cell[1, 1] + delta_frac_z * cell[2, 1]
+    dz = delta_frac_x * cell[0, 2] + delta_frac_y * cell[1, 2] + delta_frac_z * cell[2, 2]
     return dx, dy, dz, dx * dx + dy * dy + dz * dz
 
 
@@ -308,59 +308,63 @@ def _build_nl_ortho_numba(  # noqa: PLR0912, C901
                          All zeros when return_vectors=False.
     """
     n_atoms = len(coords)
-    ny = n_cells[1]
-    nz = n_cells[2]
+    n_cells_y = n_cells[1]
+    n_cells_z = n_cells[2]
 
     neighbor_list = np.full((n_atoms, max_neighbors), -1, dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
 
     for i in prange(n_atoms):
-        ti = types[i]
+        type_i = types[i]
         if use_target_filter:
-            found = False
-            for t in target_types:
-                if ti == t:
-                    found = True
+            is_target_type = False
+            for atom_type in target_types:
+                if type_i == atom_type:
+                    is_target_type = True
                     break
-            if not found:
+            if not is_target_type:
                 continue
 
-        ci = atom_cells[i]
+        cell_idx_i = atom_cells[i]
         count = 0
 
-        for dix in range(-1, 2):
-            cjx = (ci[0] + dix) % n_cells[0]
-            for diy in range(-1, 2):
-                cjy = (ci[1] + diy) % n_cells[1]
-                for diz in range(-1, 2):
-                    cjz = (ci[2] + diz) % n_cells[2]
-                    flat_id = cjx * ny * nz + cjy * nz + cjz
-                    start = cell_start[flat_id]
-                    end = cell_start[flat_id + 1]
+        for cell_offset_x in range(-1, 2):
+            neighbor_cell_x = (cell_idx_i[0] + cell_offset_x) % n_cells[0]
+            for cell_offset_y in range(-1, 2):
+                neighbor_cell_y = (cell_idx_i[1] + cell_offset_y) % n_cells[1]
+                for cell_offset_z in range(-1, 2):
+                    neighbor_cell_z = (cell_idx_i[2] + cell_offset_z) % n_cells[2]
+                    flat_cell_idx = (
+                        neighbor_cell_x * n_cells_y * n_cells_z + neighbor_cell_y * n_cells_z + neighbor_cell_z
+                    )
+                    start = cell_start[flat_cell_idx]
+                    end = cell_start[flat_cell_idx + 1]
 
                     for k in range(start, end):
                         j = cell_atoms[k]
                         if j == i:
                             continue
-                        tj = types[j]
+                        type_j = types[j]
 
                         if use_neighbor_filter:
-                            ok = False
-                            for t in neighbor_types:
-                                if tj == t:
-                                    ok = True
+                            is_valid_neighbor_type = False
+                            for atom_type in neighbor_types:
+                                if type_j == atom_type:
+                                    is_valid_neighbor_type = True
                                     break
-                            if not ok:
+                            if not is_valid_neighbor_type:
                                 continue
 
-                        rc_sq = (
-                            _lookup_cutoff_sq(ti, tj, pair_types, pair_cutoffs_sq) if use_pair_cutoffs else cutoff_sq
+                        pair_cutoff_sq = (
+                            _lookup_cutoff_sq(type_i, type_j, pair_types, pair_cutoffs_sq)
+                            if use_pair_cutoffs
+                            else cutoff_sq
                         )
 
                         dx, dy, dz, dist_sq = _dist_and_vec_ortho(coords[i], coords[j], box_size)
 
-                        if dist_sq <= rc_sq:
+                        if dist_sq <= pair_cutoff_sq:
                             if count < max_neighbors:
                                 neighbor_list[i, count] = j
                                 if return_vectors:
@@ -407,59 +411,63 @@ def _build_nl_tri_numba(  # noqa: PLR0912, C901
         vector_list:     (N, max_neighbors, 3) float32 — Cartesian bond vectors i->j.
     """
     n_atoms = len(coords_frac)
-    ny = n_cells[1]
-    nz = n_cells[2]
+    n_cells_y = n_cells[1]
+    n_cells_z = n_cells[2]
 
     neighbor_list = np.full((n_atoms, max_neighbors), -1, dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
 
     for i in prange(n_atoms):
-        ti = types[i]
+        type_i = types[i]
         if use_target_filter:
-            found = False
-            for t in target_types:
-                if ti == t:
-                    found = True
+            is_target_type = False
+            for atom_type in target_types:
+                if type_i == atom_type:
+                    is_target_type = True
                     break
-            if not found:
+            if not is_target_type:
                 continue
 
-        ci = atom_cells[i]
+        cell_idx_i = atom_cells[i]
         count = 0
 
-        for dix in range(-1, 2):
-            cjx = (ci[0] + dix) % n_cells[0]
-            for diy in range(-1, 2):
-                cjy = (ci[1] + diy) % n_cells[1]
-                for diz in range(-1, 2):
-                    cjz = (ci[2] + diz) % n_cells[2]
-                    flat_id = cjx * ny * nz + cjy * nz + cjz
-                    start = cell_start[flat_id]
-                    end = cell_start[flat_id + 1]
+        for cell_offset_x in range(-1, 2):
+            neighbor_cell_x = (cell_idx_i[0] + cell_offset_x) % n_cells[0]
+            for cell_offset_y in range(-1, 2):
+                neighbor_cell_y = (cell_idx_i[1] + cell_offset_y) % n_cells[1]
+                for cell_offset_z in range(-1, 2):
+                    neighbor_cell_z = (cell_idx_i[2] + cell_offset_z) % n_cells[2]
+                    flat_cell_idx = (
+                        neighbor_cell_x * n_cells_y * n_cells_z + neighbor_cell_y * n_cells_z + neighbor_cell_z
+                    )
+                    start = cell_start[flat_cell_idx]
+                    end = cell_start[flat_cell_idx + 1]
 
                     for k in range(start, end):
                         j = cell_atoms[k]
                         if j == i:
                             continue
-                        tj = types[j]
+                        type_j = types[j]
 
                         if use_neighbor_filter:
-                            ok = False
-                            for t in neighbor_types:
-                                if tj == t:
-                                    ok = True
+                            is_valid_neighbor_type = False
+                            for atom_type in neighbor_types:
+                                if type_j == atom_type:
+                                    is_valid_neighbor_type = True
                                     break
-                            if not ok:
+                            if not is_valid_neighbor_type:
                                 continue
 
-                        rc_sq = (
-                            _lookup_cutoff_sq(ti, tj, pair_types, pair_cutoffs_sq) if use_pair_cutoffs else cutoff_sq
+                        pair_cutoff_sq = (
+                            _lookup_cutoff_sq(type_i, type_j, pair_types, pair_cutoffs_sq)
+                            if use_pair_cutoffs
+                            else cutoff_sq
                         )
 
                         dx, dy, dz, dist_sq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
 
-                        if dist_sq <= rc_sq:
+                        if dist_sq <= pair_cutoff_sq:
                             if count < max_neighbors:
                                 neighbor_list[i, count] = j
                                 if return_vectors:
@@ -501,10 +509,10 @@ def _numba_to_list(
     vec_neighbors: list[np.ndarray] = []
 
     for i in range(n_atoms):
-        c = int(neighbor_counts[i])
-        idx_neighbors.append(neighbor_list[i, :c].tolist())
+        n_neighbors = int(neighbor_counts[i])
+        idx_neighbors.append(neighbor_list[i, :n_neighbors].tolist())
         vec_neighbors.append(
-            vector_list[i, :c].astype(np.float64) if return_vectors else np.empty((0, 3), dtype=np.float64)
+            vector_list[i, :n_neighbors].astype(np.float64) if return_vectors else np.empty((0, 3), dtype=np.float64)
         )
 
     return idx_neighbors, vec_neighbors
@@ -530,9 +538,9 @@ def _dist_vec_tri(frac_i: np.ndarray, frac_j: np.ndarray, cell: np.ndarray) -> t
     return np.einsum("ij,ij->i", rij, rij), rij
 
 
-def _get_neighbor_cells_numpy(ci: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
-    """Return the 27 neighbour cell indices (with periodic wrap) for cell ci."""
-    return (ci + SHIFT_GRID_3D) % n_cells
+def _get_neighbor_cells_numpy(cell_idx_i: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
+    """Return the 27 neighbour cell indices (with periodic wrap) for cell cell_idx_i."""
+    return (cell_idx_i + SHIFT_GRID_3D) % n_cells
 
 
 # ============================================================================
@@ -552,8 +560,8 @@ def _numpy_fallback(
     pair_types: np.ndarray,
     pair_cutoffs_sq: np.ndarray,
     use_pair_cutoffs: bool,  # noqa: FBT001
-    use_tf: bool,  # noqa: FBT001
-    use_nf: bool,  # noqa: FBT001
+    use_target_filter: bool,  # noqa: FBT001
+    use_neighbor_filter: bool,  # noqa: FBT001
     target_types: list[int] | None,
     neighbor_types: list[int] | None,
     n_atoms: int,
@@ -565,44 +573,47 @@ def _numpy_fallback(
     for idx, c in enumerate(atom_cells):
         cells[tuple(c)].append(idx)
 
-    target_set = set(target_types) if use_tf and target_types else None
-    neighbor_set = set(neighbor_types) if use_nf and neighbor_types else None
+    target_set = set(target_types) if use_target_filter and target_types else None
+    neighbor_set = set(neighbor_types) if use_neighbor_filter and neighbor_types else None
 
     idx_neighbors: list[list[int]] = [[] for _ in range(n_atoms)]
     vec_neighbors: list[np.ndarray] = [np.empty((0, 3), dtype=np.float64) for _ in range(n_atoms)]
 
     for i in range(n_atoms):
-        ti = int(types[i])
-        if target_set is not None and ti not in target_set:
+        type_i = int(types[i])
+        if target_set is not None and type_i not in target_set:
             continue
 
-        ci = atom_cells[i]
+        cell_idx_i = atom_cells[i]
         candidates: list[int] = []
-        for cj in _get_neighbor_cells_numpy(ci, n_cells):
-            candidates.extend(cells[tuple(cj)])
+        for neighbor_cell in _get_neighbor_cells_numpy(cell_idx_i, n_cells):
+            candidates.extend(cells[tuple(neighbor_cell)])
         candidates = [j for j in candidates if j != i]
         if neighbor_set is not None:
             candidates = [j for j in candidates if int(types[j]) in neighbor_set]
         if not candidates:
             continue
 
-        ca = np.array(candidates, dtype=np.int32)
+        candidates_arr = np.array(candidates, dtype=np.int32)
 
         if is_orthogonal:
-            dsq, rij = _dist_vec_ortho(coords[i], coords[ca], box_size)
+            dist_sq_arr, rij = _dist_vec_ortho(coords[i], coords[candidates_arr], box_size)
         else:
-            dsq, rij = _dist_vec_tri(coords_frac[i], coords_frac[ca], cell)
+            dist_sq_arr, rij = _dist_vec_tri(coords_frac[i], coords_frac[candidates_arr], cell)
 
         if use_pair_cutoffs:
-            rc_sq_arr = np.array(
-                [_get_pair_cutoff_sq_python(ti, int(types[j]), pair_types, pair_cutoffs_sq) for j in ca],
+            pair_cutoffs_sq_arr = np.array(
+                [
+                    _get_pair_cutoff_sq_python(type_i, int(types[j]), pair_types, pair_cutoffs_sq)
+                    for j in candidates_arr
+                ],
                 dtype=np.float64,
             )
-            mask = dsq <= rc_sq_arr
+            mask = dist_sq_arr <= pair_cutoffs_sq_arr
         else:
-            mask = dsq <= cutoff_sq
+            mask = dist_sq_arr <= cutoff_sq
 
-        idx_neighbors[i] = ca[mask].tolist()
+        idx_neighbors[i] = candidates_arr[mask].tolist()
         if return_vectors:
             vec_neighbors[i] = rij[mask]
 
@@ -627,8 +638,8 @@ def _extract_atom_ids(atoms: Atoms | tuple) -> np.ndarray:
                 return atoms.arrays[key].astype(np.int64)
         return np.arange(1, len(atoms) + 1, dtype=np.int64)
     coords, *_ = atoms
-    n = len(np.asarray(coords))
-    return np.arange(1, n + 1, dtype=np.int64)
+    n_atoms = len(np.asarray(coords))
+    return np.arange(1, n_atoms + 1, dtype=np.int64)
 
 
 # ============================================================================
@@ -731,11 +742,13 @@ def get_neighbors(
     cutoff_sq = max_cutoff * max_cutoff
 
     target_arr = np.array(target_types, dtype=np.int32) if target_types is not None else np.empty(0, dtype=np.int32)
-    neigh_arr = np.array(neighbor_types, dtype=np.int32) if neighbor_types is not None else np.empty(0, dtype=np.int32)
-    use_tf = target_types is not None
-    use_nf = neighbor_types is not None
+    neighbor_arr = (
+        np.array(neighbor_types, dtype=np.int32) if neighbor_types is not None else np.empty(0, dtype=np.int32)
+    )
+    use_target_filter = target_types is not None
+    use_neighbor_filter = neighbor_types is not None
 
-    _initial_max_neighbors = _estimate_max_neighbors(coords, cell, max_cutoff)
+    initial_max_neighbors = _estimate_max_neighbors(coords, cell, max_cutoff)
 
     # ------------------------------------------------------------------
     # Build neighbor list
@@ -754,22 +767,22 @@ def get_neighbors(
                 "cell_atoms": cell_atoms,
                 "cutoff_sq": cutoff_sq,
                 "target_types": target_arr,
-                "neighbor_types": neigh_arr,
-                "use_target_filter": use_tf,
-                "use_neighbor_filter": use_nf,
-                "max_neighbors": _initial_max_neighbors,
+                "neighbor_types": neighbor_arr,
+                "use_target_filter": use_target_filter,
+                "use_neighbor_filter": use_neighbor_filter,
+                "max_neighbors": initial_max_neighbors,
                 "pair_types": pair_types,
                 "pair_cutoffs_sq": pair_cutoffs_sq,
                 "use_pair_cutoffs": use_pair_cutoffs,
                 "return_vectors": return_vectors,
             }
-            nl, nc, vl = _build_nl_ortho_numba(**kwargs)
+            raw_neighbor_list, raw_neighbor_counts, raw_vector_list = _build_nl_ortho_numba(**kwargs)
             idx_neighbors, vec_neighbors = _numba_to_list(
-                nl,
-                nc,
-                vl,
+                raw_neighbor_list,
+                raw_neighbor_counts,
+                raw_vector_list,
                 n_atoms,
-                _initial_max_neighbors,
+                initial_max_neighbors,
                 _build_nl_ortho_numba,
                 kwargs,
                 return_vectors,
@@ -787,8 +800,8 @@ def get_neighbors(
                 pair_types=pair_types,
                 pair_cutoffs_sq=pair_cutoffs_sq,
                 use_pair_cutoffs=use_pair_cutoffs,
-                use_tf=use_tf,
-                use_nf=use_nf,
+                use_target_filter=use_target_filter,
+                use_neighbor_filter=use_neighbor_filter,
                 target_types=target_types,
                 neighbor_types=neighbor_types,
                 n_atoms=n_atoms,
@@ -808,22 +821,22 @@ def get_neighbors(
                 "cell_atoms": cell_atoms,
                 "cutoff_sq": cutoff_sq,
                 "target_types": target_arr,
-                "neighbor_types": neigh_arr,
-                "use_target_filter": use_tf,
-                "use_neighbor_filter": use_nf,
-                "max_neighbors": _initial_max_neighbors,
+                "neighbor_types": neighbor_arr,
+                "use_target_filter": use_target_filter,
+                "use_neighbor_filter": use_neighbor_filter,
+                "max_neighbors": initial_max_neighbors,
                 "pair_types": pair_types,
                 "pair_cutoffs_sq": pair_cutoffs_sq,
                 "use_pair_cutoffs": use_pair_cutoffs,
                 "return_vectors": return_vectors,
             }
-            nl, nc, vl = _build_nl_tri_numba(**kwargs)
+            raw_neighbor_list, raw_neighbor_counts, raw_vector_list = _build_nl_tri_numba(**kwargs)
             idx_neighbors, vec_neighbors = _numba_to_list(
-                nl,
-                nc,
-                vl,
+                raw_neighbor_list,
+                raw_neighbor_counts,
+                raw_vector_list,
                 n_atoms,
-                _initial_max_neighbors,
+                initial_max_neighbors,
                 _build_nl_tri_numba,
                 kwargs,
                 return_vectors,
@@ -841,8 +854,8 @@ def get_neighbors(
                 pair_types=pair_types,
                 pair_cutoffs_sq=pair_cutoffs_sq,
                 use_pair_cutoffs=use_pair_cutoffs,
-                use_tf=use_tf,
-                use_nf=use_nf,
+                use_target_filter=use_target_filter,
+                use_neighbor_filter=use_neighbor_filter,
                 target_types=target_types,
                 neighbor_types=neighbor_types,
                 n_atoms=n_atoms,
