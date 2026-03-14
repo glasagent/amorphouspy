@@ -4,11 +4,6 @@
 [![image](https://img.shields.io/conda/vn/conda-forge/amorphouspy.svg)](https://anaconda.org/conda-forge/amorphouspy)
 ![logo](assets/logo.svg)
 
-**Workflows for atomistic modeling of oxide glasses.**
-
-- documentation: <https://glasagent.github.io/amorphouspy>
-
----
 
 ## Introduction
 
