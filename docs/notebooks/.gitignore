@@ -1,0 +1,9 @@
+test/
+viscosity/
+glass/
+lmp_tmp_directory/
+tmp_cte*/
+*.dat
+*.log
+*.h5
+.nfs*

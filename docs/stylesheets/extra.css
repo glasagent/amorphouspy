@@ -1,0 +1,290 @@
+/* ===== amorphouspy Custom Theme ===== */
+
+/* ---------- Custom color palette ---------- */
+:root {
+  --md-primary-fg-color: #1a237e;
+  --md-primary-fg-color--light: #3949ab;
+  --md-primary-fg-color--dark: #0d1442;
+  --md-accent-fg-color: #ff6d00;
+  --md-accent-fg-color--transparent: rgba(255, 109, 0, 0.1);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1a237e;
+  --md-primary-fg-color--light: #3949ab;
+  --md-primary-fg-color--dark: #0d1442;
+  --md-accent-fg-color: #ffab40;
+  --md-default-bg-color: #0d1117;
+  --md-default-bg-color--light: #161b22;
+}
+
+/* ---------- Hero section on homepage ---------- */
+.md-typeset .hero {
+  text-align: center;
+  padding: 2.5rem 1rem 2rem;
+  margin: -0.5rem -0.6rem 2rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1a237e 0%, #283593 40%, #3949ab 100%);
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.md-typeset .hero::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 30% 70%, rgba(255, 255, 255, 0.06) 0%, transparent 60%),
+              radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.04) 0%, transparent 50%);
+  animation: shimmer 8s ease-in-out infinite alternate;
+}
+
+@keyframes shimmer {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(3%, 3%); }
+}
+
+.md-typeset .hero h1 {
+  color: white !important;
+  font-size: 2.6rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+  position: relative;
+}
+
+.md-typeset .hero p {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 1.15rem;
+  max-width: 600px;
+  margin: 0 auto;
+  position: relative;
+}
+
+.md-typeset .hero .hero-badges {
+  margin-top: 1.2rem;
+  position: relative;
+}
+
+.md-typeset .hero .hero-badges a {
+  display: inline-block;
+  margin: 0.3rem;
+}
+
+/* ---------- Feature cards grid ---------- */
+.md-typeset .grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.md-typeset .card {
+  background: var(--md-default-bg-color--light, #f8f9fa);
+  border: 1px solid var(--md-default-fg-color--lightest, #e0e0e0);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+  overflow: hidden;
+}
+
+.md-typeset .card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(26, 35, 126, 0.12);
+  border-color: var(--md-accent-fg-color);
+}
+
+.md-typeset .card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--md-primary-fg-color), var(--md-accent-fg-color));
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.md-typeset .card:hover::after {
+  opacity: 1;
+}
+
+.md-typeset .card .card-icon {
+  font-size: 2rem;
+  margin-bottom: 0.8rem;
+  display: block;
+}
+
+.md-typeset .card h3 {
+  margin-top: 0 !important;
+  font-size: 1.1rem;
+  color: var(--md-primary-fg-color);
+}
+
+.md-typeset .card p {
+  font-size: 0.88rem;
+  color: var(--md-default-fg-color--light);
+  margin-bottom: 0;
+}
+
+/* ---------- Styled admonitions ---------- */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* ---------- Code blocks ---------- */
+.md-typeset pre > code {
+  border-radius: 8px;
+}
+
+.md-typeset code {
+  border-radius: 4px;
+}
+
+/* ---------- Tables ---------- */
+.md-typeset table:not([class]) {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+}
+
+.md-typeset table:not([class]) thead {
+  background: linear-gradient(135deg, var(--md-primary-fg-color) 0%, var(--md-primary-fg-color--light) 100%);
+}
+
+.md-typeset table:not([class]) thead th {
+  color: white !important;
+  font-weight: 600;
+  padding: 0.8rem 1rem;
+  border-bottom: none;
+}
+
+.md-typeset table:not([class]) tbody tr {
+  transition: background 0.2s ease;
+}
+
+.md-typeset table:not([class]) tbody tr:hover {
+  background: var(--md-accent-fg-color--transparent, rgba(255, 109, 0, 0.06));
+}
+
+.md-typeset table:not([class]) td {
+  padding: 0.65rem 1rem;
+}
+
+/* ---------- Section headers ---------- */
+.md-typeset h2 {
+  border-bottom: 2px solid var(--md-primary-fg-color--light);
+  padding-bottom: 0.4rem;
+  margin-top: 2.4rem;
+}
+
+/* ---------- Navigation ---------- */
+.md-nav__item .md-nav__link--active {
+  font-weight: 700;
+}
+
+/* Sidebar section labels */
+.md-nav--primary > .md-nav__list > .md-nav__item > .md-nav__link,
+.md-nav--primary > .md-nav__list > .md-nav__item > label {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+}
+
+/* ---------- Header / Top bar ---------- */
+.md-header {
+  background: linear-gradient(135deg, #0d1442 0%, #1a237e 50%, #283593 100%);
+  box-shadow: 0 2px 12px rgba(13, 20, 66, 0.3);
+}
+
+/* ---------- Footer ---------- */
+.md-footer {
+  background: linear-gradient(135deg, #0d1442 0%, #1a237e 100%);
+}
+
+/* ---------- Smooth scrolling ---------- */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ---------- Back to top button ---------- */
+.md-top {
+  background: var(--md-primary-fg-color);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(26, 35, 126, 0.3);
+}
+
+/* ---------- Search bar ---------- */
+.md-search__form {
+  border-radius: 8px;
+}
+
+/* ---------- Quick-start steps ---------- */
+.md-typeset .steps {
+  counter-reset: step;
+}
+
+.md-typeset .steps > li {
+  list-style: none;
+  position: relative;
+  padding-left: 3rem;
+  margin-bottom: 1.5rem;
+}
+
+.md-typeset .steps > li::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2rem;
+  height: 2rem;
+  background: linear-gradient(135deg, var(--md-primary-fg-color), var(--md-primary-fg-color--light));
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+/* ---------- Pill badges ---------- */
+.md-typeset .pill {
+  display: inline-block;
+  padding: 0.15rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.md-typeset .pill-primary {
+  background: var(--md-primary-fg-color);
+  color: white;
+}
+
+.md-typeset .pill-accent {
+  background: var(--md-accent-fg-color);
+  color: white;
+}
+
+.md-typeset .pill-outline {
+  border: 1.5px solid var(--md-primary-fg-color);
+  color: var(--md-primary-fg-color);
+}
+
+/* ---------- Responsive tweaks ---------- */
+@media (max-width: 768px) {
+  .md-typeset .hero h1 { font-size: 1.8rem; }
+  .md-typeset .hero p { font-size: 1rem; }
+  .md-typeset .grid-cards { grid-template-columns: 1fr; }
+}
