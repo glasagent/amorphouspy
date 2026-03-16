@@ -1,9 +1,6 @@
 # Welcome to amorphouspy
 
-[![image](https://img.shields.io/pypi/v/amorphouspy.svg)](https://pypi.python.org/pypi/amorphouspy)
-[![image](https://img.shields.io/conda/vn/conda-forge/amorphouspy.svg)](https://anaconda.org/conda-forge/amorphouspy)
 ![logo](assets/logo.svg)
-
 
 ## Introduction
 
@@ -51,4 +48,4 @@ Each step is handled by dedicated functions in the package, and the output of on
 
 ## License
 
-BSD 3-Clause License. See [LICENSE](../LICENSE).
+BSD 3-Clause License. See [LICENSE](https://github.com/achrafatila/amorphouspy/blob/main/LICENSE).

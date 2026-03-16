@@ -42,14 +42,14 @@ nav:
   - How-To Guides:
     - Overview: how_to_guides/index.md
     - Meltquench: notebooks/Meltquench.ipynb
-    - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
-    - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
-    - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
+    # - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
+    # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
+    # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
     - Structure Analysis: notebooks/StructureAnalysis.ipynb
     - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/Viscosity.ipynb
     - CTE: notebooks/CTE.ipynb
-    - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
+    # - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
   - Theory:
     - Overview: theory/index.md
     - Structure generation: theory/structure.md
@@ -76,6 +76,7 @@ nav:
   - Developers:
     - Architecture: developers/architecture.md
   - API Reference: api_reference.md
+  - API Service (MCP): api_service.md
 
 plugins:
   - search
