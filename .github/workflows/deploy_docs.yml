@@ -2,47 +2,62 @@ name: Deploy Documentation
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    types: [labeled]
 
 permissions:
+  contents: read
   pages: write
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
   build:
+    name: Build Documentation
+    if: github.event_name == 'push' || github.event.label.name == 'builddocs'
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.x
-      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
-      - uses: actions/cache@v4
-        with:
-          key: mkdocs-material-${{ env.cache_id }}
-          path: .cache
-          restore-keys: |
-            mkdocs-material-
+          python-version: "3.11"
+          cache: pip
+
       - name: Install dependencies
-        run: pip install "mkdocs>=1.6,<2" mkdocs-material mkdocs-jupyter pymdown-extensions
-      - name: Build docs
-        run: mkdocs build
-      - name: Upload pages artifact
+        run: |
+          pip install mkdocs-material
+          pip install mkdocs-jupyter
+          pip install pymdown-extensions
+          pip install jupyter nbformat
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build documentation
+        run: mkdocs build --strict
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: site/
 
   deploy:
+    name: Deploy to GitHub Pages
     needs: build
-    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
