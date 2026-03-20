@@ -96,7 +96,6 @@ def _run_lammps_md(
                 restart_file="restart.out",
                 input_control_file={
                     "thermo_modify": "flush yes",
-                    "unfix": "ensemble",
                     "fix": custom_fix,
                 },
                 lmp_command=get_lammps_command(server_kwargs=server_kwargs),

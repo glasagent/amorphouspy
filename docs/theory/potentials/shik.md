@@ -110,22 +110,23 @@ The table files are automatically created when you call `generate_shik_potential
 
 ```python
 from amorphouspy import get_structure_dict
-from amorphouspy.potentials.shik_potential import generate_shik_potential
+from amorphouspy.potentials import generate_potential
 
 structure_dict = get_structure_dict(
     "0.75SiO2-0.15Na2O-0.10CaO",
     target_atoms=3000,
 )
 
-potential = generate_shik_potential(structure_dict, output_dir="./shik_tables")
+# With melt pre-equilibration (default)
+potential = generate_potential(structure_dict, potential_type="shik")
 
-# The potential writes table files to ./shik_tables/
-# These are referenced by absolute path in the LAMMPS configuration
+# Without melt pre-equilibration
+potential = generate_potential(structure_dict, potential_type="shik", melt=False)
 ```
 
-### Built-in Langevin pre-equilibration
+### Langevin pre-equilibration (`melt` parameter)
 
-The SHIK potential configuration automatically appends a **Langevin dynamics + NVE/limit pre-equilibration** stage to the LAMMPS input. This handles the initial atomic overlap in random starting configurations, which can cause extremely large forces with the steep $r^{-24}$ repulsion:
+By default (`melt=True`), the SHIK configuration appends a **Langevin dynamics + NVE/limit pre-equilibration** stage. This handles initial atomic overlaps in random starting configurations, which cause extremely large forces with the steep $r^{-24}$ repulsion:
 
 ```
 fix langevin all langevin 5000 5000 0.01 48279
@@ -136,6 +137,8 @@ unfix ensemble
 ```
 
 This runs 10,000 steps of velocity-limited NVE with Langevin damping at 5000 K, allowing atoms to move apart gently (max 0.5 Å per step) before the main simulation begins.
+
+Pass `melt=False` to omit this block — useful when the starting configuration is already well-equilibrated or when you want full control over the pre-equilibration protocol.
 
 ---
 

@@ -116,9 +116,24 @@ Convert structure dictionary to ASE Atoms object with optional supercell replica
 generate_potential(
     atoms_dict: dict,
     potential_type: str = "pmmcs",
+    **kwargs,
 ) -> pd.DataFrame
 ```
 Generate LAMMPS potential configuration. `potential_type` is `"pmmcs"`, `"bjp"`, or `"shik"`.
+
+Extra keyword arguments are forwarded to the underlying potential generator. For `"shik"`, the `melt` parameter is supported:
+
+| kwarg | Type | Default | Description |
+|---|---|---|---|
+| `melt` | `bool` | `True` | Append a Langevin + NVE/limit melt run block (10 000 steps). Pass `False` to omit it. |
+
+```python
+# with melt pre-equilibration (default)
+potential = generate_potential(struct_dict, potential_type="shik")
+
+# without melt pre-equilibration
+potential = generate_potential(struct_dict, potential_type="shik", melt=False)
+```
 
 ---
 

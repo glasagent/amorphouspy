@@ -244,7 +244,7 @@ def shik_protocol(
 
     """
     # Bind common parameters to runner
-    run = partial(
+    run1 = partial(
         runner,
         potential=potential,
         tmp_working_directory=tmp_working_directory,
@@ -254,8 +254,33 @@ def shik_protocol(
         server_kwargs=server_kwargs,
     )
 
+    exclude_patterns = [
+        "fix langevinnve all langevin 5000 5000 0.01 48279",
+        "fix ensemblenve all nve/limit 0.5",
+        "run 10000",
+        "unfix langevinnve",
+        "unfix ensemblenve",
+    ]
+
+    # Copy the potential before stripping the init block, so run1 keeps the
+    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
+    potential2 = potential.copy()
+    potential2["Config"] = potential2["Config"].apply(
+        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
+    )
+
+    run2 = partial(
+        runner,
+        potential=potential2,
+        tmp_working_directory=tmp_working_directory,
+        timestep=timestep,
+        n_print=n_print,
+        langevin=langevin,
+        server_kwargs=server_kwargs,
+    )
+
     # Stage 1: heating from 300 to 5000 K for 100 ps
-    structure, _ = run(
+    structure, _ = run1(
         structure=structure,
         temperature=temperature_high,  # 5000 K
         n_ionic_steps=heating_steps,
@@ -264,22 +289,8 @@ def shik_protocol(
         seed=seed,
     )
 
-    exclude_patterns = [
-        "fix langevin all langevin 5000 5000 0.01 48279",
-        "fix ensemble all nve/limit 0.5",
-        "run 10000",
-        "unfix langevin",
-        "unfix ensemble",
-    ]
-
-    # Modify potential in-place; the partial function holds a reference to this object,
-    # so subsequent calls to run() will automatically use the modified potential
-    potential["Config"] = potential["Config"].apply(
-        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
-
     # Stage 2: NVT equilibration at 5000 K for 100 ps
-    structure, _ = run(
+    structure, _ = run2(
         structure=structure,
         temperature=temperature_high,  # 5000 K
         n_ionic_steps=int(100_000 / timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
@@ -289,7 +300,7 @@ def shik_protocol(
     )
 
     # Stage 3: NPT equilibration at 5000 K and 0.1 GPa for 700 ps
-    structure, _ = run(
+    structure, _ = run2(
         structure=structure,
         temperature=temperature_high,
         n_ionic_steps=int(700_000 / timestep),  # 700 ps
@@ -298,7 +309,7 @@ def shik_protocol(
     )
 
     # Stage 4: Quenching 5000 K -> 300 K in NPT
-    structure, _ = run(
+    structure, _ = run2(
         structure=structure,
         temperature=temperature_high,
         temperature_end=temperature_low,
@@ -308,7 +319,7 @@ def shik_protocol(
     )
 
     # Stage 5: Annealing at 300 K and 0 GPa for 100 ps in NPT
-    structure_final, parsed_output = run(
+    structure_final, parsed_output = run2(
         structure=structure,
         temperature=temperature_low,
         n_ionic_steps=int(100_000 / timestep),  # 100 ps
