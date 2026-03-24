@@ -1,7 +1,7 @@
 """amorphouspy Simulation API.
 
-FastAPI application that manages long-running glass simulation tasks.
-Routers handle the individual simulation types (meltquench, etc.).
+FastAPI application that manages long-running glass simulation jobs.
+See ``docs/api-spec.md`` for the full specification.
 """
 
 import logging
@@ -15,11 +15,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
 
 from .config import DB_PATH, PROJECTS_FOLDER
-from .database import close_task_store, init_task_store
-from .routers.meltquench import router as meltquench_router
-from .visualization import router as visualization_router
+from .database import close_job_store, init_job_store
+from .routers.glasses import router as glasses_router
+from .routers.jobs import router as jobs_router
 
-# Configure logging - use stream handler by default, file handler only if not in test
+# Configure logging
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     handler = logging.StreamHandler()
@@ -28,49 +28,43 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 
 logger.info("Using project directory: %s", PROJECTS_FOLDER)
-
-# Ensure the projects directory exists
 PROJECTS_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application lifespan - startup and shutdown."""
-    # Startup: Initialize persistent task store
-    logger.info("Task store database path: %s", DB_PATH)
-    init_task_store(DB_PATH)
+    """Manage application lifespan — startup and shutdown."""
+    logger.info("Job store database path: %s", DB_PATH)
+    init_job_store(DB_PATH)
     yield
-    # Shutdown: Close database connections
-    logger.info("Closing task store database connection")
-    close_task_store()
+    logger.info("Closing job store database connection")
+    close_job_store()
 
 
-# Create FastAPI app with lifespan manager
 app = FastAPI(
     title="amorphouspy Simulation API",
-    description="API for managing long-running glass simulation tasks using amorphouspy",
-    version="0.1.0",
+    description="API for managing glass simulation jobs using amorphouspy",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
-# Enable CORS for all origins (customize as needed)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount static files
+# Static files
 static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
-# Include routers
-app.include_router(meltquench_router, tags=["meltquench"])
-app.include_router(visualization_router, tags=["visualization"])
+# Routers
+app.include_router(jobs_router)
+app.include_router(glasses_router)
 
-
+# MCP (expose all "tool"-tagged endpoints)
 mcp = FastApiMCP(app, include_tags=["tool"])
 mcp.mount_http(mount_path="/mcp")
 

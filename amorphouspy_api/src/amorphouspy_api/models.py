@@ -1,89 +1,56 @@
-"""Pydantic models for amorphouspy API requests and responses.
+"""Pydantic models for the amorphouspy API.
 
-This module contains data validation models for various simulation types
-including meltquench simulations and other glass modeling workflows.
+Defines request/response schemas for the ``/jobs`` and ``/glasses`` endpoints
+as specified in ``docs/api-spec.md``.
 """
+
+from __future__ import annotations
 
 from enum import StrEnum
 from io import StringIO
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
-from amorphouspy.workflows.structural_analysis import StructureData
 from ase import Atoms
 from ase.io import read, write
-from pydantic import (
-    BaseModel,
-    Field,
-    PlainSerializer,
-    PlainValidator,
-    ValidationInfo,
-    field_validator,
-)
+from pydantic import BaseModel, Field, PlainSerializer, PlainValidator
 
-# Constants for composition validation
-PERCENTAGE_THRESHOLD = 1.1
-PERCENTAGE_MIN = 95
-PERCENTAGE_MAX = 105
-FRACTION_MIN = 0.95
-FRACTION_MAX = 1.05
+if TYPE_CHECKING:
+    from amorphouspy.workflows.structural_analysis import StructureData
 
-# Error messages
-PERCENTAGE_ERROR_MSG = "Composition values sum to {total}, expected around 100 for percentages"
-FRACTION_ERROR_MSG = "Composition values sum to {total}, expected around 1.0 for fractions"
-LENGTH_ERROR_MSG = "Components and values lists must have the same length"
+# ---------------------------------------------------------------------------
+# ASE Atoms serialisation helpers (used by database & visualization)
+# ---------------------------------------------------------------------------
 
 
 def serialize_atoms(atoms: Atoms) -> str:
-    """Serialize ASE Atoms to JSON string.
-
-    Args:
-        atoms: The ASE Atoms object to serialize.
-
-    Returns:
-        JSON string representation of the Atoms object.
-    """
-    json_buffer = StringIO()
-    write(json_buffer, atoms, format="json")
-    return json_buffer.getvalue()
+    """Serialize ASE Atoms to JSON string."""
+    buf = StringIO()
+    write(buf, atoms, format="json")
+    return buf.getvalue()
 
 
 def validate_atoms(v: Atoms | dict | str | None) -> Atoms | None:
-    """Validate and convert input to ASE Atoms object.
-
-    Args:
-        v: Input value which can be an ASE Atoms object, a dictionary, a JSON string, or None.
-
-    Returns:
-        The validated ASE Atoms object or None if input is None.
-
-    Raises:
-        ValueError: If reconstruction from dict or parsing from string fails.
-        TypeError: If input type is not supported.
-    """
+    """Validate and convert input to ASE Atoms object."""
     if v is None:
         return None
-    elif isinstance(v, Atoms):
+    if isinstance(v, Atoms):
         return v
-    elif isinstance(v, dict):
-        # Try to reconstruct from dict
+    if isinstance(v, dict):
         try:
             return Atoms(**v)
         except Exception as e:
             msg = f"Could not reconstruct Atoms from dict: {e}"
             raise ValueError(msg) from e
-    elif isinstance(v, str):
-        # Try to parse from JSON string format
+    if isinstance(v, str):
         try:
             return read(StringIO(v), format="json")
         except Exception as e:
             msg = f"Could not parse Atoms from string: {e}"
             raise ValueError(msg) from e
-    else:
-        msg = f"final_structure must be ASE Atoms object, dict, string, or None, got {type(v)}"
-        raise TypeError(msg)
+    msg = f"Expected ASE Atoms, dict, str, or None — got {type(v)}"
+    raise TypeError(msg)
 
 
-# Custom type for ASE Atoms with serialization (allowing None)
 AtomsType = Annotated[
     Atoms | None,
     PlainValidator(validate_atoms),
@@ -91,106 +58,191 @@ AtomsType = Annotated[
 ]
 
 
-# Export the serialization functions for use in other modules
-__all__ = [
-    "AtomsType",
-    "MeltquenchRequest",
-    "MeltquenchResult",
-    "TaskResponse",
-    "TaskStatus",
-    "serialize_atoms",
-    "validate_atoms",
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+
+class Potential(StrEnum):
+    """Supported interatomic potentials."""
+
+    pmmcs = "pmmcs"
+    bjp = "bjp"
+    shik = "shik"
+
+
+class StepStatus(StrEnum):
+    """Status of an individual pipeline step."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class JobStatus(StrEnum):
+    """Overall status of a simulation job."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Analysis configurations (discriminated union)
+# ---------------------------------------------------------------------------
+
+
+class StructureAnalysis(BaseModel):
+    type: Literal["structure"] = "structure"
+    rdf_cutoff: float = Field(default=8.0, description="RDF cutoff in Å")
+    bin_width: float = Field(default=0.02, description="RDF bin width in Å")
+
+
+class ElasticAnalysis(BaseModel):
+    type: Literal["elastic"] = "elastic"
+    strain_magnitude: float = Field(default=0.01, description="Applied strain for elastic constants")
+    n_steps: int = Field(default=10000, description="Equilibration steps before measurement")
+
+
+class ViscosityAnalysis(BaseModel):
+    type: Literal["viscosity"] = "viscosity"
+    temperatures: list[float] = Field(default=[1500, 2000, 2500], description="Temperatures in K")
+    correlation_length: int = Field(default=5000, description="Green-Kubo correlation length")
+
+
+class CTEAnalysis(BaseModel):
+    type: Literal["cte"] = "cte"
+    temp_range: tuple[float, float] = Field(default=(300, 900), description="Temperature range in K")
+    heating_rate: float = Field(default=1e12, description="Heating rate in K/s")
+
+
+Analysis = Annotated[
+    StructureAnalysis | ElasticAnalysis | ViscosityAnalysis | CTEAnalysis,
+    Field(discriminator="type"),
 ]
 
 
-class TaskStatus(StrEnum):
-    """Status of a simulation task."""
-
-    STARTED = "started"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    COMPLETED_FROM_CACHE = "completed_from_cache"
-    ERROR = "error"
+# ---------------------------------------------------------------------------
+# Simulation parameters
+# ---------------------------------------------------------------------------
 
 
-class MeltquenchRequest(BaseModel):
-    """Request model for meltquench simulation.
+class MeltQuenchParams(BaseModel):
+    melt_temperature: float = Field(default=5000, description="Melt temperature in K")
+    quench_rate: float = Field(default=1e12, description="Quench rate in K/s")
+    n_atoms: int = Field(default=3000, description="Number of atoms")
+    timestep: float = Field(default=1.0, description="MD timestep in fs")
 
-    Attributes:
-        components: List of oxide components (e.g., ["CaO", "Al2O3", "SiO2"]).
-        values: List of composition values corresponding to components.
-        unit: Unit type - either "wt" (weight percent) or "mol" (molar percent).
-        heating_rate: Heating rate in K/s (default: 1e14).
-        cooling_rate: Cooling rate in K/s (default: 1e12).
-        n_print: Print interval for simulation output (default: 1000).
-        n_atoms: Target number of atoms for the generated structure (default: 5000).
-        potential_type: Type of interatomic potential to use (default: 'pmmcs').
-    """
 
-    components: list[str] = Field(..., description="List of oxide components (e.g., ['CaO', 'Al2O3', 'SiO2'])")
-    values: list[float] = Field(..., description="List of composition values corresponding to components")
-    unit: Literal["wt", "mol"] = Field(..., description="Unit type: 'wt' for weight percent or 'mol' for molar percent")
-    heating_rate: int = Field(default=int(1e14), description="Heating rate in K/s (default: 100K/ps)")
-    cooling_rate: int = Field(default=int(1e12), description="Cooling rate in K/s (default: 1K/ps)")
-    n_print: int = Field(default=1000, description="Print interval for simulation output (default: 1000)")
-    n_atoms: int = Field(
-        default=5000,
-        description="Target number of atoms for the generated structure (default: 5000)",
-    )
-    potential_type: Literal["shik", "bjp", "pmmcs"] = Field(
-        default="pmmcs",
-        description="Type of interatomic potential to use (default: 'pmmcs')",
+# ---------------------------------------------------------------------------
+# Job submission / response
+# ---------------------------------------------------------------------------
+
+
+class JobSubmission(BaseModel):
+    """Request body for ``POST /jobs``."""
+
+    composition: str = Field(..., description="Oxide glass composition, e.g. 'SiO2 70 - Na2O 15 - CaO 15'")
+    potential: Potential = Field(default=Potential.pmmcs)
+    simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
+    analyses: list[Analysis] = Field(
+        default_factory=lambda: [StructureAnalysis()],
+        description="Analyses to run. Each can carry its own parameters.",
     )
 
-    @field_validator("values")
-    @classmethod
-    def validate_values_sum(cls, v: list[float]) -> list[float]:
-        """Ensure composition values sum to approximately 100 (for percentages) or 1 (for fractions)."""
-        total = sum(v)
-        if total > PERCENTAGE_THRESHOLD:  # Likely percentages
-            if not (PERCENTAGE_MIN <= total <= PERCENTAGE_MAX):
-                msg = PERCENTAGE_ERROR_MSG.format(total=total)
-                raise ValueError(msg)
-        elif not (FRACTION_MIN <= total <= FRACTION_MAX):
-            msg = FRACTION_ERROR_MSG.format(total=total)
-            raise ValueError(msg)
-        return v
 
-    @field_validator("components")
-    @classmethod
-    def validate_components_length(cls, v: list[str], info: ValidationInfo) -> list[str]:
-        """Ensure components and values lists have the same length."""
-        if info.data and "values" in info.data and len(v) != len(info.data["values"]):
-            raise ValueError(LENGTH_ERROR_MSG)
-        return v
+class JobCreatedResponse(BaseModel):
+    """Response for ``POST /jobs``."""
+
+    id: str = Field(..., description="Job identifier")
+    status: JobStatus = Field(default=JobStatus.PENDING)
+    composition: str
+    potential: Potential
+    created_at: str
 
 
-class MeltquenchResult(BaseModel):
-    """Result model for completed meltquench simulation.
+class JobProgress(BaseModel):
+    """Per-step progress for ``GET /jobs/{id}``."""
 
-    Attributes:
-        composition: Composition string used in simulation.
-        final_structure: ASE Atoms object representing the final atomic structure.
-        mean_temperature: Mean temperature during final phase (K).
-        simulation_steps: Total number of simulation steps completed.
-        structural_analysis: Structural analysis results from glass structure analysis.
-    """
-
-    composition: str = Field(..., description="Composition string used in simulation")
-    final_structure: AtomsType = Field(..., description="ASE Atoms object of final structure")
-    mean_temperature: float = Field(..., description="Mean temperature during final phase (K)")
-    simulation_steps: int = Field(..., description="Total simulation steps completed")
-    structural_analysis: StructureData | dict = Field(..., description="Structural analysis results")
+    structure_generation: StepStatus = StepStatus.PENDING
+    melt_quench: StepStatus = StepStatus.PENDING
+    structure_analysis: StepStatus = StepStatus.PENDING
 
 
-class TaskResponse(BaseModel):
-    """Response model for task submission and status check endpoints.
+class JobStatusResponse(BaseModel):
+    """Response for ``GET /jobs/{id}``."""
 
-    Provides a consistent response format for both /submit and /check endpoints.
-    """
+    id: str
+    status: JobStatus
+    composition: str
+    potential: Potential
+    progress: JobProgress
+    errors: dict[str, str] = Field(default_factory=dict)
+    created_at: str
+    completed_at: str | None = None
 
-    task_id: str = Field(..., description="Unique identifier for the task")
-    status: TaskStatus = Field(..., description="Current status of the task")
-    visualization_url: str = Field(..., description="URL to visualize results when complete")
-    result: MeltquenchResult | None = Field(default=None, description="Simulation result if completed")
-    error: str | None = Field(default=None, description="Error message if failed")
+
+class JobResultsResponse(BaseModel):
+    """Response for ``GET /jobs/{id}/results``."""
+
+    job_id: str
+    composition: str
+    structure: StructureData | dict | None = None
+
+
+class JobSearchRequest(BaseModel):
+    """Request body for ``POST /jobs:search``."""
+
+    composition: str
+    potential: Potential | None = None
+    analyses: list[str] | None = None
+
+
+class JobSearchMatch(BaseModel):
+    job_id: str
+    composition: str
+    potential: Potential
+    analyses: list[str]
+    similarity: float = 1.0
+    completed_at: str | None = None
+
+
+class JobSearchResponse(BaseModel):
+    matches: list[JobSearchMatch]
+
+
+# ---------------------------------------------------------------------------
+# Glasses (materials) layer
+# ---------------------------------------------------------------------------
+
+
+class GlassSummary(BaseModel):
+    composition: str
+    n_jobs: int
+
+
+class GlassListResponse(BaseModel):
+    glasses: list[GlassSummary]
+
+
+class GlassPropertySource(BaseModel):
+    source_job: str
+    potential: Potential
+    computed_at: str | None = None
+
+
+class AvailableStructure(BaseModel):
+    job_id: str
+    potential: Potential
+    n_atoms: int
+
+
+class GlassPropertiesResponse(BaseModel):
+    composition: str
+    properties: dict[str, dict] = Field(default_factory=dict)
+    available_structures: list[AvailableStructure] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)

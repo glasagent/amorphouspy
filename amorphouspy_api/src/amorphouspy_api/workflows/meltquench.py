@@ -100,7 +100,7 @@ def run_meltquench_workflow(
         _assemble_results,
         composition=composition,
         meltquench_result=meltquench_future,
-        resource_dict=final_resource_dict if final_resource_dict else {},
+        resource_dict=final_resource_dict or {},
     )
 
 
