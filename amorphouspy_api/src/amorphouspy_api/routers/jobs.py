@@ -1,14 +1,14 @@
 """Jobs router — ``/jobs`` endpoints.
 
-Implements the jobs layer from ``docs/api-spec.md``:
-  POST /jobs          – submit a new simulation
-  POST /jobs:search   – find cached / similar jobs
-  GET  /jobs/{id}     – poll job status
-  POST /jobs/{id}:cancel – cancel a running job
-  GET  /jobs/{id}/results            – all analysis results
-  GET  /jobs/{id}/results/{analysis} – single analysis result
-  GET  /jobs/{id}/structure          – export quenched structure
-  GET  /jobs/{id}/visualize          – interactive HTML visualization
+Endpoints:
+  POST /jobs          - submit a new simulation
+  POST /jobs:search   - find cached / similar jobs
+  GET  /jobs/{id}     - poll job status
+  POST /jobs/{id}:cancel - cancel a running job
+  GET  /jobs/{id}/results            - all analysis results
+  GET  /jobs/{id}/results/{analysis} - single analysis result
+  GET  /jobs/{id}/structure          - export quenched structure
+  GET  /jobs/{id}/visualize          - interactive HTML visualization
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ def _submit_to_executor(
         values=values,
         n_atoms=submission.simulation.n_atoms,
         potential_type=submission.potential.value,
-        heating_rate=int(submission.simulation.quench_rate * 100),  # default heating = 100× quench
+        heating_rate=int(submission.simulation.quench_rate * 100),  # default heating = 100x quench
         cooling_rate=int(submission.simulation.quench_rate),
         n_print=1000,
         lammps_resource_dict=lammps_resource_dict,
@@ -369,7 +369,7 @@ def get_single_result(job_id: str, analysis: str) -> dict:
 @router.get("/{job_id}/structure")
 def get_structure(
     job_id: str,
-    format: Annotated[str, Query(description="Export format: xyz, cif, poscar, extxyz")] = "xyz",
+    fmt: Annotated[str, Query(alias="format", description="Export format: xyz, cif, poscar, extxyz")] = "xyz",
 ) -> Response:
     """Export the final quenched structure."""
     store = get_job_store()
@@ -392,10 +392,10 @@ def get_structure(
         "cif": ("chemical/x-cif", "cif"),
         "poscar": ("text/plain", "vasp"),
     }
-    if format not in fmt_map:
-        raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+    if fmt not in fmt_map:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {fmt}")
 
-    content_type, ase_fmt = fmt_map[format]
+    content_type, ase_fmt = fmt_map[fmt]
     buf = StringIO()
     ase_write(buf, atoms, format=ase_fmt)
 

@@ -1,21 +1,17 @@
 """Pydantic models for the amorphouspy API.
 
-Defines request/response schemas for the ``/jobs`` and ``/glasses`` endpoints
-as specified in ``docs/api-spec.md``.
+Defines request/response schemas for the ``/jobs`` and ``/glasses`` endpoints.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
 from io import StringIO
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
 from ase import Atoms
 from ase.io import read, write
 from pydantic import BaseModel, Field, PlainSerializer, PlainValidator
-
-if TYPE_CHECKING:
-    from amorphouspy.workflows.structural_analysis import StructureData
 
 # ---------------------------------------------------------------------------
 # ASE Atoms serialisation helpers (used by database & visualization)
@@ -97,24 +93,32 @@ class JobStatus(StrEnum):
 
 
 class StructureAnalysis(BaseModel):
+    """Configuration for structural analysis (RDF, coordination, bond angles)."""
+
     type: Literal["structure"] = "structure"
     rdf_cutoff: float = Field(default=8.0, description="RDF cutoff in Å")
     bin_width: float = Field(default=0.02, description="RDF bin width in Å")
 
 
 class ElasticAnalysis(BaseModel):
+    """Configuration for elastic moduli analysis."""
+
     type: Literal["elastic"] = "elastic"
     strain_magnitude: float = Field(default=0.01, description="Applied strain for elastic constants")
     n_steps: int = Field(default=10000, description="Equilibration steps before measurement")
 
 
 class ViscosityAnalysis(BaseModel):
+    """Configuration for viscosity analysis (Green-Kubo)."""
+
     type: Literal["viscosity"] = "viscosity"
     temperatures: list[float] = Field(default=[1500, 2000, 2500], description="Temperatures in K")
     correlation_length: int = Field(default=5000, description="Green-Kubo correlation length")
 
 
 class CTEAnalysis(BaseModel):
+    """Configuration for coefficient of thermal expansion analysis."""
+
     type: Literal["cte"] = "cte"
     temp_range: tuple[float, float] = Field(default=(300, 900), description="Temperature range in K")
     heating_rate: float = Field(default=1e12, description="Heating rate in K/s")
@@ -132,6 +136,8 @@ Analysis = Annotated[
 
 
 class MeltQuenchParams(BaseModel):
+    """Parameters for the melt-quench MD simulation."""
+
     melt_temperature: float = Field(default=5000, description="Melt temperature in K")
     quench_rate: float = Field(default=1e12, description="Quench rate in K/s")
     n_atoms: int = Field(default=3000, description="Number of atoms")
@@ -191,7 +197,7 @@ class JobResultsResponse(BaseModel):
 
     job_id: str
     composition: str
-    structure: StructureData | dict | None = None
+    structure: dict | None = None
 
 
 class JobSearchRequest(BaseModel):
@@ -203,6 +209,8 @@ class JobSearchRequest(BaseModel):
 
 
 class JobSearchMatch(BaseModel):
+    """A single match from a job search."""
+
     job_id: str
     composition: str
     potential: Potential
@@ -212,6 +220,8 @@ class JobSearchMatch(BaseModel):
 
 
 class JobSearchResponse(BaseModel):
+    """Response for ``POST /jobs:search``."""
+
     matches: list[JobSearchMatch]
 
 
@@ -221,27 +231,37 @@ class JobSearchResponse(BaseModel):
 
 
 class GlassSummary(BaseModel):
+    """Summary entry for one glass composition."""
+
     composition: str
     n_jobs: int
 
 
 class GlassListResponse(BaseModel):
+    """Response for ``GET /glasses``."""
+
     glasses: list[GlassSummary]
 
 
 class GlassPropertySource(BaseModel):
+    """Provenance info linking a property back to its source job."""
+
     source_job: str
     potential: Potential
     computed_at: str | None = None
 
 
 class AvailableStructure(BaseModel):
+    """A quenched structure available for download."""
+
     job_id: str
     potential: Potential
     n_atoms: int
 
 
 class GlassPropertiesResponse(BaseModel):
+    """Aggregated properties for ``GET /glasses?composition=...``."""
+
     composition: str
     properties: dict[str, dict] = Field(default_factory=dict)
     available_structures: list[AvailableStructure] = Field(default_factory=list)

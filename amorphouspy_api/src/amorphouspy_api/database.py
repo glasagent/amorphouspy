@@ -64,6 +64,7 @@ class JobStore:
     """SQLAlchemy-backed store for Job records."""
 
     def __init__(self, db_path: Path | None = None) -> None:
+        """Initialise the store, creating the DB file if needed."""
         if db_path is None:
             db_path = Path("jobs.db")
 
@@ -82,34 +83,38 @@ class JobStore:
         logger.info("Initialised job store: %s", db_path)
 
     def close(self) -> None:
+        """Dispose of the SQLAlchemy engine."""
         if self.engine:
             self.engine.dispose()
             logger.info("Closed job store connection")
 
     def session(self) -> Session:
+        """Create a new database session."""
         return self.SessionLocal()
 
     # -- CRUD ---------------------------------------------------------------
 
     def create_job(self, job: Job) -> None:
+        """Insert a new job record."""
         with self.session() as s:
             s.add(job)
             s.commit()
 
     def get_job(self, job_id: str) -> Job | None:
+        """Fetch a job by ID, or ``None``."""
         with self.session() as s:
             return s.get(Job, job_id)
 
-    def update_job(self, job_id: str, **fields: Any) -> None:
+    def update_job(self, job_id: str, **fields: object) -> None:
+        """Update arbitrary columns on a job record."""
         with self.session() as s:
             job = s.get(Job, job_id)
             if job is None:
                 return
-            for k, v in fields.items():
+            for k, val in fields.items():
                 # Serialise ASE Atoms if present inside result_data
-                if k == "result_data" and isinstance(v, dict):
-                    v = _serialise_atoms_in_result(v)
-                setattr(job, k, v)
+                effective = _serialise_atoms_in_result(val) if k == "result_data" and isinstance(val, dict) else val
+                setattr(job, k, effective)
             s.commit()
 
     # -- query helpers ------------------------------------------------------

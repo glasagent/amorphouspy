@@ -1,7 +1,6 @@
 """amorphouspy Simulation API.
 
 FastAPI application that manages long-running glass simulation jobs.
-See ``docs/api-spec.md`` for the full specification.
 """
 
 import logging

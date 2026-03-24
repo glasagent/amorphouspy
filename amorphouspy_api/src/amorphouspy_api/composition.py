@@ -30,12 +30,12 @@ def normalize_composition(raw: str) -> str:
     parts = re.split(r"\s*[-,]\s*", raw.strip())
     components: list[tuple[str, float]] = []
     for part in parts:
-        part = part.strip()
-        if not part:
+        token = part.strip()
+        if not token:
             continue
-        match = re.match(r"([A-Za-z0-9]+)\s+([\d.]+)", part)
+        match = re.match(r"([A-Za-z0-9]+)\s+([\d.]+)", token)
         if not match:
-            msg = f"Cannot parse composition component: {part!r}"
+            msg = f"Cannot parse composition component: {token!r}"
             raise ValueError(msg)
         oxide = match.group(1)
         value = float(match.group(2))
@@ -68,12 +68,12 @@ def parse_components(composition: str) -> tuple[list[str], list[float]]:
     components: list[str] = []
     values: list[float] = []
     for part in parts:
-        part = part.strip()
-        if not part:
+        token = part.strip()
+        if not token:
             continue
-        match = re.match(r"([A-Za-z0-9]+)\s+([\d.]+)", part)
+        match = re.match(r"([A-Za-z0-9]+)\s+([\d.]+)", token)
         if not match:
-            msg = f"Cannot parse composition component: {part!r}"
+            msg = f"Cannot parse composition component: {token!r}"
             raise ValueError(msg)
         components.append(match.group(1))
         values.append(float(match.group(2)))
