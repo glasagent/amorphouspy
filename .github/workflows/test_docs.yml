@@ -13,8 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: "3.13"
       - name: Install dependencies
-        run: pip install "mkdocs>=1.6,<2" mkdocs-material mkdocs-jupyter pymdown-extensions
+        run: pip install "mkdocs>=1.6,<2" mkdocs-material "mkdocs-jupyter==0.24.8" pymdown-extensions
       - name: Build with strict mode
         run: mkdocs build --strict --verbose
