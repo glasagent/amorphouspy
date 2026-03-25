@@ -1,6 +1,6 @@
 # Structure Generation
 
-This module handles everything from parsing composition strings to generating ready-to-simulate atomic structures with physically realistic densities. It is the starting point for any simulation workflow.
+This module handles everything from validating compositions to generating ready-to-simulate atomic structures with physically realistic densities. It is the starting point for any simulation workflow.
 
 ---
 
@@ -8,7 +8,7 @@ This module handles everything from parsing composition strings to generating re
 
 Creating a glass structure involves several steps:
 
-1. **Parse the composition** — interpret a human-readable string like `"0.75SiO2-0.15Na2O-0.10CaO"`
+1. **Define the composition** — provide a dict mapping oxide formulas to mol%, e.g. `{"SiO2": 75, "Na2O": 15, "CaO": 10}`
 2. **Validate the chemistry** — check that each oxide is charge-neutral and elements are valid
 3. **Plan the system** — determine how many formula units of each oxide are needed to reach the target size
 4. **Estimate the density** — use Fluegel's empirical model to predict the glass density
@@ -21,32 +21,32 @@ All of these steps are handled automatically by the high-level `get_structure_di
 
 ## Composition Input
 
-Compositions are specified as dash-separated oxide strings with numerical prefixes representing fractions or percentages:
+Compositions are specified as a dict mapping oxide formulas to mol% values. Values are automatically rescaled to sum to 1.0 internally:
 
 ```python
-# Molar fractions (must sum to ~1.0)
-"0.25CaO-0.25Al2O3-0.5SiO2"
+# Molar fractions (sum to ~1.0)
+{"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5}
 
-# Molar percentages (must sum to ~100)
-"75SiO2-15Na2O-10CaO"
+# Molar percentages (sum to ~100)
+{"SiO2": 75, "Na2O": 15, "CaO": 10}
 
 # Weight percentages (requires mode="weight")
-"79SiO2-13B2O3-3Al2O3-4Na2O-1K2O"
+{"SiO2": 79, "B2O3": 13, "Al2O3": 3, "Na2O": 4, "K2O": 1}
 ```
 
-### `get_composition(comp_str, mode="molar")`
+### `get_composition(composition, mode="molar")`
 
-Parses a composition string into normalized molar fractions. When `mode="weight"`, it first converts weight percentages to molar fractions using the molar masses of each oxide.
+Normalizes a composition dict into molar fractions. When `mode="weight"`, it first converts weight percentages to molar fractions using the molar masses of each oxide.
 
 ```python
 from amorphouspy.structure import get_composition
 
 # Molar composition
-mol_frac = get_composition("0.25CaO-0.25Al2O3-0.5SiO2")
+mol_frac = get_composition({"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5})
 # Returns: {'CaO': 0.25, 'Al2O3': 0.25, 'SiO2': 0.5}
 
 # Weight% to mol% conversion
-mol_frac = get_composition("75SiO2-15Na2O-10CaO", mode="weight")
+mol_frac = get_composition({"SiO2": 75, "Na2O": 15, "CaO": 10}, mode="weight")
 # Returns molar fractions (different from weight fractions due to molar masses)
 ```
 
@@ -54,36 +54,35 @@ mol_frac = get_composition("75SiO2-15Na2O-10CaO", mode="weight")
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `comp_str` | `str` | — | Composition string |
+| `composition` | `dict[str, float]` | — | Oxide formula → mol% mapping |
 | `mode` | `str` | `"molar"` | `"molar"` for mol fractions/%, `"weight"` for weight% |
 
 ### `extract_composition(composition)`
 
-A stricter parser that performs additional validation on top of `get_composition`. Use this when processing user input that may contain errors.
+A stricter validator that performs additional checks on top of `get_composition`. Use this when processing user input that may contain errors.
 
 **Validation steps:**
 
-1. **ASCII check** — rejects non-ASCII characters (catches copy-paste issues)
-2. **Element validation** — verifies each element symbol against the periodic table
-3. **Charge neutrality** — uses pymatgen's oxidation state guessing to ensure each oxide is charge-neutral
-4. **Sum validation** — checks that fractions sum to ~1.0 or percentages sum to ~100
+1. **Element validation** — verifies each element symbol against the periodic table
+2. **Charge neutrality** — uses pymatgen's oxidation state guessing to ensure each oxide is charge-neutral
+3. **Sum validation** — checks that fractions sum to ~1.0 or percentages sum to ~100
 
 ```python
 from amorphouspy.structure import extract_composition
 
-comp = extract_composition("0.75SiO2-0.15Na2O-0.10CaO")
+comp = extract_composition({"SiO2": 0.75, "Na2O": 0.15, "CaO": 0.10})
 # Returns: {'SiO2': 0.75, 'Na2O': 0.15, 'CaO': 0.1}
 
 # These will raise ValueError:
-# extract_composition("0.5XyZ-0.5SiO2")    # Invalid element
-# extract_composition("0.5NaCl-0.5SiO2")   # Not charge-neutral for oxide
+# extract_composition({"XyZ": 0.5, "SiO2": 0.5})    # Invalid element
+# extract_composition({"NaCl": 0.5, "SiO2": 0.5})   # Not charge-neutral for oxide
 ```
 
 ---
 
 ## Density Estimation
 
-### `get_glass_density_from_model(composition_string)`
+### `get_glass_density_from_model(composition)`
 
 Calculates room-temperature glass density using Fluegel's empirical polynomial model. This is a widely used regression model trained on a large database of measured glass densities.
 
@@ -111,7 +110,7 @@ where $x_i$ is the mole percentage of oxide $i$ and $b$ values are fitted coeffi
 ```python
 from amorphouspy.structure import get_glass_density_from_model
 
-density = get_glass_density_from_model("0.75SiO2-0.15Na2O-0.10CaO")
+density = get_glass_density_from_model({"SiO2": 75, "Na2O": 15, "CaO": 10})
 print(f"Predicted density: {density:.4f} g/cm³")
 # Typical soda-lime glass: ~2.49 g/cm³
 ```
@@ -131,7 +130,7 @@ from amorphouspy import get_structure_dict
 
 # Mode 1: Specify target atom count
 structure_dict = get_structure_dict(
-    composition="0.75SiO2-0.15Na2O-0.10CaO",
+    composition={"SiO2": 75, "Na2O": 15, "CaO": 10},
     target_atoms=3000,       # Target ~3000 atoms (may differ slightly due to stoichiometry)
     mode="molar",            # Interpret fractions as mol% (default)
     density=None,            # Auto-calculate density (Fluegel model)
@@ -141,13 +140,13 @@ structure_dict = get_structure_dict(
 
 # Mode 2: Specify molecule (formula unit) count
 structure_dict = get_structure_dict(
-    composition="0.25CaO-0.25Al2O3-0.5SiO2",
+    composition={"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5},
     n_molecules=100,         # 100 total formula units
 )
 
 # Mode 3: Weight percentages
 structure_dict = get_structure_dict(
-    composition="79SiO2-13B2O3-3Al2O3-4Na2O-1K2O",
+    composition={"SiO2": 79, "B2O3": 13, "Al2O3": 3, "Na2O": 4, "K2O": 1},
     target_atoms=5000,
     mode="weight",           # Interpret as weight%
 )
@@ -201,7 +200,7 @@ The placement algorithm:
 from amorphouspy.structure import create_random_atoms
 
 atoms_list, atom_counts = create_random_atoms(
-    composition="0.75SiO2-0.15Na2O-0.10CaO",
+    composition={"SiO2": 75, "Na2O": 15, "CaO": 10},
     target_atoms=3000,
     box_length=35.0,      # Å
     min_distance=1.6,     # Å (typical for oxide glasses)
@@ -218,7 +217,7 @@ atoms_list, atom_counts = create_random_atoms(
 
 ## System Planning
 
-### `plan_system(comp_str, target, mode, target_type)`
+### `plan_system(composition, target, mode, target_type)`
 
 Generates a comprehensive plan that converts a composition and target size into concrete integer formula units. This is the core allocation algorithm used internally by `get_structure_dict()`.
 
@@ -234,7 +233,7 @@ from amorphouspy.structure import plan_system
 
 # Plan for ~3000 atoms
 plan = plan_system(
-    comp_str="0.25CaO-0.25Al2O3-0.5SiO2",
+    composition={"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5},
     target=3000,
     target_type="atoms",    # or "molecules"
     mode="molar",
@@ -264,7 +263,7 @@ $$
 from amorphouspy.structure import get_box_from_density
 
 box_length = get_box_from_density(
-    composition="0.75SiO2-0.15Na2O-0.10CaO",
+    composition={"SiO2": 75, "Na2O": 15, "CaO": 10},
     target_atoms=3000,
     n_molecules=None,
     density=2.5,     # g/cm³ (or None for auto)
@@ -292,7 +291,7 @@ from amorphouspy.structure import parse_formula, extract_stoichiometry
 parse_formula("Ca3(PO4)2")  # {'Ca': 3, 'P': 2, 'O': 8}
 
 # Full composition
-extract_stoichiometry("0.75SiO2-0.15Na2O-0.10CaO")
+extract_stoichiometry({"SiO2": 0.75, "Na2O": 0.15, "CaO": 0.10})
 # {'SiO2': {'Si': 1, 'O': 2}, 'Na2O': {'Na': 2, 'O': 1}, 'CaO': {'Ca': 1, 'O': 1}}
 ```
 

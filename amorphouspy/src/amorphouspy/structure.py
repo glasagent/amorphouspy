@@ -22,7 +22,6 @@ from amorphouspy.shared import get_element_types_dict
 #    — missing digits will yield an empty string
 ELEMENT = re.compile(r"([A-Z][a-z]*)(\d*)")
 
-MAX_ASCII = 127
 DENSITY_TOLERANCE = 1e-10
 COMPOSITION_TOLERANCE = 1e-10
 
@@ -126,11 +125,12 @@ def weight_percent_to_mol_fraction(comp_wt_raw: dict[str, float]) -> dict[str, f
     return normalize(n_i)
 
 
-def get_composition(comp_str: str, mode: str = "molar") -> dict[str, float]:
-    """Parse a composition string into a dictionary of molar fractions.
+def get_composition(composition: dict[str, float], mode: str = "molar") -> dict[str, float]:
+    """Convert a composition dictionary into normalized molar fractions.
 
     Args:
-        comp_str: The composition string (e.g., "0.25CaO-0.25Al2O3-0.5SiO2").
+        composition: A dictionary mapping oxide formulas to their fractions,
+            e.g. {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5}.
         mode: The interpretation mode, either 'molar' or 'weight'. Defaults to "molar".
 
     Returns:
@@ -143,7 +143,7 @@ def get_composition(comp_str: str, mode: str = "molar") -> dict[str, float]:
     if mode.lower() not in ("molar", "weight"):
         error_msg = f"Invalid mode: {mode}. Supported modes are 'molar' and 'weight'."
         raise ValueError(error_msg)
-    raw = extract_composition(comp_str)
+    raw = extract_composition(composition)
     if mode.lower() == "weight":
         return weight_percent_to_mol_fraction(raw)
     return normalize(raw)
@@ -246,14 +246,14 @@ def element_counts_from_formula_units(Ni: dict[str, int]) -> dict[str, int]:
     return counts
 
 
-def plan_system(comp_str: str, target: int, mode: str = "molar", target_type: str = "atoms") -> dict:
+def plan_system(composition: dict[str, float], target: int, mode: str = "molar", target_type: str = "atoms") -> dict:
     """Generate a comprehensive plan for the system composition and size.
 
     This unified planner handles both 'atoms' and 'molecules' target types,
     converting them into a concrete allocation of formula units and atoms.
 
     Args:
-        comp_str: The composition string.
+        composition: A dictionary mapping oxide formulas to their fractions.
         target: The target count (atoms or molecules depending on `target_type`).
         mode: The composition mode ('molar' or 'weight'). Defaults to "molar".
         target_type: The type of target ('atoms' or 'molecules'). Defaults to "atoms".
@@ -269,7 +269,7 @@ def plan_system(comp_str: str, target: int, mode: str = "molar", target_type: st
         ValueError: If `target_type` is not 'atoms' or 'molecules'.
 
     """
-    mol_frac = get_composition(comp_str, mode=mode)
+    mol_frac = get_composition(composition, mode=mode)
 
     if target_type == "atoms":
         target_atoms = target
@@ -348,55 +348,33 @@ def check_neutral_oxide(oxide: str) -> None:
         raise ValueError(error_msg)
 
 
-def extract_composition(composition: str) -> dict[str, float]:
-    """Extract molar fractions from a composition string.
+def extract_composition(composition: dict[str, float]) -> dict[str, float]:
+    """Validate and normalize a composition dictionary.
 
     Handles both fractional (0.0-1.0) and percentage (0-100) inputs. Always returns
     fractions summing to 1.0.
 
     Args:
-        composition: The composition string (e.g., "0.25CaO-0.25Al2O3-0.5SiO2").
+        composition: A dictionary mapping oxide formulas to their fractions,
+            e.g. {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5}.
 
     Returns:
         A dictionary mapping oxide formulas to their molar fractions.
 
     Raises:
-        ValueError: If input contains non-ASCII characters, has invalid format,
-            invalid elements, non-neutral oxides, or sums to an invalid total.
+        ValueError: If the composition is empty, contains invalid elements,
+            non-neutral oxides, or sums to an invalid total.
 
     """
-    if any(ord(ch) > MAX_ASCII for ch in composition):
-        error_msg = f"Composition contains non-ASCII characters: {composition!r}"
-        raise ValueError(error_msg)
-
-    comp_dict = {}
-    total = 0.0
-    segments = composition.split("-")
-
-    if not segments:
-        error_msg = "Empty composition string"
+    if not composition:
+        error_msg = "Empty composition"
         raise ValueError(error_msg)
 
     valid_elements = set(chemical_symbols[1:])
+    comp_dict = {}
+    total = 0.0
 
-    for segment in segments:
-        if not segment:
-            continue
-
-        try:
-            idx = next(i for i, ch in enumerate(segment) if ch.isalpha())
-        except StopIteration as e:
-            error_msg = f"Invalid segment: '{segment}' contains no letters"
-            raise ValueError(error_msg) from e
-
-        frac_str, oxide = segment[:idx], segment[idx:]
-
-        try:
-            frac = float(frac_str) if frac_str else 1.0
-        except ValueError as e:
-            error_msg = f"Invalid fraction format: '{frac_str}' in segment '{segment}'"
-            raise ValueError(error_msg) from e
-
+    for oxide, frac in composition.items():
         if frac < 0:
             error_msg = f"Negative fraction for '{oxide}': {frac}"
             raise ValueError(error_msg)
@@ -454,11 +432,11 @@ def minimum_image_distance(
     return np.sqrt((delta**2).sum())
 
 
-def extract_stoichiometry(composition: str) -> dict[str, dict[str, int]]:
+def extract_stoichiometry(composition: dict[str, float]) -> dict[str, dict[str, int]]:
     """Extract the stoichiometry of each component in the composition.
 
     Args:
-        composition: The composition string.
+        composition: A dictionary mapping oxide formulas to their fractions.
 
     Returns:
         A dictionary mapping oxide formulas to their stoichiometric dictionaries
@@ -470,7 +448,7 @@ def extract_stoichiometry(composition: str) -> dict[str, dict[str, int]]:
 
 
 def create_random_atoms(
-    composition: str,
+    composition: dict[str, float],
     n_molecules: int | None = None,
     target_atoms: int | None = None,
     mode: str = "molar",
@@ -486,7 +464,8 @@ def create_random_atoms(
     or total number of atoms (`target_atoms`).
 
     Args:
-        composition: The composition string (e.g., "0.25CaO-0.25Al2O3-0.5SiO2").
+        composition: A dictionary mapping oxide formulas to their fractions,
+            e.g. {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5}.
         n_molecules: The desired total number of molecules. Mutually exclusive with `target_atoms`.
         target_atoms: The desired target number of atoms. Mutually exclusive with `n_molecules`.
         mode: The composition interpretation mode ("molar" or "weight"). Defaults to "molar".
@@ -507,7 +486,7 @@ def create_random_atoms(
 
     Example:
         >>> atoms_list, atom_counts = create_random_atoms(
-        ...     composition="0.8SiO2-0.2Na2O",
+        ...     composition={"SiO2": 0.8, "Na2O": 0.2},
         ...     target_atoms=500,
         ...     box_length=20.0
         ... )
@@ -578,7 +557,7 @@ def create_random_atoms(
     return atoms, atom_counts
 
 
-def get_glass_density_from_model(composition_string: str) -> float:
+def get_glass_density_from_model(composition: dict[str, float]) -> float:
     """Calculate the room-temperature glass density using Fluegel's empirical model.
 
     The model uses a polynomial expansion based on mole percentages of oxides.
@@ -586,7 +565,7 @@ def get_glass_density_from_model(composition_string: str) -> float:
     J. Am. Ceram. Soc., 90 [8] 2622-2635 (2007).
 
     Args:
-        composition_string: The glass composition string (molar fractions or mol%).
+        composition: A dictionary mapping oxide formulas to their fractions.
 
     Returns:
         The calculated density in g/cm^3.
@@ -596,7 +575,7 @@ def get_glass_density_from_model(composition_string: str) -> float:
             or if the format is invalid.
 
     Example:
-        >>> density = get_glass_density_from_model("0.75SiO2-0.25Na2O")
+        >>> density = get_glass_density_from_model({"SiO2": 0.75, "Na2O": 0.25})
 
     """
     COEFFICIENTS = {
@@ -703,9 +682,9 @@ def get_glass_density_from_model(composition_string: str) -> float:
         "Al2O3_B2O3_PbO": 0.000030116,
     }
     try:
-        mole_fractions = extract_composition(composition_string)
+        mole_fractions = extract_composition(composition)
     except (ValueError, TypeError) as e:
-        error_msg = f"Invalid composition string '{composition_string}': {e}"
+        error_msg = f"Invalid composition {composition!r}: {e}"
         raise ValueError(error_msg) from e
 
     # Convert to mol% and separate components
@@ -781,7 +760,7 @@ def get_glass_density_from_model(composition_string: str) -> float:
 
 
 def get_box_from_density(
-    composition: str,
+    composition: dict[str, float],
     n_molecules: int | None,
     target_atoms: int | None,
     mode: str = "molar",
@@ -793,7 +772,7 @@ def get_box_from_density(
     Now supports both n_molecules and target_atoms input modes.
 
     Args:
-        composition: The composition string.
+        composition: A dictionary mapping oxide formulas to their fractions.
         n_molecules: Total number of molecules.
         target_atoms: Target total number of atoms.
         mode: Composition mode ("molar" or "weight"). Defaults to "molar".
@@ -872,7 +851,7 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
         ASE Atoms object of the specified structure.
 
     Example:
-        >>> struct_dict = get_structure_dict("0.25CaO-0.25Al2O3-0.5SiO2", target_atoms=1000)
+        >>> struct_dict = get_structure_dict({"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5}, target_atoms=1000)
         >>> atoms = get_ase_structure(struct_dict)
 
     """
@@ -933,7 +912,7 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
 
 
 def get_structure_dict(
-    composition: str,
+    composition: dict[str, float],
     n_molecules: int | None = None,
     target_atoms: int | None = None,
     mode: str = "molar",
@@ -947,7 +926,8 @@ def get_structure_dict(
     and both molar and weight composition modes.
 
     Args:
-        composition: Composition string, e.g. "0.25CaO-0.25Al2O3-0.5SiO2" or "79SiO2-13B2O3-3Al2O3-4Na2O-1K2O"
+        composition: A dictionary mapping oxide formulas to their fractions,
+            e.g. {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5} or {"SiO2": 79, "B2O3": 13, "Al2O3": 3, "Na2O": 4, "K2O": 1}.
         n_molecules: Total number of molecules (traditional mode)
         target_atoms: Target number of atoms (new mode)
         mode: Composition mode: "molar" for mol%, "weight" for weight%
@@ -966,7 +946,7 @@ def get_structure_dict(
 
     Example:
         >>> struct_dict = get_structure_dict(
-        ...     composition="0.25CaO-0.25Al2O3-0.5SiO2",
+        ...     composition={"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5},
         ...     target_atoms=1000,
         ...     mode="molar"
         ... )

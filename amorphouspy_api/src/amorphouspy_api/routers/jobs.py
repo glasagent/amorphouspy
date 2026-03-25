@@ -26,7 +26,7 @@ from executorlib import get_future_from_cache
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
-from amorphouspy_api.composition import normalize_composition, parse_components
+from amorphouspy_api.composition import Composition
 from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import Job, get_job_store
 from amorphouspy_api.jobs import get_executor, get_lammps_resource_dict
@@ -98,8 +98,7 @@ def _submit_to_executor(
     submission: JobSubmission,
     job_id: str,
     request_hash: str,
-    components: list[str],
-    values: list[float],
+    composition: dict[str, float],
 ) -> dict:
     """Submit workflow to executorlib and return resolved status dict."""
     exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
@@ -107,8 +106,7 @@ def _submit_to_executor(
 
     future = run_meltquench_workflow(
         executor=exe,
-        components=components,
-        values=values,
+        composition=composition,
         n_atoms=submission.simulation.n_atoms,
         potential_type=submission.potential.value,
         heating_rate=int(submission.simulation.quench_rate * 100),  # default heating = 100x quench
@@ -177,7 +175,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
     If an identical job already completed, the cached result is returned.
     """
     store = get_job_store()
-    norm_comp = normalize_composition(submission.composition)
+    norm_comp = submission.composition.canonical
     req_hash = _job_hash(submission, norm_comp)
 
     # Check for cached result
@@ -187,14 +185,13 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
         return JobCreatedResponse(
             id=cached.job_id,
             status=JobStatus(cached.status),
-            composition=cached.composition,
+            composition=Composition.from_canonical(cached.composition),
             potential=cached.potential,
             created_at=cached.created_at.isoformat() if cached.created_at else _iso_now(),
         )
 
     # Create new job record
     job_id = str(uuid4())
-    components, values = parse_components(norm_comp)
 
     job = Job(
         job_id=job_id,
@@ -214,7 +211,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
 
     # Submit to executor
     try:
-        resolved = _submit_to_executor(submission, job_id, req_hash, components, values)
+        resolved = _submit_to_executor(submission, job_id, req_hash, submission.composition.root)
         _update_job_from_resolved(job_id, resolved)
     except Exception:
         logger.exception("Failed to submit job %s", job_id)
@@ -229,7 +226,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
     return JobCreatedResponse(
         id=job_id,
         status=JobStatus(final.status) if final else JobStatus.PENDING,
-        composition=norm_comp,
+        composition=Composition.from_canonical(norm_comp),
         potential=submission.potential,
         created_at=final.created_at.isoformat() if final and final.created_at else _iso_now(),
     )
@@ -239,13 +236,13 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
 def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
     """Search for existing completed / running jobs matching a spec."""
     store = get_job_store()
-    norm_comp = normalize_composition(request.composition)
+    norm_comp = request.composition.canonical
     jobs = store.search_by_composition(norm_comp, request.potential)
 
     matches = [
         JobSearchMatch(
             job_id=j.job_id,
-            composition=j.composition,
+            composition=Composition.from_canonical(j.composition),
             potential=j.potential,
             analyses=_analyses_list(j),
             similarity=1.0,
@@ -283,7 +280,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
     return JobStatusResponse(
         id=job.job_id,
         status=JobStatus(job.status),
-        composition=job.composition,
+        composition=Composition.from_canonical(job.composition),
         potential=job.potential,
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
@@ -315,7 +312,7 @@ def cancel_job(job_id: str) -> JobStatusResponse:
     return JobStatusResponse(
         id=job.job_id,
         status=JobStatus(job.status),
-        composition=job.composition,
+        composition=Composition.from_canonical(job.composition),
         potential=job.potential,
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
@@ -338,7 +335,7 @@ def get_job_results(job_id: str) -> JobResultsResponse:
 
     return JobResultsResponse(
         job_id=job.job_id,
-        composition=job.composition,
+        composition=Composition.from_canonical(job.composition),
         structure=result.get("structural_analysis"),
     )
 

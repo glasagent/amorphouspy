@@ -35,7 +35,7 @@ def _simple_sio2_atoms() -> Atoms:
 def test_compute_distances_orthogonal_finds_pair() -> None:
     """Two atoms 1.6 Å apart are returned with correct distance."""
     atoms = Atoms("SiO", positions=[[4.0, 5.0, 5.0], [5.6, 5.0, 5.0]], cell=[10, 10, 10], pbc=True)
-    distances, i_idx, j_idx = _compute_distances(atoms, r_max=3.0)
+    distances, _i_idx, _j_idx = _compute_distances(atoms, r_max=3.0)
     assert len(distances) >= 1
     assert distances[0] == pytest.approx(1.6, abs=1e-5)
 
@@ -103,7 +103,7 @@ def _make_histogram_inputs(same_type: bool) -> dict:  # noqa: FBT001
 def test_compute_rdf_histograms_same_type_key() -> None:
     """Same-type pair is stored under (t, t) canonical key."""
     kwargs = _make_histogram_inputs(same_type=True)
-    rdfs, hist_dir = _compute_rdf_histograms(**kwargs)
+    rdfs, _hist_dir = _compute_rdf_histograms(**kwargs)
     assert (8, 8) in rdfs
     assert rdfs[(8, 8)].shape[0] == 50
 
@@ -111,7 +111,7 @@ def test_compute_rdf_histograms_same_type_key() -> None:
 def test_compute_rdf_histograms_same_type_factor2() -> None:
     """Same-type histogram applies factor of 2 to the raw counts."""
     kwargs = _make_histogram_inputs(same_type=True)
-    rdfs, hist_dir = _compute_rdf_histograms(**kwargs)
+    _rdfs, hist_dir = _compute_rdf_histograms(**kwargs)
     # The directed histogram is raw (not doubled)
     raw_hist = hist_dir[(8, 8)]
     # g(r) numerator = hist*2, so g(r)*denominator ≈ hist*2
@@ -183,7 +183,7 @@ def test_compute_rdf_returns_correct_shapes() -> None:
 def test_compute_rdf_rmax_clamping(capsys: pytest.CaptureFixture[str]) -> None:
     """r_max larger than half the box height is clamped with a printed warning."""
     atoms = _simple_sio2_atoms()  # 10 Å box → max allowed = 5 Å
-    r, rdfs, cn = compute_rdf(atoms, r_max=8.0, n_bins=50)
+    r, _rdfs, _cn = compute_rdf(atoms, r_max=8.0, n_bins=50)
     captured = capsys.readouterr()
     assert "Warning" in captured.out
     # r should be <= adjusted r_max (floor of 5.0 = 5)
@@ -202,7 +202,7 @@ def test_compute_rdf_rmax_too_small_raises() -> None:
 def test_compute_rdf_type_pairs_filter() -> None:
     """Explicit type_pairs returns only the requested keys."""
     atoms = _simple_sio2_atoms()
-    r, rdfs, cn = compute_rdf(atoms, r_max=4.0, n_bins=50, type_pairs=[(8, 14)])
+    _r, rdfs, _cn = compute_rdf(atoms, r_max=4.0, n_bins=50, type_pairs=[(8, 14)])
     assert set(rdfs.keys()) == {(8, 14)}
 
 

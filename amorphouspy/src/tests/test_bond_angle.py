@@ -80,7 +80,7 @@ def test_compute_angles_normalized() -> None:
 def test_compute_angles_no_neighbors_within_cutoff() -> None:
     """Cutoff too small → no neighbors found → histogram has no finite non-zero values."""
     atoms = _atoms_with_known_angle(90.0)
-    bin_centers, hist = compute_angles(atoms, center_type=14, neighbor_type=8, cutoff=0.5)
+    _bin_centers, hist = compute_angles(atoms, center_type=14, neighbor_type=8, cutoff=0.5)
     # density=True on empty data produces NaN; treat NaN and 0 both as "no signal"
     assert np.nansum(hist) == pytest.approx(0.0)
 

@@ -49,7 +49,7 @@ def test_jobs_api_integration() -> None:
 
     # Submit a job with fast rates for integration testing
     payload = {
-        "composition": "SiO2 60 - CaO 25 - Al2O3 15",
+        "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
         "potential": "pmmcs",
         "simulation": {
             "melt_temperature": 5000,

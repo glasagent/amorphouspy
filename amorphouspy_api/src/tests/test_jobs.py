@@ -124,7 +124,7 @@ def test_submit_job_new() -> None:
         resp = client.post(
             "/jobs",
             json={
-                "composition": "SiO2 60 - CaO 25 - Al2O3 15",
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
             },
         )
 
@@ -132,18 +132,17 @@ def test_submit_job_new() -> None:
     data = resp.json()
     assert "id" in data
     assert data["status"] in ("pending", "completed")
-    assert data["composition"] == "Al2O3 15 - CaO 25 - SiO2 60"  # normalised
+    assert data["composition"] == {"Al2O3": 15.0, "CaO": 25.0, "SiO2": 60.0}
 
 
 def test_submit_job_returns_cached() -> None:
     """Test that submitting a duplicate request returns the cached job."""
-    from amorphouspy_api.composition import normalize_composition
     from amorphouspy_api.models import JobSubmission
     from amorphouspy_api.routers.jobs import _job_hash
 
     # Build the same submission the client will send
-    sub = JobSubmission(composition="SiO2 60 - CaO 25 - Al2O3 15")
-    norm = normalize_composition(sub.composition)
+    sub = JobSubmission(composition={"SiO2": 60, "CaO": 25, "Al2O3": 15})
+    norm = sub.composition.canonical
     real_hash = _job_hash(sub, norm)
 
     _insert_completed_job("j-cached", composition=norm, request_hash=real_hash)
@@ -151,7 +150,7 @@ def test_submit_job_returns_cached() -> None:
     resp = client.post(
         "/jobs",
         json={
-            "composition": "SiO2 60 - CaO 25 - Al2O3 15",
+            "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
         },
     )
 
@@ -285,7 +284,7 @@ def test_search_jobs_exact_match() -> None:
     resp = client.post(
         "/jobs:search",
         json={
-            "composition": "SiO2 60 - CaO 25 - Al2O3 15",
+            "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
         },
     )
     assert resp.status_code == 200
@@ -298,7 +297,7 @@ def test_search_jobs_no_match() -> None:
     resp = client.post(
         "/jobs:search",
         json={
-            "composition": "B2O3 100",
+            "composition": {"B2O3": 100},
         },
     )
     assert resp.status_code == 200
@@ -323,15 +322,15 @@ def test_list_glasses() -> None:
 def test_get_glass_properties() -> None:
     _insert_completed_job("j-glass-prop")
 
-    resp = client.get("/glasses", params={"composition": "SiO2 60 - CaO 25 - Al2O3 15"})
+    resp = client.post("/glasses:lookup", json={"composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15}})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["composition"] == "Al2O3 15 - CaO 25 - SiO2 60"
+    assert data["composition"] == {"Al2O3": 15.0, "CaO": 25.0, "SiO2": 60.0}
     assert "structure" in data["properties"]
 
 
 def test_get_glass_properties_not_found() -> None:
-    resp = client.get("/glasses", params={"composition": "B2O3 100"})
+    resp = client.post("/glasses:lookup", json={"composition": {"B2O3": 100}})
     assert resp.status_code == 404
 
 

@@ -113,7 +113,7 @@ from amorphouspy import get_structure_dict
 from amorphouspy.potentials import generate_potential
 
 structure_dict = get_structure_dict(
-    "0.75SiO2-0.15Na2O-0.10CaO",
+    {"SiO2": 75, "Na2O": 15, "CaO": 10},
     target_atoms=3000,
 )
 

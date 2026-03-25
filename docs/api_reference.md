@@ -27,16 +27,16 @@ Calculate molar mass of a compound in g/mol.
 ---
 
 ```python
-get_composition(comp_str: str, mode: str = "molar") -> dict[str, float]
+get_composition(composition: dict[str, float], mode: str = "molar") -> dict[str, float]
 ```
-Parse composition string into normalized molar fractions. `mode` is `"molar"` or `"weight"`.
+Normalize a composition dict into molar fractions. `mode` is `"molar"` or `"weight"`.
 
 ---
 
 ```python
-extract_composition(composition: str) -> dict[str, float]
+extract_composition(composition: dict[str, float]) -> dict[str, float]
 ```
-Strict composition parser with charge neutrality and element validation.
+Strict composition validator with charge neutrality and element validation.
 
 ---
 
@@ -49,7 +49,7 @@ Raise `ValueError` if oxide is not charge-neutral.
 
 ```python
 plan_system(
-    comp_str: str,
+    composition: dict[str, float],
     target: int,
     mode: str = "molar",
     target_type: str = "atoms",
@@ -60,7 +60,7 @@ Generate integer formula-unit allocation for a target system size.
 ---
 
 ```python
-get_glass_density_from_model(composition_string: str) -> float
+get_glass_density_from_model(composition: dict[str, float]) -> float
 ```
 Estimated room-temperature density (g/cm³) using Fluegel's empirical model.
 
@@ -68,7 +68,7 @@ Estimated room-temperature density (g/cm³) using Fluegel's empirical model.
 
 ```python
 create_random_atoms(
-    composition: str,
+    composition: dict[str, float],
     n_molecules: int | None = None,
     target_atoms: int | None = None,
     mode: str = "molar",
@@ -85,7 +85,7 @@ Generate random atom positions in a periodic cubic box with minimum distance con
 
 ```python
 get_structure_dict(
-    composition: str,
+    composition: dict[str, float],
     n_molecules: int | None = None,
     target_atoms: int | None = None,
     mode: str = "molar",

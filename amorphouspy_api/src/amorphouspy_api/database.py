@@ -29,7 +29,7 @@ class Job(Base):
     job_id = Column(String(36), primary_key=True)
     # Deterministic hash of (normalised composition + potential + simulation params)
     request_hash = Column(String(64), nullable=False, index=True)
-    # Normalised composition string (via composition.normalize_composition)
+    # Canonical composition string (via Composition.canonical)
     composition = Column(String(256), nullable=False, index=True)
     potential = Column(String(20), nullable=False)
     status = Column(String(20), nullable=False, default="pending")

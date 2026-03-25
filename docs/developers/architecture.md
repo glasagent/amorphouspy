@@ -47,7 +47,7 @@ Full endpoint documentation is available via the auto-generated OpenAPI docs at 
 
 ### Composition Normalization
 
-The server normalizes composition strings so that `SiO2 70 - Na2O 15 - CaO 15` and `Na2O 15 - SiO2 70 - CaO 15` resolve to the same material. A canonical form (alphabetical oxide ordering, normalized whitespace) is used internally for storage and matching.
+The server uses a `Composition` model that accepts a dict (e.g. `{"SiO2": 70, "Na2O": 15, "CaO": 15}`) and generates a canonical string internally for database storage and matching. This ensures that `{"SiO2": 70, "Na2O": 15, "CaO": 15}` and `{"Na2O": 15, "SiO2": 70, "CaO": 15}` resolve to the same material. The canonical form (alphabetical oxide ordering, rounded values) is an implementation detail — API consumers always work with dicts.
 
 ### DAG Resolution
 
@@ -69,7 +69,7 @@ The API is designed to map cleanly to MCP tools:
 
 | MCP Tool | Endpoint |
 |---|---|
-| `get_glass_properties` | `GET /glasses?composition=...` |
+| `get_glass_properties` | `POST /glasses:lookup` |
 | `search_simulations` | `POST /jobs:search` |
 | `submit_simulation` | `POST /jobs` |
 | `check_simulation_status` | `GET /jobs/{id}` |
