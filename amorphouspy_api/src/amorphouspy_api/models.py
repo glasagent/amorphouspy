@@ -3,18 +3,15 @@
 Defines request/response schemas for the ``/jobs`` and ``/glasses`` endpoints.
 """
 
-from __future__ import annotations
-
 from enum import StrEnum
 from io import StringIO
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 
 from ase import Atoms
 from ase.io import read, write
 from pydantic import BaseModel, Field, PlainSerializer, PlainValidator
 
-if TYPE_CHECKING:
-    from amorphouspy_api.composition import Composition
+from amorphouspy_api.composition import Composition
 
 # ---------------------------------------------------------------------------
 # ASE Atoms serialisation helpers (used by database & visualization)
