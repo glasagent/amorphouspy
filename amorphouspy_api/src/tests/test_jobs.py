@@ -343,3 +343,159 @@ def test_root_redirect() -> None:
     resp = client.get("/")
     assert resp.status_code == 200
     assert "swagger" in resp.text.lower() or "openapi" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Viscosity integration
+# ---------------------------------------------------------------------------
+
+
+def _mock_viscosity_result() -> dict[str, Any]:
+    return {
+        "temperatures": [2500.0, 2000.0, 1500.0],
+        "viscosities": [1.0e-2, 5.0e-1, 1.2e3],
+        "max_lag": [100.0, 120.0, 110.0],
+        "simulation_steps": [10_000_000, 10_000_000, 10_000_000],
+        "lag_times_ps": [[0.0, 1.0], [0.0, 1.0], [0.0, 1.0]],
+        "sacf_data": [[1.0, 0.5], [1.0, 0.4], [1.0, 0.3]],
+        "viscosity_running": [[0.0, 0.01], [0.0, 0.5], [0.0, 1200.0]],
+    }
+
+
+def _mock_result_with_viscosity() -> dict[str, Any]:
+    result = _mock_result()
+    result["viscosity"] = _mock_viscosity_result()
+    return result
+
+
+def _insert_completed_viscosity_job(job_id: str = "j-visc-1") -> None:
+    store = get_job_store()
+    store.create_job(
+        Job(
+            job_id=job_id,
+            request_hash="vischash1234",
+            composition="Al2O3 15 - CaO 25 - SiO2 60",
+            potential="pmmcs",
+            status="completed",
+            request_data={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "potential": "pmmcs",
+                "simulation": {},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "viscosity", "temperatures": [1500, 2000, 2500]},
+                ],
+            },
+            progress={
+                "structure_generation": "completed",
+                "melt_quench": "completed",
+                "structure_analysis": "completed",
+                "viscosity": "completed",
+            },
+            result_data=_mock_result_with_viscosity(),
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+
+def test_submit_job_with_viscosity() -> None:
+    """Test submitting a job that includes viscosity analysis."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs.run_meltquench_workflow",
+            return_value=mock_future,
+        ),
+        patch.dict(
+            "amorphouspy_api.routers.jobs._ANALYSIS_RUNNERS",
+            {"viscosity": lambda _sub, _cfg: _mock_viscosity_result()},
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "viscosity", "temperatures": [1500, 2000, 2500]},
+                ],
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "id" in data
+    assert data["status"] in ("pending", "completed")
+
+
+def test_get_results_with_viscosity() -> None:
+    """Test that the results endpoint returns viscosity data."""
+    _insert_completed_viscosity_job("j-visc-results")
+
+    resp = client.get("/jobs/j-visc-results/results")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["structure"] is not None
+    assert data["analyses"]["viscosity"] is not None
+    assert data["analyses"]["viscosity"]["temperatures"] == [2500.0, 2000.0, 1500.0]
+    assert len(data["analyses"]["viscosity"]["viscosities"]) == 3
+
+
+def test_get_single_viscosity_result() -> None:
+    """Test retrieving only the viscosity analysis result."""
+    _insert_completed_viscosity_job("j-visc-single")
+
+    resp = client.get("/jobs/j-visc-single/results/viscosity")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "viscosity" in data
+    assert data["viscosity"]["temperatures"] == [2500.0, 2000.0, 1500.0]
+
+
+def test_viscosity_progress_tracking() -> None:
+    """Test that viscosity step appears in progress when requested."""
+    _insert_completed_viscosity_job("j-visc-progress")
+
+    resp = client.get("/jobs/j-visc-progress")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["progress"]["analyses"]["viscosity"] == "completed"
+
+
+def test_job_hash_differs_with_viscosity() -> None:
+    """Test that the job hash changes when viscosity analysis is added."""
+    from amorphouspy_api.models import JobSubmission
+    from amorphouspy_api.routers.jobs import _job_hash
+
+    sub_no_visc = JobSubmission(
+        composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},
+    )
+    sub_with_visc = JobSubmission(
+        composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},
+        analyses=[
+            {"type": "structure"},
+            {"type": "viscosity", "temperatures": [1500, 2000]},
+        ],
+    )
+
+    hash1 = _job_hash(sub_no_visc, sub_no_visc.composition.canonical)
+    hash2 = _job_hash(sub_with_visc, sub_with_visc.composition.canonical)
+
+    assert hash1 != hash2
+
+
+def test_job_without_viscosity_has_no_viscosity_progress() -> None:
+    """Test that jobs without viscosity analysis don't have viscosity in progress."""
+    _insert_completed_job("j-no-visc")
+
+    resp = client.get("/jobs/j-no-visc")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "viscosity" not in data["progress"]["analyses"]

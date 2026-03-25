@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from io import StringIO
 from typing import Annotated
@@ -25,6 +26,7 @@ from ase.io import write as ase_write
 from executorlib import get_future_from_cache
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel
 
 from amorphouspy_api.composition import Composition
 from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
@@ -41,7 +43,6 @@ from amorphouspy_api.models import (
     JobStatusResponse,
     JobSubmission,
     StepStatus,
-    ViscosityAnalysis,
     validate_atoms,
 )
 from amorphouspy_api.workflows import run_meltquench_workflow
@@ -49,6 +50,32 @@ from amorphouspy_api.workflows import run_meltquench_workflow
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["tool"])
+
+# ---------------------------------------------------------------------------
+# Analysis runner registry
+# ---------------------------------------------------------------------------
+
+AnalysisRunnerFn = Callable[[JobSubmission, BaseModel], dict]
+
+_ANALYSIS_RUNNERS: dict[str, AnalysisRunnerFn] = {}
+
+
+def _register_analysis(analysis_type: str):
+    """Decorator to register a post-melt-quench analysis runner.
+
+    Usage::
+
+        @_register_analysis("viscosity")
+        def _run_viscosity(submission, config):
+            ...
+    """
+
+    def decorator(fn: AnalysisRunnerFn) -> AnalysisRunnerFn:
+        _ANALYSIS_RUNNERS[analysis_type] = fn
+        return fn
+
+    return decorator
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,16 +101,22 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+_BASE_PROGRESS_KEYS = {"structure_generation", "melt_quench", "structure_analysis"}
+
+
 def _progress_from_dict(d: dict | None) -> JobProgress:
+    """Convert a flat progress dict (from DB) into a JobProgress model."""
     if d is None:
         return JobProgress()
-    fields = {}
+    base: dict[str, StepStatus] = {}
+    analyses: dict[str, StepStatus] = {}
     for k, v in d.items():
-        if v is None:
-            fields[k] = None
+        sv = StepStatus(v) if v is not None else StepStatus.PENDING
+        if k in _BASE_PROGRESS_KEYS:
+            base[k] = sv
         else:
-            fields[k] = StepStatus(v)
-    return JobProgress(**fields)
+            analyses[k] = sv
+    return JobProgress(**base, analyses=analyses)
 
 
 def _analyses_list(job: Job) -> list[str]:
@@ -103,12 +136,13 @@ def _resolve_future(future, job_id: str) -> dict:
     return {"status": "completed", "result": future.result()}
 
 
-def _wants_viscosity(submission: JobSubmission) -> ViscosityAnalysis | None:
-    """Return the ViscosityAnalysis config if the submission requests it."""
-    for a in submission.analyses:
-        if isinstance(a, ViscosityAnalysis):
-            return a
-    return None
+def _get_post_analyses(submission: JobSubmission) -> dict[str, BaseModel]:
+    """Extract post-melt-quench analysis configs keyed by type name.
+
+    Structure analysis is built into the melt-quench pipeline itself,
+    so it is excluded here.
+    """
+    return {a.type: a for a in submission.analyses if a.type != "structure"}
 
 
 def _initial_progress(submission: JobSubmission) -> dict[str, str]:
@@ -118,8 +152,9 @@ def _initial_progress(submission: JobSubmission) -> dict[str, str]:
         "melt_quench": "pending",
         "structure_analysis": "pending",
     }
-    if _wants_viscosity(submission):
-        progress["viscosity"] = "pending"
+    for a in submission.analyses:
+        if a.type != "structure":
+            progress[a.type] = "pending"
     return progress
 
 
@@ -153,102 +188,87 @@ def _submit_to_executor(
 def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmission | None = None) -> None:
     """Persist executor outcome into the job store.
 
-    If the melt-quench completed and viscosity was requested, chain the
-    viscosity workflow before marking the job as completed.
+    If the melt-quench completed and additional analyses were requested,
+    chain each registered runner before marking the job as completed.
     """
     store = get_job_store()
     status = resolved["status"]
-
-    visc_cfg = _wants_viscosity(submission) if submission else None
+    post_analyses = _get_post_analyses(submission) if submission else {}
 
     if status == "completed":
         result = resolved["result"]
-        if visc_cfg is not None:
-            # Mark melt-quench done, viscosity running
-            store.update_job(
-                job_id,
-                status="running",
-                progress={
-                    "structure_generation": "completed",
-                    "melt_quench": "completed",
-                    "structure_analysis": "completed",
-                    "viscosity": "running",
-                },
-                result_data=result,
-            )
+        progress = dict.fromkeys(_BASE_PROGRESS_KEYS, "completed")
+
+        # Chain each requested post-processing analysis
+        for key, config in post_analyses.items():
+            runner = _ANALYSIS_RUNNERS.get(key)
+            if runner is None:
+                logger.warning("No runner registered for analysis '%s' — skipping", key)
+                continue
+
+            progress[key] = "running"
+            store.update_job(job_id, status="running", progress=progress, result_data=result)
+
             try:
-                visc_result = _run_viscosity_chain(
-                    submission=submission,
-                    visc_cfg=visc_cfg,
-                )
-                # Merge viscosity result into existing result_data
-                result["viscosity"] = visc_result
-                store.update_job(
-                    job_id,
-                    status="completed",
-                    progress={
-                        "structure_generation": "completed",
-                        "melt_quench": "completed",
-                        "structure_analysis": "completed",
-                        "viscosity": "completed",
-                    },
-                    result_data=result,
-                    completed_at=datetime.now(UTC),
-                )
+                result[key] = runner(submission, config)
+                progress[key] = "completed"
             except Exception as exc:
-                logger.exception("Viscosity workflow failed for job %s", job_id)
+                logger.exception("Analysis '%s' failed for job %s", key, job_id)
+                progress[key] = "failed"
                 store.update_job(
                     job_id,
                     status="failed",
-                    progress={
-                        "structure_generation": "completed",
-                        "melt_quench": "completed",
-                        "structure_analysis": "completed",
-                        "viscosity": "failed",
-                    },
-                    errors={"viscosity": str(exc)},
+                    progress=progress,
+                    errors={key: str(exc)},
                 )
-        else:
-            store.update_job(
-                job_id,
-                status="completed",
-                progress={
-                    "structure_generation": "completed",
-                    "melt_quench": "completed",
-                    "structure_analysis": "completed",
-                },
-                result_data=result,
-                completed_at=datetime.now(UTC),
-            )
+                return
+
+        store.update_job(
+            job_id,
+            status="completed",
+            progress=progress,
+            result_data=result,
+            completed_at=datetime.now(UTC),
+        )
+
     elif status == "failed":
+        progress = {
+            "structure_generation": "completed",
+            "melt_quench": "failed",
+            "structure_analysis": "pending",
+        }
+        for key in post_analyses:
+            progress[key] = "pending"
         store.update_job(
             job_id,
             status="failed",
-            progress={
-                "structure_generation": "completed",
-                "melt_quench": "failed",
-                "structure_analysis": "pending",
-            },
+            progress=progress,
             errors={"melt_quench": resolved.get("error", "unknown error")},
         )
+
     else:
         progress = {
             "structure_generation": "running",
             "melt_quench": "pending",
             "structure_analysis": "pending",
         }
-        if visc_cfg:
-            progress["viscosity"] = "pending"
+        for key in post_analyses:
+            progress[key] = "pending"
         store.update_job(job_id, status="running", progress=progress)
 
 
-def _run_viscosity_chain(
-    submission: JobSubmission,
-    visc_cfg: ViscosityAnalysis,
-) -> dict:
+# ---------------------------------------------------------------------------
+# Registered analysis runners
+# ---------------------------------------------------------------------------
+
+
+@_register_analysis("viscosity")
+def _run_viscosity_analysis(submission: JobSubmission, config: BaseModel) -> dict:
     """Run the viscosity workflow after melt-quench."""
+    from amorphouspy_api.models import ViscosityAnalysis
     from amorphouspy_api.workflows.viscosity import run_viscosity_workflow
 
+    cfg: ViscosityAnalysis = config  # type: ignore[assignment]
     lammps_resource_dict = get_lammps_resource_dict()
     return run_viscosity_workflow(
         composition=submission.composition.root,
@@ -256,11 +276,11 @@ def _run_viscosity_chain(
         potential_type=submission.potential.value,
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),
-        temperatures=visc_cfg.temperatures,
-        timestep=visc_cfg.timestep,
-        n_timesteps=visc_cfg.n_timesteps,
-        n_print=visc_cfg.n_print,
-        max_lag=visc_cfg.max_lag,
+        temperatures=cfg.temperatures,
+        timestep=cfg.timestep,
+        n_timesteps=cfg.n_timesteps,
+        n_print=cfg.n_print,
+        max_lag=cfg.max_lag,
         lammps_resource_dict=lammps_resource_dict,
     )
 
@@ -369,7 +389,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
                 cache_key=req_hash,
             )
             resolved = _resolve_future(future, job_id)
-            # Reconstruct submission for viscosity chaining
+            # Reconstruct submission so post-analyses can be chained
             submission = JobSubmission(**job.request_data) if job.request_data else None
             _update_job_from_resolved(job_id, resolved, submission)
             job = store.get_job(job_id)
@@ -434,11 +454,14 @@ def get_job_results(job_id: str) -> JobResultsResponse:
     if not result:
         raise HTTPException(status_code=404, detail="No results available yet")
 
+    # Collect results for all registered analysis types
+    analyses = {key: result[key] for key in _ANALYSIS_RUNNERS if key in result}
+
     return JobResultsResponse(
         job_id=job.job_id,
         composition=Composition.from_canonical(job.composition),
         structure=result.get("structural_analysis"),
-        viscosity=result.get("viscosity"),
+        analyses=analyses,
     )
 
 
