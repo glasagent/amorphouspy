@@ -109,11 +109,23 @@ class ElasticAnalysis(BaseModel):
 
 
 class ViscosityAnalysis(BaseModel):
-    """Configuration for viscosity analysis (Green-Kubo)."""
+    """Configuration for viscosity analysis (Green-Kubo).
+
+    Viscosity is computed by running additional MD production runs at each
+    requested temperature.  The melt-quench structure is sequentially cooled
+    from high to low temperature, and at each step a Green-Kubo viscosity
+    calculation is performed.
+    """
 
     type: Literal["viscosity"] = "viscosity"
-    temperatures: list[float] = Field(default=[1500, 2000, 2500], description="Temperatures in K")
-    correlation_length: int = Field(default=5000, description="Green-Kubo correlation length")
+    temperatures: list[float] = Field(default=[1500, 2000, 2500], description="Simulation temperatures in K")
+    timestep: float = Field(default=1.0, description="MD timestep in fs for the viscosity production run")
+    n_timesteps: int = Field(default=10_000_000, description="Number of MD steps per viscosity production run")
+    n_print: int = Field(default=1, description="Thermodynamic output frequency")
+    max_lag: int | None = Field(
+        default=1_000_000,
+        description="Maximum correlation lag (steps) for Green-Kubo post-processing; None uses full trajectory",
+    )
 
 
 class CTEAnalysis(BaseModel):
@@ -128,6 +140,25 @@ Analysis = Annotated[
     StructureAnalysis | ElasticAnalysis | ViscosityAnalysis | CTEAnalysis,
     Field(discriminator="type"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Viscosity result data (stored inside result_data["viscosity"])
+# ---------------------------------------------------------------------------
+
+
+class ViscosityResultData(BaseModel):
+    """Result of a multi-temperature viscosity analysis."""
+
+    temperatures: list[float] = Field(..., description="Simulation temperatures (K)")
+    viscosities: list[float] = Field(..., description="Viscosities at each temperature (Pa·s)")
+    max_lag: list[float] = Field(..., description="Max cutoff correlation time per temperature (ps)")
+    simulation_steps: list[int] = Field(..., description="MD steps per temperature")
+    lag_times_ps: list[list[float]] = Field(default_factory=list, description="Lag time arrays per temperature (ps)")
+    sacf_data: list[list[float]] = Field(default_factory=list, description="Averaged normalised SACF per temperature")
+    viscosity_running: list[list[float]] = Field(
+        default_factory=list, description="Running viscosity integral per temperature (Pa·s)"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +215,7 @@ class JobProgress(BaseModel):
     structure_generation: StepStatus = StepStatus.PENDING
     melt_quench: StepStatus = StepStatus.PENDING
     structure_analysis: StepStatus = StepStatus.PENDING
+    viscosity: StepStatus | None = None
 
 
 class JobStatusResponse(BaseModel):
@@ -205,6 +237,7 @@ class JobResultsResponse(BaseModel):
     job_id: str
     composition: Composition
     structure: dict | None = None
+    viscosity: dict | None = None
 
 
 class JobSearchRequest(BaseModel):
