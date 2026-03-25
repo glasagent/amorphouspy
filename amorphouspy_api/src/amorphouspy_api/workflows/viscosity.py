@@ -1,52 +1,47 @@
 """Viscosity workflow for glass simulation.
 
-Runs Green-Kubo viscosity calculations at multiple temperatures using the
-quenched structure from a melt-quench simulation.  The structure is
-sequentially cooled from the highest to the lowest requested temperature,
-and at each step a production MD run is performed followed by post-processing.
+Runs Green-Kubo viscosity calculations at multiple temperatures starting
+from an already-quenched glass structure.  The structure is sequentially
+cooled from the highest to the lowest requested temperature, and at each
+step a production MD run is performed followed by post-processing.
 
-Unlike the melt-quench workflow (which is a single executorlib DAG), viscosity
-must iterate over temperatures sequentially (each step depends on the previous
-cooled structure), so this module is written as a plain synchronous function
-intended to be run via :func:`run_viscosity_workflow`.
+This module is a plain synchronous function called by the ``viscosity``
+analysis runner registered in ``routers/jobs.py``.
 """
 
 import logging
 from typing import Any
 
-from amorphouspy import (
-    generate_potential,
-    get_ase_structure,
-    get_structure_dict,
-    melt_quench_simulation,
-)
+from amorphouspy import melt_quench_simulation
 from amorphouspy.workflows.viscosity import get_viscosity, viscosity_simulation
 
 logger = logging.getLogger(__name__)
 
 
 def run_viscosity_workflow(
-    composition: dict[str, float],
-    n_atoms: int,
-    potential_type: str,
+    structure,
+    potential,
+    temperatures: list[float],
     heating_rate: float,
     cooling_rate: float,
-    temperatures: list[float],
     timestep: float = 1.0,
     n_timesteps: int = 10_000_000,
     n_print: int = 1,
     max_lag: int | None = 1_000_000,
     lammps_resource_dict: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run the complete viscosity workflow: structure generation → melt-quench → viscosity at each T.
+    """Run viscosity analysis at multiple temperatures.
+
+    The workflow starts from the quenched structure produced by the
+    melt-quench pipeline — it does **not** regenerate the structure or
+    potential.
 
     Args:
-        composition: Oxide glass composition dict (e.g. {"SiO2": 70, "Na2O": 30}).
-        n_atoms: Target number of atoms.
-        potential_type: Interatomic potential type (pmmcs/bjp/shik).
-        heating_rate: Heating rate in K/ps.
+        structure: Quenched ASE Atoms from the melt-quench workflow.
+        potential: LAMMPS potential (from ``generate_potential``).
+        temperatures: Target temperatures (K) for viscosity runs.
+        heating_rate: Heating rate in K/ps (used when cooling between temps).
         cooling_rate: Cooling rate in K/ps.
-        temperatures: List of temperatures (K) for viscosity runs.
         timestep: MD timestep in fs.
         n_timesteps: Number of MD steps per viscosity production run.
         n_print: Thermodynamic output frequency.
@@ -58,12 +53,6 @@ def run_viscosity_workflow(
     """
     if lammps_resource_dict is None:
         lammps_resource_dict = {}
-
-    # Step 1: Generate structure and potential
-    logger.info("Generating structure for viscosity: %s", composition)
-    atoms_dict = get_structure_dict(composition=composition, target_atoms=n_atoms)
-    structure = get_ase_structure(atoms_dict=atoms_dict)
-    potential = generate_potential(atoms_dict=atoms_dict, potential_type=potential_type)
 
     # Sequential cooling: highest T → lowest T
     sorted_temps = sorted(temperatures, reverse=True)

@@ -55,7 +55,7 @@ router = APIRouter(prefix="/jobs", tags=["tool"])
 # Analysis runner registry
 # ---------------------------------------------------------------------------
 
-AnalysisRunnerFn = Callable[[JobSubmission, BaseModel], dict]
+AnalysisRunnerFn = Callable[[JobSubmission, BaseModel, dict], dict]
 
 _ANALYSIS_RUNNERS: dict[str, AnalysisRunnerFn] = {}
 
@@ -63,10 +63,13 @@ _ANALYSIS_RUNNERS: dict[str, AnalysisRunnerFn] = {}
 def _register_analysis(analysis_type: str):
     """Decorator to register a post-melt-quench analysis runner.
 
+    Each runner receives ``(submission, config, mq_result)`` where
+    *mq_result* is the resolved melt-quench result dict.
+
     Usage::
 
         @_register_analysis("viscosity")
-        def _run_viscosity(submission, config):
+        def _run_viscosity(submission, config, mq_result):
             ...
     """
 
@@ -101,7 +104,7 @@ def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-_BASE_PROGRESS_KEYS = {"structure_generation", "melt_quench", "structure_analysis"}
+_BASE_PROGRESS_KEYS = {"structure_generation", "melt_quench"}
 
 
 def _progress_from_dict(d: dict | None) -> JobProgress:
@@ -136,25 +139,19 @@ def _resolve_future(future, job_id: str) -> dict:
     return {"status": "completed", "result": future.result()}
 
 
-def _get_post_analyses(submission: JobSubmission) -> dict[str, BaseModel]:
-    """Extract post-melt-quench analysis configs keyed by type name.
-
-    Structure analysis is built into the melt-quench pipeline itself,
-    so it is excluded here.
-    """
-    return {a.type: a for a in submission.analyses if a.type != "structure"}
+def _get_requested_analyses(submission: JobSubmission) -> dict[str, BaseModel]:
+    """Extract analysis configs from submission, keyed by type name."""
+    return {a.type: a for a in submission.analyses}
 
 
 def _initial_progress(submission: JobSubmission) -> dict[str, str]:
     """Build the initial progress dict based on requested analyses."""
-    progress = {
+    progress: dict[str, str] = {
         "structure_generation": "pending",
         "melt_quench": "pending",
-        "structure_analysis": "pending",
     }
     for a in submission.analyses:
-        if a.type != "structure":
-            progress[a.type] = "pending"
+        progress[a.type] = "pending"
     return progress
 
 
@@ -193,14 +190,14 @@ def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmis
     """
     store = get_job_store()
     status = resolved["status"]
-    post_analyses = _get_post_analyses(submission) if submission else {}
+    requested = _get_requested_analyses(submission) if submission else {}
 
     if status == "completed":
         result = resolved["result"]
-        progress = dict.fromkeys(_BASE_PROGRESS_KEYS, "completed")
+        progress: dict[str, str] = dict.fromkeys(_BASE_PROGRESS_KEYS, "completed")
 
-        # Chain each requested post-processing analysis
-        for key, config in post_analyses.items():
+        # Run each requested analysis
+        for key, config in requested.items():
             runner = _ANALYSIS_RUNNERS.get(key)
             if runner is None:
                 logger.warning("No runner registered for analysis '%s' — skipping", key)
@@ -210,7 +207,7 @@ def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmis
             store.update_job(job_id, status="running", progress=progress, result_data=result)
 
             try:
-                result[key] = runner(submission, config)
+                result[key] = runner(submission, config, result)
                 progress[key] = "completed"
             except Exception as exc:
                 logger.exception("Analysis '%s' failed for job %s", key, job_id)
@@ -235,9 +232,8 @@ def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmis
         progress = {
             "structure_generation": "completed",
             "melt_quench": "failed",
-            "structure_analysis": "pending",
         }
-        for key in post_analyses:
+        for key in requested:
             progress[key] = "pending"
         store.update_job(
             job_id,
@@ -250,9 +246,8 @@ def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmis
         progress = {
             "structure_generation": "running",
             "melt_quench": "pending",
-            "structure_analysis": "pending",
         }
-        for key in post_analyses:
+        for key in requested:
             progress[key] = "pending"
         store.update_job(job_id, status="running", progress=progress)
 
@@ -262,26 +257,46 @@ def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmis
 # ---------------------------------------------------------------------------
 
 
+@_register_analysis("structure")
+def _run_structure_analysis(submission: JobSubmission, config: BaseModel, mq_result: dict) -> dict:
+    """Run structural analysis (RDF, coordination, bond angles) on the quenched glass."""
+    from amorphouspy.workflows.structural_analysis import analyze_structure
+
+    structural_data = analyze_structure(atoms=mq_result["final_structure"])
+    return structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
+
+
 @_register_analysis("viscosity")
-def _run_viscosity_analysis(submission: JobSubmission, config: BaseModel) -> dict:
-    """Run the viscosity workflow after melt-quench."""
+def _run_viscosity_analysis(submission: JobSubmission, config: BaseModel, mq_result: dict) -> dict:
+    """Run multi-temperature viscosity analysis on the quenched glass."""
+    from amorphouspy import generate_potential, get_structure_dict
+
     from amorphouspy_api.models import ViscosityAnalysis
     from amorphouspy_api.workflows.viscosity import run_viscosity_workflow
 
     cfg: ViscosityAnalysis = config  # type: ignore[assignment]
-    lammps_resource_dict = get_lammps_resource_dict()
-    return run_viscosity_workflow(
+
+    # Reconstruct potential (cheap parameter lookup)
+    atoms_dict = get_structure_dict(
         composition=submission.composition.root,
-        n_atoms=submission.simulation.n_atoms,
+        target_atoms=submission.simulation.n_atoms,
+    )
+    potential = generate_potential(
+        atoms_dict=atoms_dict,
         potential_type=submission.potential.value,
+    )
+
+    return run_viscosity_workflow(
+        structure=mq_result["final_structure"],
+        potential=potential,
+        temperatures=cfg.temperatures,
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),
-        temperatures=cfg.temperatures,
         timestep=cfg.timestep,
         n_timesteps=cfg.n_timesteps,
         n_print=cfg.n_print,
         max_lag=cfg.max_lag,
-        lammps_resource_dict=lammps_resource_dict,
+        lammps_resource_dict=get_lammps_resource_dict(),
     )
 
 
@@ -454,13 +469,12 @@ def get_job_results(job_id: str) -> JobResultsResponse:
     if not result:
         raise HTTPException(status_code=404, detail="No results available yet")
 
-    # Collect results for all registered analysis types
+    # Collect results for all analysis types
     analyses = {key: result[key] for key in _ANALYSIS_RUNNERS if key in result}
 
     return JobResultsResponse(
         job_id=job.job_id,
         composition=Composition.from_canonical(job.composition),
-        structure=result.get("structural_analysis"),
         analyses=analyses,
     )
 
@@ -476,7 +490,7 @@ def get_single_result(job_id: str, analysis: str) -> dict:
     result = job.result_data or {}
     # Map analysis name to result key
     key_map = {
-        "structure": "structural_analysis",
+        "structure": "structure",
         "elastic": "elastic",
         "viscosity": "viscosity",
         "cte": "cte",

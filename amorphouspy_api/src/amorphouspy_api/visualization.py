@@ -55,7 +55,7 @@ def prepare_template_context(
     Returns:
         Dictionary containing all template variables.
     """
-    structural_analysis = result_data.get("structural_analysis", {})
+    structural_analysis = result_data.get("structure", {})
 
     # Extract key properties for display
     density = structural_analysis.get("density", "N/A")
@@ -167,7 +167,7 @@ def render_job_visualization(job_id: str) -> HTMLResponse:
     if not result_data:
         raise HTTPException(status_code=404, detail="No results found for this job")
 
-    structural_analysis = result_data.get("structural_analysis")
+    structural_analysis = result_data.get("structure")
     if not structural_analysis:
         raise HTTPException(status_code=404, detail="No structural analysis data found")
 

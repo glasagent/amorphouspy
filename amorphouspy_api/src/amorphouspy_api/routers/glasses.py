@@ -61,9 +61,9 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
     result = latest.result_data or {}
 
     properties: dict[str, dict] = {}
-    if result.get("structural_analysis"):
+    if result.get("structure"):
         properties["structure"] = {
-            "data": result["structural_analysis"],
+            "data": result["structure"],
             "source_job": latest.job_id,
             "potential": latest.potential,
             "computed_at": latest.completed_at.isoformat() if latest.completed_at else None,

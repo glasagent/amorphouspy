@@ -35,6 +35,7 @@ def _mock_structural_analysis() -> dict[str, Any]:
 
 
 def _mock_result() -> dict[str, Any]:
+    """Mock melt-quench result (no analysis — that's a separate step now)."""
     return {
         "composition": "SiO2 60 - CaO 25 - Al2O3 15",
         "final_structure": {
@@ -45,7 +46,6 @@ def _mock_result() -> dict[str, Any]:
         },
         "mean_temperature": 302.3,
         "simulation_steps": 3,
-        "structural_analysis": _mock_structural_analysis(),
     }
 
 
@@ -57,6 +57,8 @@ def _insert_completed_job(
     request_hash: str = "testhash1234",
 ) -> None:
     store = get_job_store()
+    result = _mock_result()
+    result["structure"] = _mock_structural_analysis()
     store.create_job(
         Job(
             job_id=job_id,
@@ -73,9 +75,9 @@ def _insert_completed_job(
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "completed",
-                "structure_analysis": "completed",
+                "structure": "completed",
             },
-            result_data=_mock_result(),
+            result_data=result,
             completed_at=datetime.now(UTC),
         )
     )
@@ -90,11 +92,15 @@ def _insert_running_job(job_id: str = "j-running-1") -> None:
             composition="SiO2 100",
             potential="pmmcs",
             status="running",
-            request_data={"composition": "SiO2 100", "potential": "pmmcs"},
+            request_data={
+                "composition": "SiO2 100",
+                "potential": "pmmcs",
+                "analyses": [{"type": "structure"}],
+            },
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "running",
-                "structure_analysis": "pending",
+                "structure": "pending",
             },
         )
     )
@@ -117,6 +123,10 @@ def test_submit_job_new() -> None:
         patch(
             "amorphouspy_api.routers.jobs.run_meltquench_workflow",
             return_value=mock_future,
+        ),
+        patch.dict(
+            "amorphouspy_api.routers.jobs._ANALYSIS_RUNNERS",
+            {"structure": lambda _s, _c, _r: _mock_structural_analysis()},
         ),
     ):
         mock_exe.return_value.shutdown = MagicMock()
@@ -173,6 +183,7 @@ def test_get_job_status_completed() -> None:
     data = resp.json()
     assert data["status"] == "completed"
     assert data["progress"]["melt_quench"] == "completed"
+    assert data["progress"]["analyses"]["structure"] == "completed"
 
 
 def test_get_job_status_not_found() -> None:
@@ -193,7 +204,7 @@ def test_cancel_running_job() -> None:
     data = resp.json()
     assert data["status"] == "cancelled"
     assert data["progress"]["melt_quench"] == "cancelled"
-    assert data["progress"]["structure_analysis"] == "cancelled"
+    assert data["progress"]["analyses"]["structure"] == "cancelled"
     # Already-completed steps stay completed
     assert data["progress"]["structure_generation"] == "completed"
 
@@ -216,7 +227,7 @@ def test_get_results_completed() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["job_id"] == "j-results-1"
-    assert data["structure"] is not None
+    assert data["analyses"]["structure"] is not None
 
 
 def test_get_results_no_data() -> None:
@@ -362,14 +373,11 @@ def _mock_viscosity_result() -> dict[str, Any]:
     }
 
 
-def _mock_result_with_viscosity() -> dict[str, Any]:
-    result = _mock_result()
-    result["viscosity"] = _mock_viscosity_result()
-    return result
-
-
 def _insert_completed_viscosity_job(job_id: str = "j-visc-1") -> None:
     store = get_job_store()
+    result = _mock_result()
+    result["structure"] = _mock_structural_analysis()
+    result["viscosity"] = _mock_viscosity_result()
     store.create_job(
         Job(
             job_id=job_id,
@@ -389,10 +397,10 @@ def _insert_completed_viscosity_job(job_id: str = "j-visc-1") -> None:
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "completed",
-                "structure_analysis": "completed",
+                "structure": "completed",
                 "viscosity": "completed",
             },
-            result_data=_mock_result_with_viscosity(),
+            result_data=result,
             completed_at=datetime.now(UTC),
         )
     )
@@ -413,7 +421,10 @@ def test_submit_job_with_viscosity() -> None:
         ),
         patch.dict(
             "amorphouspy_api.routers.jobs._ANALYSIS_RUNNERS",
-            {"viscosity": lambda _sub, _cfg: _mock_viscosity_result()},
+            {
+                "structure": lambda _s, _c, _r: _mock_structural_analysis(),
+                "viscosity": lambda _s, _c, _r: _mock_viscosity_result(),
+            },
         ),
     ):
         mock_exe.return_value.shutdown = MagicMock()
@@ -442,7 +453,7 @@ def test_get_results_with_viscosity() -> None:
     resp = client.get("/jobs/j-visc-results/results")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["structure"] is not None
+    assert data["analyses"]["structure"] is not None
     assert data["analyses"]["viscosity"] is not None
     assert data["analyses"]["viscosity"]["temperatures"] == [2500.0, 2000.0, 1500.0]
     assert len(data["analyses"]["viscosity"]["viscosities"]) == 3

@@ -6,7 +6,10 @@ to submit different parts of the workflow with appropriate resources.
 The workflow is structured as:
 1. Structure generation and potential setup (lightweight, no special resources)
 2. LAMMPS melt-quench simulation (compute-intensive, uses LAMMPS_CORES)
-3. Structural analysis (post-processing, no special resources)
+3. Result assembly (package structure + metadata, no analysis)
+
+Analysis (structural, viscosity, etc.) happens *after* the melt-quench
+completes, via the analysis runner registry in ``routers/jobs.py``.
 """
 
 import logging
@@ -20,7 +23,6 @@ from amorphouspy import (
     get_structure_dict,
     melt_quench_simulation,
 )
-from amorphouspy.workflows.structural_analysis import analyze_structure
 
 if TYPE_CHECKING:
     from executorlib.executor.base import BaseExecutor
@@ -98,24 +100,22 @@ def run_meltquench_workflow(
 
 
 def _assemble_results(composition: dict[str, float], meltquench_result: dict[str, Any]) -> dict[str, Any]:
-    """Perform structural analysis and assemble final results.
+    """Package the melt-quench output into the result dict.
+
+    No analysis is performed here — that happens via registered analysis
+    runners after the melt-quench future resolves.
 
     Args:
         composition: Oxide glass composition dict.
         meltquench_result: Result from melt_quench_simulation.
 
     Returns:
-        Final result dictionary with structural analysis.
+        Result dict with ``final_structure``, ``mean_temperature``,
+        and ``simulation_steps``.
     """
-    final_structure = meltquench_result["structure"]
-    structural_data = analyze_structure(atoms=final_structure)
-
-    structural_summary = structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
-
     return {
         "composition": composition,
-        "final_structure": final_structure,
+        "final_structure": meltquench_result["structure"],
         "mean_temperature": float(np.mean(meltquench_result["result"]["temperature"])),
         "simulation_steps": len(meltquench_result["result"]["steps"]),
-        "structural_analysis": structural_summary,
     }

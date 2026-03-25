@@ -214,10 +214,9 @@ class JobProgress(BaseModel):
 
     structure_generation: StepStatus = StepStatus.PENDING
     melt_quench: StepStatus = StepStatus.PENDING
-    structure_analysis: StepStatus = StepStatus.PENDING
     analyses: dict[str, StepStatus] = Field(
         default_factory=dict,
-        description="Progress of additional analyses (viscosity, cte, elastic, …)",
+        description="Progress of each analysis (structure, viscosity, cte, elastic, …)",
     )
 
 
@@ -239,10 +238,9 @@ class JobResultsResponse(BaseModel):
 
     job_id: str
     composition: Composition
-    structure: dict | None = None
     analyses: dict[str, dict] = Field(
         default_factory=dict,
-        description="Results keyed by analysis type (viscosity, cte, elastic, …)",
+        description="Results keyed by analysis type (structure, viscosity, cte, elastic, …)",
     )
 
 
