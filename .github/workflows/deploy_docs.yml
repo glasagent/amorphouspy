@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install mkdocs-material
-          pip install mkdocs-jupyter
+          pip install "mkdocs-jupyter==0.24.8"
           pip install pymdown-extensions
           pip install jupyter nbformat
 
