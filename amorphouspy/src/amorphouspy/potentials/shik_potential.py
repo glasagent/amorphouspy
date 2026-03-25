@@ -148,18 +148,39 @@ def compute_oxygen_charge(atoms_dict: dict, shik_charges: dict) -> float:
 # ================================================================
 
 
-def generate_shik_potential(atoms_dict: dict, output_dir: str = ".") -> pd.DataFrame:
+def _build_pair_coeff_lines(species: list, types: dict, output_dir: Path, rvdw: float) -> list:
+    lines = []
+    for i, elem_i in enumerate(species):
+        for j, elem_j in enumerate(species):
+            if j < i:
+                continue
+            if (elem_i, elem_j) in shik_params:
+                params = shik_params[(elem_i, elem_j)]
+            elif (elem_j, elem_i) in shik_params:
+                params = shik_params[(elem_j, elem_i)]
+            else:
+                continue
+            pair_name = f"{elem_i}-{elem_j}"
+            filename = write_table_file(pair_name, params, output_dir=output_dir)
+            abs_path = Path(filename).resolve()
+            lines.append(f'pair_coeff {types[elem_i]} {types[elem_j]} table "{abs_path}" SHIK_Buck_r24 {rvdw}\n')
+    return lines
+
+
+def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bool = True) -> pd.DataFrame:
     """Generate SHIK LAMMPS input configuration with absolute table paths.
 
     Args:
         atoms_dict: Dictionary containing atomic structure information.
         output_dir: Directory to save the table file definition.
+        melt: If True, append a Langevin + NVE melt run block (10000 steps).
 
     Returns:
         DataFrame containing potential configuration.
 
     Example:
         >>> shik_pot = generate_shik_potential(struct_dict, output_dir="./potentials")
+        >>> shik_pot_no_melt = generate_shik_potential(struct_dict, melt=False)
 
     """
     output_dir = Path(output_dir).resolve()
@@ -207,33 +228,19 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".") -> pd.DataF
     rvdw = 10.0  # cutoff for the SHIK potential
 
     # --- Generate tables with absolute paths ---
-    for i, elem_i in enumerate(species):
-        for j, elem_j in enumerate(species):
-            if j < i:
-                continue
-            if (elem_i, elem_j) in shik_params:
-                params = shik_params[(elem_i, elem_j)]
-            elif (elem_j, elem_i) in shik_params:
-                params = shik_params[(elem_j, elem_i)]
-            else:
-                continue  # skip undefined pairs
-
-            pair_name = f"{elem_i}-{elem_j}"
-            filename = write_table_file(pair_name, params, output_dir=output_dir)
-            abs_path = Path(filename).resolve()
-            lines.append(f'pair_coeff {types[elem_i]} {types[elem_j]} table "{abs_path}" SHIK_Buck_r24 {rvdw}\n')
+    lines.extend(_build_pair_coeff_lines(species, types, output_dir, rvdw))
 
     lines.append("\npair_modify shift yes\n\n")
 
     lines.append("\nthermo_style custom step temp pe etotal pxx pxy pxz pyy pyz pzz vol\n")
     lines.append("\nthermo_modify flush yes\n")
     lines.append("\nthermo 100\n")
-    lines.append("\nfix langevin all langevin 5000 5000 0.01 48279\n")
-    lines.append("\nfix ensemble all nve/limit 0.5\n")
-
-    lines.append("\nrun 10000\n")
-    lines.append("\nunfix langevin\n")
-    lines.append("\nunfix ensemble\n")
+    if melt:
+        lines.append("\nfix langevinnve all langevin 5000 5000 0.01 48279\n")
+        lines.append("\nfix ensemblenve all nve/limit 0.5\n")
+        lines.append("\nrun 10000\n")
+        lines.append("\nunfix langevinnve\n")
+        lines.append("\nunfix ensemblenve\n")
 
     return pd.DataFrame(
         {
