@@ -16,17 +16,15 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Callable
 from datetime import UTC, datetime
 from io import StringIO
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import uuid4
 
 from ase.io import write as ase_write
 from executorlib import get_future_from_cache
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
-from pydantic import BaseModel
 
 from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import Job, get_job_store
@@ -45,39 +43,14 @@ from amorphouspy_api.models import (
     StepStatus,
     validate_atoms,
 )
-from amorphouspy_api.workflows import run_meltquench_workflow
+from amorphouspy_api.workflows import ANALYSES, run_meltquench_workflow
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["tool"])
-
-# ---------------------------------------------------------------------------
-# Analysis runner registry
-# ---------------------------------------------------------------------------
-
-AnalysisRunnerFn = Callable[[JobSubmission, BaseModel, dict], dict]
-
-_ANALYSIS_RUNNERS: dict[str, AnalysisRunnerFn] = {}
-
-
-def _register_analysis(analysis_type: str):
-    """Decorator to register a post-melt-quench analysis runner.
-
-    Each runner receives ``(submission, config, mq_result)`` where
-    *mq_result* is the resolved melt-quench result dict.
-
-    Usage::
-
-        @_register_analysis("viscosity")
-        def _run_viscosity(submission, config, mq_result):
-            ...
-    """
-
-    def decorator(fn: AnalysisRunnerFn) -> AnalysisRunnerFn:
-        _ANALYSIS_RUNNERS[analysis_type] = fn
-        return fn
-
-    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -198,16 +171,16 @@ def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmis
 
         # Run each requested analysis
         for key, config in requested.items():
-            runner = _ANALYSIS_RUNNERS.get(key)
-            if runner is None:
-                logger.warning("No runner registered for analysis '%s' — skipping", key)
+            fn = ANALYSES.get(key)
+            if fn is None:
+                logger.warning("No analysis function for '%s' — skipping", key)
                 continue
 
             progress[key] = "running"
             store.update_job(job_id, status="running", progress=progress, result_data=result)
 
             try:
-                result[key] = runner(submission, config, result)
+                result[key] = fn(submission, config, result)
                 progress[key] = "completed"
             except Exception as exc:
                 logger.exception("Analysis '%s' failed for job %s", key, job_id)
@@ -250,54 +223,6 @@ def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmis
         for key in requested:
             progress[key] = "pending"
         store.update_job(job_id, status="running", progress=progress)
-
-
-# ---------------------------------------------------------------------------
-# Registered analysis runners
-# ---------------------------------------------------------------------------
-
-
-@_register_analysis("structure")
-def _run_structure_analysis(submission: JobSubmission, config: BaseModel, mq_result: dict) -> dict:
-    """Run structural analysis (RDF, coordination, bond angles) on the quenched glass."""
-    from amorphouspy.workflows.structural_analysis import analyze_structure
-
-    structural_data = analyze_structure(atoms=mq_result["final_structure"])
-    return structural_data.model_dump() if hasattr(structural_data, "model_dump") else structural_data
-
-
-@_register_analysis("viscosity")
-def _run_viscosity_analysis(submission: JobSubmission, config: BaseModel, mq_result: dict) -> dict:
-    """Run multi-temperature viscosity analysis on the quenched glass."""
-    from amorphouspy import generate_potential, get_structure_dict
-
-    from amorphouspy_api.models import ViscosityAnalysis
-    from amorphouspy_api.workflows.viscosity import run_viscosity_workflow
-
-    cfg: ViscosityAnalysis = config  # type: ignore[assignment]
-
-    # Reconstruct potential (cheap parameter lookup)
-    atoms_dict = get_structure_dict(
-        composition=submission.composition.root,
-        target_atoms=submission.simulation.n_atoms,
-    )
-    potential = generate_potential(
-        atoms_dict=atoms_dict,
-        potential_type=submission.potential.value,
-    )
-
-    return run_viscosity_workflow(
-        structure=mq_result["final_structure"],
-        potential=potential,
-        temperatures=cfg.temperatures,
-        heating_rate=int(submission.simulation.quench_rate * 100),
-        cooling_rate=int(submission.simulation.quench_rate),
-        timestep=cfg.timestep,
-        n_timesteps=cfg.n_timesteps,
-        n_print=cfg.n_print,
-        max_lag=cfg.max_lag,
-        lammps_resource_dict=get_lammps_resource_dict(),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -470,7 +395,7 @@ def get_job_results(job_id: str) -> JobResultsResponse:
         raise HTTPException(status_code=404, detail="No results available yet")
 
     # Collect results for all analysis types
-    analyses = {key: result[key] for key in _ANALYSIS_RUNNERS if key in result}
+    analyses = {key: result[key] for key in ANALYSES if key in result}
 
     return JobResultsResponse(
         job_id=job.job_id,

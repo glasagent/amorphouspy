@@ -125,7 +125,7 @@ def test_submit_job_new() -> None:
             return_value=mock_future,
         ),
         patch.dict(
-            "amorphouspy_api.routers.jobs._ANALYSIS_RUNNERS",
+            "amorphouspy_api.routers.jobs.ANALYSES",
             {"structure": lambda _s, _c, _r: _mock_structural_analysis()},
         ),
     ):
@@ -420,7 +420,7 @@ def test_submit_job_with_viscosity() -> None:
             return_value=mock_future,
         ),
         patch.dict(
-            "amorphouspy_api.routers.jobs._ANALYSIS_RUNNERS",
+            "amorphouspy_api.routers.jobs.ANALYSES",
             {
                 "structure": lambda _s, _c, _r: _mock_structural_analysis(),
                 "viscosity": lambda _s, _c, _r: _mock_viscosity_result(),
