@@ -6,15 +6,15 @@ Read-only materials layer: a view over completed jobs.
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
-from amorphouspy_api.composition import normalize_composition
+from amorphouspy_api.composition import Composition
 from amorphouspy_api.database import get_job_store
 from amorphouspy_api.models import (
     AvailableStructure,
     GlassListResponse,
+    GlassLookupRequest,
     GlassPropertiesResponse,
     GlassSummary,
 )
@@ -26,25 +26,32 @@ router = APIRouter(prefix="/glasses", tags=["tool"])
 ALL_ANALYSIS_TYPES = ["structure", "elastic", "viscosity", "cte"]
 
 
-@router.get("", response_model=GlassListResponse | GlassPropertiesResponse)
-def get_glasses(
-    composition: Annotated[str | None, Query(description="Filter by composition")] = None,
-) -> GlassListResponse | GlassPropertiesResponse:
-    """List glasses or get properties for a specific composition.
+@router.get("", response_model=GlassListResponse)
+def list_glasses() -> GlassListResponse:
+    """List all compositions with completed simulation data."""
+    store = get_job_store()
+    rows = store.list_compositions()
+    return GlassListResponse(
+        glasses=[
+            GlassSummary(
+                composition=Composition.from_canonical(r["composition"]),
+                n_jobs=r["n_jobs"],
+            )
+            for r in rows
+        ],
+    )
 
-    * ``GET /glasses`` → list all compositions with completed data.
-    * ``GET /glasses?composition=SiO2 70 - Na2O 30`` → aggregated properties.
+
+@router.post(":lookup", response_model=GlassPropertiesResponse)
+def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
+    """Get aggregated properties for a specific composition.
+
+    Accepts a JSON body with a composition dict, e.g.::
+
+        {"composition": {"SiO2": 70, "Na2O": 15, "CaO": 15}}
     """
     store = get_job_store()
-
-    if composition is None:
-        rows = store.list_compositions()
-        return GlassListResponse(
-            glasses=[GlassSummary(**r) for r in rows],
-        )
-
-    # Specific composition lookup
-    norm = normalize_composition(composition)
+    norm = request.composition.canonical
     jobs = store.search_by_composition(norm)
     if not jobs:
         raise HTTPException(status_code=404, detail=f"No completed jobs for composition: {norm}")
@@ -68,7 +75,6 @@ def get_glasses(
         r = j.result_data or {}
         n_atoms = 0
         if r.get("final_structure"):
-            # Try to get atom count from the structure
             from amorphouspy_api.models import validate_atoms
 
             atoms = validate_atoms(r["final_structure"])
@@ -86,7 +92,7 @@ def get_glasses(
     missing = [t for t in ALL_ANALYSIS_TYPES if t not in computed]
 
     return GlassPropertiesResponse(
-        composition=norm,
+        composition=request.composition,
         properties=properties,
         available_structures=available_structures,
         missing=missing,

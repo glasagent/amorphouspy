@@ -30,8 +30,7 @@ logger = logging.getLogger(__name__)
 
 def run_meltquench_workflow(
     executor: "BaseExecutor",
-    components: list[str],
-    values: list[float],
+    composition: dict[str, float],
     n_atoms: int,
     potential_type: str,
     heating_rate: float,
@@ -49,8 +48,8 @@ def run_meltquench_workflow(
 
     Args:
         executor: The executorlib executor to submit jobs to.
-        components: List of oxide components (e.g., ["SiO2", "Na2O", "B2O3"]).
-        values: List of corresponding values (fractions or percentages).
+        composition: Oxide glass composition as a dict of oxide → mol%,
+            e.g. {"SiO2": 70, "Na2O": 15, "CaO": 15}.
         n_atoms: Target number of atoms in the simulation.
         potential_type: Type of interatomic potential to use.
         heating_rate: Heating rate in K/ps.
@@ -67,12 +66,6 @@ def run_meltquench_workflow(
     if lammps_resource_dict is None:
         lammps_resource_dict = {}
 
-    # Build composition string from components and values
-    comp_parts = []
-    for component, value in zip(components, values, strict=False):
-        fraction = value / 100.0 if sum(values) > 1.1 else value
-        comp_parts.append(f"{fraction}{component}")
-    composition = "-".join(comp_parts)
     logger.info("Submitting meltquench workflow for composition: %s", composition)
 
     # Step 1-3: Submit structure and potential generation (lightweight)
@@ -104,11 +97,11 @@ def run_meltquench_workflow(
     )
 
 
-def _assemble_results(composition: str, meltquench_result: dict[str, Any]) -> dict[str, Any]:
+def _assemble_results(composition: dict[str, float], meltquench_result: dict[str, Any]) -> dict[str, Any]:
     """Perform structural analysis and assemble final results.
 
     Args:
-        composition: Composition string.
+        composition: Oxide glass composition dict.
         meltquench_result: Result from melt_quench_simulation.
 
     Returns:

@@ -75,7 +75,7 @@ from amorphouspy import get_structure_dict, generate_potential
 
 # BJP works only with Ca-Al-Si-O compositions
 structure_dict = get_structure_dict(
-    "0.25CaO-0.25Al2O3-0.5SiO2",
+    {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5},
     target_atoms=3000,
 )
 

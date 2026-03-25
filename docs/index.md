@@ -10,7 +10,7 @@ The package was developed at the [Bundesanstalt für Materialforschung und -prü
 
 ## Key Features
 
-- **Structure Generation**: Create random oxide glass structures from composition strings with automatic density estimation using Fluegel's empirical model.
+- **Structure Generation**: Create random oxide glass structures from composition dicts (e.g. `{"SiO2": 75, "Na2O": 15, "CaO": 10}`) with automatic density estimation using Fluegel's empirical model.
 - **Interatomic Potentials**: Built-in support for PMMCS (Pedone), BJP (Bouhadja), and SHIK (Sundararaman) classical force fields with automatic LAMMPS input generation.
 - **Melt-Quench Simulations**: Multi-stage heating/cooling protocols with potential-specific temperature programs and ensemble control.
 - **Structural Analysis**: RDFs, coordination numbers, $Q^n$ distributions, bond angle distributions, ring statistics, cavity analysis.
@@ -23,7 +23,7 @@ The standard workflow for studying oxide glasses with `amorphouspy` follows this
 
 ```mermaid
 graph TD
-    A[Define composition string] --> B[Generate random structure]
+    A[Define composition dict] --> B[Generate random structure]
     B --> C[Select interatomic potential]
     C --> D[Melt-quench simulation]
     D --> E[Structural analysis]

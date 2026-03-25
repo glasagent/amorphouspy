@@ -76,7 +76,7 @@ from amorphouspy import get_structure_dict, generate_potential
 
 # Works with any composition using supported elements
 structure_dict = get_structure_dict(
-    "0.60SiO2-0.10Al2O3-0.15Na2O-0.10CaO-0.05MgO",
+    {"SiO2": 60, "Al2O3": 10, "Na2O": 15, "CaO": 10, "MgO": 5},
     target_atoms=3000,
 )
 

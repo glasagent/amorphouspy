@@ -29,13 +29,13 @@ By maintaining this standard, you can easily pipe the output of one function int
 
 ### 1. Generate a glass structure
 
-The first step in any simulation is creating an initial atomic configuration. `amorphouspy` takes a composition string and generates random atom positions in a periodic cubic box with the correct stoichiometry and a physically realistic density.
+The first step in any simulation is creating an initial atomic configuration. `amorphouspy` takes a composition dict and generates random atom positions in a periodic cubic box with the correct stoichiometry and a physically realistic density.
 
 ```python
 from amorphouspy import get_structure_dict, get_ase_structure
 
-# Define a soda-lime silicate composition (molar fractions)
-composition = "0.75SiO2-0.15Na2O-0.10CaO"
+# Define a soda-lime silicate composition (mol%)
+composition = {"SiO2": 75, "Na2O": 15, "CaO": 10}
 
 # Generate structure with ~3000 atoms
 # Density is auto-calculated using Fluegel's empirical model

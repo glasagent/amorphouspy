@@ -6,7 +6,7 @@ import amorphouspy.structure as ps
 def test_reproducibility() -> None:
     """Test that the random structure generation is reproducible when using a fixed seed."""
     seed = 42
-    comp = "0.25CaO-0.25Al2O3-0.5SiO2"
+    comp = {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5}
     n_molecules = 10
     box_length = 10.0  # Angstrom
     min_distance = 1.6  # Angstrom
@@ -40,7 +40,7 @@ EXPECTED_COUNTS = {"Ca": 25, "Al": 50, "Si": 50, "O": 200}
 
 def test_structure_atom_counts_molar() -> None:
     """Verify that atom counts are preserved for molar input mode."""
-    composition = "0.25CaO-0.25Al2O3-0.50SiO2"
+    composition = {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.50}
     box_length = 100
     min_distance = 2
     seed = 42
@@ -50,7 +50,7 @@ def test_structure_atom_counts_molar() -> None:
     stoichiometry = ps.extract_stoichiometry(composition)
 
     # Test with n_molecules
-    atoms, atom_counts = ps.create_random_atoms(
+    _atoms, atom_counts = ps.create_random_atoms(
         composition=composition,
         n_molecules=n_molecules,
         target_atoms=None,
@@ -84,7 +84,7 @@ def test_structure_atom_counts_molar() -> None:
 
 def test_structure_atom_counts_weight() -> None:
     """Verify that atom counts are preserved for weight input mode."""
-    weight_composition = "20.2CaO-36.6Al2O3-43.2SiO2"
+    weight_composition = {"CaO": 20.2, "Al2O3": 36.6, "SiO2": 43.2}
     box_length = 100
     min_distance = 2
     seed = 42
@@ -94,7 +94,7 @@ def test_structure_atom_counts_weight() -> None:
     stoichiometry = ps.extract_stoichiometry(weight_composition)
 
     # Test with n_molecules
-    atoms, atom_counts = ps.create_random_atoms(
+    _atoms, atom_counts = ps.create_random_atoms(
         composition=weight_composition,
         n_molecules=n_molecules,
         target_atoms=None,

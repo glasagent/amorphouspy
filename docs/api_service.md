@@ -14,7 +14,7 @@ Both layers share the same underlying data store. The materials layer is a view 
 The standard melt-quench workflow for oxide glasses follows this DAG:
 
 ```
-composition string
+composition dict
   → random structure generation
     → select interatomic potential
       → melt-quench MD simulation

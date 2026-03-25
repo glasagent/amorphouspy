@@ -13,7 +13,7 @@ All potentials are accessed through a single function:
 ```python
 from amorphouspy import get_structure_dict, generate_potential
 
-structure_dict = get_structure_dict("0.75SiO2-0.15Na2O-0.10CaO", target_atoms=3000)
+structure_dict = get_structure_dict({"SiO2": 75, "Na2O": 15, "CaO": 10}, target_atoms=3000)
 potential = generate_potential(structure_dict, potential_type="pmmcs")
 ```
 

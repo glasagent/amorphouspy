@@ -54,7 +54,7 @@ def test_parse_cutoff_dict_symmetric() -> None:
     """Dict cutoff: (8,14) and (14,8) are stored as the same pair."""
     types = np.array([8, 14], dtype=np.int32)
     cutoff = {(8, 14): 2.0}
-    max_rc, pair_types, pair_cutoffs_sq, use = _parse_cutoff(cutoff, types)
+    max_rc, pair_types, _pair_cutoffs_sq, use = _parse_cutoff(cutoff, types)
     assert max_rc == pytest.approx(2.0)
     assert use is True
     # Both orderings must be present
@@ -67,7 +67,7 @@ def test_parse_cutoff_dict_default_fallback() -> None:
     """Pairs not listed in the dict default to the maximum cutoff."""
     types = np.array([8, 14, 11], dtype=np.int32)
     cutoff = {(8, 14): 2.0, (8, 11): 2.7}
-    max_rc, pair_types, pair_cutoffs_sq, use = _parse_cutoff(cutoff, types)
+    max_rc, pair_types, pair_cutoffs_sq, _use = _parse_cutoff(cutoff, types)
     assert max_rc == pytest.approx(2.7)
     # (14,11) was not listed → should equal max_rc squared
     rows = [tuple(r) for r in pair_types]
@@ -129,7 +129,7 @@ def test_compute_cell_list_triclinic_frac_coords_in_range() -> None:
     """Fractional coordinates must lie in [0, 1)."""
     cell = np.array([[6.0, 0.0, 0.0], [1.5, 6.0, 0.0], [0.0, 0.0, 6.0]])
     coords = np.random.default_rng(2).random((15, 3)) * 6.0
-    coords_frac, atom_cells, n_cells, cell_start, order = compute_cell_list_triclinic(coords, cell, 2.0)
+    coords_frac, _atom_cells, _n_cells, _cell_start, _order = compute_cell_list_triclinic(coords, cell, 2.0)
     assert np.all(coords_frac >= 0.0)
     assert np.all(coords_frac < 1.0 + 1e-10)
 

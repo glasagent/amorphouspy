@@ -17,7 +17,7 @@ def test_glass_simulation() -> None:
     with SingleNodeExecutor() as exe:
         atoms_dict_future = exe.submit(
             get_structure_dict,
-            composition="100SiO2",
+            composition={"SiO2": 100},
             n_molecules=None,
             target_atoms=9,
             mode="molar",

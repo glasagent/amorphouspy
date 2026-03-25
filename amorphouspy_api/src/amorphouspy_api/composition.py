@@ -1,80 +1,57 @@
-"""Composition string normalization.
+"""Composition model for oxide glass compositions.
 
-Provides a canonical form for oxide glass compositions so that
-``SiO2 70 - Na2O 15 - CaO 15`` and ``Na2O 15 - SiO2 70 - CaO 15``
-resolve to the same material key.
+Provides a :class:`Composition` Pydantic model that serialises to / from a
+plain dict (e.g. ``{"SiO2": 70, "Na2O": 15, "CaO": 15}``) and bundles
+canonical-string generation for database storage.
 """
 
 from __future__ import annotations
 
-import re
+from pydantic import RootModel
 
 
-def normalize_composition(raw: str) -> str:
-    """Return a canonical composition string.
+def _fmt_value(v: float) -> str:
+    rounded = round(v, 2)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:g}"
 
-    Rules:
-    * Split on ``-`` or ``,`` separators.
-    * Each component is ``<Oxide> <value>`` (whitespace-flexible).
-    * Components are sorted alphabetically by oxide name.
-    * Values are rounded to 2 decimal places; trailing zeros stripped.
-    * Canonical separator is `` - `` (space-dash-space).
+
+class Composition(RootModel[dict[str, float]]):
+    """Oxide glass composition (mol%).
+
+    Accepts and serialises as a plain ``dict[str, float]``.
+    Values represent mol% and will be rescaled to sum to 100% where needed.
 
     Examples
     --------
-    >>> normalize_composition("Na2O 15 - SiO2 70 - CaO 15")
-    'CaO 15 - Na2O 15 - SiO2 70'
-    >>> normalize_composition("SiO2 70, Na2O 15, CaO 15")
+    >>> c = Composition({"Na2O": 15, "SiO2": 70, "CaO": 15})
+    >>> c.canonical
     'CaO 15 - Na2O 15 - SiO2 70'
     """
-    parts = re.split(r"\s*[-,]\s*", raw.strip())
-    components: list[tuple[str, float]] = []
-    for part in parts:
-        token = part.strip()
-        if not token:
-            continue
-        match = re.match(r"([A-Za-z0-9]+)\s+([\d.]+)", token)
-        if not match:
-            msg = f"Cannot parse composition component: {token!r}"
-            raise ValueError(msg)
-        oxide = match.group(1)
-        value = float(match.group(2))
-        components.append((oxide, value))
 
-    components.sort(key=lambda c: c[0])
+    @property
+    def canonical(self) -> str:
+        """Canonical string for DB storage and exact-match comparison.
 
-    def _fmt_value(v: float) -> str:
-        rounded = round(v, 2)
-        if rounded == int(rounded):
-            return str(int(rounded))
-        return f"{rounded:g}"
+        Components sorted alphabetically; values rounded to 2 dp,
+        trailing zeros stripped.
+        """
+        components = sorted(self.root.items())
+        return " - ".join(f"{oxide} {_fmt_value(val)}" for oxide, val in components)
 
-    return " - ".join(f"{oxide} {_fmt_value(val)}" for oxide, val in components)
+    @classmethod
+    def from_canonical(cls, canonical: str) -> Composition:
+        """Construct from a canonical DB string.
 
-
-def parse_components(composition: str) -> tuple[list[str], list[float]]:
-    """Parse a composition string into (components, values) lists.
-
-    Works on both raw and normalized forms.
-
-    Returns
-    -------
-    components : list[str]
-        Oxide names, e.g. ``["CaO", "Na2O", "SiO2"]``.
-    values : list[float]
-        Corresponding values.
-    """
-    parts = re.split(r"\s*[-,]\s*", composition.strip())
-    components: list[str] = []
-    values: list[float] = []
-    for part in parts:
-        token = part.strip()
-        if not token:
-            continue
-        match = re.match(r"([A-Za-z0-9]+)\s+([\d.]+)", token)
-        if not match:
-            msg = f"Cannot parse composition component: {token!r}"
-            raise ValueError(msg)
-        components.append(match.group(1))
-        values.append(float(match.group(2)))
-    return components, values
+        >>> Composition.from_canonical("CaO 15 - Na2O 15 - SiO2 70")
+        Composition({'CaO': 15.0, 'Na2O': 15.0, 'SiO2': 70.0})
+        """
+        result: dict[str, float] = {}
+        for part in canonical.split(" - "):
+            token = part.strip()
+            if not token:
+                continue
+            oxide, value_str = token.rsplit(" ", 1)
+            result[oxide] = float(value_str)
+        return cls(result)

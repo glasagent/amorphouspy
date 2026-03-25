@@ -3,8 +3,6 @@
 Defines request/response schemas for the ``/jobs`` and ``/glasses`` endpoints.
 """
 
-from __future__ import annotations
-
 from enum import StrEnum
 from io import StringIO
 from typing import Annotated, Literal
@@ -12,6 +10,8 @@ from typing import Annotated, Literal
 from ase import Atoms
 from ase.io import read, write
 from pydantic import BaseModel, Field, PlainSerializer, PlainValidator
+
+from amorphouspy_api.composition import Composition
 
 # ---------------------------------------------------------------------------
 # ASE Atoms serialisation helpers (used by database & visualization)
@@ -152,7 +152,14 @@ class MeltQuenchParams(BaseModel):
 class JobSubmission(BaseModel):
     """Request body for ``POST /jobs``."""
 
-    composition: str = Field(..., description="Oxide glass composition, e.g. 'SiO2 70 - Na2O 15 - CaO 15'")
+    composition: Composition = Field(
+        ...,
+        description=(
+            "Oxide glass composition as a mapping of oxide formula to mol%. "
+            "Values are rescaled to sum to 100%. "
+            "Example: {'SiO2': 70, 'Na2O': 15, 'CaO': 15}"
+        ),
+    )
     potential: Potential = Field(default=Potential.pmmcs)
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(
@@ -166,7 +173,7 @@ class JobCreatedResponse(BaseModel):
 
     id: str = Field(..., description="Job identifier")
     status: JobStatus = Field(default=JobStatus.PENDING)
-    composition: str
+    composition: Composition
     potential: Potential
     created_at: str
 
@@ -184,7 +191,7 @@ class JobStatusResponse(BaseModel):
 
     id: str
     status: JobStatus
-    composition: str
+    composition: Composition
     potential: Potential
     progress: JobProgress
     errors: dict[str, str] = Field(default_factory=dict)
@@ -196,14 +203,21 @@ class JobResultsResponse(BaseModel):
     """Response for ``GET /jobs/{id}/results``."""
 
     job_id: str
-    composition: str
+    composition: Composition
     structure: dict | None = None
 
 
 class JobSearchRequest(BaseModel):
     """Request body for ``POST /jobs:search``."""
 
-    composition: str
+    composition: Composition = Field(
+        ...,
+        description=(
+            "Oxide glass composition as a mapping of oxide formula to mol%. "
+            "Values are rescaled to sum to 100%. "
+            "Example: {'SiO2': 70, 'Na2O': 15, 'CaO': 15}"
+        ),
+    )
     potential: Potential | None = None
     analyses: list[str] | None = None
 
@@ -212,7 +226,7 @@ class JobSearchMatch(BaseModel):
     """A single match from a job search."""
 
     job_id: str
-    composition: str
+    composition: Composition
     potential: Potential
     analyses: list[str]
     similarity: float = 1.0
@@ -233,7 +247,7 @@ class JobSearchResponse(BaseModel):
 class GlassSummary(BaseModel):
     """Summary entry for one glass composition."""
 
-    composition: str
+    composition: Composition
     n_jobs: int
 
 
@@ -259,10 +273,22 @@ class AvailableStructure(BaseModel):
     n_atoms: int
 
 
-class GlassPropertiesResponse(BaseModel):
-    """Aggregated properties for ``GET /glasses?composition=...``."""
+class GlassLookupRequest(BaseModel):
+    """Request body for ``POST /glasses:lookup``."""
 
-    composition: str
+    composition: Composition = Field(
+        ...,
+        description=(
+            "Oxide glass composition as a mapping of oxide formula to mol%. "
+            "Example: {'SiO2': 70, 'Na2O': 15, 'CaO': 15}"
+        ),
+    )
+
+
+class GlassPropertiesResponse(BaseModel):
+    """Aggregated properties for ``POST /glasses:lookup``."""
+
+    composition: Composition
     properties: dict[str, dict] = Field(default_factory=dict)
     available_structures: list[AvailableStructure] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)

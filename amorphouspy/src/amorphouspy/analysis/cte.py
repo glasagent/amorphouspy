@@ -168,7 +168,7 @@ def cte_from_volume_temperature_data(
         reference_volume = volume[index_lowest_T]
 
     # fit and calculate CTE
-    slope, intercept, r_value, p_value, std_err = linregress(temperature, volume)
+    slope, _intercept, r_value, _p_value, _std_err = linregress(temperature, volume)
     CTE = slope / reference_volume
     R2 = r_value**2
 
