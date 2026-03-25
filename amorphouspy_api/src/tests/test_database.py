@@ -1,249 +1,206 @@
-"""Test database functionality for the task store."""
+"""Tests for the JobStore database layer."""
 
 import tempfile
 import threading
 from pathlib import Path
 
-from amorphouspy_api.database import TaskStore
+from amorphouspy_api.database import Job, JobStore
 
 
-def test_task_store_basic_operations() -> None:
-    """Test basic task store operations."""
-    # Use temporary database
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "test_tasks.db"
-        store = TaskStore(db_path)
+def test_job_store_create_and_get() -> None:
+    """Test basic create and get operations."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        job = Job(
+            job_id="j-1",
+            request_hash="abc123",
+            composition="SiO2 70 - Na2O 30",
+            potential="pmmcs",
+            status="pending",
+            progress={"structure_generation": "pending"},
+        )
+        store.create_job(job)
 
-        # Test set and get
-        task_data = {
-            "state": "processing",
-            "status": "Starting",
-            "request_hash": "abc123def456",
-        }
-
-        store.set("test_task_1", task_data)
-        retrieved = store.get("test_task_1")
-
+        retrieved = store.get_job("j-1")
         assert retrieved is not None
-        assert retrieved["state"] == "processing"
-        assert retrieved["status"] == "Starting"
-        assert retrieved["request_hash"] == "abc123def456"
-
+        assert retrieved.composition == "SiO2 70 - Na2O 30"
+        assert retrieved.status == "pending"
         store.close()
 
 
-def test_task_store_cached_result_lookup() -> None:
-    """Test efficient cached result lookup by hash."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "test_tasks.db"
-        store = TaskStore(db_path)
-
-        # Create a completed task with results (matching current API format)
-        # Create a simple mock structure that can be validated as ASE Atoms
-        mock_structure = {
-            "numbers": [14, 8, 8],  # Si, O, O
-            "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
-            "pbc": [True, True, True],
-        }
-
-        result_data = {
-            "composition": "0.75SiO2-0.25Na2O",
-            "final_structure": mock_structure,
-            "mean_temperature": 300.0,
-            "simulation_steps": 1000,
-            "structural_analysis": {
-                "density": 2.5,
-                "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
-                "network": {
-                    "connectivity": 3.0,
-                    "Qn_distribution": {},
-                    "Qn_distribution_partial": {},
-                },
-                "distributions": {"bond_angles": {}, "rings": {}},
-                "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
-                "elements": {"formers": ["Si"], "modifiers": ["Na"], "cutoffs": {}},
-            },
-        }
-
-        completed_task = {
-            "state": "complete",
-            "status": "Completed",
-            "request_hash": "test_hash_123",
-            "result": result_data,
-        }
-
-        store.set("completed_task", completed_task)
-
-        # Test cache lookup
-        cached_result = store.find_cached_result("test_hash_123")
-        assert cached_result is not None
-        # find_cached_result now returns tuple[str, MeltquenchResult]
-        task_id, result = cached_result
-        assert task_id == "completed_task"
-        assert result.composition == "0.75SiO2-0.25Na2O"
-        assert result.structural_analysis is not None
-        # Handle both dict and StructureData object cases
-        if isinstance(result.structural_analysis, dict):
-            assert result.structural_analysis["density"] == 2.5
-        else:
-            assert result.structural_analysis.density == 2.5
-
-        # Test cache miss
-        no_result = store.find_cached_result("nonexistent_hash")
-        assert no_result is None
-
-        store.close()
-
-
-def test_task_store_items() -> None:
-    """Test getting all tasks."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "test_tasks.db"
-        store = TaskStore(db_path)
-
-        # Add multiple tasks
-        store.set("task1", {"state": "processing", "request_hash": "hash1"})
-        store.set("task2", {"state": "complete", "request_hash": "hash2"})
-
-        # Get all items
-        items = store.items()
-        assert len(items) == 2
-
-        task_ids = [item[0] for item in items]
-        assert "task1" in task_ids
-        assert "task2" in task_ids
-
-        store.close()
-
-
-def test_task_store_persistence() -> None:
-    """Test that data persists across TaskStore instances."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "test_tasks.db"
-
-        # Create store and add data
-        store1 = TaskStore(db_path)
-        store1.set(
-            "persistent_task",
-            {"state": "complete", "status": "Done", "request_hash": "persistent_hash"},
+def test_job_store_update() -> None:
+    """Test updating job fields."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-2",
+                request_hash="def456",
+                composition="SiO2 100",
+                potential="shik",
+                status="running",
+            )
         )
 
-        # Create new store instance with same database
-        store2 = TaskStore(db_path)
-        retrieved = store2.get("persistent_task")
-
-        assert retrieved is not None
-        assert retrieved["state"] == "complete"
-        assert retrieved["status"] == "Done"
-        assert retrieved["request_hash"] == "persistent_hash"
-
-        store1.close()
-        store2.close()
+        store.update_job("j-2", status="completed", result_data={"density": 2.2})
+        job = store.get_job("j-2")
+        assert job.status == "completed"
+        assert job.result_data == {"density": 2.2}
+        store.close()
 
 
-def test_task_store_concurrent_writes() -> None:
-    """Test that multiple threads can write to the task store simultaneously."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "test_tasks.db"
-        store = TaskStore(db_path)
+def test_find_completed_by_hash() -> None:
+    """Test cache lookup by request hash."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-3",
+                request_hash="hash-a",
+                composition="SiO2 80 - Na2O 20",
+                potential="pmmcs",
+                status="completed",
+                result_data={"structural_analysis": {"density": 2.5}},
+            )
+        )
 
+        found = store.find_completed_by_hash("hash-a")
+        assert found is not None
+        assert found.job_id == "j-3"
+
+        assert store.find_completed_by_hash("nonexistent") is None
+        store.close()
+
+
+def test_search_by_composition() -> None:
+    """Test searching completed jobs by composition."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        for i, pot in enumerate(["pmmcs", "shik"]):
+            store.create_job(
+                Job(
+                    job_id=f"j-search-{i}",
+                    request_hash=f"h-{i}",
+                    composition="SiO2 70 - Na2O 30",
+                    potential=pot,
+                    status="completed",
+                    result_data={},
+                )
+            )
+        store.create_job(
+            Job(
+                job_id="j-other",
+                request_hash="h-other",
+                composition="SiO2 100",
+                potential="pmmcs",
+                status="completed",
+                result_data={},
+            )
+        )
+
+        results = store.search_by_composition("SiO2 70 - Na2O 30")
+        assert len(results) == 2
+
+        results_filtered = store.search_by_composition("SiO2 70 - Na2O 30", "shik")
+        assert len(results_filtered) == 1
+        assert results_filtered[0].potential == "shik"
+        store.close()
+
+
+def test_list_compositions() -> None:
+    """Test listing all compositions with completed jobs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        for i in range(3):
+            store.create_job(
+                Job(
+                    job_id=f"j-list-{i}",
+                    request_hash=f"h-list-{i}",
+                    composition="SiO2 70 - Na2O 30",
+                    potential="pmmcs",
+                    status="completed",
+                    result_data={},
+                )
+            )
+        store.create_job(
+            Job(
+                job_id="j-list-other",
+                request_hash="h-list-other",
+                composition="SiO2 100",
+                potential="pmmcs",
+                status="completed",
+                result_data={},
+            )
+        )
+        # Pending job should not appear
+        store.create_job(
+            Job(
+                job_id="j-list-pending",
+                request_hash="h-list-pending",
+                composition="B2O3 100",
+                potential="pmmcs",
+                status="pending",
+            )
+        )
+
+        comps = store.list_compositions()
+        assert len(comps) == 2
+        by_comp = {c["composition"]: c["n_jobs"] for c in comps}
+        assert by_comp["SiO2 70 - Na2O 30"] == 3
+        assert by_comp["SiO2 100"] == 1
+        store.close()
+
+
+def test_concurrent_writes() -> None:
+    """Test thread safety of concurrent writes."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
         errors: list[Exception] = []
-        n_threads = 10
+        n = 10
 
-        def write_task(i: int) -> None:
+        def create(i: int) -> None:
             try:
-                store.set(
-                    f"thread-task-{i}",
-                    {"state": "processing", "request_hash": f"hash-{i}"},
+                store.create_job(
+                    Job(
+                        job_id=f"j-thread-{i}",
+                        request_hash=f"h-thread-{i}",
+                        composition="SiO2 100",
+                        potential="pmmcs",
+                        status="pending",
+                    )
                 )
             except Exception as e:
                 errors.append(e)
 
-        threads = [threading.Thread(target=write_task, args=(i,)) for i in range(n_threads)]
+        threads = [threading.Thread(target=create, args=(i,)) for i in range(n)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
 
-        assert errors == [], f"Concurrent writes failed: {errors}"
-
-        # Verify all tasks were written
-        items = store.items()
-        assert len(items) == n_threads
-
+        assert errors == []
         store.close()
 
 
-def test_task_store_concurrent_cache_lookup() -> None:
-    """Test that find_cached_result works correctly from multiple threads.
-
-    This simulates the pattern where FastAPI runs sync endpoints in a
-    threadpool — multiple /check or /cache requests hitting the DB at once.
-    """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        db_path = Path(temp_dir) / "test_tasks.db"
-        store = TaskStore(db_path)
-
-        mock_structure = {
-            "numbers": [14, 8, 8],
-            "positions": [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
-            "pbc": [True, True, True],
-        }
-
-        store.set(
-            "cached-task",
-            {
-                "state": "complete",
-                "request_hash": "shared-hash",
-                "result": {
-                    "composition": "SiO2",
-                    "final_structure": mock_structure,
-                    "mean_temperature": 300.0,
-                    "simulation_steps": 100,
-                    "structural_analysis": {
-                        "density": 2.2,
-                        "coordination": {"oxygen": {}, "formers": {}, "modifiers": {}},
-                        "network": {
-                            "connectivity": 4.0,
-                            "Qn_distribution": {},
-                            "Qn_distribution_partial": {},
-                        },
-                        "distributions": {"bond_angles": {}, "rings": {}},
-                        "rdfs": {"r": [], "rdfs": {}, "cumulative_coordination": {}},
-                        "elements": {"formers": ["Si"], "modifiers": [], "cutoffs": {}},
-                    },
-                },
-            },
+def test_persistence() -> None:
+    """Test that data persists across JobStore instances."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        store1 = JobStore(db_path)
+        store1.create_job(
+            Job(
+                job_id="j-persist",
+                request_hash="h-persist",
+                composition="SiO2 100",
+                potential="pmmcs",
+                status="completed",
+                result_data={},
+            )
         )
+        store1.close()
 
-        errors: list[Exception] = []
-        results: list[tuple | None] = []
-        lock = threading.Lock()
-        n_threads = 10
-
-        def lookup() -> None:
-            try:
-                result = store.find_cached_result("shared-hash")
-                with lock:
-                    results.append(result)
-            except Exception as e:
-                with lock:
-                    errors.append(e)
-
-        threads = [threading.Thread(target=lookup) for _ in range(n_threads)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert errors == [], f"Concurrent cache lookups failed: {errors}"
-        assert len(results) == n_threads
-        for r in results:
-            assert r is not None
-            task_id, mq_result = r
-            assert task_id == "cached-task"
-            assert mq_result.composition == "SiO2"
-
-        store.close()
+        store2 = JobStore(db_path)
+        job = store2.get_job("j-persist")
+        assert job is not None
+        assert job.status == "completed"
+        store2.close()

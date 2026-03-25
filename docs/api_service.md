@@ -1,6 +1,30 @@
 # API Service (MCP)
 
-The `amorphouspy-api` is a FastAPI-based service that provides a Model Context Protocol (MCP) interface for running long-running glass simulation tasks with intelligent caching and persistent task management.
+The `amorphouspy-api` is a FastAPI-based service that provides a Model Context Protocol (MCP) interface for running oxide glass simulations with intelligent caching.
+
+The API has two layers:
+
+- **Materials layer** (`/glasses`): Read-only, property-centric. "What do we know about this glass?"
+- **Jobs layer** (`/jobs`): Simulation-centric. "Run this computation."
+
+Both layers share the same underlying data store. The materials layer is a view over completed jobs.
+
+## Simulation Pipeline
+
+The standard melt-quench workflow for oxide glasses follows this DAG:
+
+```
+composition string
+  → random structure generation
+    → select interatomic potential
+      → melt-quench MD simulation
+        → structural analysis (RDF, coordination, bond angles)
+        → elastic moduli (bulk, shear, Young's, Poisson)
+        → viscosity (Green-Kubo at multiple temperatures)
+        → CTE (coefficient of thermal expansion)
+```
+
+The API hides this DAG from the user. The user specifies a composition and which analyses they want; the server resolves dependencies automatically.
 
 ## How It Works
 
@@ -14,11 +38,11 @@ graph LR
     subgraph FastAPI
     A1[Request hash]
     A2[Cache lookup]
-    A3[Task creation]
+    A3[Job creation]
     end
     
     subgraph SQLite
-    B1[Task metadata]
+    B1[Job metadata]
     B2[Results]
     B3[Hash index]
     end
@@ -33,25 +57,25 @@ graph LR
 ### Key Components
 
 #### 1. Request Hashing & Caching
-- Each simulation request is hashed based on composition and simulation parameters.
-- Uses `cloudpickle` + SHA256 for consistent, reproducible hashes.
+- Each simulation request is hashed based on composition, potential, and simulation parameters.
+- Deterministic SHA256 hash for consistent, reproducible cache keys.
 - Automatic cache lookups prevent duplicate simulations.
 - Results persist across server restarts.
 
-#### 2. Persistent Task Store (SQLite)
-- All task metadata stored in SQLite database (`tasks.db`).
-- Efficient indexed lookups by request hash.
-- Tracks task states: `processing` → `complete`/`error`.
+#### 2. Job Store (SQLite)
+- All job metadata stored in SQLite database (`jobs.db`).
+- Efficient indexed lookups by request hash and composition.
+- Tracks job states: `pending` → `running` → `completed`/`failed`/`cancelled`.
 - Survives server restarts and process crashes.
 
 #### 3. Job Execution with executorlib
-- Supports local execution (`SingleNodeExecutor`) or SLURM cluster (`SlurmClusterExecutor`).
+- Supports local execution (`TestClusterExecutor`) or SLURM cluster (`SlurmClusterExecutor`/`FluxClusterExecutor`).
 - Executor type configured via environment variables.
 - Built-in job caching at the executor level.
 - Re-submitting same job returns cached result or running future.
 
 #### 4. Model Context Protocol (MCP) Integration
-- Exposes simulation capabilities as MCP tools.
+- Exposes simulation capabilities as MCP tools via `fastapi-mcp`.
 - Compatible with Claude, VS Code, and other MCP clients.
 - Server-Sent Events (SSE) endpoint at `/mcp`.
 

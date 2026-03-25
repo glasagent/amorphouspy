@@ -1,7 +1,7 @@
-"""Visualization router for amorphouspy API.
+"""Visualization helpers for amorphouspy API.
 
-This module provides endpoints for visualizing simulation results,
-including structural analysis plots and data summaries.
+Renders an interactive HTML page with Plotly charts and 3Dmol.js
+for a completed simulation job.
 """
 
 import json
@@ -10,52 +10,34 @@ from pathlib import Path
 from typing import Any
 
 from amorphouspy.workflows.structural_analysis import StructureData
-from fastapi import APIRouter, HTTPException
+from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from .database import get_task_store
+from .database import get_job_store
+from .models import validate_atoms
 
 logger = logging.getLogger(__name__)
 
-# Create visualization router
-router = APIRouter(prefix="/visualize", tags=["visualization"])
-
-# Setup Jinja2 templates
 template_dir = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(template_dir))
 
 
 def atoms_to_xyz_string(atoms) -> str:
-    """Convert ASE Atoms object to extended XYZ format string for 3Dmol.js.
-
-    Args:
-        atoms: ASE Atoms object or serialized structure data.
-
-    Returns:
-        Extended XYZ format string with cell information.
-    """
+    """Convert ASE Atoms object to extended XYZ format string for 3Dmol.js."""
     if atoms is None:
         return ""
-
     try:
         from io import StringIO
 
         from ase.io import write
 
-        from .models import validate_atoms
-
-        # Use our custom validator to handle any input format
         atoms_obj = validate_atoms(atoms)
-
-        # Use extended XYZ format which naturally includes cell information
         xyz_buffer = StringIO()
         write(xyz_buffer, atoms_obj, format="extxyz")
         return xyz_buffer.getvalue()
-
     except Exception:
         logger.exception("Error converting atoms to extended XYZ")
-        logger.exception("Atoms type: %s", type(atoms))
         return ""
 
 
@@ -110,24 +92,11 @@ def prepare_template_context(
 
 
 def _validate_task_data(task_data: dict | None, task_id: str) -> dict:
-    """Validate task data and ensure it's complete.
-
-    Args:
-        task_data: Task data from the store.
-        task_id: Task identifier for error messages.
-
-    Returns:
-        Validated task data.
-
-    Raises:
-        HTTPException: If task not found or not completed.
-    """
     if not task_data:
         raise HTTPException(status_code=404, detail="Task not found")
-
-    if task_data["state"] != "complete":
-        raise HTTPException(status_code=400, detail=f"Task is not completed yet. Current state: {task_data['state']}")
-
+    if task_data.get("state", task_data.get("status")) not in ("complete", "completed"):
+        state = task_data.get("state", task_data.get("status", "unknown"))
+        raise HTTPException(status_code=400, detail=f"Task is not completed yet. Current state: {state}")
     return task_data
 
 
@@ -182,51 +151,43 @@ def _process_structure_for_3d(result_data: dict) -> str:
     return structure_xyz
 
 
-@router.get("/meltquench/{task_id}", response_class=HTMLResponse)
-async def visualize_results(task_id: str) -> HTMLResponse:
-    """Visualize simulation results for a given task ID with interactive Plotly plots.
+def render_job_visualization(job_id: str) -> HTMLResponse:
+    """Render interactive visualisation for a completed job.
 
-    This endpoint returns an HTML page with interactive structural analysis plots and key results.
-
-    Args:
-        task_id: The simulation task identifier.
-
-    Returns:
-        HTML page with interactive results visualization.
-
-    Raises:
-        HTTPException: If task not found, not completed, or missing structural analysis.
+    Called from ``routers/jobs.py`` (``GET /jobs/{id}/visualize``).
     """
+    store = get_job_store()
+    job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail=f"Job is not completed yet. Current status: {job.status}")
+
+    result_data = job.result_data
+    if not result_data:
+        raise HTTPException(status_code=404, detail="No results found for this job")
+
+    structural_analysis = result_data.get("structural_analysis")
+    if not structural_analysis:
+        raise HTTPException(status_code=404, detail="No structural analysis data found")
+
     try:
-        # Get task data
-        task_data = get_task_store().get(task_id)
-        task_data = _validate_task_data(task_data, task_id)
-
-        # Get result data
-        result_data = _get_and_validate_results(task_data)
-
-        # Generate interactive plot
         from amorphouspy.workflows.structural_analysis import plot_analysis_results_plotly
 
-        structural_data = result_data["structural_analysis"]
-        if isinstance(structural_data, dict):
-            structural_data = StructureData(**structural_data)
+        if isinstance(structural_analysis, dict):
+            structural_analysis = StructureData(**structural_analysis)
 
-        plotly_fig = plot_analysis_results_plotly(structural_data).to_dict()
-
-        # Get atomic structure for 3D visualization
+        plotly_fig = plot_analysis_results_plotly(structural_analysis).to_dict()
         structure_xyz = _process_structure_for_3d(result_data)
 
-        # Create HTML response using template
-        context = prepare_template_context(task_id, result_data, plotly_fig, structure_xyz)
+        context = prepare_template_context(job_id, result_data, plotly_fig, structure_xyz)
         html_content = templates.get_template("results.html").render(context)
 
-        logger.info("Generated interactive visualization for task %s", task_id)
+        logger.info("Generated visualisation for job %s", job_id)
         return HTMLResponse(content=html_content)
 
     except HTTPException:
-        # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        logger.exception("Error generating visualization for task %s", task_id)
-        raise HTTPException(status_code=500, detail=f"Error generating visualization: {e!s}") from e
+        logger.exception("Error generating visualisation for job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"Error generating visualisation: {e!s}") from e
