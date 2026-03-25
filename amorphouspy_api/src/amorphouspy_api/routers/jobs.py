@@ -28,11 +28,11 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-from amorphouspy_api.composition import Composition
 from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import Job, get_job_store
-from amorphouspy_api.jobs import get_executor, get_lammps_resource_dict
+from amorphouspy_api.executor import get_executor, get_lammps_resource_dict
 from amorphouspy_api.models import (
+    Composition,
     JobCreatedResponse,
     JobProgress,
     JobResultsResponse,
@@ -541,6 +541,6 @@ def get_structure(
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
 def visualize_job(job_id: str) -> HTMLResponse:
     """Interactive HTML visualization of completed results."""
-    from amorphouspy_api.visualization import render_job_visualization
+    from amorphouspy_api.routers.visualization import render_job_visualization
 
     return render_job_visualization(job_id)

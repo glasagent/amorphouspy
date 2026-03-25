@@ -9,10 +9,10 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from amorphouspy_api.composition import Composition
 from amorphouspy_api.database import get_job_store
 from amorphouspy_api.models import (
     AvailableStructure,
+    Composition,
     GlassListResponse,
     GlassLookupRequest,
     GlassPropertiesResponse,

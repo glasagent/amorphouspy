@@ -14,12 +14,12 @@ from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from .database import get_job_store
-from .models import validate_atoms
+from amorphouspy_api.database import get_job_store
+from amorphouspy_api.models import validate_atoms
 
 logger = logging.getLogger(__name__)
 
-template_dir = Path(__file__).parent / "templates"
+template_dir = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(template_dir))
 
 
