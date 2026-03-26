@@ -103,7 +103,7 @@ def test_jobs_api_integration() -> None:
     assert "composition" in result
 
     # Validate structural analysis results
-    structure = result.get("structure")
+    structure = result.get("analyses", {}).get("structure")
     assert structure is not None, "Expected structure analysis results"
     assert "density" in structure
 
