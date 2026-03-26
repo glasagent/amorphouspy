@@ -144,16 +144,97 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
 
 
 def refresh_job_from_cache(job: Job) -> None:
-    """Re-check executor cache for a running job and update DB if resolved."""
+    """Re-check executor cache for a running job and update DB if resolved.
+
+    Checks the merged result first (fast path).  If that is not ready yet,
+    probes each step's individual cache key for granular progress.
+    """
+    cache_dir = str(MELTQUENCH_PROJECT_DIR)
+    cache_key = job.request_hash
+
+    # Fast path — final merged result available?
     try:
         future = get_future_from_cache(
-            cache_directory=str(MELTQUENCH_PROJECT_DIR),
-            cache_key=job.request_hash,
+            cache_directory=cache_dir,
+            cache_key=cache_key,
         )
         resolved = _resolve_future(future, job.job_id)
-        submission = JobSubmission(**job.request_data) if job.request_data else None
-        _update_from_resolved(job.job_id, resolved, submission)
+        if resolved["status"] in ("completed", "failed"):
+            submission = JobSubmission(**job.request_data) if job.request_data else None
+            _update_from_resolved(job.job_id, resolved, submission)
+            return
     except FileNotFoundError:
-        logger.info("Cache files not yet available for job %s", job.job_id)
-    except Exception:
-        logger.exception("Failed to check job %s", job.job_id)
+        pass
+
+    # Slow path — probe per-step cache keys
+    submission = JobSubmission(**job.request_data) if job.request_data else None
+    all_steps = list(BASE_STEPS)
+    if submission:
+        all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
+
+    progress: dict[str, str] = {}
+    has_failure = False
+    for step_name in all_steps:
+        step_key = f"{cache_key}_{step_name}"
+        try:
+            step_future = get_future_from_cache(
+                cache_directory=cache_dir,
+                cache_key=step_key,
+            )
+            step_resolved = _resolve_future(step_future, job.job_id)
+            progress[step_name] = step_resolved["status"]
+            if step_resolved["status"] == "failed":
+                has_failure = True
+        except FileNotFoundError:
+            progress[step_name] = "pending"
+
+    store = get_job_store()
+    if has_failure:
+        store.update_job(job.job_id, status="failed", progress=progress)
+    else:
+        store.update_job(job.job_id, status="running", progress=progress)
+
+
+def build_visualization_context(job_id: str, result_data: dict) -> dict:
+    """Build the Jinja2 template context from job result data."""
+    import json
+
+    from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
+    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
+    from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
+
+    mq = result_data.get("melt_quench", {})
+
+    # --- Structure analysis (always present) ---
+    context = prepare_structure_context(result_data)
+
+    # Melt-quench metadata
+    mean_temperature = mq.get("mean_temperature", "N/A")
+    if isinstance(mean_temperature, (int, float)):
+        mean_temperature = f"{mean_temperature:.1f}"
+    simulation_steps = mq.get("simulation_steps", "N/A")
+    if isinstance(simulation_steps, int):
+        simulation_steps = f"{simulation_steps:,}"
+
+    context.update(
+        {
+            "job_id": job_id,
+            "composition": mq.get("composition", "N/A"),
+            "mean_temperature": mean_temperature,
+            "simulation_steps": simulation_steps,
+        }
+    )
+
+    # --- Optional analyses ---
+    visc_data = result_data.get("viscosity")
+    if visc_data:
+        context["viscosity_plots"] = prepare_viscosity_plots(visc_data)
+
+    cte_data = result_data.get("cte")
+    if cte_data:
+        context["cte_plots"] = prepare_cte_plots(cte_data)
+        summary = cte_data.get("summary")
+        if summary:
+            context["cte_summary"] = json.dumps(summary)
+
+    return context

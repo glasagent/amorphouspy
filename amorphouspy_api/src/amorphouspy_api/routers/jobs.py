@@ -43,6 +43,7 @@ from amorphouspy_api.routers.jobs_helpers import (
     _progress_from_dict,
     _submit_to_executor,
     _update_from_resolved,
+    build_visualization_context,
     refresh_job_from_cache,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -277,6 +278,38 @@ def get_structure(
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
 def visualize_job(job_id: str) -> HTMLResponse:
     """Interactive HTML visualization of completed results."""
-    from amorphouspy_api.routers.visualization import render_job_visualization
+    from pathlib import Path
 
-    return render_job_visualization(job_id)
+    from fastapi.templating import Jinja2Templates
+
+    store = get_job_store()
+    job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job is not completed yet. Current status: {job.status}",
+        )
+
+    result_data = job.result_data
+    if not result_data:
+        raise HTTPException(status_code=404, detail="No results found for this job")
+
+    if not result_data.get("structure"):
+        raise HTTPException(status_code=404, detail="No structural analysis data found")
+
+    try:
+        context = build_visualization_context(job_id, result_data)
+
+        template_dir = Path(__file__).parent.parent / "templates"
+        templates = Jinja2Templates(directory=str(template_dir))
+        html_content = templates.get_template("results.html").render(context)
+
+        return HTMLResponse(content=html_content)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error generating visualisation for job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"Error generating visualisation: {e!s}") from e
