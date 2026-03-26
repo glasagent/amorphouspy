@@ -44,8 +44,14 @@ pytest = "*"
 pytest-cov = "*"
 nbval = "*"
 
+[feature.docs.dependencies]
+mkdocs-material = "*"
+mkdocs-jupyter = "==0.24.8"
+pymdown-extensions = "*"
+
 [environments]
-default = { features = ["dev"], solve-group = "default" }
+default = { features = ["dev", "docs"], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "default" }
 
 [tasks]
 test-lib = { cmd = "python -m pytest src/tests --durations=0 --cov=src/amorphouspy --cov-report=xml --cov-report=term", cwd = "amorphouspy" }
@@ -54,3 +60,5 @@ test-notebooks = { cmd = "pytest --durations=0 --nbval-lax ../notebooks/*ipynb -
 serve = "uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 8000 --log-level info --backlog 1 --timeout-keep-alive 60"
 lint = "ruff check --output-format=github"
 format-check = "ruff format --check --diff"
+docs-build = "mkdocs build --strict"
+docs-serve = "mkdocs serve"
