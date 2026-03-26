@@ -54,7 +54,10 @@ def prepare_structure_context(result_data: dict[str, Any]) -> dict[str, Any]:
     ``plotly_json``, ``structure_xyz``, ``density``, ``network_connectivity``,
     ``network_formers``, ``modifiers``.
     """
-    from amorphouspy.workflows.structural_analysis import StructureData, plot_analysis_results_plotly
+    from amorphouspy.workflows.structural_analysis import (
+        StructureData,
+        plot_analysis_results_plotly,
+    )
 
     structural_analysis = result_data.get("structure", {})
     mq = result_data.get("melt_quench", {})

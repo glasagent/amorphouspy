@@ -4,18 +4,53 @@ Runs Green-Kubo viscosity calculations at multiple temperatures starting
 from an already-quenched glass structure.  The structure is sequentially
 cooled from the highest to the lowest requested temperature, and at each
 step a production MD run is performed followed by post-processing.
-
-This module is a plain synchronous function called by the ``viscosity``
-analysis runner registered in ``routers/jobs.py``.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from amorphouspy import melt_quench_simulation
 from amorphouspy.workflows.viscosity import get_viscosity, viscosity_simulation
 
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from amorphouspy_api.models import JobSubmission, ViscosityAnalysis
+
 logger = logging.getLogger(__name__)
+
+
+def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+    """Multi-temperature viscosity analysis on the quenched glass."""
+    from amorphouspy import generate_potential, get_structure_dict
+
+    from amorphouspy_api.executor import get_lammps_resource_dict
+
+    cfg: ViscosityAnalysis = config  # type: ignore[assignment]
+
+    atoms_dict = get_structure_dict(
+        composition=submission.composition.root,
+        target_atoms=submission.simulation.n_atoms,
+    )
+    potential = generate_potential(
+        atoms_dict=atoms_dict,
+        potential_type=submission.potential.value,
+    )
+
+    return run_viscosity_workflow(
+        structure=result["melt_quench"]["final_structure"],
+        potential=potential,
+        temperatures=cfg.temperatures,
+        heating_rate=int(submission.simulation.quench_rate * 100),
+        cooling_rate=int(submission.simulation.quench_rate),
+        timestep=cfg.timestep,
+        n_timesteps=cfg.n_timesteps,
+        n_print=cfg.n_print,
+        max_lag=cfg.max_lag,
+        lammps_resource_dict=get_lammps_resource_dict(),
+    )
 
 
 def run_viscosity_workflow(

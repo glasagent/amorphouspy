@@ -7,9 +7,59 @@ simulation functions to the API pipeline calling convention.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from amorphouspy_api.models import JobSubmission
 
 logger = logging.getLogger(__name__)
+
+
+def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+    """CTE analysis via fluctuations or temperature scan."""
+    from amorphouspy import generate_potential, get_structure_dict
+
+    from amorphouspy_api.executor import get_lammps_resource_dict
+    from amorphouspy_api.models import CTEFluctuations
+
+    atoms_dict = get_structure_dict(
+        composition=submission.composition.root,
+        target_atoms=submission.simulation.n_atoms,
+    )
+    potential = generate_potential(
+        atoms_dict=atoms_dict,
+        potential_type=submission.potential.value,
+    )
+
+    resource_dict = get_lammps_resource_dict()
+
+    if isinstance(config, CTEFluctuations):
+        return run_cte_fluctuations(
+            structure=result["melt_quench"]["final_structure"],
+            potential=potential,
+            temperature=config.temperature,
+            pressure=config.pressure,
+            timestep=config.timestep,
+            equilibration_steps=config.equilibration_steps,
+            production_steps=config.production_steps,
+            min_production_runs=config.min_production_runs,
+            max_production_runs=config.max_production_runs,
+            cte_uncertainty_criterion=config.cte_uncertainty_criterion,
+            lammps_resource_dict=resource_dict,
+        )
+
+    return run_cte_temperature_scan(
+        structure=result["melt_quench"]["final_structure"],
+        potential=potential,
+        temperatures=config.temperatures,
+        pressure=config.pressure,
+        timestep=config.timestep,
+        equilibration_steps=config.equilibration_steps,
+        production_steps=config.production_steps,
+        lammps_resource_dict=resource_dict,
+    )
 
 
 def run_cte_fluctuations(
@@ -84,7 +134,9 @@ def run_cte_temperature_scan(
 # ---------------------------------------------------------------------------
 
 
-def _cumulative_mean_and_uncertainty(values: list[float]) -> tuple[list[float], list[float]]:
+def _cumulative_mean_and_uncertainty(
+    values: list[float],
+) -> tuple[list[float], list[float]]:
     """Compute running mean and standard-error-of-the-mean for a list of values."""
     import math
 
@@ -116,7 +168,12 @@ def _build_cte_convergence_plot(data: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     traces: list[dict[str, Any]] = []
-    colors = {"CTE_V": "#7b2d8e", "CTE_x": "#1f77b4", "CTE_y": "#ff7f0e", "CTE_z": "#2ca02c"}
+    colors = {
+        "CTE_V": "#7b2d8e",
+        "CTE_x": "#1f77b4",
+        "CTE_y": "#ff7f0e",
+        "CTE_z": "#2ca02c",
+    }
 
     for key, color in colors.items():
         values = data.get(key, [])

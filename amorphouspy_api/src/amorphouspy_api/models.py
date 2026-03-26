@@ -9,7 +9,15 @@ from typing import Annotated, Literal
 
 from ase import Atoms
 from ase.io import read, write
-from pydantic import BaseModel, Discriminator, Field, PlainSerializer, PlainValidator, RootModel, Tag
+from pydantic import (
+    BaseModel,
+    Discriminator,
+    Field,
+    PlainSerializer,
+    PlainValidator,
+    RootModel,
+    Tag,
+)
 
 # ---------------------------------------------------------------------------
 # Composition

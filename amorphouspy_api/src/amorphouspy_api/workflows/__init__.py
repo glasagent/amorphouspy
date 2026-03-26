@@ -41,38 +41,80 @@ def _accumulate_step(step_name: str, step_fn, submission, config, accumulated: d
     return {**accumulated, step_name: step_result}
 
 
+def _run_analysis(step_name: str, step_fn, submission, config, base_result: dict) -> dict:
+    """Run a single analysis step. Returns ``{step_name: result}``.
+
+    Unlike ``_accumulate_step`` this does **not** carry forward the full
+    accumulated dict — each analysis only receives the base pipeline result
+    (structure_generation + melt_quench) and works independently.
+    """
+    step_result = step_fn(submission, config, base_result)
+    return {step_name: step_result}
+
+
+def _merge_results(base_result: dict, **analysis_results: dict) -> dict:
+    """Merge the base pipeline result with individual analysis outputs."""
+    merged = dict(base_result)
+    for result_dict in analysis_results.values():
+        merged.update(result_dict)
+    return merged
+
+
 def submit_pipeline(
     executor: BaseExecutor,
     submission: JobSubmission,
     cache_key: str | None = None,
 ) -> Future:
-    """Submit all pipeline steps as a chain of executor futures.
+    """Submit all pipeline steps as executor futures.
 
-    Base steps (structure_generation, melt_quench) always run.
-    Requested analyses are appended to the chain.
-    The *cache_key* is set on the final step so the complete result
-    can be retrieved later via ``get_future_from_cache``.
+    Base steps (structure_generation, melt_quench) run sequentially.
+    Requested analyses then fan out **in parallel** from the base result.
+    A final merge step collects everything under the bare *cache_key*.
+
+    Each intermediate step gets ``{cache_key}_{step_name}`` so individual
+    progress can be queried via ``get_future_from_cache``.
     """
-    # Build ordered list of (step_name, step_fn, config)
-    steps: list[tuple] = [(name, STEPS[name], None) for name in ("structure_generation", "melt_quench")]
-
-    analysis_configs = {a.type: a for a in submission.analyses}
-    steps.extend((name, ANALYSES[name], config) for name, config in analysis_configs.items() if name in ANALYSES)
-
-    # Chain futures — each step receives the accumulated result from the previous
+    # --- Base steps: sequential chain ---
     future = None
-    for i, (name, fn, config) in enumerate(steps):
-        kwargs = {
-            "step_name": name,
-            "step_fn": fn,
-            "submission": submission,
-            "config": config,
-            "accumulated": future if future is not None else {},
-        }
+    for name in ("structure_generation", "melt_quench"):
         resource_dict = {}
-        if i == len(steps) - 1 and cache_key is not None:
-            resource_dict["cache_key"] = cache_key
+        if cache_key is not None:
+            resource_dict["cache_key"] = f"{cache_key}_{name}"
+        future = executor.submit(
+            _accumulate_step,
+            resource_dict=resource_dict,
+            step_name=name,
+            step_fn=STEPS[name],
+            submission=submission,
+            config=None,
+            accumulated=future if future is not None else {},
+        )
 
-        future = executor.submit(_accumulate_step, resource_dict=resource_dict, **kwargs)
+    base_future = future  # contains structure_generation + melt_quench
 
-    return future
+    # --- Analysis steps: fan-out in parallel from base_future ---
+    analysis_configs = {a.type: a for a in submission.analyses}
+    analysis_futures: dict[str, Future] = {}
+    for name, config in analysis_configs.items():
+        if name in ANALYSES:
+            resource_dict = {}
+            if cache_key is not None:
+                resource_dict["cache_key"] = f"{cache_key}_{name}"
+            analysis_futures[name] = executor.submit(
+                _run_analysis,
+                resource_dict=resource_dict,
+                step_name=name,
+                step_fn=ANALYSES[name],
+                submission=submission,
+                config=config,
+                base_result=base_future,
+            )
+
+    # --- Merge step: collects base + all analysis results ---
+    merge_resource: dict[str, str] = {}
+    if cache_key is not None:
+        merge_resource["cache_key"] = cache_key
+    merge_kwargs: dict[str, dict | Future] = {"base_result": base_future}
+    merge_kwargs.update(analysis_futures)
+
+    return executor.submit(_merge_results, resource_dict=merge_resource, **merge_kwargs)
