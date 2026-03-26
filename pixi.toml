@@ -11,6 +11,19 @@ lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
 pygraphviz = "*"
 # Not in any pyproject.toml
 jupyter = "*"
+# Prefer conda-forge over PyPI for compiled packages
+ase = "*"
+executorlib = "*"
+lammpsparser = "*"
+numba = "*"
+numpy = "*"
+pandas = "*"
+pymatgen = "*"
+pysqa = "*"
+scipy = "*"
+sqlalchemy = "*"
+uvicorn = "*"
+fastapi-mcp = "*"
 
 # Platform-specific: flux-core and sovapy not available on osx-arm64
 [target.linux-64.dependencies]
