@@ -182,11 +182,20 @@ class ViscosityAnalysis(BaseModel):
 
 
 class ElasticAnalysis(BaseModel):
-    """Configuration for elastic moduli analysis (placeholder)."""
+    """Configuration for elastic moduli analysis (stress-strain finite differences).
+
+    Calculates the full Cij stiffness tensor via central differences and
+    derives isotropic moduli (B, G, E, nu) using Voigt-Reuss-Hill averaging.
+    """
 
     type: Literal["elastic"] = "elastic"
-    strain_magnitude: float = Field(default=0.01, description="Applied strain for elastic constants")
-    n_steps: int = Field(default=10000, description="Equilibration steps before measurement")
+    temperature: float = Field(default=300.0, description="Simulation temperature in K")
+    pressure: float | None = Field(default=None, description="Target pressure for equilibration (None = NVT)")
+    timestep: float = Field(default=1.0, description="MD timestep in fs")
+    equilibration_steps: int = Field(default=1_000_000, description="Equilibration MD steps")
+    production_steps: int = Field(default=10_000, description="Production MD steps per strain direction")
+    n_print: int = Field(default=1, description="Thermodynamic output frequency")
+    strain: float = Field(default=1e-3, description="Strain magnitude for finite differences")
 
 
 class _CTEBase(BaseModel):

@@ -200,6 +200,7 @@ def build_visualization_context(job_id: str, result_data: dict) -> dict:
     import json
 
     from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
+    from amorphouspy_api.workflows.analyses.elastic import prepare_elastic_plots
     from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
     from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
 
@@ -236,5 +237,12 @@ def build_visualization_context(job_id: str, result_data: dict) -> dict:
         summary = cte_data.get("summary")
         if summary:
             context["cte_summary"] = json.dumps(summary)
+
+    elastic_data = result_data.get("elastic")
+    if elastic_data:
+        context["elastic_plots"] = prepare_elastic_plots(elastic_data)
+        moduli = elastic_data.get("moduli")
+        if moduli:
+            context["elastic_moduli"] = moduli
 
     return context
