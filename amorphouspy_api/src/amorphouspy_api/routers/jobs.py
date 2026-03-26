@@ -250,7 +250,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
             status=JobStatus(cached.status),
             composition=Composition.from_canonical(cached.composition),
             potential=cached.potential,
-            created_at=cached.created_at.isoformat() if cached.created_at else _iso_now(),
+            created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
         )
 
     # Create new job record
@@ -287,7 +287,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
         status=JobStatus(final.status) if final else JobStatus.PENDING,
         composition=Composition.from_canonical(norm_comp),
         potential=submission.potential,
-        created_at=final.created_at.isoformat() if final and final.created_at else _iso_now(),
+        created_at=(final.created_at.isoformat() if final and final.created_at else _iso_now()),
     )
 
 
@@ -430,7 +430,10 @@ def get_single_result(job_id: str, analysis: str) -> dict:
 @router.get("/{job_id}/structure")
 def get_structure(
     job_id: str,
-    fmt: Annotated[str, Query(alias="format", description="Export format: xyz, cif, poscar, extxyz")] = "xyz",
+    fmt: Annotated[
+        str,
+        Query(alias="format", description="Export format: xyz, cif, poscar, extxyz"),
+    ] = "xyz",
 ) -> Response:
     """Export the final quenched structure."""
     store = get_job_store()

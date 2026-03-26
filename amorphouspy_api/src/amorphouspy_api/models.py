@@ -170,7 +170,10 @@ class ViscosityAnalysis(BaseModel):
     type: Literal["viscosity"] = "viscosity"
     temperatures: list[float] = Field(default=[1500, 2000, 2500], description="Simulation temperatures in K")
     timestep: float = Field(default=1.0, description="MD timestep in fs for the viscosity production run")
-    n_timesteps: int = Field(default=10_000_000, description="Number of MD steps per viscosity production run")
+    n_timesteps: int = Field(
+        default=10_000_000,
+        description="Number of MD steps per viscosity production run",
+    )
     n_print: int = Field(default=1, description="Thermodynamic output frequency")
     max_lag: int | None = Field(
         default=1_000_000,
@@ -207,7 +210,8 @@ class ViscosityResultData(BaseModel):
     lag_times_ps: list[list[float]] = Field(default_factory=list, description="Lag time arrays per temperature (ps)")
     sacf_data: list[list[float]] = Field(default_factory=list, description="Averaged normalised SACF per temperature")
     viscosity_running: list[list[float]] = Field(
-        default_factory=list, description="Running viscosity integral per temperature (Pa·s)"
+        default_factory=list,
+        description="Running viscosity integral per temperature (Pa·s)",
     )
 
 

@@ -66,7 +66,7 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
             "data": result["structure"],
             "source_job": latest.job_id,
             "potential": latest.potential,
-            "computed_at": latest.completed_at.isoformat() if latest.completed_at else None,
+            "computed_at": (latest.completed_at.isoformat() if latest.completed_at else None),
         }
 
     # Collect available structures across all completed jobs
