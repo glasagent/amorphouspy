@@ -1,6 +1,7 @@
 __pycache__/
 *.log
 .DS_Store
+.pixi/
 *.dat
 *.dump
 *.dump.gz

@@ -21,8 +21,10 @@ dependencies = [
   "lammpsparser",
   "pymatgen",
   "scipy",
-  "sovapy",
 ]
+
+[project.optional-dependencies]
+sovapy = ["sovapy"]
 
 [tool.pytest]
 testpaths = ["src/tests"]
