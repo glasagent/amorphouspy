@@ -4,26 +4,24 @@ channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64", "osx-64"]
 
 [dependencies]
+# Core Python version
 python = "3.13.*"
-ase = ">=3.25.0"
-cryptography = "45.0.7.*"
-executorlib = ">=1.8.2"
-pysqa = ">=0.3.4"
+# Build tooling
 hatchling = "*"
-jupyter = "*"
-networkx = ">=3.4,<4"
-pandas = "2.3.3.*"
-numpy = "2.3.3.*"
-pygraphviz = "1.14.*"
-lammpsparser = "0.0.1.*"
-pymatgen = "2025.10.07.*"
-scipy = "1.16.2.*"
-mpmath = ">=1.1.0,<1.4"
-sqlalchemy = "*"
-numba = "*"
-uvicorn = "*"
-fastapi-mcp = "0.4.0.*"
+# Conda-only / specific build packages
 lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
+pygraphviz = "1.14.*"
+# Not in any pyproject.toml
+jupyter = "*"
+pysqa = ">=0.3.4"
+cryptography = "45.0.7.*"
+mpmath = ">=1.1.0,<1.4"
+networkx = ">=3.4,<4"
+# Version pins (tighter than pyproject.toml)
+numpy = "2.3.3.*"
+pandas = "2.3.3.*"
+scipy = "1.16.2.*"
+pymatgen = "2025.10.07.*"
 
 # Platform-specific: flux-core and sovapy not available on osx-arm64
 [target.linux-64.dependencies]
