@@ -510,3 +510,170 @@ def test_job_without_viscosity_has_no_viscosity_progress() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert "viscosity" not in data["progress"]["analyses"]
+
+
+# ---------------------------------------------------------------------------
+# CTE integration
+# ---------------------------------------------------------------------------
+
+
+def _mock_cte_fluctuations_result() -> dict[str, Any]:
+    return {
+        "summary": {
+            "CTE_V_mean": 2.5e-5,
+            "CTE_x_mean": 8.3e-6,
+            "CTE_y_mean": 8.4e-6,
+            "CTE_z_mean": 8.3e-6,
+            "CTE_V_uncertainty": 5e-7,
+            "CTE_x_uncertainty": 2e-7,
+            "CTE_y_uncertainty": 2e-7,
+            "CTE_z_uncertainty": 2e-7,
+            "is_converged": "True",
+            "convergence_criterion": 1e-6,
+        },
+        "data": {
+            "run_index": [1, 2, 3],
+            "steps": [200_000, 200_000, 200_000],
+            "T": [300.1, 300.2, 300.0],
+            "V": [1000.0, 1000.1, 999.9],
+            "CTE_V": [2.5e-5, 2.5e-5, 2.5e-5],
+            "CTE_x": [8.3e-6, 8.3e-6, 8.3e-6],
+            "CTE_y": [8.4e-6, 8.4e-6, 8.4e-6],
+            "CTE_z": [8.3e-6, 8.3e-6, 8.3e-6],
+        },
+    }
+
+
+def _insert_completed_cte_job(job_id: str = "j-cte-1") -> None:
+    store = get_job_store()
+    result = _mock_result(include_structure=True)
+    result["cte"] = _mock_cte_fluctuations_result()
+    store.create_job(
+        Job(
+            job_id=job_id,
+            request_hash="ctehash1234",
+            composition="SiO2 60 - CaO 25 - Al2O3 15",
+            potential="pmmcs",
+            status="completed",
+            request_data={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "potential": "pmmcs",
+                "simulation": {},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "cte"},
+                ],
+            },
+            progress={
+                "structure_generation": "completed",
+                "melt_quench": "completed",
+                "structure": "completed",
+                "cte": "completed",
+            },
+            result_data=result,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+
+def test_submit_job_with_cte() -> None:
+    """Test submitting a job that includes CTE analysis."""
+    result = _mock_result()
+    result["cte"] = _mock_cte_fluctuations_result()
+
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = result
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "cte"},
+                ],
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "id" in data
+    assert data["status"] in ("pending", "completed")
+
+
+def test_submit_job_with_cte_temperature_scan() -> None:
+    """Test submitting a CTE job using the temperature_scan method."""
+    result = _mock_result()
+    result["cte"] = {"01_300K": {"run01": {"CTE_V": 2.5e-5}}}
+
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = result
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "analyses": [
+                    {"type": "cte", "method": "temperature_scan", "temperatures": [300, 500, 700]},
+                ],
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "id" in data
+
+
+def test_get_results_with_cte() -> None:
+    """Test that the results endpoint returns CTE data."""
+    _insert_completed_cte_job("j-cte-results")
+
+    resp = client.get("/jobs/j-cte-results/results")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["analyses"]["cte"] is not None
+    assert data["analyses"]["cte"]["summary"]["CTE_V_mean"] == 2.5e-5
+    assert data["analyses"]["cte"]["summary"]["is_converged"] == "True"
+
+
+def test_get_single_cte_result() -> None:
+    """Test retrieving only the CTE analysis result."""
+    _insert_completed_cte_job("j-cte-single")
+
+    resp = client.get("/jobs/j-cte-single/results/cte")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "cte" in data
+    assert data["cte"]["summary"]["CTE_V_mean"] == 2.5e-5
+
+
+def test_cte_progress_tracking() -> None:
+    """Test that CTE step appears in progress when requested."""
+    _insert_completed_cte_job("j-cte-progress")
+
+    resp = client.get("/jobs/j-cte-progress")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["progress"]["analyses"]["cte"] == "completed"
