@@ -91,12 +91,13 @@ $$
 where $\langle f(q) \rangle = \sum_\alpha c_\alpha f_\alpha(q)$ is now itself $q$-dependent,
 so both numerator and denominator vary across the diffractogram.
 
-### Cromer–Mann parameterisation
+### International Tables parameterisation
 
-The form factor is evaluated with the four-Gaussian Cromer–Mann fit:
+The form factor is evaluated using the four-Gaussian fit from the International Tables for
+Crystallography (as used by pymatgen's XRD calculator):
 
 $$
-f_\alpha(q) = \sum_{i=1}^{4} a_i \exp\!\left(-b_i s^2\right) + c,
+f_\alpha(q) = Z_\alpha - 41.78214\, s^2 \sum_{i=1}^{4} a_i \exp\!\left(-b_i s^2\right),
 \qquad s = \frac{q}{4\pi}
 $$
 
@@ -186,4 +187,4 @@ sq_SiO = sq_partials_n[(8, 14)]
 1. Faber, T. E. & Ziman, J. M. (1965). *A theory of the electrical properties of liquid metals.* Phil. Mag. **11**, 153–173.
 2. Lorch, E. (1969). *Neutron diffraction by germania, silica and radiation-damaged silica glasses.* J. Phys. C **2**, 229–237.
 3. Sears, V. F. (1992). *Neutron scattering lengths and cross sections.* Neutron News **3**, 26–37.
-4. Cromer, D. T. & Mann, J. B. (1968). *X-ray scattering factors computed from numerical Hartree–Fock wave functions.* Acta Cryst. A **24**, 321–324.
+4. *International Tables for Crystallography*, Vol. C (2006). Atomic scattering factors for X-rays. Kluwer Academic Publishers.
