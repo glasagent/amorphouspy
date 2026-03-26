@@ -31,6 +31,16 @@ pixi run -- jupyter notebook notebooks/Meltquench.ipynb
 pixi run -- pre-commit install
 ```
 
+## Documentation
+
+```bash
+# Build the docs (strict mode)
+pixi run docs-build
+
+# Serve locally with live reload
+pixi run docs-serve
+```
+
 
 ## Upcoming milestones
 
