@@ -1,8 +1,5 @@
 # amorphouspy-api service
-
-# Note: Using ubuntu-based micromamba images, since default debian-based micromamba images 
-# don't work with http proxy settings,
-FROM mambaorg/micromamba:1.5.9-jammy AS build
+FROM ghcr.io/prefix-dev/pixi:0.46.0-jammy-cuda-12.6.3 AS build
 
 USER root
 RUN apt-get update && \
@@ -12,24 +9,16 @@ RUN apt-get update && \
     && apt-get autoremove -y && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-USER mambauser
+WORKDIR /app
 
-# Install the environment
-COPY environment.yml .
+COPY pixi.toml pixi.lock ./
+RUN pixi install --locked
 
-RUN micromamba install -y -n base -f environment.yml && \
-    micromamba clean --all --yes
-
+COPY LICENSE .
+COPY amorphouspy amorphouspy/
+COPY amorphouspy_api/ amorphouspy_api/
+RUN pixi run -- pip install --no-deps --no-build-isolation ./amorphouspy ./amorphouspy_api
 
 EXPOSE 8000
 
-WORKDIR /app
-COPY LICENSE .
-
-COPY amorphouspy amorphouspy/
-RUN micromamba run pip install /app/amorphouspy
-
-COPY amorphouspy_api/ amorphouspy_api/
-RUN micromamba run pip install /app/amorphouspy_api
-
-CMD ["uvicorn","amorphouspy_api.app:app","--host", "0.0.0.0","--port", "8000","--log-level","info","--backlog","1","--timeout-keep-alive","60"]
+CMD ["pixi", "run", "serve"]

@@ -13,26 +13,19 @@ Endpoints:
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
-from datetime import UTC, datetime
 from io import StringIO
 from typing import Annotated
 from uuid import uuid4
 
 from ase.io import write as ase_write
-from executorlib import get_future_from_cache
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
-from amorphouspy_api.composition import Composition
-from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import Job, get_job_store
-from amorphouspy_api.jobs import get_executor, get_lammps_resource_dict
 from amorphouspy_api.models import (
+    Composition,
     JobCreatedResponse,
-    JobProgress,
     JobResultsResponse,
     JobSearchMatch,
     JobSearchRequest,
@@ -40,126 +33,23 @@ from amorphouspy_api.models import (
     JobStatus,
     JobStatusResponse,
     JobSubmission,
-    StepStatus,
     validate_atoms,
 )
-from amorphouspy_api.workflows import run_meltquench_workflow
+from amorphouspy_api.routers.jobs_helpers import (
+    _analyses_list,
+    _initial_progress,
+    _iso_now,
+    _job_hash,
+    _progress_from_dict,
+    _submit_to_executor,
+    _update_from_resolved,
+    refresh_job_from_cache,
+)
+from amorphouspy_api.workflows import ANALYSES
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["tool"])
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
-    """Deterministic hash from (normalised composition + potential + sim params)."""
-    payload = json.dumps(
-        {
-            "composition": normalized_comp,
-            "potential": submission.potential.value,
-            "simulation": submission.simulation.model_dump(),
-        },
-        sort_keys=True,
-    )
-    return hashlib.sha256(payload.encode()).hexdigest()[:16]
-
-
-def _iso_now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _progress_from_dict(d: dict | None) -> JobProgress:
-    if d is None:
-        return JobProgress()
-    return JobProgress(**{k: StepStatus(v) for k, v in d.items()})
-
-
-def _analyses_list(job: Job) -> list[str]:
-    """Extract the list of requested analysis type names from a stored job."""
-    req = job.request_data or {}
-    return [a.get("type", "structure") for a in req.get("analyses", [])]
-
-
-def _resolve_future(future, job_id: str) -> dict:
-    """Extract state from an executorlib future."""
-    if not future.done():
-        return {"status": "running"}
-    exc = future.exception()
-    if exc is not None:
-        logger.error("Job %s failed: %s", job_id, exc)
-        return {"status": "failed", "error": str(exc)}
-    return {"status": "completed", "result": future.result()}
-
-
-def _submit_to_executor(
-    submission: JobSubmission,
-    job_id: str,
-    request_hash: str,
-    composition: dict[str, float],
-) -> dict:
-    """Submit workflow to executorlib and return resolved status dict."""
-    exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
-    lammps_resource_dict = get_lammps_resource_dict()
-
-    future = run_meltquench_workflow(
-        executor=exe,
-        composition=composition,
-        n_atoms=submission.simulation.n_atoms,
-        potential_type=submission.potential.value,
-        heating_rate=int(submission.simulation.quench_rate * 100),  # default heating = 100x quench
-        cooling_rate=int(submission.simulation.quench_rate),
-        n_print=1000,
-        lammps_resource_dict=lammps_resource_dict,
-        cache_key=request_hash,
-    )
-
-    resolved = _resolve_future(future, job_id)
-    exe.shutdown(wait=False, cancel_futures=False)
-    return resolved
-
-
-def _update_job_from_resolved(job_id: str, resolved: dict) -> None:
-    """Persist executor outcome into the job store."""
-    store = get_job_store()
-    status = resolved["status"]
-
-    if status == "completed":
-        result = resolved["result"]
-        store.update_job(
-            job_id,
-            status="completed",
-            progress={
-                "structure_generation": "completed",
-                "melt_quench": "completed",
-                "structure_analysis": "completed",
-            },
-            result_data=result,
-            completed_at=datetime.now(UTC),
-        )
-    elif status == "failed":
-        store.update_job(
-            job_id,
-            status="failed",
-            progress={
-                "structure_generation": "completed",
-                "melt_quench": "failed",
-                "structure_analysis": "pending",
-            },
-            errors={"melt_quench": resolved.get("error", "unknown error")},
-        )
-    else:
-        store.update_job(
-            job_id,
-            status="running",
-            progress={
-                "structure_generation": "running",
-                "melt_quench": "pending",
-                "structure_analysis": "pending",
-            },
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +77,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
             status=JobStatus(cached.status),
             composition=Composition.from_canonical(cached.composition),
             potential=cached.potential,
-            created_at=cached.created_at.isoformat() if cached.created_at else _iso_now(),
+            created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
         )
 
     # Create new job record
@@ -200,19 +90,15 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
         potential=submission.potential.value,
         status="pending",
         request_data=submission.model_dump(),
-        progress={
-            "structure_generation": "pending",
-            "melt_quench": "pending",
-            "structure_analysis": "pending",
-        },
+        progress=_initial_progress(submission),
     )
     store.create_job(job)
     logger.info("Created job %s (hash=%s)", job_id, req_hash)
 
     # Submit to executor
     try:
-        resolved = _submit_to_executor(submission, job_id, req_hash, submission.composition.root)
-        _update_job_from_resolved(job_id, resolved)
+        resolved = _submit_to_executor(submission, job_id, req_hash)
+        _update_from_resolved(job_id, resolved, submission)
     except Exception:
         logger.exception("Failed to submit job %s", job_id)
         store.update_job(
@@ -228,7 +114,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
         status=JobStatus(final.status) if final else JobStatus.PENDING,
         composition=Composition.from_canonical(norm_comp),
         potential=submission.potential,
-        created_at=final.created_at.isoformat() if final and final.created_at else _iso_now(),
+        created_at=(final.created_at.isoformat() if final and final.created_at else _iso_now()),
     )
 
 
@@ -263,19 +149,8 @@ def get_job_status(job_id: str) -> JobStatusResponse:
 
     # If still running, try to refresh from executor cache
     if job.status == "running":
-        req_hash = job.request_hash
-        try:
-            future = get_future_from_cache(
-                cache_directory=str(MELTQUENCH_PROJECT_DIR),
-                cache_key=req_hash,
-            )
-            resolved = _resolve_future(future, job_id)
-            _update_job_from_resolved(job_id, resolved)
-            job = store.get_job(job_id)
-        except FileNotFoundError:
-            logger.info("Cache files not yet available for job %s", job_id)
-        except Exception:
-            logger.exception("Failed to check job %s", job_id)
+        refresh_job_from_cache(job)
+        job = store.get_job(job_id)
 
     return JobStatusResponse(
         id=job.job_id,
@@ -333,10 +208,13 @@ def get_job_results(job_id: str) -> JobResultsResponse:
     if not result:
         raise HTTPException(status_code=404, detail="No results available yet")
 
+    # Collect results for all analysis types
+    analyses = {key: result[key] for key in ANALYSES if key in result}
+
     return JobResultsResponse(
         job_id=job.job_id,
         composition=Composition.from_canonical(job.composition),
-        structure=result.get("structural_analysis"),
+        analyses=analyses,
     )
 
 
@@ -349,14 +227,7 @@ def get_single_result(job_id: str, analysis: str) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
 
     result = job.result_data or {}
-    # Map analysis name to result key
-    key_map = {
-        "structure": "structural_analysis",
-        "elastic": "elastic",
-        "viscosity": "viscosity",
-        "cte": "cte",
-    }
-    key = key_map.get(analysis, analysis)
+    key = analysis
     if key not in result:
         raise HTTPException(status_code=404, detail=f"No results for analysis '{analysis}'")
 
@@ -366,7 +237,10 @@ def get_single_result(job_id: str, analysis: str) -> dict:
 @router.get("/{job_id}/structure")
 def get_structure(
     job_id: str,
-    fmt: Annotated[str, Query(alias="format", description="Export format: xyz, cif, poscar, extxyz")] = "xyz",
+    fmt: Annotated[
+        str,
+        Query(alias="format", description="Export format: xyz, cif, poscar, extxyz"),
+    ] = "xyz",
 ) -> Response:
     """Export the final quenched structure."""
     store = get_job_store()
@@ -375,7 +249,8 @@ def get_structure(
         raise HTTPException(status_code=404, detail="Job not found")
 
     result = job.result_data or {}
-    raw_structure = result.get("final_structure")
+    mq = result.get("melt_quench", {})
+    raw_structure = mq.get("final_structure")
     if not raw_structure:
         raise HTTPException(status_code=404, detail="No structure available")
 
@@ -402,6 +277,6 @@ def get_structure(
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
 def visualize_job(job_id: str) -> HTMLResponse:
     """Interactive HTML visualization of completed results."""
-    from amorphouspy_api.visualization import render_job_visualization
+    from amorphouspy_api.routers.visualization import render_job_visualization
 
     return render_job_visualization(job_id)

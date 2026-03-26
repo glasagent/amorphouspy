@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amorphouspy"
-version = "0.0.16"
+version = "0.0.17"
 description = "Workflows for atomistic modeling of oxide glasses"
 authors = [
   { name = "Achraf Atila", email = "achraf.atila@bam.de" },
@@ -15,14 +15,16 @@ authors = [
 license = { file = "../LICENSE" }
 dependencies = [
   "ase",
-  "executorlib",
   "numba",
   "pandas",
   "lammpsparser",
   "pymatgen",
   "scipy",
-  "sovapy",
 ]
+
+[project.optional-dependencies]
+executorlib = ["executorlib"]
+sovapy = ["sovapy"]
 
 [tool.pytest]
 testpaths = ["src/tests"]

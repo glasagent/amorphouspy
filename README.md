@@ -12,18 +12,33 @@ Later, these workflows serve as blueprints intended to be used by "Otto", the Gl
 
 ## Installation
 
-```
-conda env create -f environment.yml
-conda activate amorphouspy
-pip install -e amorphouspy
-jupyter notebook notebooks/Meltquench.ipynb
+This project uses [pixi](https://pixi.sh) for environment management.
+
+```bash
+# Install pixi (if not already installed)
+curl -fsSL https://pixi.sh/install.sh | bash
+
+# Install the environment (including dev dependencies and editable packages)
+pixi install
+
+# Run a notebook
+pixi run -- jupyter notebook notebooks/Meltquench.ipynb
 ```
 
 ## Developer setup
-In addition, install
+
+```bash
+pixi run -- pre-commit install
 ```
-pip install -r amorphouspy/requirements-dev.txt
-pre-commit install
+
+## Documentation
+
+```bash
+# Build the docs (strict mode)
+pixi run docs-build
+
+# Serve locally with live reload
+pixi run docs-serve
 ```
 
 

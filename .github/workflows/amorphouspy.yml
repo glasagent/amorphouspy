@@ -10,27 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: Conda config
-      run: echo -e "channels:\n  - conda-forge\n" > .condarc
-    - name: Setup Mambaforge
-      uses: conda-incubator/setup-miniconda@v3
+    - uses: prefix-dev/setup-pixi@v0.8.8
       with:
-        python-version: "3.13"
-        miniforge-version: latest
-        condarc-file: .condarc
-        environment-file: environment.yml
-    - name: Install dependencies
-      working-directory: amorphouspy
-      shell: bash -l {0}
-      run: |
-        pip install hatchling editables
-        pip install --no-deps --no-build-isolation -e .
-        pip install -r requirements-dev.txt
+        locked: true
     - name: Run pytest test suite
-      shell: bash -l {0}
-      working-directory: amorphouspy
-      run: |
-        python -m pytest src/tests --durations=0 --cov=src/amorphouspy --cov-report=xml --cov-report=term
+      run: pixi run test-lib
 
     - name: Pytest coverage comment
       uses: MishaKav/pytest-coverage-comment@main

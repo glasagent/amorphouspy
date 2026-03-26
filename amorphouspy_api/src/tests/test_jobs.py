@@ -34,19 +34,29 @@ def _mock_structural_analysis() -> dict[str, Any]:
     }
 
 
-def _mock_result() -> dict[str, Any]:
-    return {
-        "composition": "SiO2 60 - CaO 25 - Al2O3 15",
-        "final_structure": {
-            "numbers": [14] * 50 + [8] * 100,
-            "positions": [[0.0, 0.0, 0.0]] * 150,
-            "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
-            "pbc": [True, True, True],
+def _mock_result(*, include_structure: bool = True) -> dict[str, Any]:
+    """Mock full pipeline result in nested format."""
+    result: dict[str, Any] = {
+        "structure_generation": {
+            "atoms_dict": {},
+            "structure": {},
+            "potential": {},
         },
-        "mean_temperature": 302.3,
-        "simulation_steps": 3,
-        "structural_analysis": _mock_structural_analysis(),
+        "melt_quench": {
+            "composition": {"SiO2": 60.0, "CaO": 25.0, "Al2O3": 15.0},
+            "final_structure": {
+                "numbers": [14] * 50 + [8] * 100,
+                "positions": [[0.0, 0.0, 0.0]] * 150,
+                "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+                "pbc": [True, True, True],
+            },
+            "mean_temperature": 302.3,
+            "simulation_steps": 3,
+        },
     }
+    if include_structure:
+        result["structure"] = _mock_structural_analysis()
+    return result
 
 
 def _insert_completed_job(
@@ -57,6 +67,7 @@ def _insert_completed_job(
     request_hash: str = "testhash1234",
 ) -> None:
     store = get_job_store()
+    result = _mock_result(include_structure=True)
     store.create_job(
         Job(
             job_id=job_id,
@@ -73,9 +84,9 @@ def _insert_completed_job(
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "completed",
-                "structure_analysis": "completed",
+                "structure": "completed",
             },
-            result_data=_mock_result(),
+            result_data=result,
             completed_at=datetime.now(UTC),
         )
     )
@@ -90,11 +101,15 @@ def _insert_running_job(job_id: str = "j-running-1") -> None:
             composition="SiO2 100",
             potential="pmmcs",
             status="running",
-            request_data={"composition": "SiO2 100", "potential": "pmmcs"},
+            request_data={
+                "composition": "SiO2 100",
+                "potential": "pmmcs",
+                "analyses": [{"type": "structure"}],
+            },
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "running",
-                "structure_analysis": "pending",
+                "structure": "pending",
             },
         )
     )
@@ -113,9 +128,9 @@ def test_submit_job_new() -> None:
     mock_future.result.return_value = _mock_result()
 
     with (
-        patch("amorphouspy_api.routers.jobs.get_executor") as mock_exe,
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
         patch(
-            "amorphouspy_api.routers.jobs.run_meltquench_workflow",
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
             return_value=mock_future,
         ),
     ):
@@ -138,7 +153,7 @@ def test_submit_job_new() -> None:
 def test_submit_job_returns_cached() -> None:
     """Test that submitting a duplicate request returns the cached job."""
     from amorphouspy_api.models import JobSubmission
-    from amorphouspy_api.routers.jobs import _job_hash
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
 
     # Build the same submission the client will send
     sub = JobSubmission(composition={"SiO2": 60, "CaO": 25, "Al2O3": 15})
@@ -173,6 +188,7 @@ def test_get_job_status_completed() -> None:
     data = resp.json()
     assert data["status"] == "completed"
     assert data["progress"]["melt_quench"] == "completed"
+    assert data["progress"]["analyses"]["structure"] == "completed"
 
 
 def test_get_job_status_not_found() -> None:
@@ -193,7 +209,7 @@ def test_cancel_running_job() -> None:
     data = resp.json()
     assert data["status"] == "cancelled"
     assert data["progress"]["melt_quench"] == "cancelled"
-    assert data["progress"]["structure_analysis"] == "cancelled"
+    assert data["progress"]["analyses"]["structure"] == "cancelled"
     # Already-completed steps stay completed
     assert data["progress"]["structure_generation"] == "completed"
 
@@ -216,7 +232,7 @@ def test_get_results_completed() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["job_id"] == "j-results-1"
-    assert data["structure"] is not None
+    assert data["analyses"]["structure"] is not None
 
 
 def test_get_results_no_data() -> None:
@@ -343,3 +359,154 @@ def test_root_redirect() -> None:
     resp = client.get("/")
     assert resp.status_code == 200
     assert "swagger" in resp.text.lower() or "openapi" in resp.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Viscosity integration
+# ---------------------------------------------------------------------------
+
+
+def _mock_viscosity_result() -> dict[str, Any]:
+    return {
+        "temperatures": [2500.0, 2000.0, 1500.0],
+        "viscosities": [1.0e-2, 5.0e-1, 1.2e3],
+        "max_lag": [100.0, 120.0, 110.0],
+        "simulation_steps": [10_000_000, 10_000_000, 10_000_000],
+        "lag_times_ps": [[0.0, 1.0], [0.0, 1.0], [0.0, 1.0]],
+        "sacf_data": [[1.0, 0.5], [1.0, 0.4], [1.0, 0.3]],
+        "viscosity_integral": [[0.0, 0.01], [0.0, 0.5], [0.0, 1200.0]],
+    }
+
+
+def _insert_completed_viscosity_job(job_id: str = "j-visc-1") -> None:
+    store = get_job_store()
+    result = _mock_result(include_structure=True)
+    result["viscosity"] = _mock_viscosity_result()
+    store.create_job(
+        Job(
+            job_id=job_id,
+            request_hash="vischash1234",
+            composition="Al2O3 15 - CaO 25 - SiO2 60",
+            potential="pmmcs",
+            status="completed",
+            request_data={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "potential": "pmmcs",
+                "simulation": {},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "viscosity", "temperatures": [1500, 2000, 2500]},
+                ],
+            },
+            progress={
+                "structure_generation": "completed",
+                "melt_quench": "completed",
+                "structure": "completed",
+                "viscosity": "completed",
+            },
+            result_data=result,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+
+def test_submit_job_with_viscosity() -> None:
+    """Test submitting a job that includes viscosity analysis."""
+    result = _mock_result()
+    result["viscosity"] = _mock_viscosity_result()
+
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = result
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "viscosity", "temperatures": [1500, 2000, 2500]},
+                ],
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "id" in data
+    assert data["status"] in ("pending", "completed")
+
+
+def test_get_results_with_viscosity() -> None:
+    """Test that the results endpoint returns viscosity data."""
+    _insert_completed_viscosity_job("j-visc-results")
+
+    resp = client.get("/jobs/j-visc-results/results")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["analyses"]["structure"] is not None
+    assert data["analyses"]["viscosity"] is not None
+    assert data["analyses"]["viscosity"]["temperatures"] == [2500.0, 2000.0, 1500.0]
+    assert len(data["analyses"]["viscosity"]["viscosities"]) == 3
+
+
+def test_get_single_viscosity_result() -> None:
+    """Test retrieving only the viscosity analysis result."""
+    _insert_completed_viscosity_job("j-visc-single")
+
+    resp = client.get("/jobs/j-visc-single/results/viscosity")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "viscosity" in data
+    assert data["viscosity"]["temperatures"] == [2500.0, 2000.0, 1500.0]
+
+
+def test_viscosity_progress_tracking() -> None:
+    """Test that viscosity step appears in progress when requested."""
+    _insert_completed_viscosity_job("j-visc-progress")
+
+    resp = client.get("/jobs/j-visc-progress")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["progress"]["analyses"]["viscosity"] == "completed"
+
+
+def test_job_hash_differs_with_viscosity() -> None:
+    """Test that the job hash changes when viscosity analysis is added."""
+    from amorphouspy_api.models import JobSubmission
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
+
+    sub_no_visc = JobSubmission(
+        composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},
+    )
+    sub_with_visc = JobSubmission(
+        composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},
+        analyses=[
+            {"type": "structure"},
+            {"type": "viscosity", "temperatures": [1500, 2000]},
+        ],
+    )
+
+    hash1 = _job_hash(sub_no_visc, sub_no_visc.composition.canonical)
+    hash2 = _job_hash(sub_with_visc, sub_with_visc.composition.canonical)
+
+    assert hash1 != hash2
+
+
+def test_job_without_viscosity_has_no_viscosity_progress() -> None:
+    """Test that jobs without viscosity analysis don't have viscosity in progress."""
+    _insert_completed_job("j-no-visc")
+
+    resp = client.get("/jobs/j-no-visc")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "viscosity" not in data["progress"]["analyses"]

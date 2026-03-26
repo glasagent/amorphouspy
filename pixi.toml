@@ -1,0 +1,64 @@
+[workspace]
+name = "pyiron-glass"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+
+[dependencies]
+python = "3.13.*"
+hatchling = "*"
+# Conda-only / need specific builds
+lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
+pygraphviz = "*"
+# Not in any pyproject.toml
+jupyter = "*"
+# Prefer conda-forge over PyPI for compiled packages
+ase = "*"
+executorlib = "*"
+lammpsparser = "*"
+numba = "*"
+numpy = "*"
+pandas = "*"
+pymatgen = "*"
+pysqa = "*"
+scipy = "*"
+sqlalchemy = "*"
+uvicorn = "*"
+fastapi-mcp = "*"
+
+# Platform-specific: flux-core and sovapy not available on osx-arm64
+[target.linux-64.dependencies]
+flux-core = ">=0.81.0"
+sovapy = "0.8.3.*"
+
+[target.osx-64.dependencies]
+sovapy = "0.8.3.*"
+
+[pypi-dependencies]
+amorphouspy = { path = "amorphouspy", editable = true }
+amorphouspy-api = { path = "amorphouspy_api", editable = true }
+
+[feature.dev.dependencies]
+pre-commit = "*"
+ruff = ">=0.12.0"
+pytest = "*"
+pytest-cov = "*"
+nbval = "*"
+
+[feature.docs.dependencies]
+mkdocs-material = "*"
+mkdocs-jupyter = "==0.24.8"
+pymdown-extensions = "*"
+
+[environments]
+default = { features = ["dev", "docs"], solve-group = "default" }
+docs = { features = ["docs"], solve-group = "default" }
+
+[tasks]
+test-lib = { cmd = "python -m pytest src/tests --durations=0 --cov=src/amorphouspy --cov-report=xml --cov-report=term", cwd = "amorphouspy" }
+test-api = { cmd = "pytest --durations=0 --cov=src/amorphouspy_api --cov-report=xml --cov-report=term", cwd = "amorphouspy_api" }
+test-notebooks = { cmd = "pytest --durations=0 --nbval-lax ../notebooks/*ipynb --cov=$(pwd)/src/amorphouspy --cov-report=term --cov-report=xml --cov-append", cwd = "amorphouspy" }
+serve = "uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 8000 --log-level info --backlog 1 --timeout-keep-alive 60"
+lint = "ruff check --output-format=github"
+format-check = "ruff format --check --diff"
+docs-build = "mkdocs build --strict"
+docs-serve = "mkdocs serve"

@@ -18,24 +18,3 @@ jobs:
         with:
           version: "0.12.0"
           args: format --check --diff
-
-  pip_check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Conda config
-        run: echo -e "channels:\n  - conda-forge\n" > .condarc
-      - name: Setup Mambaforge
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          python-version: "3.13"
-          miniforge-version: latest
-          condarc-file: .condarc
-          environment-file: environment.yml
-      - name: Pip check
-        shell: bash -l {0}
-        run: |
-          pip install hatchling editables
-          pip install --no-deps --no-build-isolation -e amorphouspy
-          pip install --no-deps --no-build-isolation -e amorphouspy_api
-          pip check

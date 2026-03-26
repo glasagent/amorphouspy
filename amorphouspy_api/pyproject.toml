@@ -12,6 +12,8 @@ authors = [
 license = { file = "../LICENSE" }
 dependencies = [
   "amorphouspy",
+  "executorlib",
+  "pysqa",
   "uvicorn",
   "fastapi-mcp",
   "sqlalchemy",

@@ -93,4 +93,7 @@ def test_get_viscosity_synthetic() -> None:
     out = get_viscosity(result, timestep=10.0, max_lag=100)
     assert "viscosity" in out
     assert out["viscosity"] > 0
-    assert isinstance(out["max_lag"], list)
+    assert isinstance(out["max_lag"], (int, float, np.integer, np.floating))
+    assert isinstance(out["lag_time_ps"], list)
+    assert isinstance(out["sacf"], list)
+    assert isinstance(out["viscosity_integral"], list)
