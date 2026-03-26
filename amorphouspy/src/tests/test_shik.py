@@ -1,4 +1,7 @@
-"""Test module for glass simulation workflow."""
+"""Test module for glass simulation workflow.
+
+Author: Achraf Atila (achraf.atila@bam.de)
+"""
 
 from ase.io import read
 from executorlib import SingleNodeExecutor
