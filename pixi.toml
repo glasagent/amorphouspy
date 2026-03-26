@@ -54,4 +54,3 @@ test-notebooks = { cmd = "pytest --durations=0 --nbval-lax ../notebooks/*ipynb -
 serve = "uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 8000 --log-level info --backlog 1 --timeout-keep-alive 60"
 lint = "ruff check --output-format=github"
 format-check = "ruff format --check --diff"
-pip-check = "pip check"
