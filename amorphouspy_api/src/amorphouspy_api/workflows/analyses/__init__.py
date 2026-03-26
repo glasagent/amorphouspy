@@ -1,13 +1,7 @@
-"""Post-melt-quench analysis functions.
-
-Each function receives ``(submission, config, mq_result)`` and returns a
-dict of results.  The ``ANALYSES`` mapping connects the API type strings
-(``"structure"``, ``"viscosity"``, …) to these functions.
-"""
+"""Analysis step implementations (structure, viscosity)."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,18 +9,16 @@ if TYPE_CHECKING:
 
     from amorphouspy_api.models import JobSubmission, ViscosityAnalysis
 
-AnalysisFn = Callable[["JobSubmission", "BaseModel", dict], dict]
 
-
-def run_structure(submission: JobSubmission, config: BaseModel, mq_result: dict) -> dict:
+def run_structural_analysis(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
     from amorphouspy.workflows.structural_analysis import analyze_structure
 
-    data = analyze_structure(atoms=mq_result["final_structure"])
+    data = analyze_structure(atoms=result["melt_quench"]["final_structure"])
     return data.model_dump() if hasattr(data, "model_dump") else data
 
 
-def run_viscosity(submission: JobSubmission, config: BaseModel, mq_result: dict) -> dict:
+def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     """Multi-temperature viscosity analysis on the quenched glass."""
     from amorphouspy import generate_potential, get_structure_dict
 
@@ -45,7 +37,7 @@ def run_viscosity(submission: JobSubmission, config: BaseModel, mq_result: dict)
     )
 
     return run_viscosity_workflow(
-        structure=mq_result["final_structure"],
+        structure=result["melt_quench"]["final_structure"],
         potential=potential,
         temperatures=cfg.temperatures,
         heating_rate=int(submission.simulation.quench_rate * 100),
@@ -58,7 +50,4 @@ def run_viscosity(submission: JobSubmission, config: BaseModel, mq_result: dict)
     )
 
 
-ANALYSES: dict[str, AnalysisFn] = {
-    "structure": run_structure,
-    "viscosity": run_viscosity,
-}
+__all__ = ["run_structural_analysis", "run_viscosity"]

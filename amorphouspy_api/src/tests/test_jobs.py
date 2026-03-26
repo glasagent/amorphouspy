@@ -34,19 +34,29 @@ def _mock_structural_analysis() -> dict[str, Any]:
     }
 
 
-def _mock_result() -> dict[str, Any]:
-    """Mock melt-quench result (no analysis — that's a separate step now)."""
-    return {
-        "composition": "SiO2 60 - CaO 25 - Al2O3 15",
-        "final_structure": {
-            "numbers": [14] * 50 + [8] * 100,
-            "positions": [[0.0, 0.0, 0.0]] * 150,
-            "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
-            "pbc": [True, True, True],
+def _mock_result(*, include_structure: bool = True) -> dict[str, Any]:
+    """Mock full pipeline result in nested format."""
+    result: dict[str, Any] = {
+        "structure_generation": {
+            "atoms_dict": {},
+            "structure": {},
+            "potential": {},
         },
-        "mean_temperature": 302.3,
-        "simulation_steps": 3,
+        "melt_quench": {
+            "composition": {"SiO2": 60.0, "CaO": 25.0, "Al2O3": 15.0},
+            "final_structure": {
+                "numbers": [14] * 50 + [8] * 100,
+                "positions": [[0.0, 0.0, 0.0]] * 150,
+                "cell": [[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]],
+                "pbc": [True, True, True],
+            },
+            "mean_temperature": 302.3,
+            "simulation_steps": 3,
+        },
     }
+    if include_structure:
+        result["structure"] = _mock_structural_analysis()
+    return result
 
 
 def _insert_completed_job(
@@ -57,8 +67,7 @@ def _insert_completed_job(
     request_hash: str = "testhash1234",
 ) -> None:
     store = get_job_store()
-    result = _mock_result()
-    result["structure"] = _mock_structural_analysis()
+    result = _mock_result(include_structure=True)
     store.create_job(
         Job(
             job_id=job_id,
@@ -119,14 +128,10 @@ def test_submit_job_new() -> None:
     mock_future.result.return_value = _mock_result()
 
     with (
-        patch("amorphouspy_api.routers.jobs.get_executor") as mock_exe,
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
         patch(
-            "amorphouspy_api.routers.jobs.run_meltquench_workflow",
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
             return_value=mock_future,
-        ),
-        patch.dict(
-            "amorphouspy_api.routers.jobs.ANALYSES",
-            {"structure": lambda _s, _c, _r: _mock_structural_analysis()},
         ),
     ):
         mock_exe.return_value.shutdown = MagicMock()
@@ -148,7 +153,7 @@ def test_submit_job_new() -> None:
 def test_submit_job_returns_cached() -> None:
     """Test that submitting a duplicate request returns the cached job."""
     from amorphouspy_api.models import JobSubmission
-    from amorphouspy_api.routers.jobs import _job_hash
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
 
     # Build the same submission the client will send
     sub = JobSubmission(composition={"SiO2": 60, "CaO": 25, "Al2O3": 15})
@@ -375,8 +380,7 @@ def _mock_viscosity_result() -> dict[str, Any]:
 
 def _insert_completed_viscosity_job(job_id: str = "j-visc-1") -> None:
     store = get_job_store()
-    result = _mock_result()
-    result["structure"] = _mock_structural_analysis()
+    result = _mock_result(include_structure=True)
     result["viscosity"] = _mock_viscosity_result()
     store.create_job(
         Job(
@@ -408,23 +412,19 @@ def _insert_completed_viscosity_job(job_id: str = "j-visc-1") -> None:
 
 def test_submit_job_with_viscosity() -> None:
     """Test submitting a job that includes viscosity analysis."""
+    result = _mock_result()
+    result["viscosity"] = _mock_viscosity_result()
+
     mock_future = MagicMock()
     mock_future.done.return_value = True
     mock_future.exception.return_value = None
-    mock_future.result.return_value = _mock_result()
+    mock_future.result.return_value = result
 
     with (
-        patch("amorphouspy_api.routers.jobs.get_executor") as mock_exe,
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
         patch(
-            "amorphouspy_api.routers.jobs.run_meltquench_workflow",
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
             return_value=mock_future,
-        ),
-        patch.dict(
-            "amorphouspy_api.routers.jobs.ANALYSES",
-            {
-                "structure": lambda _s, _c, _r: _mock_structural_analysis(),
-                "viscosity": lambda _s, _c, _r: _mock_viscosity_result(),
-            },
         ),
     ):
         mock_exe.return_value.shutdown = MagicMock()
@@ -483,7 +483,7 @@ def test_viscosity_progress_tracking() -> None:
 def test_job_hash_differs_with_viscosity() -> None:
     """Test that the job hash changes when viscosity analysis is added."""
     from amorphouspy_api.models import JobSubmission
-    from amorphouspy_api.routers.jobs import _job_hash
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
 
     sub_no_visc = JobSubmission(
         composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},

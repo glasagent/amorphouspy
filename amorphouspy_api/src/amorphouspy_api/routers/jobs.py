@@ -13,26 +13,19 @@ Endpoints:
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
-from datetime import UTC, datetime
 from io import StringIO
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 from uuid import uuid4
 
 from ase.io import write as ase_write
-from executorlib import get_future_from_cache
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
-from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import Job, get_job_store
-from amorphouspy_api.executor import get_executor, get_lammps_resource_dict
 from amorphouspy_api.models import (
     Composition,
     JobCreatedResponse,
-    JobProgress,
     JobResultsResponse,
     JobSearchMatch,
     JobSearchRequest,
@@ -40,189 +33,23 @@ from amorphouspy_api.models import (
     JobStatus,
     JobStatusResponse,
     JobSubmission,
-    StepStatus,
     validate_atoms,
 )
-from amorphouspy_api.workflows import ANALYSES, run_meltquench_workflow
-
-if TYPE_CHECKING:
-    from pydantic import BaseModel
+from amorphouspy_api.routers.jobs_helpers import (
+    _analyses_list,
+    _initial_progress,
+    _iso_now,
+    _job_hash,
+    _progress_from_dict,
+    _submit_to_executor,
+    _update_from_resolved,
+    refresh_job_from_cache,
+)
+from amorphouspy_api.workflows import ANALYSES
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["tool"])
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
-    """Deterministic hash from (normalised composition + potential + sim params + analyses)."""
-    analyses_dump = [a.model_dump() for a in submission.analyses]
-    payload = json.dumps(
-        {
-            "composition": normalized_comp,
-            "potential": submission.potential.value,
-            "simulation": submission.simulation.model_dump(),
-            "analyses": analyses_dump,
-        },
-        sort_keys=True,
-    )
-    return hashlib.sha256(payload.encode()).hexdigest()[:16]
-
-
-def _iso_now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-_BASE_PROGRESS_KEYS = {"structure_generation", "melt_quench"}
-
-
-def _progress_from_dict(d: dict | None) -> JobProgress:
-    """Convert a flat progress dict (from DB) into a JobProgress model."""
-    if d is None:
-        return JobProgress()
-    base: dict[str, StepStatus] = {}
-    analyses: dict[str, StepStatus] = {}
-    for k, v in d.items():
-        sv = StepStatus(v) if v is not None else StepStatus.PENDING
-        if k in _BASE_PROGRESS_KEYS:
-            base[k] = sv
-        else:
-            analyses[k] = sv
-    return JobProgress(**base, analyses=analyses)
-
-
-def _analyses_list(job: Job) -> list[str]:
-    """Extract the list of requested analysis type names from a stored job."""
-    req = job.request_data or {}
-    return [a.get("type", "structure") for a in req.get("analyses", [])]
-
-
-def _resolve_future(future, job_id: str) -> dict:
-    """Extract state from an executorlib future."""
-    if not future.done():
-        return {"status": "running"}
-    exc = future.exception()
-    if exc is not None:
-        logger.error("Job %s failed: %s", job_id, exc)
-        return {"status": "failed", "error": str(exc)}
-    return {"status": "completed", "result": future.result()}
-
-
-def _get_requested_analyses(submission: JobSubmission) -> dict[str, BaseModel]:
-    """Extract analysis configs from submission, keyed by type name."""
-    return {a.type: a for a in submission.analyses}
-
-
-def _initial_progress(submission: JobSubmission) -> dict[str, str]:
-    """Build the initial progress dict based on requested analyses."""
-    progress: dict[str, str] = {
-        "structure_generation": "pending",
-        "melt_quench": "pending",
-    }
-    for a in submission.analyses:
-        progress[a.type] = "pending"
-    return progress
-
-
-def _submit_to_executor(
-    submission: JobSubmission,
-    job_id: str,
-    request_hash: str,
-    composition: dict[str, float],
-) -> dict:
-    """Submit workflow to executorlib and return resolved status dict."""
-    exe = get_executor(cache_directory=MELTQUENCH_PROJECT_DIR)
-    lammps_resource_dict = get_lammps_resource_dict()
-
-    future = run_meltquench_workflow(
-        executor=exe,
-        composition=composition,
-        n_atoms=submission.simulation.n_atoms,
-        potential_type=submission.potential.value,
-        heating_rate=int(submission.simulation.quench_rate * 100),  # default heating = 100x quench
-        cooling_rate=int(submission.simulation.quench_rate),
-        n_print=1000,
-        lammps_resource_dict=lammps_resource_dict,
-        cache_key=request_hash,
-    )
-
-    resolved = _resolve_future(future, job_id)
-    exe.shutdown(wait=False, cancel_futures=False)
-    return resolved
-
-
-def _update_job_from_resolved(job_id: str, resolved: dict, submission: JobSubmission | None = None) -> None:
-    """Persist executor outcome into the job store.
-
-    If the melt-quench completed and additional analyses were requested,
-    chain each registered runner before marking the job as completed.
-    """
-    store = get_job_store()
-    status = resolved["status"]
-    requested = _get_requested_analyses(submission) if submission else {}
-
-    if status == "completed":
-        result = resolved["result"]
-        progress: dict[str, str] = dict.fromkeys(_BASE_PROGRESS_KEYS, "completed")
-
-        # Run each requested analysis
-        for key, config in requested.items():
-            fn = ANALYSES.get(key)
-            if fn is None:
-                logger.warning("No analysis function for '%s' — skipping", key)
-                continue
-
-            progress[key] = "running"
-            store.update_job(job_id, status="running", progress=progress, result_data=result)
-
-            try:
-                result[key] = fn(submission, config, result)
-                progress[key] = "completed"
-            except Exception as exc:
-                logger.exception("Analysis '%s' failed for job %s", key, job_id)
-                progress[key] = "failed"
-                store.update_job(
-                    job_id,
-                    status="failed",
-                    progress=progress,
-                    errors={key: str(exc)},
-                )
-                return
-
-        store.update_job(
-            job_id,
-            status="completed",
-            progress=progress,
-            result_data=result,
-            completed_at=datetime.now(UTC),
-        )
-
-    elif status == "failed":
-        progress = {
-            "structure_generation": "completed",
-            "melt_quench": "failed",
-        }
-        for key in requested:
-            progress[key] = "pending"
-        store.update_job(
-            job_id,
-            status="failed",
-            progress=progress,
-            errors={"melt_quench": resolved.get("error", "unknown error")},
-        )
-
-    else:
-        progress = {
-            "structure_generation": "running",
-            "melt_quench": "pending",
-        }
-        for key in requested:
-            progress[key] = "pending"
-        store.update_job(job_id, status="running", progress=progress)
 
 
 # ---------------------------------------------------------------------------
@@ -270,8 +97,8 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
 
     # Submit to executor
     try:
-        resolved = _submit_to_executor(submission, job_id, req_hash, submission.composition.root)
-        _update_job_from_resolved(job_id, resolved, submission)
+        resolved = _submit_to_executor(submission, job_id, req_hash)
+        _update_from_resolved(job_id, resolved, submission)
     except Exception:
         logger.exception("Failed to submit job %s", job_id)
         store.update_job(
@@ -322,21 +149,8 @@ def get_job_status(job_id: str) -> JobStatusResponse:
 
     # If still running, try to refresh from executor cache
     if job.status == "running":
-        req_hash = job.request_hash
-        try:
-            future = get_future_from_cache(
-                cache_directory=str(MELTQUENCH_PROJECT_DIR),
-                cache_key=req_hash,
-            )
-            resolved = _resolve_future(future, job_id)
-            # Reconstruct submission so post-analyses can be chained
-            submission = JobSubmission(**job.request_data) if job.request_data else None
-            _update_job_from_resolved(job_id, resolved, submission)
-            job = store.get_job(job_id)
-        except FileNotFoundError:
-            logger.info("Cache files not yet available for job %s", job_id)
-        except Exception:
-            logger.exception("Failed to check job %s", job_id)
+        refresh_job_from_cache(job)
+        job = store.get_job(job_id)
 
     return JobStatusResponse(
         id=job.job_id,
@@ -442,7 +256,8 @@ def get_structure(
         raise HTTPException(status_code=404, detail="Job not found")
 
     result = job.result_data or {}
-    raw_structure = result.get("final_structure")
+    mq = result.get("melt_quench", {})
+    raw_structure = mq.get("final_structure")
     if not raw_structure:
         raise HTTPException(status_code=404, detail="No structure available")
 

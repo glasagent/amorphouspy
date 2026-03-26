@@ -74,10 +74,11 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
     for j in jobs:
         r = j.result_data or {}
         n_atoms = 0
-        if r.get("final_structure"):
+        mq = r.get("melt_quench", {})
+        if mq.get("final_structure"):
             from amorphouspy_api.models import validate_atoms
 
-            atoms = validate_atoms(r["final_structure"])
+            atoms = validate_atoms(mq["final_structure"])
             n_atoms = len(atoms) if atoms else 0
         available_structures.append(
             AvailableStructure(
