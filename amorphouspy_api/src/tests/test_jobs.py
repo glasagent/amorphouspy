@@ -677,3 +677,122 @@ def test_cte_progress_tracking() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["progress"]["analyses"]["cte"] == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Elastic integration
+# ---------------------------------------------------------------------------
+
+
+def _mock_elastic_result() -> dict[str, Any]:
+    return {
+        "Cij": [[100, 30, 30, 0, 0, 0]] * 3 + [[0, 0, 0, 35, 0, 0]] * 3,
+        "moduli": {
+            "B": 53.3,
+            "G": 35.0,
+            "E": 85.6,
+            "nu": 0.222,
+        },
+    }
+
+
+def _insert_completed_elastic_job(job_id: str = "j-elastic-1") -> None:
+    store = get_job_store()
+    result = _mock_result(include_structure=True)
+    result["elastic"] = _mock_elastic_result()
+    store.create_job(
+        Job(
+            job_id=job_id,
+            request_hash="elastichash1234",
+            composition="SiO2 60 - CaO 25 - Al2O3 15",
+            potential="pmmcs",
+            status="completed",
+            request_data={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "potential": "pmmcs",
+                "simulation": {},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "elastic"},
+                ],
+            },
+            progress={
+                "structure_generation": "completed",
+                "melt_quench": "completed",
+                "structure": "completed",
+                "elastic": "completed",
+            },
+            result_data=result,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+
+def test_submit_job_with_elastic() -> None:
+    """Test submitting a job that includes elastic analysis."""
+    result = _mock_result()
+    result["elastic"] = _mock_elastic_result()
+
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = result
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "analyses": [
+                    {"type": "structure"},
+                    {"type": "elastic"},
+                ],
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "id" in data
+    assert data["status"] in ("pending", "completed")
+
+
+def test_get_results_with_elastic() -> None:
+    """Test that the results endpoint returns elastic data."""
+    _insert_completed_elastic_job("j-elastic-results")
+
+    resp = client.get("/jobs/j-elastic-results/results")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["analyses"]["elastic"] is not None
+    assert data["analyses"]["elastic"]["moduli"]["B"] == 53.3
+    assert data["analyses"]["elastic"]["moduli"]["E"] == 85.6
+
+
+def test_get_single_elastic_result() -> None:
+    """Test retrieving only the elastic analysis result."""
+    _insert_completed_elastic_job("j-elastic-single")
+
+    resp = client.get("/jobs/j-elastic-single/results/elastic")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "elastic" in data
+    assert data["elastic"]["moduli"]["G"] == 35.0
+    assert data["elastic"]["moduli"]["nu"] == 0.222
+
+
+def test_elastic_progress_tracking() -> None:
+    """Test that elastic step appears in progress when requested."""
+    _insert_completed_elastic_job("j-elastic-progress")
+
+    resp = client.get("/jobs/j-elastic-progress")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["progress"]["analyses"]["elastic"] == "completed"

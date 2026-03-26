@@ -19,25 +19,16 @@ logger = logging.getLogger(__name__)
 
 def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     """CTE analysis via fluctuations or temperature scan."""
-    from amorphouspy import generate_potential, get_structure_dict
-
     from amorphouspy_api.executor import get_lammps_resource_dict
     from amorphouspy_api.models import CTEFluctuations
 
-    atoms_dict = get_structure_dict(
-        composition=submission.composition.root,
-        target_atoms=submission.simulation.n_atoms,
-    )
-    potential = generate_potential(
-        atoms_dict=atoms_dict,
-        potential_type=submission.potential.value,
-    )
-
+    potential = result["structure_generation"]["potential"]
+    structure = result["melt_quench"]["final_structure"]
     resource_dict = get_lammps_resource_dict()
 
     if isinstance(config, CTEFluctuations):
         return run_cte_fluctuations(
-            structure=result["melt_quench"]["final_structure"],
+            structure=structure,
             potential=potential,
             temperature=config.temperature,
             pressure=config.pressure,
@@ -51,7 +42,7 @@ def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
         )
 
     return run_cte_temperature_scan(
-        structure=result["melt_quench"]["final_structure"],
+        structure=structure,
         potential=potential,
         temperatures=config.temperatures,
         pressure=config.pressure,

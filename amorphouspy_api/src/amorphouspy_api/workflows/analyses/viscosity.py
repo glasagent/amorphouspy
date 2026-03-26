@@ -24,24 +24,13 @@ logger = logging.getLogger(__name__)
 
 def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     """Multi-temperature viscosity analysis on the quenched glass."""
-    from amorphouspy import generate_potential, get_structure_dict
-
     from amorphouspy_api.executor import get_lammps_resource_dict
 
     cfg: ViscosityAnalysis = config  # type: ignore[assignment]
 
-    atoms_dict = get_structure_dict(
-        composition=submission.composition.root,
-        target_atoms=submission.simulation.n_atoms,
-    )
-    potential = generate_potential(
-        atoms_dict=atoms_dict,
-        potential_type=submission.potential.value,
-    )
-
     return run_viscosity_workflow(
         structure=result["melt_quench"]["final_structure"],
-        potential=potential,
+        potential=result["structure_generation"]["potential"],
         temperatures=cfg.temperatures,
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),

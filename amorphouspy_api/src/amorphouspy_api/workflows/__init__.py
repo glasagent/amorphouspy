@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from .analyses import run_cte, run_structural_analysis, run_viscosity
+from .analyses import run_cte, run_elastic, run_structural_analysis, run_viscosity
 from .meltquench import generate_structure, run_melt_quench
 
 AnalysisFn = Callable[["JobSubmission", "BaseModel", dict], dict]
@@ -16,6 +16,7 @@ STEPS: dict[str, AnalysisFn] = {
     "structure": run_structural_analysis,
     "viscosity": run_viscosity,
     "cte": run_cte,
+    "elastic": run_elastic,
 }
 
 BASE_STEPS = {"structure_generation", "melt_quench"}
