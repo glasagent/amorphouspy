@@ -171,19 +171,24 @@ class JobStore:
 
 
 def _serialise_atoms_in_result(result: dict) -> dict:
-    """Deep-copy *result* and recursively serialise any ASE Atoms found in it."""
+    """Deep-copy *result* and recursively convert non-JSON-serialisable objects."""
     import copy
 
+    import numpy as np
     from ase import Atoms
 
     def _walk(obj: object) -> object:
         if isinstance(obj, Atoms):
             return serialize_atoms(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.integer, np.floating)):
+            return obj.item()
         if isinstance(obj, dict):
             return {k: _walk(v) for k, v in obj.items()}
         if isinstance(obj, list):
             return [_walk(v) for v in obj]
-        return obj
+        return _walk(obj.to_dict()) if hasattr(obj, "to_dict") else obj
 
     return _walk(copy.deepcopy(result))
 
