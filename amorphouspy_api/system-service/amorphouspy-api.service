@@ -1,0 +1,20 @@
+[Unit]
+Description=amorphouspy API server
+After=network.target
+
+[Service]
+Type=simple
+User=amorphouspy
+WorkingDirectory=/home/amorphouspy/amorphouspy/amorphouspy_api
+ExecStart=/home/amorphouspy/.pixi/bin/pixi run -- uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 443 --log-level info --backlog 1 --timeout-keep-alive 60
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=on-failure
+RestartSec=5
+Environment=EXECUTOR_TYPE=slurm
+Environment=SLURM_PARTITION=main_queue
+Environment=SLURM_RUN_TIME_MAX=7200
+Environment=LAMMPS_CORES=8
+Environment=AMORPHOUSPY_PROJECTS=/net/fileserver1/data_raid/data/amorphouspy_data
+
+[Install]
+WantedBy=multi-user.target
