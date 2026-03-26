@@ -1,0 +1,21 @@
+name: Update pixi.lock
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Weekly on Monday at 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.8.8
+      - name: Update lock file
+        run: pixi update --json | pixi exec pixi-diff-to-markdown >> "$GITHUB_STEP_SUMMARY"
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update pixi.lock"
+          title: "chore: weekly pixi.lock update"
+          branch: chore/pixi-lock-update
+          delete-branch: true
