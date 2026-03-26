@@ -72,6 +72,7 @@ nav:
         - Bond Angles: theory/analysis/bond_angles.md
         - Ring Statistics: theory/analysis/rings.md
         - Cavity Analysis: theory/analysis/cavities.md
+        - Structure Factor: theory/analysis/structure_factor.md
         - CTE Analysis: theory/analysis/cte_analysis.md
   - Developers:
     - Architecture: developers/architecture.md
