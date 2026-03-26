@@ -7,11 +7,15 @@ Both executors use wait=False to allow non-blocking exit from the context manage
 enabling the API to check job status without blocking.
 
 Configure via environment variables:
-    EXECUTOR_TYPE: "local" (default) or "slurm"
-    EXECUTOR_CORES: Number of cores per worker (default: 4)
-    LAMMPS_CORES: Number of cores for LAMMPS simulations (default: EXECUTOR_CORES or 4)
+    EXECUTOR_TYPE: "test" (default), "slurm", "flux", or "single"
+    LAMMPS_CORES: Number of MPI cores for LAMMPS simulations (default: 4)
     SLURM_PARTITION: SLURM partition name (optional, slurm only)
-    SLURM_TIME: SLURM time limit (optional, slurm only)
+    SLURM_RUN_TIME_MAX: Max run time per job in seconds (optional, slurm only)
+    SLURM_MEMORY_MAX: Max memory per job in GB (optional, slurm only)
+
+For advanced SLURM customization, place a Jinja2 submission template at
+``<AMORPHOUSPY_PROJECTS>/submission_template.sh``. If present, it is
+automatically used for all SLURM job submissions.
 """
 
 import logging
@@ -22,6 +26,8 @@ from typing import Any
 import executorlib
 from executorlib import get_future_from_cache  # noqa: F401 — re-exported
 from executorlib.api import TestClusterExecutor
+
+from amorphouspy_api.config import PROJECTS_FOLDER
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +45,7 @@ def get_executor_class() -> type:
     Returns:
         BaseExecutor subclass based on environment.
     """
-    executor_type = os.environ.get("EXECUTOR_TYPE", "local").lower()
+    executor_type = os.environ.get("EXECUTOR_TYPE", "test").lower()
 
     executor_classes = {
         "slurm": executorlib.SlurmClusterExecutor,
@@ -55,35 +61,28 @@ def get_executor_class() -> type:
     return executor_classes[executor_type]
 
 
-def get_executor_config() -> dict[str, Any]:
-    """Build executor configuration from environment variables.
-
-    Returns:
-        Dictionary of executor configuration options.
-    """
-    config: dict[str, Any] = {}
-    cores = os.environ.get("EXECUTOR_CORES")
-    if cores:
-        config["cores_per_worker"] = int(cores)
-
-    # SLURM-specific config
-    if os.environ.get("EXECUTOR_TYPE", "local").lower() == "slurm":
-        if os.environ.get("SLURM_PARTITION"):
-            config["partition"] = os.environ["SLURM_PARTITION"]
-        if os.environ.get("SLURM_TIME"):
-            config["time"] = os.environ["SLURM_TIME"]
-
-    return config
-
-
 def get_lammps_resource_dict() -> dict[str, Any]:
     """Get resource dictionary for LAMMPS simulations.
+
+    These are passed as ``resource_dict`` to ``executor.submit()`` and control
+    the SLURM job allocation for compute-intensive LAMMPS steps.
 
     Returns:
         Dictionary with LAMMPS-specific resource settings.
     """
-    cores = int(os.environ.get("LAMMPS_CORES", os.environ.get("EXECUTOR_CORES", "4")))
-    return {"cores": cores}
+    resource_dict: dict[str, Any] = {
+        "cores": int(os.environ.get("LAMMPS_CORES", "4")),
+    }
+    if os.environ.get("SLURM_PARTITION"):
+        resource_dict["partition"] = os.environ["SLURM_PARTITION"]
+    if os.environ.get("SLURM_RUN_TIME_MAX"):
+        resource_dict["run_time_max"] = int(os.environ["SLURM_RUN_TIME_MAX"])
+    if os.environ.get("SLURM_MEMORY_MAX"):
+        resource_dict["memory_max"] = int(os.environ["SLURM_MEMORY_MAX"])
+    template_path = PROJECTS_FOLDER / "submission_template.sh"
+    if template_path.is_file():
+        resource_dict["submission_template"] = template_path.read_text()
+    return resource_dict
 
 
 def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:
@@ -97,7 +96,6 @@ def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:
     """
     # Create new executor each time to properly detect cached results
     executor_class = get_executor_class()
-    executor_config = get_executor_config()
 
     logger.info(
         "Creating executor: %s with cache_directory=%s",
@@ -105,4 +103,4 @@ def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:
         cache_directory,
     )
 
-    return executor_class(cache_directory=cache_directory, **executor_config)
+    return executor_class(cache_directory=cache_directory)
