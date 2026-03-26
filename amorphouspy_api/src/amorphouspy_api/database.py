@@ -171,17 +171,21 @@ class JobStore:
 
 
 def _serialise_atoms_in_result(result: dict) -> dict:
-    """Deep-copy *result* and serialise any ASE Atoms found in it."""
+    """Deep-copy *result* and recursively serialise any ASE Atoms found in it."""
     import copy
 
     from ase import Atoms
 
-    out = copy.deepcopy(result)
-    # Nested under melt_quench (current format)
-    mq = out.get("melt_quench")
-    if isinstance(mq, dict) and isinstance(mq.get("final_structure"), Atoms):
-        mq["final_structure"] = serialize_atoms(mq["final_structure"])
-    return out
+    def _walk(obj: object) -> object:
+        if isinstance(obj, Atoms):
+            return serialize_atoms(obj)
+        if isinstance(obj, dict):
+            return {k: _walk(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_walk(v) for v in obj]
+        return obj
+
+    return _walk(copy.deepcopy(result))
 
 
 # ---------------------------------------------------------------------------
