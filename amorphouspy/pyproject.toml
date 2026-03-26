@@ -15,7 +15,6 @@ authors = [
 license = { file = "../LICENSE" }
 dependencies = [
   "ase",
-  "executorlib",
   "numba",
   "pandas",
   "lammpsparser",
@@ -24,6 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+executorlib = ["executorlib"]
 sovapy = ["sovapy"]
 
 [tool.pytest]
