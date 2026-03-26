@@ -1,4 +1,4 @@
-"""Analysis step implementations (structure, viscosity)."""
+"""Analysis step implementations (structure, viscosity, cte)."""
 
 from __future__ import annotations
 
@@ -50,4 +50,53 @@ def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) ->
     )
 
 
-__all__ = ["run_structural_analysis", "run_viscosity"]
+def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+    """CTE analysis via fluctuations or temperature scan."""
+    from amorphouspy import generate_potential, get_structure_dict
+
+    from amorphouspy_api.executor import get_lammps_resource_dict
+    from amorphouspy_api.models import CTEFluctuations
+
+    atoms_dict = get_structure_dict(
+        composition=submission.composition.root,
+        target_atoms=submission.simulation.n_atoms,
+    )
+    potential = generate_potential(
+        atoms_dict=atoms_dict,
+        potential_type=submission.potential.value,
+    )
+
+    resource_dict = get_lammps_resource_dict()
+
+    if isinstance(config, CTEFluctuations):
+        from amorphouspy_api.workflows.analyses.cte import run_cte_fluctuations
+
+        return run_cte_fluctuations(
+            structure=result["melt_quench"]["final_structure"],
+            potential=potential,
+            temperature=config.temperature,
+            pressure=config.pressure,
+            timestep=config.timestep,
+            equilibration_steps=config.equilibration_steps,
+            production_steps=config.production_steps,
+            min_production_runs=config.min_production_runs,
+            max_production_runs=config.max_production_runs,
+            cte_uncertainty_criterion=config.cte_uncertainty_criterion,
+            lammps_resource_dict=resource_dict,
+        )
+
+    from amorphouspy_api.workflows.analyses.cte import run_cte_temperature_scan
+
+    return run_cte_temperature_scan(
+        structure=result["melt_quench"]["final_structure"],
+        potential=potential,
+        temperatures=config.temperatures,
+        pressure=config.pressure,
+        timestep=config.timestep,
+        equilibration_steps=config.equilibration_steps,
+        production_steps=config.production_steps,
+        lammps_resource_dict=resource_dict,
+    )
+
+
+__all__ = ["run_cte", "run_structural_analysis", "run_viscosity"]

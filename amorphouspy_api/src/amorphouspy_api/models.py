@@ -9,7 +9,7 @@ from typing import Annotated, Literal
 
 from ase import Atoms
 from ase.io import read, write
-from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, RootModel
+from pydantic import BaseModel, Discriminator, Field, PlainSerializer, PlainValidator, RootModel, Tag
 
 # ---------------------------------------------------------------------------
 # Composition
@@ -181,17 +181,83 @@ class ElasticAnalysis(BaseModel):
     n_steps: int = Field(default=10000, description="Equilibration steps before measurement")
 
 
-class CTEAnalysis(BaseModel):
-    """Configuration for coefficient of thermal expansion analysis (placeholder)."""
+class _CTEBase(BaseModel):
+    """Shared simulation parameters for both CTE methods."""
 
     type: Literal["cte"] = "cte"
-    temp_range: tuple[float, float] = Field(default=(300, 900), description="Temperature range in K")
-    heating_rate: float = Field(default=1e12, description="Heating rate in K/s")
+    pressure: float = Field(default=1e-4, description="Target pressure in GPa (default ≈ 1 bar)")
+    timestep: float = Field(default=1.0, description="MD timestep in fs")
+    equilibration_steps: int = Field(default=100_000, description="Equilibration MD steps")
+    production_steps: int = Field(default=200_000, description="Production MD steps per run")
+
+
+class CTEFluctuations(_CTEBase):
+    """CTE via enthalpy-volume fluctuations at a single temperature.
+
+    Iteratively runs production MD until convergence criteria are met,
+    returning CTE values with uncertainty estimates.
+    """
+
+    method: Literal["fluctuations"] = "fluctuations"
+    temperature: float = Field(default=300.0, description="Simulation temperature in K")
+    min_production_runs: int = Field(
+        default=2,
+        description="Minimum production runs before convergence check",
+    )
+    max_production_runs: int = Field(
+        default=25,
+        description="Maximum production runs",
+    )
+    cte_uncertainty_criterion: float = Field(
+        default=1e-6,
+        description="Convergence criterion for linear CTE uncertainty in 1/K",
+    )
+
+
+class CTETemperatureScan(_CTEBase):
+    """CTE via NPT production runs at multiple temperatures.
+
+    Returns raw volume / box-length data at each temperature for
+    user-side CTE fitting (e.g. linear or polynomial V-T fit).
+    """
+
+    method: Literal["temperature_scan"] = "temperature_scan"
+    temperatures: list[float] = Field(
+        default=[300, 400, 500, 600],
+        description="Temperatures in K",
+    )
+
+
+CTEAnalysis = Annotated[
+    CTEFluctuations | CTETemperatureScan,
+    Field(discriminator="method"),
+]
+
+
+def _analysis_tag(v: object) -> str:
+    """Return a unique tag for each Analysis variant.
+
+    Most types are identified by their ``type`` field alone.  CTE variants
+    share ``type="cte"`` and are further distinguished by ``method``.
+    """
+    if isinstance(v, dict):
+        t = v.get("type", "")
+        if t == "cte":
+            return f"cte_{v.get('method', 'fluctuations')}"
+        return t
+    t = getattr(v, "type", "")
+    if t == "cte":
+        return f"cte_{getattr(v, 'method', 'fluctuations')}"
+    return t
 
 
 Analysis = Annotated[
-    StructureAnalysis | ViscosityAnalysis | ElasticAnalysis | CTEAnalysis,
-    Field(discriminator="type"),
+    Annotated[StructureAnalysis, Tag("structure")]
+    | Annotated[ViscosityAnalysis, Tag("viscosity")]
+    | Annotated[ElasticAnalysis, Tag("elastic")]
+    | Annotated[CTEFluctuations, Tag("cte_fluctuations")]
+    | Annotated[CTETemperatureScan, Tag("cte_temperature_scan")],
+    Discriminator(_analysis_tag),
 ]
 
 
