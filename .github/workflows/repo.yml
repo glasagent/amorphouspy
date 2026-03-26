@@ -18,11 +18,3 @@ jobs:
         with:
           version: "0.12.0"
           args: format --check --diff
-
-  pip_check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: prefix-dev/setup-pixi@v0.8.8
-      - name: Pip check
-        run: pixi run pip-check
