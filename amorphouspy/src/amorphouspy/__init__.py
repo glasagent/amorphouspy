@@ -9,6 +9,7 @@ from amorphouspy.analysis.cte import (
 from amorphouspy.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
 from amorphouspy.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.analysis.structure_factor import compute_structure_factor
 from amorphouspy.io_utils import (
     get_properties_for_structure_analysis,
     structure_from_parsed_output,
@@ -44,6 +45,7 @@ __all__ = [
     "compute_network_connectivity",
     "compute_qn",
     "compute_rdf",
+    "compute_structure_factor",
     "count_distribution",
     "create_random_atoms",
     "cte_from_fluctuations_simulation",
