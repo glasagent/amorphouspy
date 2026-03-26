@@ -61,18 +61,12 @@ def get_executor_class() -> type:
     return executor_classes[executor_type]
 
 
-def get_lammps_resource_dict() -> dict[str, Any]:
-    """Get resource dictionary for LAMMPS simulations.
+def get_base_resource_dict() -> dict[str, Any]:
+    """Get base resource dictionary shared by all SLURM steps.
 
-    These are passed as ``resource_dict`` to ``executor.submit()`` and control
-    the SLURM job allocation for compute-intensive LAMMPS steps.
-
-    Returns:
-        Dictionary with LAMMPS-specific resource settings.
+    Contains partition, time limits, etc. — but not cores.
     """
-    resource_dict: dict[str, Any] = {
-        "cores": int(os.environ.get("LAMMPS_CORES", "4")),
-    }
+    resource_dict: dict[str, Any] = {}
     if os.environ.get("SLURM_PARTITION"):
         resource_dict["partition"] = os.environ["SLURM_PARTITION"]
     if os.environ.get("SLURM_RUN_TIME_MAX"):
@@ -83,6 +77,21 @@ def get_lammps_resource_dict() -> dict[str, Any]:
     if template_path.is_file():
         resource_dict["submission_template"] = template_path.read_text()
     return resource_dict
+
+
+def get_lammps_resource_dict() -> dict[str, Any]:
+    """Get resource dictionary for LAMMPS simulations.
+
+    These are passed as ``resource_dict`` to ``executor.submit()`` and control
+    the SLURM job allocation for compute-intensive LAMMPS steps.
+
+    Returns:
+        Dictionary with LAMMPS-specific resource settings.
+    """
+    return {
+        **get_base_resource_dict(),
+        "cores": int(os.environ.get("LAMMPS_CORES", "4")),
+    }
 
 
 def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:
