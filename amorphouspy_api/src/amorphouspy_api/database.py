@@ -172,11 +172,15 @@ class JobStore:
 
 def _serialise_atoms_in_result(result: dict) -> dict:
     """Deep-copy *result* and serialise any ASE Atoms found in it."""
+    import copy
+
     from ase import Atoms
 
-    out = result.copy()
-    if "final_structure" in out and isinstance(out["final_structure"], Atoms):
-        out["final_structure"] = serialize_atoms(out["final_structure"])
+    out = copy.deepcopy(result)
+    # Nested under melt_quench (current format)
+    mq = out.get("melt_quench")
+    if isinstance(mq, dict) and isinstance(mq.get("final_structure"), Atoms):
+        mq["final_structure"] = serialize_atoms(mq["final_structure"])
     return out
 
 

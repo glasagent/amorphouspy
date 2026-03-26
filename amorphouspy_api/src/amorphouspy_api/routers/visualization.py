@@ -42,20 +42,11 @@ def atoms_to_xyz_string(atoms) -> str:
 
 
 def prepare_template_context(
-    task_id: str, result_data: dict[str, Any], plotly_fig: dict, structure_xyz: str = ""
+    job_id: str, result_data: dict[str, Any], plotly_fig: dict, structure_xyz: str = ""
 ) -> dict[str, Any]:
-    """Prepare context data for the results template.
-
-    Args:
-        task_id: Task identifier.
-        result_data: Dictionary containing simulation results.
-        plotly_fig: Plotly figure as dictionary.
-        structure_xyz: XYZ format string for 3D visualization.
-
-    Returns:
-        Dictionary containing all template variables.
-    """
+    """Prepare context data for the results template."""
     structural_analysis = result_data.get("structure", {})
+    mq = result_data.get("melt_quench", {})
 
     # Extract key properties for display
     density = structural_analysis.get("density", "N/A")
@@ -69,17 +60,17 @@ def prepare_template_context(
     network_formers = structural_analysis.get("elements", {}).get("formers", [])
     modifiers = structural_analysis.get("elements", {}).get("modifiers", [])
 
-    mean_temperature = result_data.get("mean_temperature", "N/A")
+    mean_temperature = mq.get("mean_temperature", "N/A")
     if isinstance(mean_temperature, (int, float)):
         mean_temperature = f"{mean_temperature:.1f}"
 
-    simulation_steps = result_data.get("simulation_steps", "N/A")
+    simulation_steps = mq.get("simulation_steps", "N/A")
     if isinstance(simulation_steps, int):
         simulation_steps = f"{simulation_steps:,}"
 
     return {
-        "task_id": task_id,
-        "composition": result_data.get("composition", "N/A"),
+        "job_id": job_id,
+        "composition": mq.get("composition", "N/A"),
         "mean_temperature": mean_temperature,
         "simulation_steps": simulation_steps,
         "density": density,
@@ -89,38 +80,6 @@ def prepare_template_context(
         "plotly_json": json.dumps(plotly_fig),
         "structure_xyz": structure_xyz,
     }
-
-
-def _validate_task_data(task_data: dict | None, task_id: str) -> dict:
-    if not task_data:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task_data.get("state", task_data.get("status")) not in ("complete", "completed"):
-        state = task_data.get("state", task_data.get("status", "unknown"))
-        raise HTTPException(status_code=400, detail=f"Task is not completed yet. Current state: {state}")
-    return task_data
-
-
-def _get_and_validate_results(task_data: dict) -> dict:
-    """Extract and validate result data from task.
-
-    Args:
-        task_data: Validated task data.
-
-    Returns:
-        Result data dictionary.
-
-    Raises:
-        HTTPException: If no results or structural analysis found.
-    """
-    result_data = task_data.get("result")
-    if not result_data:
-        raise HTTPException(status_code=404, detail="No results found for this task")
-
-    structural_analysis = result_data.get("structural_analysis")
-    if not structural_analysis:
-        raise HTTPException(status_code=404, detail="No structural analysis data found")
-
-    return result_data
 
 
 def _process_structure_for_3d(result_data: dict) -> str:
@@ -135,9 +94,8 @@ def _process_structure_for_3d(result_data: dict) -> str:
     structure_xyz = ""
 
     try:
-        atoms = result_data["final_structure"]
-        logger.info("Found final_structure data with type: %s", type(atoms))
-        logger.info("Structure data preview: %s", str(atoms)[:500])
+        mq = result_data.get("melt_quench", {})
+        atoms = mq["final_structure"]
 
         structure_xyz = atoms_to_xyz_string(atoms)
         if structure_xyz:

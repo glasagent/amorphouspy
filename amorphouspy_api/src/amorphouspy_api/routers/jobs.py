@@ -227,14 +227,7 @@ def get_single_result(job_id: str, analysis: str) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
 
     result = job.result_data or {}
-    # Map analysis name to result key
-    key_map = {
-        "structure": "structure",
-        "elastic": "elastic",
-        "viscosity": "viscosity",
-        "cte": "cte",
-    }
-    key = key_map.get(analysis, analysis)
+    key = analysis
     if key not in result:
         raise HTTPException(status_code=404, detail=f"No results for analysis '{analysis}'")
 

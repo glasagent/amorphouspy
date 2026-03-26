@@ -150,14 +150,6 @@ class StructureAnalysis(BaseModel):
     bin_width: float = Field(default=0.02, description="RDF bin width in Å")
 
 
-class ElasticAnalysis(BaseModel):
-    """Configuration for elastic moduli analysis."""
-
-    type: Literal["elastic"] = "elastic"
-    strain_magnitude: float = Field(default=0.01, description="Applied strain for elastic constants")
-    n_steps: int = Field(default=10000, description="Equilibration steps before measurement")
-
-
 class ViscosityAnalysis(BaseModel):
     """Configuration for viscosity analysis (Green-Kubo).
 
@@ -181,8 +173,16 @@ class ViscosityAnalysis(BaseModel):
     )
 
 
+class ElasticAnalysis(BaseModel):
+    """Configuration for elastic moduli analysis (placeholder)."""
+
+    type: Literal["elastic"] = "elastic"
+    strain_magnitude: float = Field(default=0.01, description="Applied strain for elastic constants")
+    n_steps: int = Field(default=10000, description="Equilibration steps before measurement")
+
+
 class CTEAnalysis(BaseModel):
-    """Configuration for coefficient of thermal expansion analysis."""
+    """Configuration for coefficient of thermal expansion analysis (placeholder)."""
 
     type: Literal["cte"] = "cte"
     temp_range: tuple[float, float] = Field(default=(300, 900), description="Temperature range in K")
@@ -190,7 +190,7 @@ class CTEAnalysis(BaseModel):
 
 
 Analysis = Annotated[
-    StructureAnalysis | ElasticAnalysis | ViscosityAnalysis | CTEAnalysis,
+    StructureAnalysis | ViscosityAnalysis | ElasticAnalysis | CTEAnalysis,
     Field(discriminator="type"),
 ]
 

@@ -18,12 +18,11 @@ from amorphouspy_api.models import (
     GlassPropertiesResponse,
     GlassSummary,
 )
+from amorphouspy_api.workflows import ANALYSES
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/glasses", tags=["tool"])
-
-ALL_ANALYSIS_TYPES = ["structure", "elastic", "viscosity", "cte"]
 
 
 @router.get("", response_model=GlassListResponse)
@@ -90,7 +89,7 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
 
     # List analysis types not yet computed
     computed = set(properties.keys())
-    missing = [t for t in ALL_ANALYSIS_TYPES if t not in computed]
+    missing = [t for t in ANALYSES if t not in computed]
 
     return GlassPropertiesResponse(
         composition=request.composition,
