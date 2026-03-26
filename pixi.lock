@@ -411,6 +411,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e5/7a/8dd906bd22e79e47397a61742927f6747fe93242ef86645ee9092e610244/pyjwt-2.12.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/03/5d/f61bda8fa2b94b6c422b5c7471039cbcc00ee3c24f9eb4852ad043243f85/pymatgen-2026.3.23-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2c/8d/643e214ae2607746baaead580310ed2d3b52840758c26aeb7803b282808e/pymatgen_core-2026.3.9-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/d0/06/27d13c5d2030071444736eaee4fffafc6505976e6ea2c58454df96fc18c9/pysqa-0.3.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1b/d0/397f9626e711ff749a95d96b7af99b9c566a9bb5129b8e4c10fc4d100304/python_multipart-0.0.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/14/25/b208c5683343959b670dc001595f2f3737e051da617f66c31f7c4fa93abc/rich-14.3.3-py3-none-any.whl
@@ -788,6 +789,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e5/7a/8dd906bd22e79e47397a61742927f6747fe93242ef86645ee9092e610244/pyjwt-2.12.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/03/5d/f61bda8fa2b94b6c422b5c7471039cbcc00ee3c24f9eb4852ad043243f85/pymatgen-2026.3.23-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c1/18/b349d2d755f8061113cceb5dc81c150278fed3e30480c397b606321f28fd/pymatgen_core-2026.3.9.tar.gz
+      - pypi: https://files.pythonhosted.org/packages/d0/06/27d13c5d2030071444736eaee4fffafc6505976e6ea2c58454df96fc18c9/pysqa-0.3.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1b/d0/397f9626e711ff749a95d96b7af99b9c566a9bb5129b8e4c10fc4d100304/python_multipart-0.0.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/14/25/b208c5683343959b670dc001595f2f3737e051da617f66c31f7c4fa93abc/rich-14.3.3-py3-none-any.whl
@@ -1132,6 +1134,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/03/5d/f61bda8fa2b94b6c422b5c7471039cbcc00ee3c24f9eb4852ad043243f85/pymatgen-2026.3.23-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/95/c7/5f2518bbb400c1fb0b95da8f88738866ccbdb91d65962cb737b1710a0b00/pymatgen_core-2026.3.9-cp313-cp313-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/d0/06/27d13c5d2030071444736eaee4fffafc6505976e6ea2c58454df96fc18c9/pysqa-0.3.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1b/d0/397f9626e711ff749a95d96b7af99b9c566a9bb5129b8e4c10fc4d100304/python_multipart-0.0.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/14/25/b208c5683343959b670dc001595f2f3737e051da617f66c31f7c4fa93abc/rich-14.3.3-py3-none-any.whl
@@ -1214,22 +1217,24 @@ packages:
 - pypi: ./amorphouspy
   name: amorphouspy
   version: 0.0.16
-  sha256: b5f7209518f101c025de7822c7595f1ad2d7454562f39095cb7c709b490945a4
+  sha256: 5435413a8cf772159ef6f1033501e388aba09d50f970cbb7d0ff2e5312298c9a
   requires_dist:
   - ase
-  - executorlib
   - numba
   - pandas
   - lammpsparser
   - pymatgen
   - scipy
+  - executorlib ; extra == 'executorlib'
   - sovapy ; extra == 'sovapy'
 - pypi: ./amorphouspy_api
   name: amorphouspy-api
   version: 0.0.1
-  sha256: 3b0ab2678896d270805c09f7112219db682ed55aa6bcb4abd4121b4cdab261ad
+  sha256: df4eb25f6d4a6f43a27cff0f08f2203bddb97bc5a45c82432f7222a885fa102e
   requires_dist:
   - amorphouspy
+  - executorlib
+  - pysqa
   - uvicorn
   - fastapi-mcp
   - sqlalchemy
@@ -10034,6 +10039,19 @@ packages:
   - pkg:pypi/pysocks?source=hash-mapping
   size: 21085
   timestamp: 1733217331982
+- pypi: https://files.pythonhosted.org/packages/d0/06/27d13c5d2030071444736eaee4fffafc6505976e6ea2c58454df96fc18c9/pysqa-0.3.5-py3-none-any.whl
+  name: pysqa
+  version: 0.3.5
+  sha256: 98d7df3112d74c250656d135884de4b681cea5d4e2f56d2d8240000eec1fa338
+  requires_dist:
+  - jinja2>=2.11.3,<=3.1.6
+  - pandas>=1.5.3,<=3.0.1
+  - pyyaml>=5.3.1,<=6.0.3
+  - paramiko>=2.7.1,<=4.0.0 ; extra == 'remote'
+  - tqdm>=4.66.1,<=4.67.3 ; extra == 'remote'
+  - defusedxml>=0.7.0,<=0.7.1 ; extra == 'sge'
+  - pyauthenticator==0.3.0 ; extra == 'twofactor'
+  requires_python: '>=3.9,<3.15'
 - conda: https://conda.anaconda.org/conda-forge/noarch/pytest-9.0.2-pyhcf101f3_0.conda
   sha256: 9e749fb465a8bedf0184d8b8996992a38de351f7c64e967031944978de03a520
   md5: 2b694bad8a50dc2f712f5368de866480
