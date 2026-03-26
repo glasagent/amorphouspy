@@ -4,18 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from amorphouspy_api.workflows.analyses.structure import run_structural_analysis
+
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from amorphouspy_api.models import JobSubmission, ViscosityAnalysis
-
-
-def run_structural_analysis(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
-    """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
-    from amorphouspy.workflows.structural_analysis import analyze_structure
-
-    data = analyze_structure(atoms=result["melt_quench"]["final_structure"])
-    return data.model_dump() if hasattr(data, "model_dump") else data
 
 
 def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:

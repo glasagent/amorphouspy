@@ -121,3 +121,118 @@ def run_viscosity_workflow(
         "sacf_data": sacf_data,
         "viscosity_integral": viscosity_integral,
     }
+
+
+# ---------------------------------------------------------------------------
+# Visualization helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_arrhenius_plot(temperatures: list[float], viscosities: list[float]) -> dict:
+    """Build Plotly figure dict for an Arrhenius-style viscosity vs 1000/T plot."""
+    inv_t = [1000.0 / t for t in temperatures]
+    return {
+        "data": [
+            {
+                "x": inv_t,
+                "y": viscosities,
+                "mode": "markers+lines",
+                "line": {"width": 2},
+                "name": "Viscosity",
+            }
+        ],
+        "layout": {
+            "title": "Viscosity vs 1000/T",
+            "xaxis": {"title": "1000 / T  (1/K)"},
+            "yaxis": {"title": "Viscosity (Pa\u00b7s)", "type": "log"},
+            "hovermode": "closest",
+        },
+    }
+
+
+def _build_sacf_plot(
+    lag_times_ps: list[list[float]],
+    sacf_data: list[list[float]],
+    temperatures: list[float],
+) -> dict | None:
+    """Build Plotly figure dict for SACF decay curves (one trace per temperature)."""
+    traces = [
+        {
+            "x": lag_times_ps[i],
+            "y": sacf_data[i],
+            "mode": "lines",
+            "name": f"{temperatures[i]} K",
+            "line": {"width": 2},
+        }
+        for i in range(len(temperatures))
+        if lag_times_ps[i] and sacf_data[i]
+    ]
+    if not traces:
+        return None
+    return {
+        "data": traces,
+        "layout": {
+            "title": "Stress Autocorrelation Function",
+            "xaxis": {"title": "Lag Time (ps)", "type": "log"},
+            "yaxis": {"title": "Normalized SACF"},
+            "hovermode": "closest",
+            "showlegend": True,
+        },
+    }
+
+
+def _build_running_viscosity_plot(
+    lag_times_ps: list[list[float]],
+    viscosity_integral: list[list[float]],
+    temperatures: list[float],
+) -> dict | None:
+    """Build Plotly figure dict for running viscosity convergence curves."""
+    traces = [
+        {
+            "x": lag_times_ps[i],
+            "y": viscosity_integral[i],
+            "mode": "lines",
+            "name": f"{temperatures[i]} K",
+            "line": {"width": 2},
+        }
+        for i in range(len(temperatures))
+        if lag_times_ps[i] and viscosity_integral[i]
+    ]
+    if not traces:
+        return None
+    return {
+        "data": traces,
+        "layout": {
+            "title": "Viscosity Convergence",
+            "xaxis": {"title": "Lag Time (ps)", "type": "log"},
+            "yaxis": {"title": "Viscosity (Pa\u00b7s)", "type": "log"},
+            "hovermode": "closest",
+            "showlegend": True,
+        },
+    }
+
+
+def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, str]:
+    """Build JSON-encoded Plotly plots from viscosity result data.
+
+    Returns:
+        Dict with keys ``arrhenius``, ``sacf`` (optional), ``convergence`` (optional).
+    """
+    import json
+
+    temps = visc_data.get("temperatures", [])
+    viscosities = visc_data.get("viscosities", [])
+    lag_times_ps = visc_data.get("lag_times_ps", [])
+    sacf = visc_data.get("sacf_data", [])
+    viscosity_integral = visc_data.get("viscosity_integral", [])
+
+    plots: dict[str, str] = {}
+    if temps and viscosities:
+        plots["arrhenius"] = json.dumps(_build_arrhenius_plot(temps, viscosities))
+    sacf_fig = _build_sacf_plot(lag_times_ps, sacf, temps)
+    if sacf_fig:
+        plots["sacf"] = json.dumps(sacf_fig)
+    conv_fig = _build_running_viscosity_plot(lag_times_ps, viscosity_integral, temps)
+    if conv_fig:
+        plots["convergence"] = json.dumps(conv_fig)
+    return plots

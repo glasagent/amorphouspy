@@ -274,9 +274,83 @@ def get_structure(
     return Response(content=buf.getvalue(), media_type=content_type)
 
 
+def _build_visualization_context(job_id: str, result_data: dict) -> dict:
+    """Build the Jinja2 template context from job result data."""
+    import json
+
+    from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
+    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
+    from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
+
+    mq = result_data.get("melt_quench", {})
+
+    # --- Structure analysis (always present) ---
+    context = prepare_structure_context(result_data)
+
+    # Melt-quench metadata
+    mean_temperature = mq.get("mean_temperature", "N/A")
+    if isinstance(mean_temperature, (int, float)):
+        mean_temperature = f"{mean_temperature:.1f}"
+    simulation_steps = mq.get("simulation_steps", "N/A")
+    if isinstance(simulation_steps, int):
+        simulation_steps = f"{simulation_steps:,}"
+
+    context.update(
+        {
+            "job_id": job_id,
+            "composition": mq.get("composition", "N/A"),
+            "mean_temperature": mean_temperature,
+            "simulation_steps": simulation_steps,
+        }
+    )
+
+    # --- Optional analyses ---
+    visc_data = result_data.get("viscosity")
+    if visc_data:
+        context["viscosity_plots"] = prepare_viscosity_plots(visc_data)
+
+    cte_data = result_data.get("cte")
+    if cte_data:
+        context["cte_plots"] = prepare_cte_plots(cte_data)
+        summary = cte_data.get("summary")
+        if summary:
+            context["cte_summary"] = json.dumps(summary)
+
+    return context
+
+
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
 def visualize_job(job_id: str) -> HTMLResponse:
     """Interactive HTML visualization of completed results."""
-    from amorphouspy_api.routers.visualization import render_job_visualization
+    from pathlib import Path
 
-    return render_job_visualization(job_id)
+    from fastapi.templating import Jinja2Templates
+
+    store = get_job_store()
+    job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail=f"Job is not completed yet. Current status: {job.status}")
+
+    result_data = job.result_data
+    if not result_data:
+        raise HTTPException(status_code=404, detail="No results found for this job")
+
+    if not result_data.get("structure"):
+        raise HTTPException(status_code=404, detail="No structural analysis data found")
+
+    try:
+        context = _build_visualization_context(job_id, result_data)
+
+        template_dir = Path(__file__).parent.parent / "templates"
+        templates = Jinja2Templates(directory=str(template_dir))
+        html_content = templates.get_template("results.html").render(context)
+
+        return HTMLResponse(content=html_content)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error generating visualisation for job %s", job_id)
+        raise HTTPException(status_code=500, detail=f"Error generating visualisation: {e!s}") from e
