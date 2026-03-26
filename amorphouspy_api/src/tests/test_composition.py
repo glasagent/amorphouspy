@@ -1,6 +1,6 @@
 """Tests for the Composition model."""
 
-from amorphouspy_api.composition import Composition
+from amorphouspy_api.models import Composition
 
 
 def test_canonical_sorts_alphabetically() -> None:

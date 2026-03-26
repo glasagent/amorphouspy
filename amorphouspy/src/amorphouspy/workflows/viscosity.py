@@ -475,11 +475,19 @@ def get_viscosity(
         max_lag: Maximum correlation lag (number of steps). Defaults to 1,000,000.
 
     Returns:
-        A dictionary with 'temperature', 'viscosity' (Pa·s), and 'max_lag'.
+        A dictionary containing:
+            - temperature: Mean simulation temperature (K)
+            - viscosity: Computed viscosity (Pa·s)
+            - max_lag: Cutoff time per stress component (ps)
+            - lag_time_ps: Array of lag times in picoseconds
+            - sacf: Averaged normalized stress autocorrelation function
+            - viscosity_integral: Cumulative viscosity integral (Pa·s) vs lag time
 
     Example:
         >>> result_dict = get_viscosity(simulation_output, timestep=1.0)
         >>> print(result_dict['viscosity'])
+        >>> print(result_dict['sacf'])
+        >>> print(result_dict['viscosity_integral'])
 
     """
     kB = 1.380649e-23  # m2 kg s-2 K-1
@@ -522,6 +530,10 @@ def get_viscosity(
     acfxz = autocorrelation_fft(pxz, max_lag)
     acfyz = autocorrelation_fft(pyz, max_lag)
 
+    # Recompute lag time arrays with updated max_lag
+    lag_time_s = np.arange(max_lag) * dt_s
+    lag_time_ps = lag_time_s * 1e12
+
     eta_xy_running = scale * cumulative_trapezoid(acfxy, dt_s)
     eta_xz_running = scale * cumulative_trapezoid(acfxz, dt_s)
     eta_yz_running = scale * cumulative_trapezoid(acfyz, dt_s)
@@ -529,4 +541,17 @@ def get_viscosity(
 
     viscosity = eta_avg[-1]
 
-    return {"temperature": temperature, "viscosity": viscosity, "max_lag": max_lag_1}
+    # Normalized SACF for visualization (averaged over 3 components)
+    sacf_xy_normalized = acfxy / acfxy[0]
+    sacf_xz_normalized = acfxz / acfxz[0]
+    sacf_yz_normalized = acfyz / acfyz[0]
+    sacf_avg = ((sacf_xy_normalized + sacf_xz_normalized + sacf_yz_normalized) / 3).tolist()
+
+    return {
+        "temperature": temperature,
+        "viscosity": viscosity,
+        "max_lag": np.max(max_lag_1),
+        "lag_time_ps": lag_time_ps.tolist(),
+        "sacf": sacf_avg,
+        "viscosity_integral": eta_avg.tolist(),
+    }

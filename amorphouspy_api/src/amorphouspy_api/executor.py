@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import executorlib
+from executorlib import get_future_from_cache  # noqa: F401 — re-exported
 from executorlib.api import TestClusterExecutor
 
 logger = logging.getLogger(__name__)

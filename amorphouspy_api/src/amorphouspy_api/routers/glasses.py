@@ -9,21 +9,20 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from amorphouspy_api.composition import Composition
 from amorphouspy_api.database import get_job_store
 from amorphouspy_api.models import (
     AvailableStructure,
+    Composition,
     GlassListResponse,
     GlassLookupRequest,
     GlassPropertiesResponse,
     GlassSummary,
 )
+from amorphouspy_api.workflows import ANALYSES
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/glasses", tags=["tool"])
-
-ALL_ANALYSIS_TYPES = ["structure", "elastic", "viscosity", "cte"]
 
 
 @router.get("", response_model=GlassListResponse)
@@ -61,12 +60,12 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
     result = latest.result_data or {}
 
     properties: dict[str, dict] = {}
-    if result.get("structural_analysis"):
+    if result.get("structure"):
         properties["structure"] = {
-            "data": result["structural_analysis"],
+            "data": result["structure"],
             "source_job": latest.job_id,
             "potential": latest.potential,
-            "computed_at": latest.completed_at.isoformat() if latest.completed_at else None,
+            "computed_at": (latest.completed_at.isoformat() if latest.completed_at else None),
         }
 
     # Collect available structures across all completed jobs
@@ -74,10 +73,11 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
     for j in jobs:
         r = j.result_data or {}
         n_atoms = 0
-        if r.get("final_structure"):
+        mq = r.get("melt_quench", {})
+        if mq.get("final_structure"):
             from amorphouspy_api.models import validate_atoms
 
-            atoms = validate_atoms(r["final_structure"])
+            atoms = validate_atoms(mq["final_structure"])
             n_atoms = len(atoms) if atoms else 0
         available_structures.append(
             AvailableStructure(
@@ -89,7 +89,7 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
 
     # List analysis types not yet computed
     computed = set(properties.keys())
-    missing = [t for t in ALL_ANALYSIS_TYPES if t not in computed]
+    missing = [t for t in ANALYSES if t not in computed]
 
     return GlassPropertiesResponse(
         composition=request.composition,

@@ -9,9 +9,59 @@ from typing import Annotated, Literal
 
 from ase import Atoms
 from ase.io import read, write
-from pydantic import BaseModel, Field, PlainSerializer, PlainValidator
+from pydantic import BaseModel, Field, PlainSerializer, PlainValidator, RootModel
 
-from amorphouspy_api.composition import Composition
+# ---------------------------------------------------------------------------
+# Composition
+# ---------------------------------------------------------------------------
+
+
+def _fmt_value(v: float) -> str:
+    rounded = round(v, 2)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:g}"
+
+
+class Composition(RootModel[dict[str, float]]):
+    """Oxide glass composition (mol%).
+
+    Accepts and serialises as a plain ``dict[str, float]``.
+    Values represent mol% and will be rescaled to sum to 100% where needed.
+
+    Examples
+    --------
+    >>> c = Composition({"Na2O": 15, "SiO2": 70, "CaO": 15})
+    >>> c.canonical
+    'CaO 15 - Na2O 15 - SiO2 70'
+    """
+
+    @property
+    def canonical(self) -> str:
+        """Canonical string for DB storage and exact-match comparison.
+
+        Components sorted alphabetically; values rounded to 2 dp,
+        trailing zeros stripped.
+        """
+        components = sorted(self.root.items())
+        return " - ".join(f"{oxide} {_fmt_value(val)}" for oxide, val in components)
+
+    @classmethod
+    def from_canonical(cls, canonical: str) -> "Composition":
+        """Construct from a canonical DB string.
+
+        >>> Composition.from_canonical("CaO 15 - Na2O 15 - SiO2 70")
+        Composition({'CaO': 15.0, 'Na2O': 15.0, 'SiO2': 70.0})
+        """
+        result: dict[str, float] = {}
+        for part in canonical.split(" - "):
+            token = part.strip()
+            if not token:
+                continue
+            oxide, value_str = token.rsplit(" ", 1)
+            result[oxide] = float(value_str)
+        return cls(result)
+
 
 # ---------------------------------------------------------------------------
 # ASE Atoms serialisation helpers (used by database & visualization)
@@ -100,24 +150,39 @@ class StructureAnalysis(BaseModel):
     bin_width: float = Field(default=0.02, description="RDF bin width in Å")
 
 
+class ViscosityAnalysis(BaseModel):
+    """Configuration for viscosity analysis (Green-Kubo).
+
+    Viscosity is computed by running additional MD production runs at each
+    requested temperature.  The melt-quench structure is sequentially cooled
+    from high to low temperature, and at each step a Green-Kubo viscosity
+    calculation is performed.
+    """
+
+    type: Literal["viscosity"] = "viscosity"
+    temperatures: list[float] = Field(default=[1500, 2000, 2500], description="Simulation temperatures in K")
+    timestep: float = Field(default=1.0, description="MD timestep in fs for the viscosity production run")
+    n_timesteps: int = Field(
+        default=10_000_000,
+        description="Number of MD steps per viscosity production run",
+    )
+    n_print: int = Field(default=1, description="Thermodynamic output frequency")
+    max_lag: int | None = Field(
+        default=1_000_000,
+        description="Maximum correlation lag (steps) for Green-Kubo post-processing; None uses full trajectory",
+    )
+
+
 class ElasticAnalysis(BaseModel):
-    """Configuration for elastic moduli analysis."""
+    """Configuration for elastic moduli analysis (placeholder)."""
 
     type: Literal["elastic"] = "elastic"
     strain_magnitude: float = Field(default=0.01, description="Applied strain for elastic constants")
     n_steps: int = Field(default=10000, description="Equilibration steps before measurement")
 
 
-class ViscosityAnalysis(BaseModel):
-    """Configuration for viscosity analysis (Green-Kubo)."""
-
-    type: Literal["viscosity"] = "viscosity"
-    temperatures: list[float] = Field(default=[1500, 2000, 2500], description="Temperatures in K")
-    correlation_length: int = Field(default=5000, description="Green-Kubo correlation length")
-
-
 class CTEAnalysis(BaseModel):
-    """Configuration for coefficient of thermal expansion analysis."""
+    """Configuration for coefficient of thermal expansion analysis (placeholder)."""
 
     type: Literal["cte"] = "cte"
     temp_range: tuple[float, float] = Field(default=(300, 900), description="Temperature range in K")
@@ -125,9 +190,29 @@ class CTEAnalysis(BaseModel):
 
 
 Analysis = Annotated[
-    StructureAnalysis | ElasticAnalysis | ViscosityAnalysis | CTEAnalysis,
+    StructureAnalysis | ViscosityAnalysis | ElasticAnalysis | CTEAnalysis,
     Field(discriminator="type"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Viscosity result data (stored inside result_data["viscosity"])
+# ---------------------------------------------------------------------------
+
+
+class ViscosityResultData(BaseModel):
+    """Result of a multi-temperature viscosity analysis."""
+
+    temperatures: list[float] = Field(..., description="Simulation temperatures (K)")
+    viscosities: list[float] = Field(..., description="Viscosities at each temperature (Pa·s)")
+    max_lag: list[float] = Field(..., description="Max cutoff correlation time per temperature (ps)")
+    simulation_steps: list[int] = Field(..., description="MD steps per temperature")
+    lag_times_ps: list[list[float]] = Field(default_factory=list, description="Lag time arrays per temperature (ps)")
+    sacf_data: list[list[float]] = Field(default_factory=list, description="Averaged normalised SACF per temperature")
+    viscosity_integral: list[list[float]] = Field(
+        default_factory=list,
+        description="Cumulative viscosity integral per temperature (Pa·s)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +268,10 @@ class JobProgress(BaseModel):
 
     structure_generation: StepStatus = StepStatus.PENDING
     melt_quench: StepStatus = StepStatus.PENDING
-    structure_analysis: StepStatus = StepStatus.PENDING
+    analyses: dict[str, StepStatus] = Field(
+        default_factory=dict,
+        description="Progress of each analysis (structure, viscosity, cte, elastic, …)",
+    )
 
 
 class JobStatusResponse(BaseModel):
@@ -204,7 +292,10 @@ class JobResultsResponse(BaseModel):
 
     job_id: str
     composition: Composition
-    structure: dict | None = None
+    analyses: dict[str, dict] = Field(
+        default_factory=dict,
+        description="Results keyed by analysis type (structure, viscosity, cte, elastic, …)",
+    )
 
 
 class JobSearchRequest(BaseModel):
