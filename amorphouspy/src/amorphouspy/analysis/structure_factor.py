@@ -256,8 +256,8 @@ def compute_structure_factor(
     where c_a is the atomic concentration, b_a the coherent scattering length
     (from NIST), and <b> = sum_a c_a * b_a.
 
-    X-ray diffraction: b_a is replaced by the q-dependent Waasmaier-Kirfel (1995)
-    form factor f_a(q), making the weights q-dependent.
+    X-ray diffraction: b_a is replaced by the q-dependent International Tables
+    form factor f_a(q) (four-Gaussian fit via pymatgen), making the weights q-dependent.
 
     Args:
         structure: ASE Atoms object with periodic boundary conditions.
@@ -267,8 +267,8 @@ def compute_structure_factor(
         r_max: Real-space cutoff in Angstroms for the underlying RDF (default 10.0).
         n_bins: Number of radial bins for the RDF (default 2000).
         radiation: Scattering probe: ``"neutron"`` uses tabulated NIST coherent
-            scattering lengths; ``"xray"`` uses Waasmaier-Kirfel (1995) form factors
-            via pymatgen (default ``"neutron"``).
+            scattering lengths; ``"xray"`` uses the International Tables
+            four-Gaussian form factors via pymatgen (default ``"neutron"``).
         lorch_damping: Apply the Lorch modification function M(r) = sinc(r/r_max)
             to suppress termination ripples from the finite r_max cutoff
             (default True).
