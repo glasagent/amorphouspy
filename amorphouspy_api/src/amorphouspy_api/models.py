@@ -209,9 +209,9 @@ class ViscosityResultData(BaseModel):
     simulation_steps: list[int] = Field(..., description="MD steps per temperature")
     lag_times_ps: list[list[float]] = Field(default_factory=list, description="Lag time arrays per temperature (ps)")
     sacf_data: list[list[float]] = Field(default_factory=list, description="Averaged normalised SACF per temperature")
-    viscosity_running: list[list[float]] = Field(
+    viscosity_integral: list[list[float]] = Field(
         default_factory=list,
-        description="Running viscosity integral per temperature (Pa·s)",
+        description="Cumulative viscosity integral per temperature (Pa·s)",
     )
 
 

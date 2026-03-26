@@ -369,7 +369,7 @@ def _mock_viscosity_result() -> dict[str, Any]:
         "simulation_steps": [10_000_000, 10_000_000, 10_000_000],
         "lag_times_ps": [[0.0, 1.0], [0.0, 1.0], [0.0, 1.0]],
         "sacf_data": [[1.0, 0.5], [1.0, 0.4], [1.0, 0.3]],
-        "viscosity_running": [[0.0, 0.01], [0.0, 0.5], [0.0, 1200.0]],
+        "viscosity_integral": [[0.0, 0.01], [0.0, 0.5], [0.0, 1200.0]],
     }
 
 

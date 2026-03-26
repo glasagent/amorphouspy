@@ -259,20 +259,20 @@ def _build_sacf_plot(
 
 def _build_running_viscosity_plot(
     lag_times_ps: list[list[float]],
-    viscosity_running: list[list[float]],
+    viscosity_integral: list[list[float]],
     temperatures: list[float],
 ) -> dict | None:
     """Build Plotly figure dict for running viscosity convergence curves."""
     traces = [
         {
             "x": lag_times_ps[i],
-            "y": viscosity_running[i],
+            "y": viscosity_integral[i],
             "mode": "lines",
             "name": f"{temperatures[i]} K",
             "line": {"width": 2},
         }
         for i in range(len(temperatures))
-        if lag_times_ps[i] and viscosity_running[i]
+        if lag_times_ps[i] and viscosity_integral[i]
     ]
     if not traces:
         return None
@@ -298,7 +298,7 @@ def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, str]:
     viscosities = visc_data.get("viscosities", [])
     lag_times_ps = visc_data.get("lag_times_ps", [])
     sacf_data = visc_data.get("sacf_data", [])
-    viscosity_running = visc_data.get("viscosity_running", [])
+    viscosity_integral = visc_data.get("viscosity_integral", [])
 
     plots: dict[str, str] = {}
     if temps and viscosities:
@@ -306,7 +306,7 @@ def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, str]:
     sacf_fig = _build_sacf_plot(lag_times_ps, sacf_data, temps)
     if sacf_fig:
         plots["sacf"] = json.dumps(sacf_fig)
-    conv_fig = _build_running_viscosity_plot(lag_times_ps, viscosity_running, temps)
+    conv_fig = _build_running_viscosity_plot(lag_times_ps, viscosity_integral, temps)
     if conv_fig:
         plots["convergence"] = json.dumps(conv_fig)
     return plots

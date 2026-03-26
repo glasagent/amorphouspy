@@ -63,7 +63,7 @@ def run_viscosity_workflow(
     sim_steps: list[int] = []
     lag_times_ps: list[list[float]] = []
     sacf_data: list[list[float]] = []
-    viscosity_running: list[list[float]] = []
+    viscosity_integral: list[list[float]] = []
 
     structure_current = structure
 
@@ -110,7 +110,7 @@ def run_viscosity_workflow(
         sim_steps.append(int(n_timesteps))
         lag_times_ps.append(visc_data.get("lag_time_ps", []))
         sacf_data.append(visc_data.get("sacf", []))
-        viscosity_running.append(visc_data.get("viscosity_running", []))
+        viscosity_integral.append(visc_data.get("viscosity_integral", []))
 
     return {
         "temperatures": sorted_temps,
@@ -119,5 +119,5 @@ def run_viscosity_workflow(
         "simulation_steps": sim_steps,
         "lag_times_ps": lag_times_ps,
         "sacf_data": sacf_data,
-        "viscosity_running": viscosity_running,
+        "viscosity_integral": viscosity_integral,
     }

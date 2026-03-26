@@ -481,13 +481,13 @@ def get_viscosity(
             - max_lag: Cutoff time per stress component (ps)
             - lag_time_ps: Array of lag times in picoseconds
             - sacf: Averaged normalized stress autocorrelation function
-            - viscosity_running: Running viscosity integral (Pa·s) vs lag time
+            - viscosity_integral: Cumulative viscosity integral (Pa·s) vs lag time
 
     Example:
         >>> result_dict = get_viscosity(simulation_output, timestep=1.0)
         >>> print(result_dict['viscosity'])
         >>> print(result_dict['sacf'])
-        >>> print(result_dict['viscosity_running'])
+        >>> print(result_dict['viscosity_integral'])
 
     """
     kB = 1.380649e-23  # m2 kg s-2 K-1
@@ -553,5 +553,5 @@ def get_viscosity(
         "max_lag": np.max(max_lag_1),
         "lag_time_ps": lag_time_ps.tolist(),
         "sacf": sacf_avg,
-        "viscosity_running": eta_avg.tolist(),
+        "viscosity_integral": eta_avg.tolist(),
     }
