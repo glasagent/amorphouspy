@@ -82,15 +82,16 @@ def get_base_resource_dict() -> dict[str, Any]:
 def get_lammps_resource_dict() -> dict[str, Any]:
     """Get resource dictionary for LAMMPS simulations.
 
-    These are passed as ``resource_dict`` to ``executor.submit()`` and control
-    the SLURM job allocation for compute-intensive LAMMPS steps.
+    Uses ``threads_per_core`` so that executorlib runs a **single** Python
+    process (``cache_serial.py``) while SBATCH still allocates enough CPUs
+    for LAMMPS's internal ``mpiexec -n <cores>``.
 
     Returns:
         Dictionary with LAMMPS-specific resource settings.
     """
     return {
         **get_base_resource_dict(),
-        "cores": int(os.environ.get("LAMMPS_CORES", "4")),
+        "threads_per_core": int(os.environ.get("LAMMPS_CORES", "4")),
     }
 
 
