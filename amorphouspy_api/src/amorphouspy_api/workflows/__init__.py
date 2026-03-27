@@ -75,14 +75,19 @@ def submit_pipeline(
     Each intermediate step gets ``{cache_key}_{step_name}`` so individual
     progress can be queried via ``get_future_from_cache``.
     """
-    from amorphouspy_api.executor import get_base_resource_dict
+    from amorphouspy_api.executor import get_base_resource_dict, get_lammps_resource_dict
 
     base_resource_dict = get_base_resource_dict()
+    lammps_resource_dict = get_lammps_resource_dict()
+
+    # Steps that run LAMMPS simulations and need multi-core SBATCH allocation.
+    LAMMPS_STEPS = {"melt_quench", "cte", "viscosity", "elastic"}
 
     # --- Base steps: sequential chain ---
     future = None
     for name in ("structure_generation", "melt_quench"):
-        resource_dict = {**base_resource_dict, "job_name": name}
+        rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
+        resource_dict = {**rd, "job_name": name}
         if cache_key is not None:
             resource_dict["cache_key"] = f"{cache_key}_{name}"
         future = executor.submit(
@@ -102,7 +107,8 @@ def submit_pipeline(
     analysis_futures: dict[str, Future] = {}
     for name, config in analysis_configs.items():
         if name in ANALYSES:
-            resource_dict = {**base_resource_dict, "job_name": name}
+            rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
+            resource_dict = {**rd, "job_name": name}
             if cache_key is not None:
                 resource_dict["cache_key"] = f"{cache_key}_{name}"
             analysis_futures[name] = executor.submit(
