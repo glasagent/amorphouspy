@@ -82,7 +82,7 @@ def submit_pipeline(
     # --- Base steps: sequential chain ---
     future = None
     for name in ("structure_generation", "melt_quench"):
-        resource_dict = {**base_resource_dict}
+        resource_dict = {**base_resource_dict, "job_name": name}
         if cache_key is not None:
             resource_dict["cache_key"] = f"{cache_key}_{name}"
         future = executor.submit(
@@ -102,7 +102,7 @@ def submit_pipeline(
     analysis_futures: dict[str, Future] = {}
     for name, config in analysis_configs.items():
         if name in ANALYSES:
-            resource_dict = {**base_resource_dict}
+            resource_dict = {**base_resource_dict, "job_name": name}
             if cache_key is not None:
                 resource_dict["cache_key"] = f"{cache_key}_{name}"
             analysis_futures[name] = executor.submit(
@@ -116,7 +116,7 @@ def submit_pipeline(
             )
 
     # --- Merge step: collects base + all analysis results ---
-    merge_resource: dict[str, str] = {**base_resource_dict}
+    merge_resource: dict[str, str] = {**base_resource_dict, "job_name": "merge_results"}
     if cache_key is not None:
         merge_resource["cache_key"] = cache_key
     merge_kwargs: dict[str, dict | Future] = {"base_result": base_future}
