@@ -70,7 +70,7 @@ def get_base_resource_dict() -> dict[str, Any]:
     if os.environ.get("SLURM_PARTITION"):
         resource_dict["partition"] = os.environ["SLURM_PARTITION"]
     if os.environ.get("SLURM_RUN_TIME_MAX"):
-        resource_dict["run_time_max"] = int(os.environ["SLURM_RUN_TIME_MAX"])
+        resource_dict["run_time_limit"] = int(os.environ["SLURM_RUN_TIME_MAX"])
     if os.environ.get("SLURM_MEMORY_MAX"):
         resource_dict["memory_max"] = int(os.environ["SLURM_MEMORY_MAX"])
     template_path = PROJECTS_FOLDER / "submission_template.sh"
