@@ -91,6 +91,10 @@ def _run_lammps_md(
             lmp_command=get_lammps_command(server_kwargs=server_kwargs),
         )
 
+        if _job_crashed or parsed_output.get("generic") is None or parsed_output.get("lammps") is None:
+            msg = f"LAMMPS crashed. Check logs in {tmp_path}"
+            raise RuntimeError(msg)
+
         # Retrieves the final structure from the parsed output
         new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
 
