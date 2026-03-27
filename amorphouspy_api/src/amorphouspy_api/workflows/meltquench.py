@@ -60,7 +60,7 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
     Returns a dict with ``final_structure``, ``mean_temperature``,
     ``simulation_steps``, and ``composition``.
     """
-    from amorphouspy_api.executor import get_lammps_resource_dict
+    from amorphouspy_api.executor import get_lammps_server_kwargs
 
     structure = result["structure_generation"]["structure"]
     potential = result["structure_generation"]["potential"]
@@ -72,7 +72,7 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),
         langevin=False,
-        server_kwargs=get_lammps_resource_dict(),
+        server_kwargs=get_lammps_server_kwargs(),
     )
 
     return {

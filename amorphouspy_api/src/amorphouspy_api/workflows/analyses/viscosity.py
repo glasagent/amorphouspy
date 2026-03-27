@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     """Multi-temperature viscosity analysis on the quenched glass."""
-    from amorphouspy_api.executor import get_lammps_resource_dict
+    from amorphouspy_api.executor import get_lammps_server_kwargs
 
     cfg: ViscosityAnalysis = config  # type: ignore[assignment]
 
@@ -38,7 +38,7 @@ def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) ->
         n_timesteps=cfg.n_timesteps,
         n_print=cfg.n_print,
         max_lag=cfg.max_lag,
-        lammps_resource_dict=get_lammps_resource_dict(),
+        lammps_resource_dict=get_lammps_server_kwargs(),
     )
 
 

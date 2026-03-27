@@ -95,6 +95,15 @@ def get_lammps_resource_dict() -> dict[str, Any]:
     }
 
 
+def get_lammps_server_kwargs() -> dict[str, int]:
+    """Get the ``server_kwargs`` for amorphouspy LAMMPS functions.
+
+    Returns ``{"cores": N}`` as expected by
+    :func:`amorphouspy.workflows.shared.get_lammps_command`.
+    """
+    return {"cores": int(os.environ.get("LAMMPS_CORES", "4"))}
+
+
 def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:
     """Create a fresh executor instance.
 
