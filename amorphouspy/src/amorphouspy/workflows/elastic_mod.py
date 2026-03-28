@@ -21,7 +21,7 @@ from amorphouspy.io_utils import structure_from_parsed_output
 from amorphouspy.workflows.shared import get_lammps_command
 
 
-def _run_lammps_md(
+def _run_lammps_md(  # pragma: no cover
     structure: Atoms,
     potential: str,
     temperature: float | list[float],

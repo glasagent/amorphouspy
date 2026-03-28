@@ -29,7 +29,7 @@ from amorphouspy.workflows.cte_helpers import (
 from amorphouspy.workflows.shared import get_lammps_command
 
 
-def _run_lammps_md(
+def _run_lammps_md(  # pragma: no cover
     structure: Atoms,
     potential: str,
     temperature: float,

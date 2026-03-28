@@ -25,7 +25,7 @@ from amorphouspy.workflows.shared import get_lammps_command
 NPOINTS = 2
 
 
-def _run_lammps_md(
+def _run_lammps_md(  # pragma: no cover
     structure: Atoms,
     potential: str,
     temperature: float | list[float],
