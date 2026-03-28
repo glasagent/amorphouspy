@@ -28,12 +28,13 @@ from amorphouspy.workflows.structural_analysis import (
     plot_analysis_results_plotly,
 )
 
+from . import DATA_DIR
+
 # ---------------------------------------------------------------------------
 # Test data path
 # ---------------------------------------------------------------------------
 
-DATA_DIR = "/Users/achrafatila/Documents/Workflows/amorphouspy/amorphouspy/src/tests/data"
-SIO2_XYZ = f"{DATA_DIR}/SiO2_glass_300_atoms.xyz"
+SIO2_XYZ = DATA_DIR / "SiO2_glass_300_atoms.xyz"
 
 
 # ---------------------------------------------------------------------------
