@@ -30,7 +30,7 @@ from ase import Atoms
 from sovapy.computation.cavity import Cavity
 from sovapy.core.file import File
 
-from amorphouspy.io_utils import get_properties_for_structure_analysis, write_xyz
+from amorphouspy.io_utils import write_xyz
 from amorphouspy.shared import type_to_dict
 
 
@@ -55,8 +55,12 @@ def compute_cavities(
         >>> print(cavities['volumes'])
 
     """
-    # Extract properties using the provided helper
-    _ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    _atoms = structure.copy()
+    _atoms.wrap()
+    coords = _atoms.get_positions()
+    types = _atoms.get_atomic_numbers()
+    cell = _atoms.get_cell()
+    box_size = np.array([cell[0, 0], cell[1, 1], cell[2, 2]])
     type_dict = type_to_dict(types)
 
     # Use a context manager to ensure the temporary file is cleaned up
