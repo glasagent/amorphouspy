@@ -5,7 +5,6 @@ import pytest
 from ase import Atoms
 
 from amorphouspy.io_utils import (
-    get_properties_for_structure_analysis,
     structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
@@ -39,50 +38,6 @@ def _parsed_output(atoms: Atoms) -> dict:
             "indices": [indices],
         }
     }
-
-
-# ---------------------------------------------------------------------------
-# get_properties_for_structure_analysis
-# ---------------------------------------------------------------------------
-
-
-def test_get_properties_ids_sequential():
-    """IDs are 1-based sequential integers."""
-    atoms = _simple_atoms()
-    ids, _, _, _ = get_properties_for_structure_analysis(atoms)
-    assert list(ids) == [1, 2]
-
-
-def test_get_properties_types():
-    """Atomic numbers are returned unchanged."""
-    atoms = _simple_atoms()
-    _, types, _, _ = get_properties_for_structure_analysis(atoms)
-    np.testing.assert_array_equal(types, [14, 8])
-
-
-def test_get_properties_cell_diagonal():
-    """Cell is returned as the diagonal of the cell matrix."""
-    atoms = _simple_atoms()
-    _, _, _, cell = get_properties_for_structure_analysis(atoms)
-    np.testing.assert_allclose(cell, [5.0, 5.0, 5.0])
-
-
-def test_get_properties_does_not_modify_original():
-    """Original atoms object is not modified by the wrap operation."""
-    atoms = _simple_atoms()
-    atoms.positions[0] = [-1.0, 0.0, 0.0]
-    original_pos = atoms.get_positions().copy()
-    get_properties_for_structure_analysis(atoms)
-    np.testing.assert_array_equal(atoms.get_positions(), original_pos)
-
-
-def test_get_properties_coords_are_wrapped():
-    """Returned coordinates are wrapped inside the simulation cell."""
-    atoms = _simple_atoms()
-    atoms.positions[0] = [-1.0, 0.0, 0.0]  # outside the box
-    _, _, coords, _ = get_properties_for_structure_analysis(atoms)
-    assert (coords >= 0.0).all()
-    assert (coords < 5.0).all()
 
 
 # ---------------------------------------------------------------------------
