@@ -23,41 +23,6 @@ import numpy as np
 from ase import Atoms
 
 
-# See issue #30: Why not use ase.io.read instead of custom parser function?
-def get_properties_for_structure_analysis(
-    atoms: Atoms,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Based on an atoms object, extract atom IDs, types, coordinates, and box size.
-
-    Args:
-        atoms: ASE Atoms object containing atomic information.
-
-    Returns:
-        Tuple containing:
-            - ids: Array of atom IDs.
-            - types: Array of atom types.
-            - coords: Wrapped coordinates.
-            - cell: Dimensions of the simulation box.
-
-    Example:
-        >>> ids, types, coords, box = get_properties_for_structure_analysis(atoms)
-
-    """
-    # Use a copy to avoid that the original atoms object is modified by wrap()
-    atoms_copy = atoms.copy()
-    atoms_copy.wrap()
-    coords = atoms_copy.get_positions()
-    ids = np.array(range(1, len(atoms_copy) + 1))
-    types = atoms_copy.get_atomic_numbers()
-    cell = atoms_copy.get_cell()
-    # Here, the output of the cell is formatted to match the previous function.
-    # But this needs to be changed to something more robust in the future to
-    # also be able to handle non-orthorhombic cells
-    cell_hack = np.array([cell[0, 0], cell[1, 1], cell[2, 2]])
-
-    return ids, types, coords, cell_hack
-
-
 def write_distribution_to_file(
     composition: float,
     filepath: str,

@@ -11,7 +11,6 @@ from amorphouspy.analysis.radial_distribution_functions import compute_coordinat
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.analysis.structure_factor import compute_structure_factor
 from amorphouspy.io_utils import (
-    get_properties_for_structure_analysis,
     structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
@@ -58,7 +57,6 @@ __all__ = [
     "get_ase_structure",
     "get_glass_density_from_model",
     "get_neighbors",
-    "get_properties_for_structure_analysis",
     "get_structure_dict",
     "get_viscosity",
     "md_simulation",
