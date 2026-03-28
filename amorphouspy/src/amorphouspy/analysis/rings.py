@@ -30,7 +30,7 @@ from ase import Atoms
 from sovapy.computation.rings import RINGs
 from sovapy.core.file import File
 
-from amorphouspy.io_utils import get_properties_for_structure_analysis, write_xyz
+from amorphouspy.io_utils import write_xyz
 from amorphouspy.shared import type_to_dict
 
 
@@ -67,7 +67,12 @@ def compute_guttmann_rings(
         ... )
 
     """
-    _ids, types, coords, box_size = get_properties_for_structure_analysis(structure)
+    _atoms = structure.copy()
+    _atoms.wrap()
+    coords = _atoms.get_positions()
+    types = _atoms.get_atomic_numbers()
+    cell = _atoms.get_cell()
+    box_size = np.array([cell[0, 0], cell[1, 1], cell[2, 2]])
     type_dict = type_to_dict(types)
     with tempfile.NamedTemporaryFile("w+", suffix=".xyz", delete=True) as tmp:
         write_xyz(filename=tmp.name, coords=coords, types=types, box_size=box_size, type_dict=type_dict)
@@ -119,7 +124,7 @@ def generate_bond_length_dict(
     """
     if specific_cutoffs is None:
         specific_cutoffs = {}
-    _, types, _, _ = get_properties_for_structure_analysis(atoms)
+    types = atoms.get_atomic_numbers()
     type_dict = type_to_dict(types)
     elements = list(type_dict.values())
     bond_dict = {}
