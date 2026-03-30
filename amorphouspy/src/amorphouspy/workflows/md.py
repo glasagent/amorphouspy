@@ -46,6 +46,9 @@ def md_simulation(
         A dictionary containing the simulation steps and temperature data.
 
     """
+    if potential.empty:
+        msg = "No matching potential found for the given configuration."
+        raise ValueError(msg)
     potential_name = potential.at[0, "Name"]
 
     if potential_name.lower() == "shik":

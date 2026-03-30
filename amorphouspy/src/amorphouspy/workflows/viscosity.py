@@ -68,6 +68,9 @@ def viscosity_simulation(
         ... )
 
     """
+    if potential.empty:
+        msg = "No matching potential found for the given configuration."
+        raise ValueError(msg)
     potential_name = potential.at[0, "Name"]
 
     if potential_name.lower() == "shik":
