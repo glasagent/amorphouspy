@@ -7,44 +7,54 @@ Author
 Achraf Atila (achraf.atila@bam.de)
 """
 
+from dataclasses import dataclass
 from functools import partial
 
 import pandas as pd
 from ase.atoms import Atoms
 
 
-def pmmcs_protocol(
-    runner: callable,
-    structure: Atoms,
-    potential: pd.DataFrame | dict,
-    temperature_high: float,
-    temperature_low: float,
-    heating_steps: int,
-    cooling_steps: int,
-    timestep: float,
-    n_print: int,
-    *,
-    langevin: bool,
-    seed: int,
-    server_kwargs: dict | None,
-    tmp_working_directory: str | None,
-) -> tuple[Atoms, dict]:
+@dataclass
+class MeltQuenchParams:
+    """Parameters for melt-quench simulation protocols.
+
+    Attributes:
+        runner: The function to run LAMMPS MD simulations.
+        structure: Initial atomic structure.
+        potential: Potential parameters.
+        temperature_high: High temperature for melting.
+        temperature_low: Low temperature for quenching.
+        heating_steps: Number of steps for heating phase.
+        cooling_steps: Number of steps for cooling phase.
+        timestep: MD timestep.
+        n_print: Print frequency.
+        langevin: Whether to use Langevin dynamics.
+        seed: Random seed.
+        server_kwargs: Server configuration.
+        tmp_working_directory: Temporary directory path.
+
+    """
+
+    runner: callable
+    structure: Atoms
+    potential: pd.DataFrame | dict
+    temperature_high: float
+    temperature_low: float
+    heating_steps: int
+    cooling_steps: int
+    timestep: float
+    n_print: int
+    langevin: bool
+    seed: int
+    server_kwargs: dict | None = None
+    tmp_working_directory: str | None = None
+
+
+def pmmcs_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation PMMCS protocol.
 
     Args:
-        runner: The function to run LAMMPS MD simulations.
-        structure: Initial atomic structure.
-        potential: Potential parameters.
-        temperature_high: High temperature for melting.
-        temperature_low: Low temperature for quenching.
-        heating_steps: Number of steps for heating phase.
-        cooling_steps: Number of steps for cooling phase.
-        timestep: MD timestep.
-        n_print: Print frequency.
-        langevin: Whether to use Langevin dynamics.
-        seed: Random seed.
-        server_kwargs: Server configuration.
-        tmp_working_directory: Temporary directory path.
+        params: MeltQuenchParams dataclass containing all simulation parameters.
 
     Returns:
         Final structure and parsed output.
@@ -52,29 +62,29 @@ def pmmcs_protocol(
     """
     # Bind common parameters to runner
     run = partial(
-        runner,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        timestep=timestep,
-        n_print=n_print,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
+        params.runner,
+        potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
     )
 
     # Stage 1: Heating from low to high T
     structure, _ = run(
-        structure=structure,
-        temperature=temperature_low,
-        temperature_end=temperature_high,
-        n_ionic_steps=heating_steps,
-        initial_temperature=temperature_low,
-        seed=seed,
+        structure=params.structure,
+        temperature=params.temperature_low,
+        temperature_end=params.temperature_high,
+        n_ionic_steps=params.heating_steps,
+        initial_temperature=params.temperature_low,
+        seed=params.seed,
     )
 
     # Stage 2: Equilibration at high T
     structure, _ = run(
         structure=structure,
-        temperature=temperature_high,
+        temperature=params.temperature_high,
         n_ionic_steps=10_000,
         initial_temperature=0,
     )
@@ -82,16 +92,16 @@ def pmmcs_protocol(
     # Stage 3: Cooling from high to low T
     structure, _ = run(
         structure=structure,
-        temperature=temperature_high,
-        temperature_end=temperature_low,
-        n_ionic_steps=cooling_steps,
+        temperature=params.temperature_high,
+        temperature_end=params.temperature_low,
+        n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
     )
 
     # Stage 4: Pressure release at low T
     structure, _ = run(
         structure=structure,
-        temperature=temperature_low,
+        temperature=params.temperature_low,
         n_ionic_steps=10_000,
         initial_temperature=0,
         pressure=0.0,
@@ -100,7 +110,7 @@ def pmmcs_protocol(
     # Stage 5: Long equilibration at low T
     structure_final, parsed_output = run(
         structure=structure,
-        temperature=temperature_low,
+        temperature=params.temperature_low,
         n_ionic_steps=100_000,
         initial_temperature=0,
     )
@@ -108,38 +118,11 @@ def pmmcs_protocol(
     return structure_final, parsed_output
 
 
-def bjp_protocol(
-    runner: callable,
-    structure: Atoms,
-    potential: pd.DataFrame | dict,
-    temperature_high: float,
-    temperature_low: float,
-    heating_steps: int,
-    cooling_steps: int,
-    timestep: float,
-    n_print: int,
-    *,
-    langevin: bool,
-    seed: int,
-    server_kwargs: dict | None,
-    tmp_working_directory: str | None,
-) -> tuple[Atoms, dict]:
+def bjp_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation BJP protocol.
 
     Args:
-        runner: The function to run LAMMPS MD simulations.
-        structure: Initial atomic structure.
-        potential: Potential parameters.
-        temperature_high: High temperature for melting.
-        temperature_low: Low temperature for quenching.
-        heating_steps: Number of steps for heating phase.
-        cooling_steps: Number of steps for cooling phase.
-        timestep: MD timestep.
-        n_print: Print frequency.
-        langevin: Whether to use Langevin dynamics.
-        seed: Random seed.
-        server_kwargs: Server configuration.
-        tmp_working_directory: Temporary directory path.
+        params: MeltQuenchParams dataclass containing all simulation parameters.
 
     Returns:
         Final structure and parsed output.
@@ -147,30 +130,30 @@ def bjp_protocol(
     """
     # Bind common parameters to runner
     run = partial(
-        runner,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        timestep=timestep,
-        n_print=n_print,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
+        params.runner,
+        potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
     )
 
     # Stage 1: Heating from low to high T
     structure, _ = run(
-        structure=structure,
-        temperature=temperature_low,
-        temperature_end=temperature_high,
-        n_ionic_steps=heating_steps,
-        initial_temperature=temperature_low,
+        structure=params.structure,
+        temperature=params.temperature_low,
+        temperature_end=params.temperature_high,
+        n_ionic_steps=params.heating_steps,
+        initial_temperature=params.temperature_low,
         pressure=0.0,
-        seed=seed,
+        seed=params.seed,
     )
 
     # Stage 2: Equilibration at high T
     structure, _ = run(
         structure=structure,
-        temperature=temperature_high,
+        temperature=params.temperature_high,
         n_ionic_steps=100_000,
         initial_temperature=0,
         pressure=0.0,
@@ -179,9 +162,9 @@ def bjp_protocol(
     # Stage 3: Cooling from high to low T
     structure, _ = run(
         structure=structure,
-        temperature=temperature_high,
-        temperature_end=temperature_low,
-        n_ionic_steps=cooling_steps,
+        temperature=params.temperature_high,
+        temperature_end=params.temperature_low,
+        n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
         pressure=0.0,
     )
@@ -189,7 +172,7 @@ def bjp_protocol(
     # Stage 4: Pressure release at low T
     structure, _ = run(
         structure=structure,
-        temperature=temperature_low,
+        temperature=params.temperature_low,
         n_ionic_steps=100_000,
         initial_temperature=0,
         pressure=0.0,
@@ -198,7 +181,7 @@ def bjp_protocol(
     # Stage 5: Long equilibration at low T
     structure_final, parsed_output = run(
         structure=structure,
-        temperature=temperature_low,
+        temperature=params.temperature_low,
         n_ionic_steps=100_000,
         initial_temperature=0,
     )
@@ -206,38 +189,11 @@ def bjp_protocol(
     return structure_final, parsed_output
 
 
-def shik_protocol(
-    runner: callable,
-    structure: Atoms,
-    potential: pd.DataFrame | dict,
-    temperature_high: float,
-    temperature_low: float,
-    heating_steps: int,
-    cooling_steps: int,
-    timestep: float,
-    n_print: int,
-    *,
-    langevin: bool,
-    seed: int,
-    server_kwargs: dict | None,
-    tmp_working_directory: str | None,
-) -> tuple[Atoms, dict]:
+def shik_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation SHIK protocol.
 
     Args:
-        runner: The function to run LAMMPS MD simulations.
-        structure: Initial atomic structure.
-        potential: Potential parameters.
-        temperature_high: High temperature for melting.
-        temperature_low: Low temperature for quenching.
-        heating_steps: Number of steps for heating phase.
-        cooling_steps: Number of steps for cooling phase.
-        timestep: MD timestep.
-        n_print: Print frequency.
-        langevin: Whether to use Langevin dynamics.
-        seed: Random seed.
-        server_kwargs: Server configuration.
-        tmp_working_directory: Temporary directory path.
+        params: MeltQuenchParams dataclass containing all simulation parameters.
 
     Returns:
         Final structure and parsed output.
@@ -245,13 +201,13 @@ def shik_protocol(
     """
     # Bind common parameters to runner
     run1 = partial(
-        runner,
-        potential=potential,
-        tmp_working_directory=tmp_working_directory,
-        timestep=timestep,
-        n_print=n_print,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
+        params.runner,
+        potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
     )
 
     exclude_patterns = [
@@ -264,46 +220,46 @@ def shik_protocol(
 
     # Copy the potential before stripping the init block, so run1 keeps the
     # original Config (with langevin + nve/limit) while run2 uses the stripped version.
-    potential2 = potential.copy()
+    potential2 = params.potential.copy()
     potential2["Config"] = potential2["Config"].apply(
         lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
     )
 
     run2 = partial(
-        runner,
+        params.runner,
         potential=potential2,
-        tmp_working_directory=tmp_working_directory,
-        timestep=timestep,
-        n_print=n_print,
-        langevin=langevin,
-        server_kwargs=server_kwargs,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
     )
 
     # Stage 1: heating from 300 to 5000 K for 100 ps
     structure, _ = run1(
-        structure=structure,
-        temperature=temperature_high,  # 5000 K
-        n_ionic_steps=heating_steps,
-        initial_temperature=temperature_high,
+        structure=params.structure,
+        temperature=params.temperature_high,  # 5000 K
+        n_ionic_steps=params.heating_steps,
+        initial_temperature=params.temperature_high,
         pressure=None,  # NVT ensemble
-        seed=seed,
+        seed=params.seed,
     )
 
     # Stage 2: NVT equilibration at 5000 K for 100 ps
     structure, _ = run2(
         structure=structure,
-        temperature=temperature_high,  # 5000 K
-        n_ionic_steps=int(100_000 / timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
-        initial_temperature=temperature_high,
+        temperature=params.temperature_high,  # 5000 K
+        n_ionic_steps=int(100_000 / params.timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
+        initial_temperature=params.temperature_high,
         pressure=None,  # NVT ensemble
-        seed=seed,
+        seed=params.seed,
     )
 
     # Stage 3: NPT equilibration at 5000 K and 0.1 GPa for 700 ps
     structure, _ = run2(
         structure=structure,
-        temperature=temperature_high,
-        n_ionic_steps=int(700_000 / timestep),  # 700 ps
+        temperature=params.temperature_high,
+        n_ionic_steps=int(700_000 / params.timestep),  # 700 ps
         initial_temperature=0,
         pressure=0.1,  # GPa
     )
@@ -311,9 +267,9 @@ def shik_protocol(
     # Stage 4: Quenching 5000 K -> 300 K in NPT
     structure, _ = run2(
         structure=structure,
-        temperature=temperature_high,
-        temperature_end=temperature_low,
-        n_ionic_steps=cooling_steps,
+        temperature=params.temperature_high,
+        temperature_end=params.temperature_low,
+        n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
         pressure=[0.1, 0.0],  # ramp pressure from 0.1 -> 0 GPa
     )
@@ -321,83 +277,10 @@ def shik_protocol(
     # Stage 5: Annealing at 300 K and 0 GPa for 100 ps in NPT
     structure_final, parsed_output = run2(
         structure=structure,
-        temperature=temperature_low,
-        n_ionic_steps=int(100_000 / timestep),  # 100 ps
+        temperature=params.temperature_low,
+        n_ionic_steps=int(100_000 / params.timestep),  # 100 ps
         initial_temperature=0,
         pressure=0.0,
     )
 
     return structure_final, parsed_output
-
-
-# Protocol registry for easy lookup
-PROTOCOLS = {
-    "pmmcs": pmmcs_protocol,
-    "bjp": bjp_protocol,
-    "shik": shik_protocol,
-}
-
-
-def run_protocol(
-    protocol_name: str,
-    runner: callable,
-    structure: Atoms,
-    potential: pd.DataFrame | dict,
-    temperature_high: float,
-    temperature_low: float,
-    heating_steps: int,
-    cooling_steps: int,
-    timestep: float,
-    n_print: int,
-    *,
-    langevin: bool,
-    seed: int,
-    server_kwargs: dict | None = None,
-    tmp_working_directory: str | None = None,
-) -> tuple[Atoms, dict]:
-    """Run a melt-quench protocol by name.
-
-    Args:
-        protocol_name: Name of the protocol ('pmmcs', 'bjp', or 'shik').
-        runner: The function to run LAMMPS MD simulations.
-        structure: Initial atomic structure.
-        potential: Potential parameters.
-        temperature_high: High temperature for melting.
-        temperature_low: Low temperature for quenching.
-        heating_steps: Number of steps for heating phase.
-        cooling_steps: Number of steps for cooling phase.
-        timestep: MD timestep.
-        n_print: Print frequency.
-        langevin: Whether to use Langevin dynamics.
-        seed: Random seed.
-        server_kwargs: Server configuration.
-        tmp_working_directory: Temporary directory path.
-
-    Returns:
-        Final structure and parsed output.
-
-    Raises:
-        ValueError: If protocol_name is not recognized.
-
-    """
-    protocol_name = protocol_name.lower()
-    if protocol_name not in PROTOCOLS:
-        msg = f"Unknown protocol: {protocol_name}. Available protocols: {', '.join(PROTOCOLS.keys())}"
-        raise ValueError(msg)
-
-    protocol = PROTOCOLS[protocol_name]
-    return protocol(
-        runner=runner,
-        structure=structure,
-        potential=potential,
-        temperature_high=temperature_high,
-        temperature_low=temperature_low,
-        heating_steps=heating_steps,
-        cooling_steps=cooling_steps,
-        timestep=timestep,
-        n_print=n_print,
-        langevin=langevin,
-        seed=seed,
-        server_kwargs=server_kwargs,
-        tmp_working_directory=tmp_working_directory,
-    )
