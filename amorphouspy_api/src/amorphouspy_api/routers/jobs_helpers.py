@@ -182,11 +182,19 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
     if status == "completed":
         result = resolved["result"]
         progress = dict.fromkeys(all_steps, "completed")
+
+        # Compute elemental atom-fraction vector from the result
+        from amorphouspy_api.database import Job as _Job
+
+        _tmp = _Job(result_data=result, composition=submission.composition.canonical if submission else "")
+        evec = elemental_fractions_from_job(_tmp)
+
         store.update_job(
             job_id,
             status="completed",
             progress=progress,
             result_data=result,
+            elemental_vector=evec,
             completed_at=datetime.now(UTC),
         )
     elif status == "failed":

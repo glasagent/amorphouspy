@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import uuid4
 
 from ase.io import write as ase_write
@@ -45,7 +45,6 @@ from amorphouspy_api.routers.jobs_helpers import (
     _update_from_resolved,
     build_visualization_context,
     composition_distance,
-    elemental_fractions_from_job,
     oxide_to_elemental_fractions,
     refresh_job_from_cache,
 )
@@ -153,32 +152,30 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
 
     # --- close matches (if threshold > 0) ---
     if request.threshold > 0:
-        all_jobs = store.list_completed_jobs()
-        scored: list[tuple[float, Job]] = []
-        for j in all_jobs:
-            if j.job_id in exact_ids:
+        rows = store.list_completed_vectors(request.potential)
+        scored: list[tuple[float, Any]] = []
+        for job_id, evec, comp, potential, req_data, completed_at in rows:
+            if job_id in exact_ids:
                 continue
-            if request.potential and j.potential != request.potential:
+            if evec is None:
                 continue
-            candidate_vec = elemental_fractions_from_job(j)
-            if candidate_vec is None:
-                continue
-            dist = composition_distance(query_vec, candidate_vec)
+            dist = composition_distance(query_vec, evec)
             if dist <= request.threshold:
-                scored.append((dist, j))
+                scored.append((dist, job_id, comp, potential, req_data, completed_at))
         scored.sort(key=lambda x: x[0])
-        for dist, j in scored[: request.max_results]:
+        for dist, job_id, comp, potential, req_data, completed_at in scored[: request.max_results]:
             sim = 1.0 / (1.0 + dist)
+            analyses = [a.get("type", "structure") for a in (req_data or {}).get("analyses", [])]
             matches.append(
                 JobSearchMatch(
-                    job_id=j.job_id,
-                    composition=Composition.from_canonical(j.composition),
-                    potential=j.potential,
-                    analyses=_analyses_list(j),
+                    job_id=job_id,
+                    composition=Composition.from_canonical(comp),
+                    potential=potential,
+                    analyses=analyses,
                     similarity=round(sim, 4),
                     match_type="close",
                     distance=round(dist, 4),
-                    completed_at=j.completed_at.isoformat() if j.completed_at else None,
+                    completed_at=completed_at.isoformat() if completed_at else None,
                 )
             )
 

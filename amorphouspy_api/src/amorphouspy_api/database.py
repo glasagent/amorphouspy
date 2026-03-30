@@ -46,6 +46,10 @@ class Job(Base):
     # Errors keyed by step name: {"viscosity": "…"}
     errors = Column(JSON, nullable=True)
 
+    # Normalised elemental atom fractions: {"Si": 0.33, "O": 0.67, …}
+    # Populated on completion from the actual structure.
+    elemental_vector = Column(JSON, nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -164,15 +168,29 @@ class JobStore:
             )
             return [{"composition": comp, "n_jobs": n} for comp, n in rows]
 
-    def list_completed_jobs(self) -> list[Job]:
-        """Return all completed jobs (used for fuzzy composition search)."""
+    def list_completed_vectors(
+        self,
+        potential: str | None = None,
+    ) -> list[tuple[str, dict, str, str | None]]:
+        """Return (job_id, elemental_vector, potential, completed_at) for fuzzy search.
+
+        Only includes completed jobs that have an elemental_vector stored.
+        """
         with self.session() as s:
-            return list(
-                s.query(Job)
-                .filter(Job.status == "completed", Job.result_data.isnot(None))
-                .order_by(Job.created_at.desc())
-                .all()
+            q = s.query(
+                Job.job_id,
+                Job.elemental_vector,
+                Job.composition,
+                Job.potential,
+                Job.request_data,
+                Job.completed_at,
+            ).filter(
+                Job.status == "completed",
+                Job.elemental_vector.isnot(None),
             )
+            if potential:
+                q = q.filter(Job.potential == potential)
+            return q.order_by(Job.created_at.desc()).all()
 
 
 # ---------------------------------------------------------------------------

@@ -151,6 +151,56 @@ def test_list_compositions() -> None:
         store.close()
 
 
+def test_list_completed_vectors() -> None:
+    """Test lightweight vector query for fuzzy search."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-vec-1",
+                request_hash="h-vec-1",
+                composition="SiO2 100",
+                potential="pmmcs",
+                status="completed",
+                result_data={},
+                elemental_vector={"Si": 0.333, "O": 0.667},
+                request_data={"analyses": [{"type": "structure"}]},
+            )
+        )
+        store.create_job(
+            Job(
+                job_id="j-vec-2",
+                request_hash="h-vec-2",
+                composition="SiO2 70 - Na2O 30",
+                potential="shik",
+                status="completed",
+                result_data={},
+                elemental_vector={"Si": 0.2, "Na": 0.17, "O": 0.63},
+                request_data={"analyses": [{"type": "structure"}]},
+            )
+        )
+        # No vector → should not appear
+        store.create_job(
+            Job(
+                job_id="j-vec-none",
+                request_hash="h-vec-none",
+                composition="B2O3 100",
+                potential="pmmcs",
+                status="completed",
+                result_data={},
+            )
+        )
+
+        rows = store.list_completed_vectors()
+        assert len(rows) == 2
+
+        rows_pmmcs = store.list_completed_vectors("pmmcs")
+        assert len(rows_pmmcs) == 1
+        assert rows_pmmcs[0][0] == "j-vec-1"  # job_id
+        assert rows_pmmcs[0][1] == {"Si": 0.333, "O": 0.667}  # elemental_vector
+        store.close()
+
+
 def test_concurrent_writes() -> None:
     """Test thread safety of concurrent writes."""
     with tempfile.TemporaryDirectory() as tmp:

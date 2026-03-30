@@ -66,30 +66,33 @@ def _insert_completed_job(
     potential: str = "pmmcs",
     request_hash: str = "testhash1234",
 ) -> None:
+    from amorphouspy_api.routers.jobs_helpers import elemental_fractions_from_job
+
     store = get_job_store()
     result = _mock_result(include_structure=True)
-    store.create_job(
-        Job(
-            job_id=job_id,
-            request_hash=request_hash,
-            composition=composition,
-            potential=potential,
-            status="completed",
-            request_data={
-                "composition": composition,
-                "potential": potential,
-                "simulation": {},
-                "analyses": [{"type": "structure"}],
-            },
-            progress={
-                "structure_generation": "completed",
-                "melt_quench": "completed",
-                "structure": "completed",
-            },
-            result_data=result,
-            completed_at=datetime.now(UTC),
-        )
+    job = Job(
+        job_id=job_id,
+        request_hash=request_hash,
+        composition=composition,
+        potential=potential,
+        status="completed",
+        request_data={
+            "composition": composition,
+            "potential": potential,
+            "simulation": {},
+            "analyses": [{"type": "structure"}],
+        },
+        progress={
+            "structure_generation": "completed",
+            "melt_quench": "completed",
+            "structure": "completed",
+        },
+        result_data=result,
+        completed_at=datetime.now(UTC),
     )
+    # Pre-compute elemental vector (mirrors what _update_from_resolved does)
+    job.elemental_vector = elemental_fractions_from_job(job)
+    store.create_job(job)
 
 
 def _insert_running_job(job_id: str = "j-running-1") -> None:
