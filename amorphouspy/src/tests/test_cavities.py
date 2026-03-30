@@ -6,9 +6,8 @@ Atom type mapping: O=type1, Si=type2, Na=type3.
 
 import numpy as np
 import pytest
-from ase.io import read
-
 from amorphouspy.analysis.cavities import compute_cavities
+from ase.io import read
 
 from . import DATA_DIR
 

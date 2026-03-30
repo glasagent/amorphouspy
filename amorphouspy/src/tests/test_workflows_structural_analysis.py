@@ -2,15 +2,10 @@
 
 from unittest.mock import patch
 
+import amorphouspy.workflows.structural_analysis as sa_module
 import numpy as np
 import plotly.graph_objects as go
 import pytest
-from ase.data import chemical_symbols as _ase_chemical_symbols
-from ase.io import read
-from plotly.subplots import make_subplots
-from scipy.ndimage import gaussian_filter1d as _gaussian_filter1d
-
-import amorphouspy.workflows.structural_analysis as sa_module
 from amorphouspy.workflows.structural_analysis import (
     CoordinationData,
     ElementInfo,
@@ -27,6 +22,10 @@ from amorphouspy.workflows.structural_analysis import (
     find_rdf_minimum,
     plot_analysis_results_plotly,
 )
+from ase.data import chemical_symbols as _ase_chemical_symbols
+from ase.io import read
+from plotly.subplots import make_subplots
+from scipy.ndimage import gaussian_filter1d as _gaussian_filter1d
 
 from . import DATA_DIR
 

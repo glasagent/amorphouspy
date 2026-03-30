@@ -4,7 +4,6 @@ import logging
 
 import numpy as np
 import pytest
-
 from amorphouspy.workflows.cte_helpers import (
     _collect_sim_data,
     _create_logger,

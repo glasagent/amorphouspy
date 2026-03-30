@@ -16,7 +16,6 @@ functionalities include:
 
 import numpy as np
 import pytest
-
 from amorphouspy.workflows.viscosity import (
     auto_cutoff,
     autocorrelation_fft,

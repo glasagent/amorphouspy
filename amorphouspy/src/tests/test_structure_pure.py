@@ -1,9 +1,8 @@
 """Tests for pure helper functions in amorphouspy.structure."""
 
+import amorphouspy.structure as ps
 import numpy as np
 import pytest
-
-import amorphouspy.structure as ps
 
 # ---------------------------------------------------------------------------
 # parse_formula

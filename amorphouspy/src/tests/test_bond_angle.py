@@ -2,9 +2,8 @@
 
 import numpy as np
 import pytest
-from ase import Atoms
-
 from amorphouspy.analysis.bond_angle_distribution import compute_angles
+from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # Helpers
