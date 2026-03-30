@@ -1,9 +1,13 @@
-"""Tests for the Composition model."""
+"""Tests for the Composition model and elemental-space helpers."""
 
 import math
 
 from amorphouspy_api.models import Composition
-from amorphouspy_api.routers.jobs_helpers import composition_distance
+from amorphouspy_api.routers.jobs_helpers import (
+    composition_distance,
+    elemental_fractions_from_job,
+    oxide_to_elemental_fractions,
+)
 
 
 def test_canonical_sorts_alphabetically() -> None:
@@ -35,30 +39,96 @@ def test_serialises_as_dict() -> None:
 
 
 # ---------------------------------------------------------------------------
-# composition_distance
+# composition_distance  (operates in elemental atom-fraction space)
 # ---------------------------------------------------------------------------
 
 
 def test_distance_identical() -> None:
-    a = {"SiO2": 70, "Na2O": 30}
+    a = {"Si": 0.33, "O": 0.67}
     assert composition_distance(a, a) == 0.0
 
 
 def test_distance_symmetric() -> None:
-    a = {"SiO2": 70, "Na2O": 30}
-    b = {"SiO2": 65, "Na2O": 25, "CaO": 10}
+    a = {"Si": 0.4, "O": 0.6}
+    b = {"Si": 0.3, "O": 0.5, "Ca": 0.2}
     assert composition_distance(a, b) == composition_distance(b, a)
 
 
 def test_distance_known_value() -> None:
-    a = {"SiO2": 60, "CaO": 25, "Al2O3": 15}
-    b = {"SiO2": 62, "CaO": 23, "Al2O3": 15}
-    # diff: SiO2 -2, CaO +2 → sqrt(4+4) = sqrt(8)
-    assert math.isclose(composition_distance(a, b), math.sqrt(8), rel_tol=1e-9)
+    # diff: Si +0.1, O -0.1  →  sqrt(0.01 + 0.01) = sqrt(0.02)
+    a = {"Si": 0.4, "O": 0.6}
+    b = {"Si": 0.3, "O": 0.7}
+    assert math.isclose(composition_distance(a, b), math.sqrt(0.02), rel_tol=1e-9)
 
 
-def test_distance_disjoint_components() -> None:
-    a = {"SiO2": 100}
-    b = {"B2O3": 100}
-    # diff: SiO2 100, B2O3 -100 → sqrt(10000+10000)
-    assert math.isclose(composition_distance(a, b), math.sqrt(20000), rel_tol=1e-9)
+def test_distance_disjoint_elements() -> None:
+    a = {"Si": 1.0}
+    b = {"B": 1.0}
+    # sqrt(1 + 1) = sqrt(2)
+    assert math.isclose(composition_distance(a, b), math.sqrt(2), rel_tol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# oxide_to_elemental_fractions
+# ---------------------------------------------------------------------------
+
+
+def test_oxide_to_elemental_pure_sio2() -> None:
+    fracs = oxide_to_elemental_fractions({"SiO2": 100})
+    # SiO2 → 1 Si + 2 O → 1/3 Si, 2/3 O
+    assert math.isclose(fracs["Si"], 1 / 3, rel_tol=1e-9)
+    assert math.isclose(fracs["O"], 2 / 3, rel_tol=1e-9)
+
+
+def test_oxide_to_elemental_binary() -> None:
+    fracs = oxide_to_elemental_fractions({"SiO2": 50, "Na2O": 50})
+    # 0.5 SiO2 → 0.5 Si + 1.0 O;  0.5 Na2O → 1.0 Na + 0.5 O
+    # totals: Si 0.5, Na 1.0, O 1.5 → sum 3.0
+    assert math.isclose(fracs["Si"], 0.5 / 3.0, rel_tol=1e-9)
+    assert math.isclose(fracs["Na"], 1.0 / 3.0, rel_tol=1e-9)
+    assert math.isclose(fracs["O"], 1.5 / 3.0, rel_tol=1e-9)
+
+
+def test_oxide_to_elemental_sums_to_one() -> None:
+    fracs = oxide_to_elemental_fractions({"SiO2": 60, "CaO": 25, "Al2O3": 15})
+    assert math.isclose(sum(fracs.values()), 1.0, rel_tol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# elemental_fractions_from_job
+# ---------------------------------------------------------------------------
+
+
+def test_elemental_from_job_uses_structure() -> None:
+    """When final_structure has atomic numbers, use those directly."""
+    from unittest.mock import MagicMock
+
+    job = MagicMock()
+    job.result_data = {
+        "melt_quench": {
+            "final_structure": {
+                "numbers": [14, 14, 8, 8, 8, 8],  # 2 Si + 4 O
+                "positions": [[0, 0, 0]] * 6,
+                "cell": [[10, 0, 0], [0, 10, 0], [0, 0, 10]],
+                "pbc": [True, True, True],
+            }
+        }
+    }
+    fracs = elemental_fractions_from_job(job)
+    assert math.isclose(fracs["Si"], 2 / 6, rel_tol=1e-9)
+    assert math.isclose(fracs["O"], 4 / 6, rel_tol=1e-9)
+
+
+def test_elemental_from_job_falls_back_to_composition() -> None:
+    """Without final_structure, fall back to oxide composition."""
+    from unittest.mock import MagicMock
+
+    job = MagicMock()
+    job.result_data = {
+        "melt_quench": {
+            "composition": {"SiO2": 100},
+        }
+    }
+    fracs = elemental_fractions_from_job(job)
+    assert math.isclose(fracs["Si"], 1 / 3, rel_tol=1e-9)
+    assert math.isclose(fracs["O"], 2 / 3, rel_tol=1e-9)

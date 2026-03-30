@@ -325,12 +325,13 @@ def test_search_jobs_close_match() -> None:
     """A nearby composition should appear as a close match."""
     _insert_completed_job("j-close-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
 
-    # Search for a slightly different composition
+    # The mock structure has only Si+O atoms, so the elemental distance
+    # from an Al2O3-CaO-SiO2 query is ~0.18 — use threshold 0.2.
     resp = client.post(
         "/jobs:search",
         json={
             "composition": {"SiO2": 62, "CaO": 23, "Al2O3": 15},
-            "threshold": 5.0,
+            "threshold": 0.2,
         },
     )
     assert resp.status_code == 200
@@ -350,7 +351,7 @@ def test_search_jobs_close_match_outside_threshold() -> None:
         "/jobs:search",
         json={
             "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
-            "threshold": 5.0,
+            "threshold": 0.01,
         },
     )
     assert resp.status_code == 200

@@ -45,13 +45,63 @@ def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
 
 
 def composition_distance(a: dict[str, float], b: dict[str, float]) -> float:
-    """Euclidean distance between two compositions in oxide-mol% space.
+    """Euclidean distance between two compositions in elemental atom-fraction space.
 
-    Each composition is treated as a sparse vector over all oxide components.
-    Missing components are treated as 0 mol%.
+    Each dict maps element symbols to atom fractions (values summing to 1).
+    Missing elements are treated as 0.
     """
-    all_oxides = set(a) | set(b)
-    return sum((a.get(ox, 0.0) - b.get(ox, 0.0)) ** 2 for ox in all_oxides) ** 0.5
+    all_elements = set(a) | set(b)
+    return sum((a.get(el, 0.0) - b.get(el, 0.0)) ** 2 for el in all_elements) ** 0.5
+
+
+def oxide_to_elemental_fractions(oxide_comp: dict[str, float]) -> dict[str, float]:
+    """Convert an oxide mol-% composition to normalised elemental atom fractions.
+
+    Reuses :func:`~amorphouspy.structure.element_counts_from_formula_units`
+    (which accepts float "formula units" at runtime) and
+    :func:`~amorphouspy.structure.normalize`.
+
+    Example:
+    -------
+    >>> oxide_to_elemental_fractions({"SiO2": 100})
+    {'Si': 0.333..., 'O': 0.666...}
+    """
+    from amorphouspy.structure import element_counts_from_formula_units, normalize
+
+    mol_frac = normalize(oxide_comp)
+    raw_counts = element_counts_from_formula_units(mol_frac)  # type: ignore[arg-type]
+    return normalize(raw_counts)
+
+
+def elemental_fractions_from_job(job: Job) -> dict[str, float] | None:
+    """Extract normalised elemental atom fractions from a completed job.
+
+    Prefers the actual structure (atomic numbers) stored in
+    ``result_data["melt_quench"]["final_structure"]``; falls back to the
+    requested oxide composition.
+    """
+    from collections import Counter
+
+    from amorphouspy.structure import normalize
+    from ase.data import chemical_symbols
+
+    result = job.result_data or {}
+    mq = result.get("melt_quench", {})
+    struct = mq.get("final_structure")
+
+    if struct and isinstance(struct, dict) and "numbers" in struct:
+        counts = Counter(chemical_symbols[z] for z in struct["numbers"])
+        return normalize(dict(counts))
+
+    # Fallback: derive from the stored oxide composition
+    stored_comp = mq.get("composition")
+    if stored_comp and isinstance(stored_comp, dict):
+        return oxide_to_elemental_fractions(stored_comp)
+
+    # Last resort: derive from the canonical composition on the job record
+    from amorphouspy_api.models import Composition
+
+    return oxide_to_elemental_fractions(Composition.from_canonical(job.composition).root)
 
 
 def _iso_now() -> str:

@@ -395,10 +395,11 @@ class JobSearchRequest(BaseModel):
     potential: Potential | None = None
     analyses: list[str] | None = None
     threshold: float = Field(
-        default=10.0,
+        default=0.05,
         description=(
-            "Maximum Euclidean distance in oxide-mol% space for a composition "
-            "to be included as a close match. Set to 0 for exact matches only."
+            "Maximum Euclidean distance in elemental atom-fraction space for a "
+            "composition to be included as a close match. Set to 0 for exact "
+            "matches only. Typical values: 0.01-0.1."
         ),
     )
     max_results: int = Field(
@@ -423,7 +424,7 @@ class JobSearchMatch(BaseModel):
     )
     distance: float = Field(
         default=0.0,
-        description="Euclidean distance in oxide-mol% space (0 for exact matches).",
+        description="Euclidean distance in elemental atom-fraction space (0 for exact matches).",
     )
     completed_at: str | None = None
 

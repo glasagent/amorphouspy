@@ -45,6 +45,8 @@ from amorphouspy_api.routers.jobs_helpers import (
     _update_from_resolved,
     build_visualization_context,
     composition_distance,
+    elemental_fractions_from_job,
+    oxide_to_elemental_fractions,
     refresh_job_from_cache,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -125,12 +127,12 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
     """Search for existing completed / running jobs matching a spec.
 
     Returns exact composition matches first (similarity=1.0), then
-    close matches within *threshold* Euclidean distance in oxide-mol%
-    space, sorted by ascending distance.
+    close matches within *threshold* Euclidean distance in elemental
+    atom-fraction space, sorted by ascending distance.
     """
     store = get_job_store()
     norm_comp = request.composition.canonical
-    query_vec = request.composition.root
+    query_vec = oxide_to_elemental_fractions(request.composition.root)
 
     # --- exact matches ---
     exact_jobs = store.search_by_composition(norm_comp, request.potential)
@@ -158,7 +160,9 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
                 continue
             if request.potential and j.potential != request.potential:
                 continue
-            candidate_vec = Composition.from_canonical(j.composition).root
+            candidate_vec = elemental_fractions_from_job(j)
+            if candidate_vec is None:
+                continue
             dist = composition_distance(query_vec, candidate_vec)
             if dist <= request.threshold:
                 scored.append((dist, j))
