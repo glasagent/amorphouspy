@@ -164,6 +164,16 @@ class JobStore:
             )
             return [{"composition": comp, "n_jobs": n} for comp, n in rows]
 
+    def list_completed_jobs(self) -> list[Job]:
+        """Return all completed jobs (used for fuzzy composition search)."""
+        with self.session() as s:
+            return list(
+                s.query(Job)
+                .filter(Job.status == "completed", Job.result_data.isnot(None))
+                .order_by(Job.created_at.desc())
+                .all()
+            )
+
 
 # ---------------------------------------------------------------------------
 # ASE Atoms serialisation inside result dicts

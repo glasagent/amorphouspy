@@ -44,6 +44,7 @@ from amorphouspy_api.routers.jobs_helpers import (
     _submit_to_executor,
     _update_from_resolved,
     build_visualization_context,
+    composition_distance,
     refresh_job_from_cache,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -121,11 +122,19 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
 
 @router.post(":search", response_model=JobSearchResponse)
 def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
-    """Search for existing completed / running jobs matching a spec."""
+    """Search for existing completed / running jobs matching a spec.
+
+    Returns exact composition matches first (similarity=1.0), then
+    close matches within *threshold* Euclidean distance in oxide-mol%
+    space, sorted by ascending distance.
+    """
     store = get_job_store()
     norm_comp = request.composition.canonical
-    jobs = store.search_by_composition(norm_comp, request.potential)
+    query_vec = request.composition.root
 
+    # --- exact matches ---
+    exact_jobs = store.search_by_composition(norm_comp, request.potential)
+    exact_ids = {j.job_id for j in exact_jobs}
     matches = [
         JobSearchMatch(
             job_id=j.job_id,
@@ -133,10 +142,42 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
             potential=j.potential,
             analyses=_analyses_list(j),
             similarity=1.0,
+            match_type="exact",
+            distance=0.0,
             completed_at=j.completed_at.isoformat() if j.completed_at else None,
         )
-        for j in jobs
+        for j in exact_jobs
     ]
+
+    # --- close matches (if threshold > 0) ---
+    if request.threshold > 0:
+        all_jobs = store.list_completed_jobs()
+        scored: list[tuple[float, Job]] = []
+        for j in all_jobs:
+            if j.job_id in exact_ids:
+                continue
+            if request.potential and j.potential != request.potential:
+                continue
+            candidate_vec = Composition.from_canonical(j.composition).root
+            dist = composition_distance(query_vec, candidate_vec)
+            if dist <= request.threshold:
+                scored.append((dist, j))
+        scored.sort(key=lambda x: x[0])
+        for dist, j in scored[: request.max_results]:
+            sim = 1.0 / (1.0 + dist)
+            matches.append(
+                JobSearchMatch(
+                    job_id=j.job_id,
+                    composition=Composition.from_canonical(j.composition),
+                    potential=j.potential,
+                    analyses=_analyses_list(j),
+                    similarity=round(sim, 4),
+                    match_type="close",
+                    distance=round(dist, 4),
+                    completed_at=j.completed_at.isoformat() if j.completed_at else None,
+                )
+            )
+
     return JobSearchResponse(matches=matches)
 
 

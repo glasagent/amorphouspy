@@ -44,6 +44,16 @@ def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+def composition_distance(a: dict[str, float], b: dict[str, float]) -> float:
+    """Euclidean distance between two compositions in oxide-mol% space.
+
+    Each composition is treated as a sparse vector over all oxide components.
+    Missing components are treated as 0 mol%.
+    """
+    all_oxides = set(a) | set(b)
+    return sum((a.get(ox, 0.0) - b.get(ox, 0.0)) ** 2 for ox in all_oxides) ** 0.5
+
+
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat()
 
