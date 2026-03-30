@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .analyses import run_cte, run_elastic, run_structural_analysis, run_viscosity
 from .meltquench import generate_structure, run_melt_quench
@@ -75,7 +75,7 @@ def submit_pipeline(
     Each intermediate step gets ``{cache_key}_{step_name}`` so individual
     progress can be queried via ``get_future_from_cache``.
     """
-    from amorphouspy_api.executor import get_base_resource_dict, get_lammps_resource_dict
+    from amorphouspy_api.executor import _is_slurm, get_base_resource_dict, get_lammps_resource_dict
 
     base_resource_dict = get_base_resource_dict()
     lammps_resource_dict = get_lammps_resource_dict()
@@ -87,7 +87,9 @@ def submit_pipeline(
     future = None
     for name in ("structure_generation", "melt_quench"):
         rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-        resource_dict = {**rd, "job_name": name}
+        resource_dict = dict(rd)
+        if _is_slurm():
+            resource_dict["job_name"] = name
         if cache_key is not None:
             resource_dict["cache_key"] = f"{cache_key}_{name}"
         future = executor.submit(
@@ -108,7 +110,9 @@ def submit_pipeline(
     for name, config in analysis_configs.items():
         if name in ANALYSES:
             rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-            resource_dict = {**rd, "job_name": name}
+            resource_dict = dict(rd)
+            if _is_slurm():
+                resource_dict["job_name"] = name
             if cache_key is not None:
                 resource_dict["cache_key"] = f"{cache_key}_{name}"
             analysis_futures[name] = executor.submit(
@@ -122,7 +126,9 @@ def submit_pipeline(
             )
 
     # --- Merge step: collects base + all analysis results ---
-    merge_resource: dict[str, str] = {**base_resource_dict, "job_name": "merge_results"}
+    merge_resource: dict[str, Any] = dict(base_resource_dict)
+    if _is_slurm():
+        merge_resource["job_name"] = "merge_results"
     if cache_key is not None:
         merge_resource["cache_key"] = cache_key
     merge_kwargs: dict[str, dict | Future] = {"base_result": base_future}

@@ -61,12 +61,20 @@ def get_executor_class() -> type:
     return executor_classes[executor_type]
 
 
-def get_base_resource_dict() -> dict[str, Any]:
-    """Get base resource dictionary shared by all SLURM steps.
+def _is_slurm() -> bool:
+    """Return True when the executor is configured for SLURM."""
+    return os.environ.get("EXECUTOR_TYPE", "test").lower() == "slurm"
 
-    Contains partition, time limits, etc. — but not cores.
+
+def get_base_resource_dict() -> dict[str, Any]:
+    """Get base resource dictionary shared by all steps.
+
+    SLURM-specific keys (partition, time limits, submission template) are
+    only included when ``EXECUTOR_TYPE=slurm``.
     """
     resource_dict: dict[str, Any] = {}
+    if not _is_slurm():
+        return resource_dict
     if os.environ.get("SLURM_PARTITION"):
         resource_dict["partition"] = os.environ["SLURM_PARTITION"]
     if os.environ.get("SLURM_RUN_TIME_MAX"):
@@ -82,17 +90,18 @@ def get_base_resource_dict() -> dict[str, Any]:
 def get_lammps_resource_dict() -> dict[str, Any]:
     """Get resource dictionary for LAMMPS simulations.
 
-    Uses ``threads_per_core`` so that executorlib runs a **single** Python
-    process (``cache_serial.py``) while SBATCH still allocates enough CPUs
-    for LAMMPS's internal ``mpiexec -n <cores>``.
+    On SLURM, uses ``threads_per_core`` so that executorlib runs a **single**
+    Python process while SBATCH still allocates enough CPUs for LAMMPS's
+    internal ``mpiexec -n <cores>``.  On other executors the dict is empty
+    (LAMMPS core count is handled via ``get_lammps_server_kwargs`` instead).
 
     Returns:
         Dictionary with LAMMPS-specific resource settings.
     """
-    return {
-        **get_base_resource_dict(),
-        "threads_per_core": int(os.environ.get("LAMMPS_CORES", "4")),
-    }
+    base = get_base_resource_dict()
+    if _is_slurm():
+        base["threads_per_core"] = int(os.environ.get("LAMMPS_CORES", "4"))
+    return base
 
 
 def get_lammps_server_kwargs() -> dict[str, int]:
