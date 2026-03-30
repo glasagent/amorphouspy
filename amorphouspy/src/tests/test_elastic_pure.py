@@ -2,9 +2,8 @@
 
 import numpy as np
 import pytest
-from ase import Atoms
-
 from amorphouspy.workflows.elastic_mod import apply_strain, isotropic_moduli_from_Cij
+from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # Helpers

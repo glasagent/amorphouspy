@@ -12,3 +12,55 @@ filterwarnings = [
     "ignore::pydantic.PydanticDeprecatedSince211",
     "ignore:.*multi-threaded.*fork.*",
 ]
+
+[tool.ruff]
+# Target Python version
+target-version = "py312"
+# Line length control
+line-length = 120
+
+[tool.ruff.format]           # formatter tweaks
+quote-style  = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint]             # linter rules
+select   = ["ALL"]           # enable every rule Ruff knows
+ignore   = [
+  "D203", 
+  "D213",
+  "PLR0913",
+  "PLR0915",
+  "S101",
+  "S113",
+  "N802",
+  "N803",
+  "N806",
+  "FBT002",
+  "COM812",
+  "PLC0415",
+  "PLR2004",
+  "G004",
+  "ERA001",
+  "PLW0603",
+  "TRY301",
+  "TRY300",
+  "SLF001",
+  "G201",
+  "E501",
+  "E402",
+  "ANN001",
+  "ANN201",
+  "ARG001",
+  "D100",
+  "D103",
+  "D205",
+  "D413",
+  "BLE001",
+  "RET505",
+]
+fixable  = ["ALL"]           # allow --fix to touch everything
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

@@ -2,15 +2,14 @@
 
 import numpy as np
 import pytest
-from ase import Atoms
-from ase.io import read
-
 from amorphouspy.analysis.radial_distribution_functions import (
     _compute_cn_cumulative,
     _compute_distances,
     _compute_rdf_histograms,
     compute_rdf,
 )
+from ase import Atoms
+from ase.io import read
 
 from . import DATA_DIR
 

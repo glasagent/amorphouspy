@@ -15,7 +15,6 @@ import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
-
 from amorphouspy import (
     generate_potential,
     get_ase_structure,
