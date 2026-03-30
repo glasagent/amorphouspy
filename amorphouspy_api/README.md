@@ -58,11 +58,13 @@ This FastAPI-based service provides a Model Context Protocol (MCP) interface for
 ## Installation
 
 ```bash
-# Install amorphouspy dependency
-pip install -e ../amorphouspy/
+pip install amorphouspy[api]
+```
 
-# Install the API
-pip install -e .
+Or for development (from repo root):
+
+```bash
+pip install -e ".[api]"
 ```
 
 ## Launch API (including MCP server)
@@ -78,10 +80,9 @@ The API will be available at:
 
 ## Developer Setup
 
-Install development dependencies:
 ```bash
-pip install -r requirements-dev.txt
-pre-commit install
+pixi install
+pixi run -- pre-commit install
 ```
 
 ## Run Tests
