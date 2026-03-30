@@ -19,7 +19,6 @@ class MeltQuenchParams:
     """Parameters for melt-quench simulation protocols.
 
     Attributes:
-        runner: The function to run LAMMPS MD simulations.
         structure: Initial atomic structure.
         potential: Potential parameters.
         temperature_high: High temperature for melting.
@@ -35,7 +34,6 @@ class MeltQuenchParams:
 
     """
 
-    runner: callable
     structure: Atoms
     potential: pd.DataFrame | dict
     temperature_high: float
@@ -50,10 +48,11 @@ class MeltQuenchParams:
     tmp_working_directory: str | None = None
 
 
-def pmmcs_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
+def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation PMMCS protocol.
 
     Args:
+        runner: The function to run LAMMPS MD simulations.
         params: MeltQuenchParams dataclass containing all simulation parameters.
 
     Returns:
@@ -62,7 +61,7 @@ def pmmcs_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """
     # Bind common parameters to runner
     run = partial(
-        params.runner,
+        runner,
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
@@ -118,10 +117,11 @@ def pmmcs_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     return structure_final, parsed_output
 
 
-def bjp_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
+def bjp_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation BJP protocol.
 
     Args:
+        runner: The function to run LAMMPS MD simulations.
         params: MeltQuenchParams dataclass containing all simulation parameters.
 
     Returns:
@@ -130,7 +130,7 @@ def bjp_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """
     # Bind common parameters to runner
     run = partial(
-        params.runner,
+        runner,
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
@@ -189,10 +189,11 @@ def bjp_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     return structure_final, parsed_output
 
 
-def shik_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
+def shik_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation SHIK protocol.
 
     Args:
+        runner: The function to run LAMMPS MD simulations.
         params: MeltQuenchParams dataclass containing all simulation parameters.
 
     Returns:
@@ -201,7 +202,7 @@ def shik_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """
     # Bind common parameters to runner
     run1 = partial(
-        params.runner,
+        runner,
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
@@ -226,7 +227,7 @@ def shik_protocol(params: MeltQuenchParams) -> tuple[Atoms, dict]:
     )
 
     run2 = partial(
-        params.runner,
+        runner,
         potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,

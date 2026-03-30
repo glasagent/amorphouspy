@@ -214,7 +214,6 @@ def melt_quench_simulation(
 
     # Create parameters dataclass
     params = MeltQuenchParams(
-        runner=_run_lammps_md,
         structure=structure,
         potential=potential,
         temperature_high=temperature_high,
@@ -231,7 +230,7 @@ def melt_quench_simulation(
 
     # Run the protocol using the function-based approach
     protocol_func = protocol_map[potential_name]
-    structure_final, parsed_output = protocol_func(params)
+    structure_final, parsed_output = protocol_func(_run_lammps_md, params)
 
     result = parsed_output.get("generic", None)
 

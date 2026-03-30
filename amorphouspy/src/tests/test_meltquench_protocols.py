@@ -40,10 +40,9 @@ def mock_runner():
     return mock
 
 
-def test_meltquench_params_creation(mock_runner, mock_structure, mock_potential):
+def test_meltquench_params_creation(mock_structure, mock_potential):
     """Test that MeltQuenchParams dataclass can be created successfully."""
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=mock_potential,
         temperature_high=5000.0,
@@ -56,7 +55,6 @@ def test_meltquench_params_creation(mock_runner, mock_structure, mock_potential)
         seed=12345,
     )
 
-    assert params.runner == mock_runner
     assert params.structure == mock_structure
     assert params.potential.equals(mock_potential)
     assert params.temperature_high == 5000.0
@@ -71,10 +69,9 @@ def test_meltquench_params_creation(mock_runner, mock_structure, mock_potential)
     assert params.tmp_working_directory is None
 
 
-def test_meltquench_params_with_optional_values(mock_runner, mock_structure, mock_potential, tmp_path):
+def test_meltquench_params_with_optional_values(mock_structure, mock_potential, tmp_path):
     """Test that MeltQuenchParams dataclass handles optional parameters."""
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=mock_potential,
         temperature_high=5000.0,
@@ -96,7 +93,6 @@ def test_meltquench_params_with_optional_values(mock_runner, mock_structure, moc
 def test_pmmcs_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potential):
     """Test that pmmcs_protocol accepts MeltQuenchParams dataclass."""
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=mock_potential,
         temperature_high=5000.0,
@@ -109,7 +105,7 @@ def test_pmmcs_protocol_accepts_dataclass(mock_runner, mock_structure, mock_pote
         seed=12345,
     )
 
-    structure, output = pmmcs_protocol(params)
+    structure, output = pmmcs_protocol(mock_runner, params)
 
     assert mock_runner.called
     assert structure is not None
@@ -119,7 +115,6 @@ def test_pmmcs_protocol_accepts_dataclass(mock_runner, mock_structure, mock_pote
 def test_bjp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potential):
     """Test that bjp_protocol accepts MeltQuenchParams dataclass."""
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=mock_potential,
         temperature_high=5000.0,
@@ -132,7 +127,7 @@ def test_bjp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potent
         seed=12345,
     )
 
-    structure, output = bjp_protocol(params)
+    structure, output = bjp_protocol(mock_runner, params)
 
     assert mock_runner.called
     assert structure is not None
@@ -149,7 +144,6 @@ def test_shik_protocol_accepts_dataclass(mock_runner, mock_structure):
     )
 
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=potential,
         temperature_high=5000.0,
@@ -162,7 +156,7 @@ def test_shik_protocol_accepts_dataclass(mock_runner, mock_structure):
         seed=12345,
     )
 
-    structure, output = shik_protocol(params)
+    structure, output = shik_protocol(mock_runner, params)
 
     assert mock_runner.called
     assert structure is not None
@@ -172,7 +166,6 @@ def test_shik_protocol_accepts_dataclass(mock_runner, mock_structure):
 def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_potential):
     """Test that pmmcs_protocol calls the runner with correct parameters."""
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=mock_potential,
         temperature_high=5000.0,
@@ -185,7 +178,7 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
         seed=12345,
     )
 
-    pmmcs_protocol(params)
+    pmmcs_protocol(mock_runner, params)
 
     # 5 stages in the protocol
     assert mock_runner.call_count == 5
@@ -194,7 +187,6 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
 def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_potential):
     """Test that bjp_protocol calls the runner with correct parameters."""
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=mock_potential,
         temperature_high=5000.0,
@@ -207,7 +199,7 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
         seed=12345,
     )
 
-    bjp_protocol(params)
+    bjp_protocol(mock_runner, params)
 
     # 5 stages in the protocol
     assert mock_runner.call_count == 5
@@ -223,7 +215,6 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
     )
 
     params = MeltQuenchParams(
-        runner=mock_runner,
         structure=mock_structure,
         potential=potential,
         temperature_high=5000.0,
@@ -236,7 +227,7 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
         seed=12345,
     )
 
-    shik_protocol(params)
+    shik_protocol(mock_runner, params)
 
     # 5 stages in the protocol
     assert mock_runner.call_count == 5
