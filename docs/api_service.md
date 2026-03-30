@@ -93,11 +93,13 @@ graph LR
 ## Installation
 
 ```bash
-# Install amorphouspy dependency
-pip install -e ./amorphouspy/
+pip install amorphouspy[api]
+```
 
-# Install the API
-pip install -e ./amorphouspy_api/
+Or for development (editable install):
+
+```bash
+pip install -e ".[api]"
 ```
 
 ## Launch API
