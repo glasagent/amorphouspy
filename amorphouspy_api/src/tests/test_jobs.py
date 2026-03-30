@@ -66,30 +66,34 @@ def _insert_completed_job(
     potential: str = "pmmcs",
     request_hash: str = "testhash1234",
 ) -> None:
+    from amorphouspy_api.routers.jobs_helpers import _elem_dict_to_vector, elemental_fractions_from_job
+
     store = get_job_store()
     result = _mock_result(include_structure=True)
-    store.create_job(
-        Job(
-            job_id=job_id,
-            request_hash=request_hash,
-            composition=composition,
-            potential=potential,
-            status="completed",
-            request_data={
-                "composition": composition,
-                "potential": potential,
-                "simulation": {},
-                "analyses": [{"type": "structure"}],
-            },
-            progress={
-                "structure_generation": "completed",
-                "melt_quench": "completed",
-                "structure": "completed",
-            },
-            result_data=result,
-            completed_at=datetime.now(UTC),
-        )
+    job = Job(
+        job_id=job_id,
+        request_hash=request_hash,
+        composition=composition,
+        potential=potential,
+        status="completed",
+        request_data={
+            "composition": composition,
+            "potential": potential,
+            "simulation": {},
+            "analyses": [{"type": "structure"}],
+        },
+        progress={
+            "structure_generation": "completed",
+            "melt_quench": "completed",
+            "structure": "completed",
+        },
+        result_data=result,
+        completed_at=datetime.now(UTC),
     )
+    # Pre-compute elemental vector (mirrors what _update_from_resolved does)
+    fracs = elemental_fractions_from_job(job)
+    job.elemental_vector = _elem_dict_to_vector(fracs) if fracs else None
+    store.create_job(job)
 
 
 def _insert_running_job(job_id: str = "j-running-1") -> None:
@@ -314,6 +318,61 @@ def test_search_jobs_no_match() -> None:
         "/jobs:search",
         json={
             "composition": {"B2O3": 100},
+            "threshold": 0,
+        },
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["matches"]) == 0
+
+
+def test_search_jobs_close_match() -> None:
+    """A nearby composition should appear as a close match."""
+    _insert_completed_job("j-close-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
+
+    # The mock structure has only Si+O atoms, so the elemental distance
+    # from an Al2O3-CaO-SiO2 query is ~0.18 — use threshold 0.2.
+    resp = client.post(
+        "/jobs:search",
+        json={
+            "composition": {"SiO2": 62, "CaO": 23, "Al2O3": 15},
+            "threshold": 0.2,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    close = [m for m in data["matches"] if m["match_type"] == "close"]
+    assert len(close) >= 1
+    assert close[0]["job_id"] == "j-close-1"
+    assert close[0]["distance"] > 0
+    assert close[0]["similarity"] < 1.0
+
+
+def test_search_jobs_close_match_outside_threshold() -> None:
+    """A composition outside the threshold should not appear."""
+    _insert_completed_job("j-far-1", composition="SiO2 100")
+
+    resp = client.post(
+        "/jobs:search",
+        json={
+            "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+            "threshold": 0.01,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    close = [m for m in data["matches"] if m["match_type"] == "close"]
+    assert all(m["job_id"] != "j-far-1" for m in close)
+
+
+def test_search_jobs_threshold_zero_exact_only() -> None:
+    """threshold=0 should return only exact matches, no close ones."""
+    _insert_completed_job("j-exact-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
+
+    resp = client.post(
+        "/jobs:search",
+        json={
+            "composition": {"SiO2": 62, "CaO": 23, "Al2O3": 15},
+            "threshold": 0,
         },
     )
     assert resp.status_code == 200

@@ -6,10 +6,9 @@ requires the 20Na2O-80SiO2 dump file).  Atom type mapping: O=type1, Si=type2, Na
 
 import numpy as np
 import pytest
+from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from ase import Atoms
 from ase.io import read
-
-from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 
 from . import DATA_DIR
 

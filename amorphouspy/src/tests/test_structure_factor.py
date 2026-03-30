@@ -6,7 +6,6 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import numpy as np
 import numpy.typing as npt
 import pytest
-from ase import Atoms
 
 # Assuming the original script is named structure_factor.py
 from amorphouspy.analysis.structure_factor import (
@@ -15,6 +14,7 @@ from amorphouspy.analysis.structure_factor import (
     _xray_form_factor,
     compute_structure_factor,
 )
+from ase import Atoms
 
 
 def test_neutron_scattering_length() -> None:

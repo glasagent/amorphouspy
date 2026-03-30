@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 def run_elastic(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     """Elastic moduli analysis on the quenched glass."""
     from amorphouspy import elastic_simulation
+
     from amorphouspy_api.executor import get_lammps_server_kwargs
 
     cfg: ElasticAnalysis = config  # type: ignore[assignment]
