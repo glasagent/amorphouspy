@@ -122,3 +122,28 @@ jobs:
 
         git push origin main
         git push origin "v$NEW_VERSION"
+
+    - name: Publish GitHub Release
+      if: hashFiles('new_version.txt') != ''
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        NEW_VERSION=$(cat new_version.txt)
+
+        # Find the draft release maintained by release-drafter and publish it
+        DRAFT_ID=$(gh api repos/$GH_REPO/releases --jq '.[] | select(.draft==true) | .id' | head -1)
+
+        if [ -n "$DRAFT_ID" ]; then
+          gh api repos/$GH_REPO/releases/$DRAFT_ID \
+            --method PATCH \
+            --field draft=false \
+            --field tag_name="v$NEW_VERSION" \
+            --field name="v$NEW_VERSION" \
+            --field make_latest=true
+        else
+          # Fallback: create release with GitHub auto-generated notes
+          gh release create "v$NEW_VERSION" \
+            --title "v$NEW_VERSION" \
+            --generate-notes
+        fi

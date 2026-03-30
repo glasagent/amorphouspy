@@ -11,11 +11,13 @@ from amorphouspy.analysis.radial_distribution_functions import compute_coordinat
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.analysis.structure_factor import compute_structure_factor
 from amorphouspy.io_utils import (
+    get_properties_for_structure_analysis,
     structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
     write_xyz,
 )
+from amorphouspy.mass import get_atomic_mass
 from amorphouspy.neighbors import get_neighbors
 from amorphouspy.potentials import potential
 from amorphouspy.potentials.potential import generate_potential
@@ -23,16 +25,21 @@ from amorphouspy.shared import count_distribution, running_mean, type_to_dict
 from amorphouspy.structure import (
     check_neutral_oxide,
     create_random_atoms,
+    extract_composition,
+    formula_mass_g_per_mol,
     get_ase_structure,
+    get_composition,
     get_glass_density_from_model,
     get_structure_dict,
+    parse_formula,
+    plan_system,
 )
 from amorphouspy.workflows.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 from amorphouspy.workflows.elastic_mod import elastic_simulation
 from amorphouspy.workflows.md import md_simulation
 from amorphouspy.workflows.meltquench import melt_quench_simulation
-from amorphouspy.workflows.structural_analysis import analyze_structure, find_rdf_minimum
-from amorphouspy.workflows.viscosity import get_viscosity, viscosity_simulation
+from amorphouspy.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results_plotly
+from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_simulation
 
 __all__ = [
     "analyze_structure",
@@ -51,16 +58,25 @@ __all__ = [
     "cte_from_npt_fluctuations",
     "cte_from_volume_temperature_data",
     "elastic_simulation",
+    "extract_composition",
     "find_rdf_minimum",
+    "fit_vft",
+    "formula_mass_g_per_mol",
     "generate_bond_length_dict",
     "generate_potential",
     "get_ase_structure",
+    "get_atomic_mass",
+    "get_composition",
     "get_glass_density_from_model",
     "get_neighbors",
+    "get_properties_for_structure_analysis",
     "get_structure_dict",
     "get_viscosity",
     "md_simulation",
     "melt_quench_simulation",
+    "parse_formula",
+    "plan_system",
+    "plot_analysis_results_plotly",
     "potential",
     "running_mean",
     "structure_from_parsed_output",

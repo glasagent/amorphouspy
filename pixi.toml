@@ -47,6 +47,7 @@ nbval = "*"
 mkdocs-material = "*"
 mkdocs-jupyter = "==0.24.8"
 pymdown-extensions = "*"
+mkdocstrings = {version = "*", extras = ["python"]}
 
 [environments]
 default = { features = ["dev", "docs"], solve-group = "default" }
