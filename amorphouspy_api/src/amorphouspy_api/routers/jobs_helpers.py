@@ -165,6 +165,13 @@ def refresh_job_from_cache(job: Job) -> None:
             return
     except FileNotFoundError:
         pass
+    except Exception as exc:
+        # get_future_from_cache raises stored errors directly; treat as failed.
+        logger.exception("Job %s failed (cached error)", job.job_id)
+        submission = JobSubmission(**job.request_data) if job.request_data else None
+        resolved = {"status": "failed", "error": str(exc)}
+        _update_from_resolved(job.job_id, resolved, submission)
+        return
 
     # Slow path — probe per-step cache keys
     submission = JobSubmission(**job.request_data) if job.request_data else None
@@ -187,6 +194,10 @@ def refresh_job_from_cache(job: Job) -> None:
                 has_failure = True
         except FileNotFoundError:
             progress[step_name] = "pending"
+        except Exception:
+            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
+            progress[step_name] = "failed"
+            has_failure = True
 
     store = get_job_store()
     if has_failure:
@@ -195,12 +206,16 @@ def refresh_job_from_cache(job: Job) -> None:
         store.update_job(job.job_id, status="running", progress=progress)
 
 
-def build_visualization_context(job_id: str, result_data: dict) -> dict:
+def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
     """Build the Jinja2 template context from job result data."""
     import json
 
     from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
     from amorphouspy_api.workflows.analyses.elastic import prepare_elastic_plots
+    from amorphouspy_api.workflows.analyses.meltquench_viz import (
+        build_temperature_time_plot,
+        prepare_timing_context,
+    )
     from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
     from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
 
@@ -225,6 +240,16 @@ def build_visualization_context(job_id: str, result_data: dict) -> dict:
             "simulation_steps": simulation_steps,
         }
     )
+
+    # --- Step timings from executorlib cache ---
+    if request_hash:
+        timing_ctx = prepare_timing_context(request_hash)
+        context.update(timing_ctx)
+
+    # --- Temperature-time diagram ---
+    tt_plot = build_temperature_time_plot(mq)
+    if tt_plot:
+        context["temperature_time_plot"] = tt_plot
 
     # --- Optional analyses ---
     visc_data = result_data.get("viscosity")

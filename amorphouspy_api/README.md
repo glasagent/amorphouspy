@@ -47,10 +47,10 @@ This FastAPI-based service provides a Model Context Protocol (MCP) interface for
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `EXECUTOR_TYPE` | Executor backend: `local` or `slurm` | `local` |
-| `EXECUTOR_CORES` | Number of CPU cores per worker | `4` |
+| `EXECUTOR_TYPE` | Executor backend: `test`, `slurm`, `flux`, or `single` | `test` |
 | `SLURM_PARTITION` | SLURM partition name (slurm only) | - |
-| `SLURM_TIME` | SLURM job time limit (slurm only) | - |
+| `SLURM_RUN_TIME_MAX` | Max run time per job in seconds (slurm only) | - |
+| `SLURM_MEMORY_MAX` | Max memory per job in GB (slurm only) | - |
 | `AMORPHOUSPY_PROJECTS` | Directory for project/cache files | `./projects` |
 | `API_BASE_URL` | Base URL for visualization links | - |
 

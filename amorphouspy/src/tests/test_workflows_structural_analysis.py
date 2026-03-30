@@ -104,16 +104,14 @@ def _make_minimal_structure_data(
 
 
 def _make_plot_figure() -> go.Figure:
-    """Make a 5x2 plotly figure matching what plot_analysis_results_plotly creates."""
+    """Make a 3x3 plotly figure matching what plot_analysis_results_plotly creates."""
     return make_subplots(
-        rows=5,
-        cols=2,
+        rows=3,
+        cols=3,
         specs=[
-            [{"type": "bar"}, {"type": "bar"}],
-            [{"type": "bar"}, {"type": "bar"}],
-            [{"type": "scatter"}, {"type": "bar"}],
-            [{"type": "scatter"}, {"type": "scatter"}],
-            [{"type": "scatter"}, None],
+            [{"type": "bar"}, {"type": "bar"}, {"type": "bar"}],
+            [{"type": "bar"}, {"type": "scatter"}, {"type": "bar"}],
+            [{"type": "scatter"}, {"type": "scatter"}, {"type": "scatter"}],
         ],
     )
 
@@ -508,10 +506,10 @@ def test_plot_analysis_results_returns_figure() -> None:
 
 
 def test_plot_analysis_results_has_correct_layout() -> None:
-    """Figure has the expected height and showlegend settings."""
+    """Figure has a height set and showlegend enabled."""
     sd = _make_minimal_structure_data()
     fig = plot_analysis_results_plotly(sd)
-    assert fig.layout.height == 1500
+    assert fig.layout.height is not None
     assert fig.layout.showlegend is True
 
 

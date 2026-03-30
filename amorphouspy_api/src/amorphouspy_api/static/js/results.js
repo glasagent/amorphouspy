@@ -9,6 +9,11 @@ window.onload = function () {
 
 // Render the Plotly plot
 function initPlotlyPlot() {
+    // Use the height from the figure layout (set in Python) for the container
+    const figHeight = plotlyData.layout && plotlyData.layout.height ? plotlyData.layout.height : 1500;
+    const plotDiv = document.getElementById('plotly-div');
+    plotDiv.style.height = figHeight + 'px';
+
     Plotly.newPlot('plotly-div', plotlyData.data, plotlyData.layout, {
         responsive: true,
         displayModeBar: true,

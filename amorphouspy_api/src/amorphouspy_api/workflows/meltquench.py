@@ -60,19 +60,29 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
     Returns a dict with ``final_structure``, ``mean_temperature``,
     ``simulation_steps``, and ``composition``.
     """
-    from amorphouspy_api.executor import get_lammps_resource_dict
+    from amorphouspy_api.executor import get_lammps_server_kwargs
 
     structure = result["structure_generation"]["structure"]
     potential = result["structure_generation"]["potential"]
+
+    heating_rate = int(submission.simulation.quench_rate * 100)
+    cooling_rate = int(submission.simulation.quench_rate)
+
+    temperature_high = submission.simulation.melt_temperature
+    temperature_low = 300.0
+    timestep = submission.simulation.timestep
 
     mq = melt_quench_simulation(
         structure=structure,
         potential=potential,
         n_print=1000,
-        heating_rate=int(submission.simulation.quench_rate * 100),
-        cooling_rate=int(submission.simulation.quench_rate),
+        heating_rate=heating_rate,
+        cooling_rate=cooling_rate,
+        timestep=timestep,
+        temperature_high=temperature_high,
+        temperature_low=temperature_low,
         langevin=False,
-        server_kwargs=get_lammps_resource_dict(),
+        server_kwargs=get_lammps_server_kwargs(),
     )
 
     return {
@@ -80,4 +90,11 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
         "final_structure": mq["structure"],
         "mean_temperature": float(np.mean(mq["result"]["temperature"])),
         "simulation_steps": len(mq["result"]["steps"]),
+        "temperature_trajectory": [float(t) for t in mq["result"]["temperature"]],
+        "steps_trajectory": [int(s) for s in mq["result"]["steps"]],
+        "timestep": timestep,
+        "cooling_rate": cooling_rate,
+        "heating_rate": heating_rate,
+        "temperature_high": temperature_high,
+        "temperature_low": temperature_low,
     }

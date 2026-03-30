@@ -21,7 +21,7 @@ def run_elastic(submission: JobSubmission, config: BaseModel, result: dict) -> d
     """Elastic moduli analysis on the quenched glass."""
     from amorphouspy import elastic_simulation
 
-    from amorphouspy_api.executor import get_lammps_resource_dict
+    from amorphouspy_api.executor import get_lammps_server_kwargs
 
     cfg: ElasticAnalysis = config  # type: ignore[assignment]
 
@@ -43,7 +43,7 @@ def run_elastic(submission: JobSubmission, config: BaseModel, result: dict) -> d
         production_steps=cfg.production_steps,
         n_print=cfg.n_print,
         strain=cfg.strain,
-        server_kwargs=get_lammps_resource_dict(),
+        server_kwargs=get_lammps_server_kwargs(),
     )
 
     # Convert Cij ndarray to nested list for JSON serialisation.
