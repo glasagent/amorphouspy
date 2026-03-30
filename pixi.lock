@@ -2586,7 +2586,7 @@ packages:
 - pypi: ./
   name: amorphouspy
   version: 0.2.2
-  sha256: 8e4b3de9ee3c7ca63b353b0c191c6ddc08dd8f0d2609b3b7f3ff91824d31330d
+  sha256: fee81bce6518a4e5d48e04dcb091cdc79a156b620b567f79f0a8b69ba4a94fa1
   requires_dist:
   - ase
   - numba

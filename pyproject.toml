@@ -70,6 +70,9 @@ fixable  = ["ALL"]
   "PLR2004",
   "ANN",
 ]
+"amorphouspy_api/conftest.py" = [
+  "INP001",
+]
 "amorphouspy_api/**" = [
   "PLR0915",
   "S113",
@@ -93,6 +96,46 @@ fixable  = ["ALL"]
   "D413",
   "BLE001",
   "RET505",
+]
+"notebooks/**/*.ipynb" = [
+  "T201",    # print() is expected in notebooks
+  "N816",    # mixedCase variable names
+  "N812",    # lowercase imported as non-lowercase
+  "ANN",     # type annotations
+  "D103",    # missing docstrings
+  "PLR2004", # magic values
+  "ERA001",  # commented-out code
+  "E501",    # line too long
+  "B905",    # zip() without strict=
+  "UP032",   # f-string vs format()
+  "UP015",   # unnecessary mode argument
+  "PTH123",  # open() vs Path.open()
+  "RUF003",  # ambiguous unicode characters
+  "SLF001",  # private member access
+  "S108",    # insecure temp file
+  "PLR2044", # empty comment
+  "RET505",  # unnecessary else after return
+  "I001",    # import sorting
+]
+"docs/notebooks/**/*.ipynb" = [
+  "T201",
+  "N816",
+  "N812",
+  "ANN",
+  "D103",
+  "PLR2004",
+  "ERA001",
+  "E501",
+  "B905",
+  "UP032",
+  "UP015",
+  "PTH123",
+  "RUF003",
+  "SLF001",
+  "S108",
+  "PLR2044",
+  "RET505",
+  "I001",
 ]
 
 [tool.ruff.lint.pydocstyle]
