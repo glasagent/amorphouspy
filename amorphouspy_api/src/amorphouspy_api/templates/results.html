@@ -15,29 +15,6 @@
         <p>Composition: {{ composition }}</p>
     </div>
 
-    <div class="structure-container">
-        <div class="section-title">Atomic Structure</div>
-        <div class="controls">
-            <div class="control-group">
-                <span class="control-label">Style:</span>
-                <select id="style-select" onchange="updateStyle()">
-                    <option value="sphere">Ball & Stick</option>
-                    <option value="stick">Stick</option>
-                    <option value="line">Wireframe</option>
-                    <option value="cross">Cross</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <button onclick="resetView()">Reset View</button>
-            </div>
-        </div>
-        <div id="structure-div"></div>
-        <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-            Interactive 3D structure. Use mouse to rotate, zoom, and pan.
-            Hover over atoms for element info.
-        </p>
-    </div>
-
     <div class="results-container">
         <div class="info-panel">
             <div class="section-title">Simulation Results</div>
@@ -82,12 +59,59 @@
                 </div>
             </div>
 
+            {% if step_timings %}
+            <div class="section-title" style="margin-top: 25px;">Computation Time</div>
+            {% for item in step_timings %}
+            <div class="property">
+                <span class="property-label">{{ item.name }}:</span>
+                <span class="property-value">{{ item.runtime }}</span>
+            </div>
+            {% endfor %}
+            <div class="property" style="border-top: 2px solid #667eea; font-weight: bold;">
+                <span class="property-label">Total:</span>
+                <span class="property-value">{{ total_runtime }}</span>
+            </div>
+            {% endif %}
+
             <div class="download-buttons">
                 <button class="download-btn" onclick="downloadPlot('png')">Download PNG</button>
                 <button class="download-btn" onclick="downloadPlot('svg')">Download SVG</button>
             </div>
         </div>
 
+        <div class="structure-panel">
+            <div class="section-title">Atomic Structure</div>
+            <div class="controls">
+                <div class="control-group">
+                    <span class="control-label">Style:</span>
+                    <select id="style-select" onchange="updateStyle()">
+                        <option value="sphere">Ball & Stick</option>
+                        <option value="stick">Stick</option>
+                        <option value="line">Wireframe</option>
+                        <option value="cross">Cross</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <button onclick="resetView()">Reset View</button>
+                </div>
+            </div>
+            <div id="structure-div"></div>
+            <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                Interactive 3D structure. Use mouse to rotate, zoom, and pan.
+                Hover over atoms for element info.
+            </p>
+        </div>
+    </div>
+
+    {% if temperature_time_plot %}
+    <div class="analysis-container">
+        <div class="plot-panel">
+            <div id="temperature-time-div" style="height: 400px;"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="analysis-container">
         <div class="plot-panel">
             <div class="section-title">Structural Analysis</div>
             <div id="plotly-div"></div>
@@ -98,21 +122,22 @@
     </div>
 
     {% if viscosity_plots %}
-    <div class="results-container" style="margin-top: 30px;">
-        <div class="plot-panel" style="grid-column: 1 / -1;">
+    <div class="analysis-container">
+        <div class="plot-panel">
             <div class="section-title">Viscosity Analysis</div>
+            <div class="viscosity-grid">
+                {% if viscosity_plots.visc_vs_t %}
+                <div id="viscosity-vt-div" style="height: 500px;"></div>
+                {% endif %}
 
-            {% if viscosity_plots.arrhenius %}
-            <div id="viscosity-arrhenius-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
+                {% if viscosity_plots.arrhenius %}
+                <div id="viscosity-arrhenius-div" style="height: 500px;"></div>
+                {% endif %}
 
-            {% if viscosity_plots.sacf %}
-            <div id="viscosity-sacf-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
-
-            {% if viscosity_plots.convergence %}
-            <div id="viscosity-convergence-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
+                {% if viscosity_plots.convergence %}
+                <div id="viscosity-convergence-div" style="height: 500px;"></div>
+                {% endif %}
+            </div>
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
                 Viscosity computed via the Green-Kubo formalism from stress autocorrelation functions.
@@ -122,20 +147,24 @@
     {% endif %}
 
     {% if cte_plots %}
-    <div class="results-container" style="margin-top: 30px;">
-        <div class="plot-panel" style="grid-column: 1 / -1;">
+    <div class="analysis-container">
+        <div class="plot-panel">
             <div class="section-title">CTE Analysis</div>
 
-            {% if cte_plots.convergence %}
-            <div id="cte-convergence-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
+            {% if cte_plots.summary or cte_plots.convergence %}
+            <div class="cte-grid">
+                {% if cte_plots.summary %}
+                <div id="cte-summary-div" style="height: 450px;"></div>
+                {% endif %}
 
-            {% if cte_plots.summary %}
-            <div id="cte-summary-div" style="margin-bottom: 30px;"></div>
+                {% if cte_plots.convergence %}
+                <div id="cte-convergence-div" style="height: 450px;"></div>
+                {% endif %}
+            </div>
             {% endif %}
 
             {% if cte_plots.volume_temperature %}
-            <div id="cte-vt-div" style="margin-bottom: 30px;"></div>
+            <div id="cte-vt-div" style="height: 450px; margin-top: 20px;"></div>
             {% endif %}
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
@@ -198,18 +227,26 @@
     </script>
     <script src="/static/js/results.js"></script>
 
+    {% if temperature_time_plot %}
+    <script>
+        const ttPlot = {{ temperature_time_plot | safe }};
+        Plotly.newPlot('temperature-time-div', ttPlot.data, ttPlot.layout,
+            { responsive: true, displayModeBar: true, displaylogo: false });
+    </script>
+    {% endif %}
+
     {% if viscosity_plots %}
     <script>
         const plotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
 
+        {% if viscosity_plots.visc_vs_t %}
+        const viscVsT = {{ viscosity_plots.visc_vs_t | safe }};
+        Plotly.newPlot('viscosity-vt-div', viscVsT.data, viscVsT.layout, plotOpts);
+        {% endif %}
+
         {% if viscosity_plots.arrhenius %}
         const arrhenius = {{ viscosity_plots.arrhenius | safe }};
         Plotly.newPlot('viscosity-arrhenius-div', arrhenius.data, arrhenius.layout, plotOpts);
-        {% endif %}
-
-        {% if viscosity_plots.sacf %}
-        const sacf = {{ viscosity_plots.sacf | safe }};
-        Plotly.newPlot('viscosity-sacf-div', sacf.data, sacf.layout, plotOpts);
         {% endif %}
 
         {% if viscosity_plots.convergence %}

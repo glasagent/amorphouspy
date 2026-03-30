@@ -401,8 +401,8 @@ def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: li
                         offsetgroup=i,
                         showlegend=True,
                     ),
-                    row=2,
-                    col=1,
+                    row=1,
+                    col=3,
                 )
 
     # Plot 4: Qn distribution
@@ -421,7 +421,7 @@ def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: li
                 showlegend=True,
             ),
             row=2,
-            col=2,
+            col=1,
         )
 
 
@@ -444,8 +444,8 @@ def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[
                         line={"color": colors[i % len(colors)], "width": 2},
                         showlegend=True,
                     ),
-                    row=3,
-                    col=1,
+                    row=2,
+                    col=2,
                 )
 
     # Plot 6: Ring size distribution
@@ -468,8 +468,8 @@ def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[
                 marker_color="green",
                 showlegend=True,
             ),
-            row=3,
-            col=2,
+            row=2,
+            col=3,
         )
 
 
@@ -478,7 +478,7 @@ def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[s
     if not structure_data.rdfs.rdfs:
         return
 
-    plot_positions = [(4, 1), (4, 2), (5, 1)]  # Skip (5, 2) as it's empty
+    plot_positions = [(3, 1), (3, 2), (3, 3)]  # All three RDFs in row 3
     rdf_pairs = list(structure_data.rdfs.rdfs.items())
 
     for idx, (row, col) in enumerate(plot_positions):
@@ -531,14 +531,10 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
         >>> fig.show()
 
     """
-    # Constants for magic values
-    LAST_ROW = 5
-    LAST_COL = 2
-
-    # Create subplot layout (5x2 grid)
+    # Create subplot layout (3x3 grid)
     fig = make_subplots(
-        rows=5,
-        cols=2,
+        rows=3,
+        cols=3,
         subplot_titles=[
             "Oxygen Coordination",
             "Former Coordination",
@@ -549,17 +545,14 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
             "O-O RDF",
             "Former-O RDFs",
             "Modifier-O RDFs",
-            "",
         ],
         specs=[
-            [{"type": "bar"}, {"type": "bar"}],
-            [{"type": "bar"}, {"type": "bar"}],
-            [{"type": "scatter"}, {"type": "bar"}],
-            [{"type": "scatter"}, {"type": "scatter"}],
-            [{"type": "scatter"}, None],
+            [{"type": "bar"}, {"type": "bar"}, {"type": "bar"}],
+            [{"type": "bar"}, {"type": "scatter"}, {"type": "bar"}],
+            [{"type": "scatter"}, {"type": "scatter"}, {"type": "scatter"}],
         ],
-        vertical_spacing=0.08,
-        horizontal_spacing=0.12,
+        vertical_spacing=0.10,
+        horizontal_spacing=0.08,
     )
 
     colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
@@ -571,36 +564,30 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
 
     # Update layout and axes
     fig.update_layout(
-        height=1500,  # Increased height for 5 rows
-        width=1000,  # Reduced width for 2 columns
+        height=1000,
         showlegend=True,
         legend={"orientation": "v", "yanchor": "top", "y": 1, "xanchor": "left", "x": 1.02},
     )
 
-    # Update individual subplot axes
     # Row 1: Coordination plots
     fig.update_xaxes(title_text="O_n", row=1, col=1)
     fig.update_yaxes(title_text="Percentage", row=1, col=1)
     fig.update_xaxes(title_text="Former_n", row=1, col=2)
     fig.update_yaxes(title_text="Percentage", row=1, col=2)
+    fig.update_xaxes(title_text="Modifier_n", row=1, col=3)
+    fig.update_yaxes(title_text="Percentage", row=1, col=3)
 
-    # Row 2: Modifier and Q^n distributions
-    fig.update_xaxes(title_text="Modifier_n", row=2, col=1)
+    # Row 2: Q^n, Bond angles, Ring statistics
+    fig.update_xaxes(title_text="Q^n", row=2, col=1)
     fig.update_yaxes(title_text="Percentage", row=2, col=1)
-    fig.update_xaxes(title_text="Q^n", row=2, col=2)
-    fig.update_yaxes(title_text="Percentage", row=2, col=2)
+    fig.update_xaxes(title_text="Angle (degrees)", row=2, col=2)
+    fig.update_yaxes(title_text="Frequency", row=2, col=2)
+    fig.update_xaxes(title_text="Former atoms in ring", row=2, col=3)
+    fig.update_yaxes(title_text="Normalized count", row=2, col=3)
 
-    # Row 3: Bond angles and rings
-    fig.update_xaxes(title_text="Angle (degrees)", row=3, col=1)
-    fig.update_yaxes(title_text="Frequency", row=3, col=1)
-    fig.update_xaxes(title_text="Former atoms in ring", row=3, col=2)
-    fig.update_yaxes(title_text="Normalized count", row=3, col=2)
-
-    # Row 4-5: RDF plots
-    for row in [4, 5]:
-        for col in [1, 2]:
-            if not (row == LAST_ROW and col == LAST_COL):  # Skip the empty subplot
-                fig.update_xaxes(title_text="r (Å)", range=[0, 10], row=row, col=col)
-                fig.update_yaxes(title_text="g(r), CN(r)", range=[0, 25], row=row, col=col)
+    # Row 3: RDF plots
+    for col in [1, 2, 3]:
+        fig.update_xaxes(title_text="r (Å)", range=[0, 10], row=3, col=col)
+        fig.update_yaxes(title_text="g(r), CN(r)", range=[0, 25], row=3, col=col)
 
     return fig

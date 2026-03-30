@@ -152,24 +152,54 @@ def run_viscosity_workflow(
 # ---------------------------------------------------------------------------
 
 
-def _build_arrhenius_plot(temperatures: list[float], viscosities: list[float]) -> dict:
-    """Build Plotly figure dict for an Arrhenius-style viscosity vs 1000/T plot."""
-    inv_t = [1000.0 / t for t in temperatures]
+def _build_viscosity_vs_temperature_plot(temperatures: list[float], viscosities: list[float]) -> dict:
+    """Build Plotly figure dict for viscosity vs temperature in dPa\u00b7s and \u00b0C."""
+    temps_c = [t - 273.15 for t in temperatures]
+    visc_dpas = [v * 10 for v in viscosities]
     return {
         "data": [
             {
-                "x": inv_t,
-                "y": viscosities,
+                "x": temps_c,
+                "y": visc_dpas,
                 "mode": "markers+lines",
                 "line": {"width": 2},
+                "marker": {"size": 8},
                 "name": "Viscosity",
             }
         ],
         "layout": {
-            "title": "Viscosity vs 1000/T",
-            "xaxis": {"title": "1000 / T  (1/K)"},
-            "yaxis": {"title": "Viscosity (Pa\u00b7s)", "type": "log"},
+            "title": {"text": "Viscosity vs Temperature", "font": {"size": 16}},
+            "xaxis": {"title": {"text": "Temperature (\u00b0C)", "font": {"size": 14}}},
+            "yaxis": {"title": {"text": "Viscosity (dPa\u00b7s)", "font": {"size": 14}}, "type": "log"},
             "hovermode": "closest",
+            "height": 500,
+            "margin": {"l": 80, "r": 40, "t": 60, "b": 70},
+        },
+    }
+
+
+def _build_arrhenius_plot(temperatures: list[float], viscosities: list[float]) -> dict:
+    """Build Plotly figure dict for an Arrhenius-style viscosity vs 1000/T plot."""
+    inv_t = [1000.0 / t for t in temperatures]
+    visc_dpas = [v * 10 for v in viscosities]
+    return {
+        "data": [
+            {
+                "x": inv_t,
+                "y": visc_dpas,
+                "mode": "markers+lines",
+                "line": {"width": 2},
+                "marker": {"size": 8},
+                "name": "Viscosity",
+            }
+        ],
+        "layout": {
+            "title": {"text": "Arrhenius Plot", "font": {"size": 16}},
+            "xaxis": {"title": {"text": "1000 / T  (1/K)", "font": {"size": 14}}},
+            "yaxis": {"title": {"text": "Viscosity (dPa\u00b7s)", "font": {"size": 14}}, "type": "log"},
+            "hovermode": "closest",
+            "height": 500,
+            "margin": {"l": 80, "r": 40, "t": 60, "b": 70},
         },
     }
 
@@ -201,6 +231,8 @@ def _build_sacf_plot(
             "yaxis": {"title": "Normalized SACF"},
             "hovermode": "closest",
             "showlegend": True,
+            "height": 500,
+            "margin": {"l": 80, "r": 40, "t": 60, "b": 60},
         },
     }
 
@@ -214,9 +246,9 @@ def _build_running_viscosity_plot(
     traces = [
         {
             "x": lag_times_ps[i],
-            "y": viscosity_integral[i],
+            "y": [v * 10 for v in viscosity_integral[i]],
             "mode": "lines",
-            "name": f"{temperatures[i]} K",
+            "name": f"{temperatures[i] - 273.15:.0f} \u00b0C",
             "line": {"width": 2},
         }
         for i in range(len(temperatures))
@@ -227,11 +259,13 @@ def _build_running_viscosity_plot(
     return {
         "data": traces,
         "layout": {
-            "title": "Viscosity Convergence",
-            "xaxis": {"title": "Lag Time (ps)", "type": "log"},
-            "yaxis": {"title": "Viscosity (Pa\u00b7s)", "type": "log"},
+            "title": {"text": "Viscosity Convergence", "font": {"size": 16}},
+            "xaxis": {"title": {"text": "Lag Time (ps)", "font": {"size": 14}}, "type": "log"},
+            "yaxis": {"title": {"text": "Viscosity (dPa\u00b7s)", "font": {"size": 14}}, "type": "log"},
             "hovermode": "closest",
             "showlegend": True,
+            "height": 500,
+            "margin": {"l": 80, "r": 40, "t": 60, "b": 70},
         },
     }
 
@@ -247,15 +281,13 @@ def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, str]:
     temps = visc_data.get("temperatures", [])
     viscosities = visc_data.get("viscosities", [])
     lag_times_ps = visc_data.get("lag_times_ps", [])
-    sacf = visc_data.get("sacf_data", [])
+    visc_data.get("sacf_data", [])
     viscosity_integral = visc_data.get("viscosity_integral", [])
 
     plots: dict[str, str] = {}
     if temps and viscosities:
+        plots["visc_vs_t"] = json.dumps(_build_viscosity_vs_temperature_plot(temps, viscosities))
         plots["arrhenius"] = json.dumps(_build_arrhenius_plot(temps, viscosities))
-    sacf_fig = _build_sacf_plot(lag_times_ps, sacf, temps)
-    if sacf_fig:
-        plots["sacf"] = json.dumps(sacf_fig)
     conv_fig = _build_running_viscosity_plot(lag_times_ps, viscosity_integral, temps)
     if conv_fig:
         plots["convergence"] = json.dumps(conv_fig)

@@ -300,7 +300,7 @@ def visualize_job(job_id: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="No structural analysis data found")
 
     try:
-        context = build_visualization_context(job_id, result_data)
+        context = build_visualization_context(job_id, result_data, request_hash=job.request_hash)
 
         template_dir = Path(__file__).parent.parent / "templates"
         templates = Jinja2Templates(directory=str(template_dir))

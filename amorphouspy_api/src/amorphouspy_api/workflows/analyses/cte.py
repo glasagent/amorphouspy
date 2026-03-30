@@ -161,9 +161,6 @@ def _build_cte_convergence_plot(data: dict[str, Any]) -> dict[str, Any] | None:
     traces: list[dict[str, Any]] = []
     colors = {
         "CTE_V": "#7b2d8e",
-        "CTE_x": "#1f77b4",
-        "CTE_y": "#ff7f0e",
-        "CTE_z": "#2ca02c",
     }
 
     for key, color in colors.items():
@@ -203,47 +200,47 @@ def _build_cte_convergence_plot(data: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "data": traces,
         "layout": {
-            "title": "CTE Convergence (Fluctuations)",
-            "xaxis": {"title": "Production Run"},
-            "yaxis": {"title": "CTE (1/K)", "exponentformat": "e"},
+            "title": {"text": "CTE Convergence (Fluctuations)", "font": {"size": 16}},
+            "xaxis": {"title": {"text": "Production Run", "font": {"size": 14}}},
+            "yaxis": {"title": {"text": "CTE (1/K)", "font": {"size": 14}}, "exponentformat": "e"},
             "hovermode": "closest",
             "showlegend": True,
+            "height": 450,
+            "margin": {"l": 80, "r": 40, "t": 60, "b": 60},
         },
     }
 
 
 def _build_cte_summary_plot(summary: dict[str, Any]) -> dict[str, Any] | None:
-    """Build Plotly bar chart of final CTE values with error bars."""
-    keys = ["CTE_V", "CTE_x", "CTE_y", "CTE_z"]
-    labels = []
-    values = []
-    errors = []
-    for k in keys:
-        mean_val = summary.get(f"{k}_mean")
-        unc_val = summary.get(f"{k}_uncertainty")
-        if mean_val is not None:
-            labels.append(k)
-            values.append(mean_val)
-            errors.append(unc_val if unc_val is not None else 0.0)
+    """Build Plotly bar chart of final CTE_V value with error bar and temperature."""
+    mean_val = summary.get("CTE_V_mean")
+    unc_val = summary.get("CTE_V_uncertainty", 0.0)
+    temperature = summary.get("temperature", "N/A")
 
-    if not values:
+    if mean_val is None:
         return None
+
+    title = f"CTE Summary (T = {temperature} K)" if temperature != "N/A" else "CTE Summary"
 
     return {
         "data": [
             {
-                "x": labels,
-                "y": values,
+                "x": ["CTE_V"],
+                "y": [mean_val],
                 "type": "bar",
-                "error_y": {"type": "data", "array": errors, "visible": True},
-                "marker": {"color": ["#7b2d8e", "#1f77b4", "#ff7f0e", "#2ca02c"][: len(labels)]},
+                "error_y": {"type": "data", "array": [unc_val], "visible": True},
+                "marker": {"color": ["#7b2d8e"]},
+                "text": [f"{mean_val:.2e} \u00b1 {unc_val:.2e} 1/K"],
+                "textposition": "outside",
             }
         ],
         "layout": {
-            "title": "CTE Summary",
-            "xaxis": {"title": "Component"},
-            "yaxis": {"title": "CTE (1/K)", "exponentformat": "e"},
+            "title": {"text": title, "font": {"size": 16}},
+            "xaxis": {"title": ""},
+            "yaxis": {"title": {"text": "CTE (1/K)", "font": {"size": 14}}, "exponentformat": "e"},
             "hovermode": "closest",
+            "height": 450,
+            "margin": {"l": 80, "r": 40, "t": 60, "b": 40},
         },
     }
 
