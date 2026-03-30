@@ -5,8 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import Counter
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+from amorphouspy.structure import element_counts_from_formula_units, normalize
+from ase.data import chemical_symbols
 
 from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import get_job_store
@@ -66,8 +70,6 @@ def oxide_to_elemental_fractions(oxide_comp: dict[str, float]) -> dict[str, floa
     >>> oxide_to_elemental_fractions({"SiO2": 100})
     {'Si': 0.333..., 'O': 0.666...}
     """
-    from amorphouspy.structure import element_counts_from_formula_units, normalize
-
     mol_frac = normalize(oxide_comp)
     raw_counts = element_counts_from_formula_units(mol_frac)  # type: ignore[arg-type]
     return normalize(raw_counts)
@@ -80,11 +82,6 @@ def elemental_fractions_from_job(job: Job) -> dict[str, float] | None:
     ``result_data["melt_quench"]["final_structure"]``; falls back to the
     requested oxide composition.
     """
-    from collections import Counter
-
-    from amorphouspy.structure import normalize
-    from ase.data import chemical_symbols
-
     result = job.result_data or {}
     mq = result.get("melt_quench", {})
     struct = mq.get("final_structure")
