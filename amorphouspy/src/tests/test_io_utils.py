@@ -2,14 +2,13 @@
 
 import numpy as np
 import pytest
-from ase import Atoms
-
 from amorphouspy.io_utils import (
     structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
     write_xyz,
 )
+from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # Helpers

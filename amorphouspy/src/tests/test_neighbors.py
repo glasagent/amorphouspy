@@ -5,8 +5,6 @@ import sys
 
 import numpy as np
 import pytest
-from ase import Atoms
-
 from amorphouspy.neighbors import (
     NUMBA_AVAILABLE,
     _build_nl_ortho_numba,
@@ -24,6 +22,7 @@ from amorphouspy.neighbors import (
     compute_cell_list_triclinic,
     get_neighbors,
 )
+from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # Fixtures

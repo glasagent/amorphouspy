@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-
 from amorphouspy.analysis.cte import cte_from_npt_fluctuations, cte_from_volume_temperature_data
 
 # ---------------------------------------------------------------------------

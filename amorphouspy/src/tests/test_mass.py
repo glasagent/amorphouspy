@@ -1,7 +1,6 @@
 """Tests for mass calculation utilities."""
 
 import pytest
-
 from amorphouspy.mass import get_atomic_mass
 
 
