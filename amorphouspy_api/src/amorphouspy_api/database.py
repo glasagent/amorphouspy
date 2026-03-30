@@ -46,7 +46,7 @@ class Job(Base):
     # Errors keyed by step name: {"viscosity": "…"}
     errors = Column(JSON, nullable=True)
 
-    # Normalised elemental atom fractions: {"Si": 0.33, "O": 0.67, …}
+    # Fixed-length elemental atom-fraction vector (length 119, indexed by Z).
     # Populated on completion from the actual structure.
     elemental_vector = Column(JSON, nullable=True)
 

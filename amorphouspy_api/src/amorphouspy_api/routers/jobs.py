@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
-from typing import Annotated, Any
+from typing import Annotated
 from uuid import uuid4
 
 from ase.io import write as ase_write
@@ -44,8 +44,8 @@ from amorphouspy_api.routers.jobs_helpers import (
     _submit_to_executor,
     _update_from_resolved,
     build_visualization_context,
-    composition_distance,
-    oxide_to_elemental_fractions,
+    find_close_matches,
+    oxide_to_elemental_vector,
     refresh_job_from_cache,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -131,7 +131,7 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
     """
     store = get_job_store()
     norm_comp = request.composition.canonical
-    query_vec = oxide_to_elemental_fractions(request.composition.root)
+    query_vec = oxide_to_elemental_vector(request.composition.root)
 
     # --- exact matches ---
     exact_jobs = store.search_by_composition(norm_comp, request.potential)
@@ -153,17 +153,14 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
     # --- close matches (if threshold > 0) ---
     if request.threshold > 0:
         rows = store.list_completed_vectors(request.potential)
-        scored: list[tuple[float, Any]] = []
-        for job_id, evec, comp, potential, req_data, completed_at in rows:
-            if job_id in exact_ids:
-                continue
-            if evec is None:
-                continue
-            dist = composition_distance(query_vec, evec)
-            if dist <= request.threshold:
-                scored.append((dist, job_id, comp, potential, req_data, completed_at))
-        scored.sort(key=lambda x: x[0])
-        for dist, job_id, comp, potential, req_data, completed_at in scored[: request.max_results]:
+        scored = find_close_matches(
+            query_vec,
+            rows,
+            exclude_ids=exact_ids,
+            threshold=request.threshold,
+            max_results=request.max_results,
+        )
+        for dist, job_id, comp, potential, req_data, completed_at in scored:
             sim = 1.0 / (1.0 + dist)
             analyses = [a.get("type", "structure") for a in (req_data or {}).get("analyses", [])]
             matches.append(

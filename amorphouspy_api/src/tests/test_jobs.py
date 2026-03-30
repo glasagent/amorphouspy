@@ -66,7 +66,7 @@ def _insert_completed_job(
     potential: str = "pmmcs",
     request_hash: str = "testhash1234",
 ) -> None:
-    from amorphouspy_api.routers.jobs_helpers import elemental_fractions_from_job
+    from amorphouspy_api.routers.jobs_helpers import _elem_dict_to_vector, elemental_fractions_from_job
 
     store = get_job_store()
     result = _mock_result(include_structure=True)
@@ -91,7 +91,8 @@ def _insert_completed_job(
         completed_at=datetime.now(UTC),
     )
     # Pre-compute elemental vector (mirrors what _update_from_resolved does)
-    job.elemental_vector = elemental_fractions_from_job(job)
+    fracs = elemental_fractions_from_job(job)
+    job.elemental_vector = _elem_dict_to_vector(fracs) if fracs else None
     store.create_job(job)
 
 

@@ -9,6 +9,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import numpy as np
 from amorphouspy.structure import element_counts_from_formula_units, normalize
 from ase.data import chemical_symbols
 
@@ -56,6 +57,103 @@ def composition_distance(a: dict[str, float], b: dict[str, float]) -> float:
     """
     all_elements = set(a) | set(b)
     return sum((a.get(el, 0.0) - b.get(el, 0.0)) ** 2 for el in all_elements) ** 0.5
+
+
+# Number of elements in the periodic table (index 0 unused, 1..118 = H..Og).
+N_ELEMENTS = len(chemical_symbols)  # 119 (index 0 is dummy '')
+
+
+def _elem_dict_to_vector(d: dict[str, float]) -> list[float]:
+    """Convert a sparse {symbol: fraction} dict to a fixed-length list[float]."""
+    vec = [0.0] * N_ELEMENTS
+    for el, val in d.items():
+        vec[chemical_symbols.index(el)] = val
+    return vec
+
+
+def _vector_to_elem_dict(vec: list[float]) -> dict[str, float]:
+    """Convert a fixed-length vector back to a sparse dict (non-zero entries only)."""
+    return {chemical_symbols[i]: v for i, v in enumerate(vec) if v != 0.0}
+
+
+def oxide_to_elemental_vector(oxide_comp: dict[str, float]) -> np.ndarray:
+    """Convert oxide mol-% composition to a fixed-length numpy vector."""
+    fracs = oxide_to_elemental_fractions(oxide_comp)
+    vec = np.zeros(N_ELEMENTS)
+    for el, val in fracs.items():
+        vec[chemical_symbols.index(el)] = val
+    return vec
+
+
+def _filter_candidates(
+    rows: list,
+    exclude_ids: set[str],
+) -> list[tuple[str, list, str, str, dict | None, object]]:
+    """Filter rows from list_completed_vectors, dropping excluded/empty entries."""
+    return [
+        (job_id, evec, comp, potential, req_data, completed_at)
+        for job_id, evec, comp, potential, req_data, completed_at in rows
+        if job_id not in exclude_ids and evec is not None
+    ]
+
+
+def find_close_matches(
+    query_vec: np.ndarray,
+    rows: list,
+    *,
+    exclude_ids: set[str],
+    threshold: float,
+    max_results: int,
+) -> list[tuple[float, str, str, str, dict | None, object]]:
+    """Vectorised close-match search using numpy.
+
+    Parameters
+    ----------
+    query_vec
+        Fixed-length (N_ELEMENTS,) numpy array for the query composition.
+    rows
+        Output of ``store.list_completed_vectors()``.
+    exclude_ids
+        Job IDs to skip (already matched exactly).
+    threshold
+        Maximum Euclidean distance to include.
+    max_results
+        Cap on returned matches.
+
+    Returns
+    -------
+    list[tuple[float, str, str, str, dict | None, object]]
+        ``(distance, job_id, composition, potential, request_data, completed_at)``
+        sorted by ascending distance.
+    """
+    candidates = _filter_candidates(rows, exclude_ids)
+    if not candidates:
+        return []
+
+    # Stack pre-aligned vectors directly — no element-index building needed
+    mat = np.array([evec for _, evec, *_ in candidates])
+    distances = np.linalg.norm(mat - query_vec, axis=1)
+
+    # Filter by threshold and pick top-k
+    idxs = np.where(distances <= threshold)[0]
+    if len(idxs) == 0:
+        return []
+    if len(idxs) > max_results:
+        top_k = np.argpartition(distances[idxs], max_results)[:max_results]
+        idxs = idxs[top_k]
+    idxs = idxs[np.argsort(distances[idxs])]
+
+    return [
+        (
+            float(distances[idx]),
+            candidates[idx][0],  # job_id
+            candidates[idx][2],  # composition
+            candidates[idx][3],  # potential
+            candidates[idx][4],  # request_data
+            candidates[idx][5],  # completed_at
+        )
+        for idx in idxs
+    ]
 
 
 def oxide_to_elemental_fractions(oxide_comp: dict[str, float]) -> dict[str, float]:
@@ -184,7 +282,8 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
         from amorphouspy_api.database import Job as _Job
 
         _tmp = _Job(result_data=result, composition=submission.composition.canonical if submission else "")
-        evec = elemental_fractions_from_job(_tmp)
+        evec_dict = elemental_fractions_from_job(_tmp)
+        evec = _elem_dict_to_vector(evec_dict) if evec_dict else None
 
         store.update_job(
             job_id,

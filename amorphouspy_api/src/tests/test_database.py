@@ -155,6 +155,15 @@ def test_list_completed_vectors() -> None:
     """Test lightweight vector query for fuzzy search."""
     with tempfile.TemporaryDirectory() as tmp:
         store = JobStore(Path(tmp) / "test.db")
+        # Build fixed-length vectors (119 elements, indexed by Z)
+        vec_sio2 = [0.0] * 119
+        vec_sio2[8] = 0.667  # O
+        vec_sio2[14] = 0.333  # Si
+        vec_binary = [0.0] * 119
+        vec_binary[8] = 0.63  # O
+        vec_binary[11] = 0.17  # Na
+        vec_binary[14] = 0.2  # Si
+
         store.create_job(
             Job(
                 job_id="j-vec-1",
@@ -163,7 +172,7 @@ def test_list_completed_vectors() -> None:
                 potential="pmmcs",
                 status="completed",
                 result_data={},
-                elemental_vector={"Si": 0.333, "O": 0.667},
+                elemental_vector=vec_sio2,
                 request_data={"analyses": [{"type": "structure"}]},
             )
         )
@@ -175,11 +184,11 @@ def test_list_completed_vectors() -> None:
                 potential="shik",
                 status="completed",
                 result_data={},
-                elemental_vector={"Si": 0.2, "Na": 0.17, "O": 0.63},
+                elemental_vector=vec_binary,
                 request_data={"analyses": [{"type": "structure"}]},
             )
         )
-        # No vector → should not appear
+        # No vector -> should not appear
         store.create_job(
             Job(
                 job_id="j-vec-none",
@@ -197,7 +206,7 @@ def test_list_completed_vectors() -> None:
         rows_pmmcs = store.list_completed_vectors("pmmcs")
         assert len(rows_pmmcs) == 1
         assert rows_pmmcs[0][0] == "j-vec-1"  # job_id
-        assert rows_pmmcs[0][1] == {"Si": 0.333, "O": 0.667}  # elemental_vector
+        assert rows_pmmcs[0][1] == vec_sio2  # elemental_vector
         store.close()
 
 
