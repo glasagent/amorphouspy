@@ -75,7 +75,7 @@ def _run_lammps_md(  # pragma: no cover
             # Set scalar pressure for the parser to avoid crashes
             passed_pressure = p_start
             # Sets up the LAMMPS simulations
-            _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
+            _shell_output, parsed_output, job_crashed = lammps_file_interface_function(
                 working_directory=tmp_path,
                 structure=structure,
                 potential=potential,
@@ -103,7 +103,7 @@ def _run_lammps_md(  # pragma: no cover
         else:
             passed_pressure = pressure
             # Sets up the LAMMPS simulations
-            _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
+            _shell_output, parsed_output, job_crashed = lammps_file_interface_function(
                 working_directory=tmp_path,
                 structure=structure,
                 potential=potential,
@@ -128,7 +128,7 @@ def _run_lammps_md(  # pragma: no cover
                 lmp_command=get_lammps_command(server_kwargs=server_kwargs),
             )
 
-        if _job_crashed or "generic" not in parsed_output:
+        if job_crashed or "generic" not in parsed_output:
             msg = f"LAMMPS crashed. Check logs in {tmp_path}"
             raise RuntimeError(msg)
 
