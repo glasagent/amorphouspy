@@ -37,8 +37,7 @@ class Composition(RootModel[dict[str, float]]):
     Accepts and serialises as a plain ``dict[str, float]``.
     Values represent mol% and will be rescaled to sum to 100% where needed.
 
-    Examples
-    --------
+    Examples:
     >>> c = Composition({"Na2O": 15, "SiO2": 70, "CaO": 15})
     >>> c.canonical
     'CaO 15 - Na2O 15 - SiO2 70'

@@ -107,23 +107,15 @@ def find_close_matches(
 ) -> list[tuple[float, str, str, str, dict | None, object]]:
     """Vectorised close-match search using numpy.
 
-    Parameters
-    ----------
-    query_vec
-        Fixed-length (N_ELEMENTS,) numpy array for the query composition.
-    rows
-        Output of ``store.list_completed_vectors()``.
-    exclude_ids
-        Job IDs to skip (already matched exactly).
-    threshold
-        Maximum Euclidean distance to include.
-    max_results
-        Cap on returned matches.
+    Args:
+        query_vec: Fixed-length (N_ELEMENTS,) numpy array for the query composition.
+        rows: Output of ``store.list_completed_vectors()``.
+        exclude_ids: Job IDs to skip (already matched exactly).
+        threshold: Maximum Euclidean distance to include.
+        max_results: Cap on returned matches.
 
-    Returns
-    -------
-    list[tuple[float, str, str, str, dict | None, object]]
-        ``(distance, job_id, composition, potential, request_data, completed_at)``
+    Returns:
+        List of ``(distance, job_id, composition, potential, request_data, completed_at)``
         sorted by ascending distance.
     """
     candidates = _filter_candidates(rows, exclude_ids)

@@ -2605,7 +2605,7 @@ packages:
 - pypi: ./amorphouspy_api
   name: amorphouspy-api
   version: 0.0.1
-  sha256: df4eb25f6d4a6f43a27cff0f08f2203bddb97bc5a45c82432f7222a885fa102e
+  sha256: ea9f6e1de4d9252a601c05486f3e994b95b1413956fed5a4fb618e7e704ece78
   requires_dist:
   - amorphouspy
   - executorlib
