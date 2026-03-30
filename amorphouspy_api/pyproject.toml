@@ -1,35 +1,10 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# Tool configuration for running pytest/ruff from this subdirectory.
+# Build configuration lives in the root pyproject.toml.
 
-[project]
-name = "amorphouspy_api"
-version = "0.0.1"
-description = "Model Context Protocol server for launching glass simulations via amorphouspy"
-authors = [
-  { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
-]
-license = { file = "../LICENSE" }
-dependencies = [
-  "amorphouspy",
-  "executorlib",
-  "pysqa",
-  "uvicorn",
-  "fastapi-mcp",
-  "sqlalchemy",
-  "jinja2",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/amorphouspy_api"]
-
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ["src/tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
 markers = [
-    "integration: mark a test as an integration test."
+    "integration: mark a test as an integration test.",
 ]
 addopts = ["-m", "not integration"]
 filterwarnings = [
@@ -37,52 +12,3 @@ filterwarnings = [
     "ignore::pydantic.PydanticDeprecatedSince211",
     "ignore:.*multi-threaded.*fork.*",
 ]
-
-[tool.ruff]
-# Target Python version
-target-version = "py312"
-# Line length control
-line-length = 120
-
-[tool.ruff.format]           # formatter tweaks
-quote-style  = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
-
-[tool.ruff.lint]             # linter rules
-select   = ["ALL"]           # enable every rule Ruff knows
-ignore   = [
-  "D203", 
-  "D213",
-  "PLR0913",
-  "PLR0915",
-  "S101",
-  "S113",
-  "N802",
-  "N803",
-  "N806",
-  "FBT002",
-  "COM812",
-  "PLC0415",
-  "PLR2004",
-  "G004",
-  "ERA001",
-  "PLW0603",
-  "TRY301",
-  "TRY300",
-  "SLF001",
-  "G201",
-  "E501",
-  "E402",
-  "ANN001",
-  "ANN201",
-  "ARG001",
-  "D100",
-  "D103",
-  "D205",
-  "D413",
-  "BLE001",
-  "RET505",
-]
-fixable  = ["ALL"]           # allow --fix to touch everything

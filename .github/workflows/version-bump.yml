@@ -58,8 +58,8 @@ jobs:
 
         print(f"Detected bump type: {bump_type}")
 
-        # Read current version from amorphouspy/pyproject.toml
-        with open('amorphouspy/pyproject.toml', 'r') as f:
+        # Read current version from pyproject.toml
+        with open('pyproject.toml', 'r') as f:
             content = f.read()
 
         match = re.search(r'version = "(\d+)\.(\d+)\.(\d+)"', content)
@@ -84,17 +84,17 @@ jobs:
         new_version = f"{major}.{minor}.{patch}"
         print(f"New version: {new_version}")
 
-        # Update amorphouspy/pyproject.toml
+        # Update pyproject.toml
         new_content = re.sub(
             r'version = "\d+\.\d+\.\d+"',
             f'version = "{new_version}"',
             content
         )
 
-        with open('amorphouspy/pyproject.toml', 'w') as f:
+        with open('pyproject.toml', 'w') as f:
             f.write(new_content)
 
-        print("Updated amorphouspy/pyproject.toml")
+        print("Updated pyproject.toml")
 
         # Save new version for next step
         with open('new_version.txt', 'w') as f:
@@ -114,7 +114,7 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
-        git add amorphouspy/pyproject.toml pixi.lock
+        git add pyproject.toml pixi.lock
 
         git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
 
