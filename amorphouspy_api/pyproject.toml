@@ -1,35 +1,10 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+# Tool configuration for running pytest/ruff from this subdirectory.
+# Build configuration lives in the root pyproject.toml.
 
-[project]
-name = "amorphouspy_api"
-version = "0.0.1"
-description = "Model Context Protocol server for launching glass simulations via amorphouspy"
-authors = [
-  { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
-]
-license = { file = "../LICENSE" }
-dependencies = [
-  "amorphouspy",
-  "executorlib",
-  "pysqa",
-  "uvicorn",
-  "fastapi-mcp",
-  "sqlalchemy",
-  "jinja2",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/amorphouspy_api"]
-
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ["src/tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
 markers = [
-    "integration: mark a test as an integration test."
+    "integration: mark a test as an integration test.",
 ]
 addopts = ["-m", "not integration"]
 filterwarnings = [

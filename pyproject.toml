@@ -1,0 +1,142 @@
+[build-system]
+requires = ["hatchling>=1.21", "editables"]
+build-backend = "hatchling.build"
+
+[project]
+name = "amorphouspy"
+version = "0.2.3"
+description = "Workflows for atomistic modeling of oxide glasses"
+authors = [
+  { name = "Achraf Atila", email = "achraf.atila@bam.de" },
+  { name = "Marcel Sadowski", email = "marcel.sadowski@schott.com" },
+  { name = "Jan Janssen", email = "janssen@mpie.de" },
+  { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
+]
+license = { file = "LICENSE" }
+dependencies = [
+  "ase",
+  "numba",
+  "pandas",
+  "lammpsparser",
+  "pymatgen",
+  "scipy",
+]
+
+[project.optional-dependencies]
+api = [
+  "executorlib",
+  "pysqa",
+  "uvicorn",
+  "fastapi-mcp",
+  "sqlalchemy",
+  "jinja2",
+]
+executorlib = ["executorlib"]
+sovapy = ["sovapy"]
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "amorphouspy/src/amorphouspy",
+  "amorphouspy_api/src/amorphouspy_api",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.format]
+quote-style  = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint]
+select   = ["ALL"]
+ignore   = [
+  "D203",
+  "D213",
+  "PLR0913",
+  "S101",
+  "N802",
+  "N803",
+  "N806",
+  "FBT002",
+  "COM812",
+]
+fixable  = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"amorphouspy/src/tests/**" = [
+  "PLR2004",
+  "ANN",
+]
+"amorphouspy_api/conftest.py" = [
+  "INP001",
+]
+"amorphouspy_api/**" = [
+  "PLR0915",
+  "S113",
+  "PLC0415",
+  "PLR2004",
+  "G004",
+  "ERA001",
+  "PLW0603",
+  "TRY301",
+  "TRY300",
+  "SLF001",
+  "G201",
+  "E501",
+  "E402",
+  "ANN001",
+  "ANN201",
+  "ARG001",
+  "D100",
+  "D103",
+  "D205",
+  "D413",
+  "BLE001",
+  "RET505",
+]
+"notebooks/**/*.ipynb" = [
+  "T201",    # print() is expected in notebooks
+  "N816",    # mixedCase variable names
+  "N812",    # lowercase imported as non-lowercase
+  "ANN",     # type annotations
+  "D103",    # missing docstrings
+  "PLR2004", # magic values
+  "ERA001",  # commented-out code
+  "E501",    # line too long
+  "B905",    # zip() without strict=
+  "UP032",   # f-string vs format()
+  "UP015",   # unnecessary mode argument
+  "PTH123",  # open() vs Path.open()
+  "RUF003",  # ambiguous unicode characters
+  "SLF001",  # private member access
+  "S108",    # insecure temp file
+  "PLR2044", # empty comment
+  "RET505",  # unnecessary else after return
+  "I001",    # import sorting
+]
+"docs/notebooks/**/*.ipynb" = [
+  "T201",
+  "N816",
+  "N812",
+  "ANN",
+  "D103",
+  "PLR2004",
+  "ERA001",
+  "E501",
+  "B905",
+  "UP032",
+  "UP015",
+  "PTH123",
+  "RUF003",
+  "SLF001",
+  "S108",
+  "PLR2044",
+  "RET505",
+  "I001",
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

@@ -34,8 +34,7 @@ sovapy = "0.8.3.*"
 sovapy = "0.8.3.*"
 
 [pypi-dependencies]
-amorphouspy = { path = "amorphouspy", editable = true }
-amorphouspy-api = { path = "amorphouspy_api", editable = true }
+amorphouspy = { path = ".", editable = true }
 
 [feature.dev.dependencies]
 pre-commit = "*"
