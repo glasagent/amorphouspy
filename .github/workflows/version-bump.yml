@@ -1,13 +1,19 @@
 name: Version Bump
 
 on:
-  pull_request:
-    branches: [main]
-    types: [closed]
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   bump-version:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -25,38 +31,17 @@ jobs:
 
     - uses: prefix-dev/setup-pixi@v0.8.8
 
-    - name: Check PR labels and bump version
-      env:
-        PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
+    - name: Bump version
       run: |
-        import json
         import re
         import sys
 
-        # Get PR labels
-        labels_json = """${{ env.PR_LABELS }}"""
-        if not labels_json or labels_json.strip() == '':
-            print("No labels found on PR")
-            sys.exit(0)
+        bump_type = "${{ github.event.inputs.bump_type }}"
+        if bump_type not in ('major', 'minor', 'patch'):
+            print(f"Invalid bump type: {bump_type}")
+            sys.exit(1)
 
-        labels = json.loads(labels_json)
-        label_names = [label.get('name', '') for label in labels if isinstance(label, dict)]
-
-        print(f"PR Labels: {label_names}")
-
-        # Check for version bump label
-        bump_type = None
-        if 'major' in label_names:
-            bump_type = 'major'
-        elif 'minor' in label_names:
-            bump_type = 'minor'
-        elif 'patch' in label_names:
-            bump_type = 'patch'
-        else:
-            print("No version bump label (major/minor/patch) found on PR. Skipping version bump.")
-            sys.exit(0)
-
-        print(f"Detected bump type: {bump_type}")
+        print(f"Bump type: {bump_type}")
 
         # Read current version from pyproject.toml
         with open('pyproject.toml', 'r') as f:
@@ -64,13 +49,12 @@ jobs:
 
         match = re.search(r'version = "(\d+)\.(\d+)\.(\d+)"', content)
         if not match:
-            print("Could not find version in amorphouspy/pyproject.toml")
+            print("Could not find version in pyproject.toml")
             sys.exit(1)
 
         major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
         print(f"Current version: {major}.{minor}.{patch}")
 
-        # Bump version based on label
         if bump_type == 'major':
             major += 1
             minor = 0
@@ -103,11 +87,9 @@ jobs:
       shell: python
 
     - name: Update pixi.lock
-      if: hashFiles('new_version.txt') != ''
       run: pixi install
 
     - name: Create commit, tag, and push
-      if: hashFiles('new_version.txt') != ''
       run: |
         NEW_VERSION=$(cat new_version.txt)
 
@@ -122,28 +104,3 @@ jobs:
 
         git push origin main
         git push origin "v$NEW_VERSION"
-
-    - name: Publish GitHub Release
-      if: hashFiles('new_version.txt') != ''
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GH_REPO: ${{ github.repository }}
-      run: |
-        NEW_VERSION=$(cat new_version.txt)
-
-        # Find the draft release maintained by release-drafter and publish it
-        DRAFT_ID=$(gh api repos/$GH_REPO/releases --jq '.[] | select(.draft==true) | .id' | head -1)
-
-        if [ -n "$DRAFT_ID" ]; then
-          gh api repos/$GH_REPO/releases/$DRAFT_ID \
-            --method PATCH \
-            --field draft=false \
-            --field tag_name="v$NEW_VERSION" \
-            --field name="v$NEW_VERSION" \
-            --field make_latest=true
-        else
-          # Fallback: create release with GitHub auto-generated notes
-          gh release create "v$NEW_VERSION" \
-            --title "v$NEW_VERSION" \
-            --generate-notes
-        fi
