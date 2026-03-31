@@ -96,34 +96,35 @@
             {% endif %}
 
             <div class="download-buttons">
-                <button class="download-btn" onclick="downloadPlot('png')">Download PNG</button>
-                <button class="download-btn" onclick="downloadPlot('svg')">Download SVG</button>
+                <button class="download-btn" onclick="window.print()">Save as PDF</button>
             </div>
         </div>
 
         {% if structure_xyz or temperature_time_plot %}
         <div class="structure-panel">
             {% if structure_xyz %}
-            <div class="section-title">Atomic Structure</div>
-            <div class="controls">
-                <div class="control-group">
-                    <span class="control-label">Style:</span>
-                    <select id="style-select" onchange="updateStyle()">
-                        <option value="sphere">Ball & Stick</option>
-                        <option value="stick">Stick</option>
-                        <option value="line">Wireframe</option>
-                        <option value="cross">Cross</option>
-                    </select>
+            <div class="structure-3d-viewer">
+                <div class="section-title">Atomic Structure</div>
+                <div class="controls">
+                    <div class="control-group">
+                        <span class="control-label">Style:</span>
+                        <select id="style-select" onchange="updateStyle()">
+                            <option value="sphere">Ball & Stick</option>
+                            <option value="stick">Stick</option>
+                            <option value="line">Wireframe</option>
+                            <option value="cross">Cross</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <button onclick="resetView()">Reset View</button>
+                    </div>
                 </div>
-                <div class="control-group">
-                    <button onclick="resetView()">Reset View</button>
-                </div>
+                <div id="structure-div"></div>
+                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                    Interactive 3D structure. Use mouse to rotate, zoom, and pan.
+                    Hover over atoms for element info.
+                </p>
             </div>
-            <div id="structure-div"></div>
-            <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                Interactive 3D structure. Use mouse to rotate, zoom, and pan.
-                Hover over atoms for element info.
-            </p>
             {% endif %}
 
             {% if temperature_time_plot %}
@@ -319,6 +320,20 @@
         {% endif %}
     </script>
     {% endif %}
+
+    <script>
+        // Resize all Plotly charts before printing so they fit the page
+        window.addEventListener('beforeprint', function () {
+            document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+                Plotly.relayout(el, { width: el.parentElement.offsetWidth });
+            });
+        });
+        window.addEventListener('afterprint', function () {
+            document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+                Plotly.relayout(el, { width: null, autosize: true });
+            });
+        });
+    </script>
 </body>
 
 </html>
