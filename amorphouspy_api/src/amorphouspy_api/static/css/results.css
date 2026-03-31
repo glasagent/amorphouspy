@@ -91,7 +91,8 @@ body {
 
 .property {
     display: flex;
-    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
     padding: 10px 0;
     border-bottom: 1px solid #eee;
 }
@@ -103,11 +104,15 @@ body {
 .property-label {
     font-weight: 600;
     color: #555;
+    flex: 0 0 auto;
+    white-space: nowrap;
 }
 
 .property-value {
     color: #333;
     font-family: 'Courier New', monospace;
+    text-align: right;
+    margin-left: auto;
 }
 
 .section-title {
@@ -123,6 +128,7 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
+    margin-left: auto;
 }
 
 .element-tag {
@@ -260,8 +266,8 @@ button:hover {
         grid-template-columns: 1fr 1fr;
     }
 
-    .viscosity-grid > div,
-    .cte-grid > div {
+    .viscosity-grid>div,
+    .cte-grid>div {
         break-inside: avoid;
         page-break-inside: avoid;
         margin-bottom: 10px;
@@ -277,7 +283,7 @@ button:hover {
     }
 
     /* Hide interactive hint text */
-    .plot-panel > p,
+    .plot-panel>p,
     .analysis-container p[style] {
         display: none;
     }

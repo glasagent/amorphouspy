@@ -176,8 +176,9 @@ def elemental_fractions_from_job(job: Job) -> dict[str, float] | None:
     mq = result.get("melt_quench", {})
     struct = mq.get("final_structure")
 
-    if struct and isinstance(struct, dict) and "numbers" in struct:
-        counts = Counter(chemical_symbols[z] for z in struct["numbers"])
+    atomic_numbers = _extract_atomic_numbers(struct)
+    if atomic_numbers is not None:
+        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
         return normalize(dict(counts))
 
     # Fallback: derive from the stored oxide composition
@@ -410,6 +411,59 @@ def _add_optional_analyses(context: dict, result_data: dict) -> None:
             context["elastic_moduli"] = moduli
 
 
+def _extract_atomic_numbers(final_structure: object) -> list[int] | None:
+    """Extract atomic numbers list from a final_structure value.
+
+    Handles both dict (with ``numbers`` key) and JSON-string
+    (ASE db format with ``__ndarray__`` encoding).
+    """
+    if final_structure is None:
+        return None
+
+    # Already a dict with a plain list of numbers
+    if isinstance(final_structure, dict) and "numbers" in final_structure:
+        return list(final_structure["numbers"])
+
+    # ASE JSON serialisation: string containing {"1": {"numbers": {"__ndarray__": ...}}}
+    if isinstance(final_structure, str):
+        try:
+            data = json.loads(final_structure)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        # ASE stores atoms keyed by row id (usually "1")
+        for atoms_dict in data.values():
+            if not isinstance(atoms_dict, dict):
+                continue
+            nums = atoms_dict.get("numbers")
+            if nums is None:
+                continue
+            if isinstance(nums, dict) and "__ndarray__" in nums:
+                return list(nums["__ndarray__"][2])
+            if isinstance(nums, list):
+                return nums
+    return None
+
+
+def _compute_total_md_steps(mq: dict) -> str:
+    """Estimate the total MD integration steps from melt-quench parameters."""
+    timestep_fs = mq.get("timestep", 1.0)
+    cooling_rate = mq.get("cooling_rate")
+    heating_rate = mq.get("heating_rate")
+    t_high = mq.get("temperature_high")
+    t_low = mq.get("temperature_low", 300.0)
+
+    if not all([cooling_rate, heating_rate, t_high]):
+        return "N/A"
+
+    seconds_to_fs = 1e15
+    delta_t = t_high - t_low
+    heating_steps = int((delta_t / (timestep_fs * heating_rate)) * seconds_to_fs)
+    cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
+    # Fixed protocol stages: equil_high(10k) + pressure_release(10k) + long_equil(100k)
+    total = heating_steps + 10_000 + cooling_steps + 10_000 + 100_000
+    return f"{total:,}"
+
+
 def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
     """Build the Jinja2 template context from job result data.
 
@@ -450,15 +504,33 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
     mean_temperature = mq.get("mean_temperature", "N/A")
     if isinstance(mean_temperature, (int, float)):
         mean_temperature = f"{mean_temperature:.1f}"
-    simulation_steps = mq.get("simulation_steps", "N/A")
-    if isinstance(simulation_steps, int):
-        simulation_steps = f"{simulation_steps:,}"
+
+    # Format composition as "SiO2 67 - Na2O 18 - CaO 15"
+    raw_comp = mq.get("composition", "N/A")
+    if isinstance(raw_comp, dict):
+        composition_str = " - ".join(f"{oxide} {mol:g}" for oxide, mol in sorted(raw_comp.items()))
+    else:
+        composition_str = str(raw_comp)
+
+    # Atom count and actual composition from the final structure
+    n_atoms = "N/A"
+    actual_composition = ""
+    atomic_numbers = _extract_atomic_numbers(mq.get("final_structure"))
+    if atomic_numbers is not None:
+        n_atoms = f"{len(atomic_numbers):,}"
+        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
+        actual_composition = " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
+
+    # Total MD steps from the T-t profile parameters
+    total_md_steps = _compute_total_md_steps(mq)
 
     context.update(
         {
-            "composition": mq.get("composition", "N/A"),
+            "composition": composition_str,
+            "actual_composition": actual_composition,
+            "n_atoms": n_atoms,
             "mean_temperature": mean_temperature,
-            "simulation_steps": simulation_steps,
+            "total_md_steps": total_md_steps,
         }
     )
 
