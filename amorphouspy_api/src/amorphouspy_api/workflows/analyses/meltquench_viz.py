@@ -76,9 +76,11 @@ def prepare_timing_context(request_hash: str) -> dict[str, Any]:
         )
 
     total = sum(raw.values())
+    core_hours = total / 3600
     return {
         "step_timings": items,
         "total_runtime": _format_runtime(total),
+        "total_core_hours": f"{core_hours:.1f} h" if core_hours >= 1 else f"{core_hours * 60:.0f} min",
     }
 
 
