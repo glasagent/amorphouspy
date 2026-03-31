@@ -36,12 +36,12 @@ from amorphouspy import melt_quench_simulation
 result = melt_quench_simulation(
     structure=atoms,
     potential=potential,
-    temperature_high=5000.0,     # Melt temperature (K)
-    temperature_low=300.0,       # Quench target (K)
-    heating_rate=1e12,           # K/s
-    cooling_rate=1e12,           # K/s
-    equilibration_steps=10_000,  # Steps at melt temperature
-    timestep=1.0,                # fs
+    temperature_high=5000.0,  # Melt temperature (K)
+    temperature_low=300.0,    # Quench target (K)
+    heating_rate=1e12,        # K/s
+    cooling_rate=1e12,        # K/s
+    timestep=1.0,             # fs
+    # equilibration_steps=10_000,  # Override fixed stages (None → protocol defaults)
 )
 
 glass = result["structure"]     # Quenched ASE Atoms
@@ -57,7 +57,7 @@ glass = result["structure"]     # Quenched ASE Atoms
 | `temperature_low` | `float` | — | Final (glass) temperature in K |
 | `heating_rate` | `float` | `1e12` | Heating rate in K/s |
 | `cooling_rate` | `float` | `1e12` | Cooling rate in K/s |
-| `equilibration_steps` | `int` | `10_000` | Number of steps at the melt temperature |
+| `equilibration_steps` | `int \| None` | `None` | Override for all fixed equilibration stages inside the protocol. If `None`, each protocol uses its own production defaults. |
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
 
 **Returns:** A dictionary with:
@@ -89,35 +89,43 @@ result = melt_quench_protocol(
 
 ### PMMCS Protocol
 
-Multi-stage cooling with holds at intermediate temperatures:
+Multi-stage NPT protocol with long equilibration holds:
 
 | Stage | Temperature range | Ensemble | Duration |
 |---|---|---|---|
-| 1. Minimize | — | Conjugate gradient | — |
-| 2. Heat | 300 → 5000 K | NVT | Variable (heating rate) |
-| 3. Equilibrate | 5000 K | NVT | 50,000 steps |
-| 4. Cool stage 1 | 5000 → 3000 K | NPT | Variable (cooling rate) |
-| 5. Hold | 3000 K | NPT | 20,000 steps |
-| 6. Cool stage 2 | 3000 → 300 K | NPT | Variable (cooling rate) |
-| 7. Equilibrate | 300 K | NPT | 50,000 steps |
-
-### SHIK Protocol
-
-Includes a pressure ramp during cooling and Langevin pre-equilibration to handle the steep $r^{-24}$ repulsion:
-
-| Stage | Temperature range | Ensemble | Special |
-|---|---|---|---|
-| 1. Langevin | — | Langevin | Small dt=0.25 fs, 10,000 steps |
-| 2. Heat | 300 → 5000 K | NVT | Ramp temperature |
-| 3. Equilibrate | 5000 K | NVT | 50,000 steps |
-| 4. Cool | 5000 → 400 K | NPT | Pressure ramp: 1000 → 0 bar |
-| 5. Equilibrate | 400 K | NPT | 50,000 steps |
-
-The pressure ramp in stage 4 (`iso 1000.0 0.0`) helps the system densify correctly during cooling.
+| 1. Heat | T_low → T_high | NVT | Variable (heating rate) |
+| 2. Equilibrate | T_high | NVT | 1,000,000 steps |
+| 3. Cool | T_high → T_low | NVT | Variable (cooling rate) |
+| 4. Pressure release | T_low | NPT (P=0) | 1,000,000 steps |
+| 5. Final equilibration | T_low | NVT | 100,000 steps |
 
 ### BJP Protocol
 
-Standard two-stage cooling optimized for CAS glasses with holds at intermediate temperatures.
+NPT protocol optimised for CAS glasses with pressure control throughout:
+
+| Stage | Temperature range | Ensemble | Duration |
+|---|---|---|---|
+| 1. Heat | T_low → T_high | NPT (P=0) | Variable (heating rate) |
+| 2. Equilibrate | T_high | NPT (P=0) | 100,000 steps |
+| 3. Cool | T_high → T_low | NPT (P=0) | Variable (cooling rate) |
+| 4. Pressure release | T_low | NPT (P=0) | 100,000 steps |
+| 5. Final equilibration | T_low | NVT | 100,000 steps |
+
+### SHIK Protocol
+
+Includes a Langevin pre-equilibration stage and a pressure ramp during cooling to handle the steep $r^{-24}$ repulsion:
+
+| Stage | Temperature range | Ensemble | Duration |
+|---|---|---|---|
+| 1. Heat | T_high | NVT (Langevin) | Variable (heating rate) |
+| 2. NVT equilibration | T_high | NVT | 100,000 / timestep steps (~100 ps) |
+| 3. NPT equilibration | T_high | NPT (P=0.1 GPa) | 700,000 / timestep steps (~700 ps) |
+| 4. Cool | T_high → T_low | NPT (P=0.1→0 GPa) | Variable (cooling rate) |
+| 5. Anneal | T_low | NPT (P=0) | 100,000 / timestep steps (~100 ps) |
+
+The pressure ramp in stage 4 (`iso 0.1 → 0.0 GPa`) helps the system densify correctly during cooling.
+
+> **Override:** Pass `equilibration_steps=N` to `melt_quench_simulation` (or the API's `simulation.equilibration_steps`) to replace all fixed-duration stages with `N` steps. This is useful for fast CI tests or exploratory runs without changing production defaults.
 
 ---
 

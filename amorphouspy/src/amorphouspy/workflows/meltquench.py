@@ -152,6 +152,7 @@ def melt_quench_simulation(
     heating_rate: float = 1e12,
     cooling_rate: float = 1e12,
     n_print: int = 1000,
+    equilibration_steps: int | None = None,
     *,
     server_kwargs: dict | None = None,
     langevin: bool = False,
@@ -175,6 +176,8 @@ def melt_quench_simulation(
         cooling_rate: The rate at which the temperature is decreased during the cooling phase,
             in K/s (default is 1e12 K/s).
         n_print: The frequency of output during the simulation (default is 1000).
+        equilibration_steps: Override for all fixed equilibration stages inside the protocol.
+            If None, each protocol uses its own hardcoded defaults.
         server_kwargs: Additional keyword arguments for the server.
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
@@ -226,6 +229,7 @@ def melt_quench_simulation(
         seed=seed,
         server_kwargs=server_kwargs,
         tmp_working_directory=tmp_working_directory,
+        equilibration_steps=equilibration_steps,
     )
 
     # Run the protocol using the function-based approach

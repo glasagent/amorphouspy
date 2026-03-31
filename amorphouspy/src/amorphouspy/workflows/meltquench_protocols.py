@@ -31,6 +31,8 @@ class MeltQuenchParams:
         seed: Random seed.
         server_kwargs: Server configuration.
         tmp_working_directory: Temporary directory path.
+        equilibration_steps: Override for all fixed equilibration stages inside a protocol.
+            If None, each protocol uses its own hardcoded defaults.
 
     """
 
@@ -46,6 +48,7 @@ class MeltQuenchParams:
     seed: int
     server_kwargs: dict | None = None
     tmp_working_directory: str | None = None
+    equilibration_steps: int | None = None
 
 
 def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dict]:
@@ -84,7 +87,7 @@ def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, d
     structure, _ = run(
         structure=structure,
         temperature=params.temperature_high,
-        n_ionic_steps=10_000,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=0,
     )
 
@@ -101,7 +104,7 @@ def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, d
     structure, _ = run(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=10_000,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=0,
         pressure=0.0,
     )
@@ -110,7 +113,7 @@ def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, d
     structure_final, parsed_output = run(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=100_000,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
         initial_temperature=0,
     )
 
@@ -154,7 +157,7 @@ def bjp_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dic
     structure, _ = run(
         structure=structure,
         temperature=params.temperature_high,
-        n_ionic_steps=100_000,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
         initial_temperature=0,
         pressure=0.0,
     )
@@ -173,7 +176,7 @@ def bjp_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dic
     structure, _ = run(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=100_000,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
         initial_temperature=0,
         pressure=0.0,
     )
@@ -182,7 +185,7 @@ def bjp_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dic
     structure_final, parsed_output = run(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=100_000,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
         initial_temperature=0,
     )
 
@@ -250,7 +253,9 @@ def shik_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, di
     structure, _ = run2(
         structure=structure,
         temperature=params.temperature_high,  # 5000 K
-        n_ionic_steps=int(100_000 / params.timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
+        n_ionic_steps=params.equilibration_steps
+        if params.equilibration_steps is not None
+        else int(100_000 / params.timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
         initial_temperature=params.temperature_high,
         pressure=None,  # NVT ensemble
         seed=params.seed,
@@ -260,7 +265,9 @@ def shik_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, di
     structure, _ = run2(
         structure=structure,
         temperature=params.temperature_high,
-        n_ionic_steps=int(700_000 / params.timestep),  # 700 ps
+        n_ionic_steps=params.equilibration_steps
+        if params.equilibration_steps is not None
+        else int(700_000 / params.timestep),  # 700 ps
         initial_temperature=0,
         pressure=0.1,  # GPa
     )
@@ -279,7 +286,9 @@ def shik_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, di
     structure_final, parsed_output = run2(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=int(100_000 / params.timestep),  # 100 ps
+        n_ionic_steps=params.equilibration_steps
+        if params.equilibration_steps is not None
+        else int(100_000 / params.timestep),  # 100 ps
         initial_temperature=0,
         pressure=0.0,
     )

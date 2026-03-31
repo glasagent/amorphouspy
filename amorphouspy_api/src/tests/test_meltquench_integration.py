@@ -56,6 +56,7 @@ def test_jobs_api_integration() -> None:
             "quench_rate": 1e15,
             "n_atoms": 100,
             "timestep": 1.0,
+            "equilibration_steps": 10_000,
         },
         "analyses": [{"type": "structure"}],
     }

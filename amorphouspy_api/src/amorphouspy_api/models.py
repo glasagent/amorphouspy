@@ -309,6 +309,10 @@ class MeltQuenchParams(BaseModel):
     quench_rate: float = Field(default=1e12, description="Quench rate in K/s")
     n_atoms: int = Field(default=3000, description="Number of atoms")
     timestep: float = Field(default=1.0, description="MD timestep in fs")
+    equilibration_steps: int | None = Field(
+        default=None,
+        description="Override for all fixed equilibration stages. If None, protocol-specific defaults are used.",
+    )
 
 
 # ---------------------------------------------------------------------------
