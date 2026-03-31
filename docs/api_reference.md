@@ -174,10 +174,6 @@ The source of truth for what is public is [`__all__`](https://github.com/pyiron/
 
 ---
 
-::: amorphouspy.io_utils.get_properties_for_structure_analysis
-
----
-
 ::: amorphouspy.io_utils.structure_from_parsed_output
 
 ---
