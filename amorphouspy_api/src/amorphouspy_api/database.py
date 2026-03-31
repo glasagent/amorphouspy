@@ -40,7 +40,7 @@ class Job(Base):
     # Per-step progress: {"structure_generation": "completed", …}
     progress = Column(JSON, nullable=True)
 
-    # Analysis results keyed by type: {"structure": {…}}
+    # Analysis results keyed by type: {"structure_characterization": {…}}
     result_data = Column(JSON, nullable=True)
 
     # Errors keyed by step name: {"viscosity": "…"}

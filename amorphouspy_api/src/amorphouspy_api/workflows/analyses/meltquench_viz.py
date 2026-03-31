@@ -34,7 +34,7 @@ def get_step_timings(request_hash: str) -> dict[str, tuple[float, int]]:
     from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 
     cache_dir = MELTQUENCH_PROJECT_DIR
-    step_names = ["structure_generation", "melt_quench", "structure", "viscosity", "cte", "elastic"]
+    step_names = ["structure_generation", "melt_quench", "structure_characterization", "viscosity", "cte", "elastic"]
     timings: dict[str, tuple[float, int]] = {}
 
     for name in step_names:
@@ -71,7 +71,7 @@ def prepare_timing_context(request_hash: str) -> dict[str, Any]:
     display_names = {
         "structure_generation": "Structure Generation",
         "melt_quench": "Melt-Quench",
-        "structure": "Structural Analysis",
+        "structure_characterization": "Structural Analysis",
         "viscosity": "Viscosity",
         "cte": "CTE",
         "elastic": "Elastic Properties",

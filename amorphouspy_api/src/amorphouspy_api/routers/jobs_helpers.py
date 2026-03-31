@@ -214,7 +214,7 @@ def _progress_from_dict(d: dict | None) -> JobProgress:
 def _analyses_list(job: Job) -> list[str]:
     """Extract the list of requested analysis type names from a stored job."""
     req = job.request_data or {}
-    return [a.get("type", "structure") for a in req.get("analyses", [])]
+    return [a.get("type", "structure_characterization") for a in req.get("analyses", [])]
 
 
 def _initial_progress(submission: JobSubmission) -> dict[str, str]:
@@ -543,7 +543,7 @@ def build_visualization_context(
     }
 
     # --- Structure analysis (only when available) ---
-    if result_data.get("structure"):
+    if result_data.get("structure_characterization"):
         try:
             context.update(prepare_structure_context(result_data))
         except Exception:

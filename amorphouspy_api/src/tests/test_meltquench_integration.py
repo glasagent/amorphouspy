@@ -58,7 +58,7 @@ def test_jobs_api_integration() -> None:
             "timestep": 1.0,
             "equilibration_steps": 10_000,
         },
-        "analyses": [{"type": "structure"}],
+        "analyses": [{"type": "structure_characterization"}],
     }
     logger.info("Submitting job with fast rates: quench_rate=%s", payload["simulation"]["quench_rate"])
     r = requests.post(f"{api_url}/jobs", json=payload, timeout=30)
@@ -104,7 +104,7 @@ def test_jobs_api_integration() -> None:
     assert "composition" in result
 
     # Validate structural analysis results
-    structure = result.get("analyses", {}).get("structure")
+    structure = result.get("analyses", {}).get("structure_characterization")
     assert structure is not None, "Expected structure analysis results"
     assert "density" in structure
 
