@@ -3,6 +3,9 @@ name = "pyiron-glass"
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64", "osx-64"]
 
+[system-requirements]
+macos = "14.0"
+
 [dependencies]
 python = "3.13.*"
 hatchling = "*"
@@ -25,7 +28,7 @@ sqlalchemy = "*"
 uvicorn = "*"
 fastapi-mcp = "*"
 
-# Platform-specific: flux-core and sovapy not available on osx-arm64
+# Platform-specific: flux-core not available on osx-*; sovapy not on conda-forge for osx-arm64
 [target.linux-64.dependencies]
 flux-core = ">=0.81.0"
 sovapy = "0.8.3.*"
@@ -35,6 +38,9 @@ sovapy = "0.8.3.*"
 
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
+
+[target.osx-arm64.pypi-dependencies]
+sovapy = ">=0.8.3"
 
 [feature.dev.dependencies]
 pre-commit = "*"
@@ -47,6 +53,8 @@ nbval = "*"
 mkdocs-material = "*"
 mkdocs-jupyter = "==0.24.8"
 pymdown-extensions = "*"
+mkdocstrings = "*"
+mkdocstrings-python = "*"
 
 [environments]
 default = { features = ["dev", "docs"], solve-group = "default" }

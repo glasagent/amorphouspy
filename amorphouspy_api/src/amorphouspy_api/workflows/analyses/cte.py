@@ -27,7 +27,7 @@ def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     resource_dict = get_lammps_server_kwargs()
 
     if isinstance(config, CTEFluctuations):
-        return run_cte_fluctuations(
+        cte_result = run_cte_fluctuations(
             structure=structure,
             potential=potential,
             temperature=config.temperature,
@@ -40,8 +40,14 @@ def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
             cte_uncertainty_criterion=config.cte_uncertainty_criterion,
             lammps_resource_dict=resource_dict,
         )
+        cte_result["metadata"] = {
+            "temperature": config.temperature,
+            "production_steps": config.production_steps,
+            "timestep": config.timestep,
+        }
+        return cte_result
 
-    return run_cte_temperature_scan(
+    cte_result = run_cte_temperature_scan(
         structure=structure,
         potential=potential,
         temperatures=config.temperatures,
@@ -51,6 +57,12 @@ def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
         production_steps=config.production_steps,
         lammps_resource_dict=resource_dict,
     )
+    cte_result["metadata"] = {
+        "temperatures": config.temperatures,
+        "production_steps": config.production_steps,
+        "timestep": config.timestep,
+    }
+    return cte_result
 
 
 def run_cte_fluctuations(
@@ -148,65 +160,96 @@ def _cumulative_mean_and_uncertainty(
     return means, uncertainties
 
 
-def _build_cte_convergence_plot(data: dict[str, Any]) -> dict[str, Any] | None:
+def _build_cte_convergence_plot(data: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Build Plotly figure for CTE convergence (fluctuations method).
 
-    Shows cumulative mean +/- uncertainty for CTE_V, CTE_x, CTE_y, CTE_z
-    versus production run index.
+    Shows cumulative mean +/- uncertainty for CTE_V in ppm/K
+    versus production run index, with final value annotated at the right end.
     """
     run_index = data.get("run_index", [])
     if not run_index:
         return None
 
-    traces: list[dict[str, Any]] = []
-    colors = {
-        "CTE_V": "#7b2d8e",
-    }
-
-    for key, color in colors.items():
-        values = data.get(key, [])
-        if not values:
-            continue
-        means, uncertainties = _cumulative_mean_and_uncertainty(values)
-        upper = [m + u for m, u in zip(means, uncertainties, strict=False)]
-        lower = [m - u for m, u in zip(means, uncertainties, strict=False)]
-
-        traces.append(
-            {
-                "x": run_index,
-                "y": means,
-                "mode": "lines",
-                "name": f"{key}: {means[-1]:.2e} +/- {uncertainties[-1]:.2e} 1/K",
-                "line": {"color": color, "width": 2},
-            }
-        )
-        # Uncertainty band (upper + reversed lower)
-        traces.append(
-            {
-                "x": [*run_index, *reversed(run_index)],
-                "y": [*upper, *reversed(lower)],
-                "fill": "toself",
-                "fillcolor": color,
-                "opacity": 0.2,
-                "line": {"width": 0},
-                "showlegend": False,
-                "hoverinfo": "skip",
-            }
-        )
-
-    if not traces:
+    values = data.get("CTE_V", [])
+    if not values:
         return None
+
+    # Extract metadata for title and x-axis
+    temperature = metadata.get("temperature", "N/A") if metadata else "N/A"
+    production_steps = metadata.get("production_steps") if metadata else None
+    timestep = metadata.get("timestep", 1.0) if metadata else 1.0
+    production_ns = production_steps * timestep * 1e-6 if production_steps else None
+
+    # X-axis: cumulative simulation time in ns (or fall back to run index)
+    if production_ns is not None:
+        x_values = [i * production_ns for i in run_index]
+        x_title = "Simulation Time (ns)"
+    else:
+        x_values = list(run_index)
+        x_title = "Production Run"
+
+    PPM = 1e6  # conversion factor 1/K -> ppm/K
+    color = "#7b2d8e"
+
+    means, uncertainties = _cumulative_mean_and_uncertainty(values)
+    means_ppm = [m * PPM for m in means]
+    unc_ppm = [u * PPM for u in uncertainties]
+    upper = [m + u for m, u in zip(means_ppm, unc_ppm, strict=False)]
+    lower = [m - u for m, u in zip(means_ppm, unc_ppm, strict=False)]
+
+    traces: list[dict[str, Any]] = [
+        {
+            "x": x_values,
+            "y": means_ppm,
+            "mode": "lines",
+            "name": "CTE<sub>V</sub>",
+            "line": {"color": color, "width": 2},
+        },
+        {
+            "x": [*x_values, *reversed(x_values)],
+            "y": [*upper, *reversed(lower)],
+            "fill": "toself",
+            "fillcolor": color,
+            "opacity": 0.2,
+            "line": {"width": 0},
+            "showlegend": False,
+            "hoverinfo": "skip",
+        },
+    ]
+
+    # Annotation at right end with final CTE value
+    final_mean = means_ppm[-1]
+    final_unc = unc_ppm[-1]
+    annotations = [
+        {
+            "x": x_values[-1],
+            "y": final_mean,
+            "xanchor": "left",
+            "yanchor": "middle",
+            "text": f"<b>{final_mean:.1f} \u00b1 {final_unc:.1f} ppm/K</b>",
+            "showarrow": False,
+            "font": {"size": 13, "color": color},
+            "xshift": 10,
+        }
+    ]
+
+    # Build title with temperature
+    title_parts = ["CTE Convergence"]
+    if temperature != "N/A":
+        title_parts.append(f"T = {temperature} K")
+    title = " \u2014 ".join(title_parts)
 
     return {
         "data": traces,
         "layout": {
-            "title": {"text": "CTE Convergence (Fluctuations)", "font": {"size": 16}},
-            "xaxis": {"title": {"text": "Production Run", "font": {"size": 14}}},
-            "yaxis": {"title": {"text": "CTE (1/K)", "font": {"size": 14}}, "exponentformat": "e"},
+            "title": {"text": title, "font": {"size": 16}},
+            "xaxis": {"title": {"text": x_title, "font": {"size": 14}}},
+            "yaxis": {"title": {"text": "CTE (ppm/K)", "font": {"size": 14}}},
             "hovermode": "closest",
             "showlegend": True,
             "height": 450,
-            "margin": {"l": 80, "r": 40, "t": 60, "b": 60},
+            "margin": {"l": 80, "r": 120, "t": 60, "b": 60},
+            "annotations": annotations,
         },
     }
 
@@ -310,12 +353,9 @@ def prepare_cte_plots(cte_data: dict[str, Any]) -> dict[str, str]:
     data = cte_data.get("data")
 
     if summary and data:
-        conv_fig = _build_cte_convergence_plot(data)
+        conv_fig = _build_cte_convergence_plot(data, metadata=cte_data.get("metadata"))
         if conv_fig:
             plots["convergence"] = json.dumps(conv_fig)
-        summ_fig = _build_cte_summary_plot(summary)
-        if summ_fig:
-            plots["summary"] = json.dumps(summ_fig)
     else:
         # Temperature scan method — top-level keys are "01_300K", etc.
         vt_fig = _build_cte_vt_plot(cte_data)
