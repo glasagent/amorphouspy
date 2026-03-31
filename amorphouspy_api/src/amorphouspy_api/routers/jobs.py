@@ -325,21 +325,31 @@ def visualize_job(job_id: str) -> HTMLResponse:
     job = store.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status != "completed":
+
+    # Refresh running jobs so we pick up newly-completed steps
+    if job.status == "running":
+        refresh_job_from_cache(job)
+        job = store.get_job(job_id)
+
+    if job.status == "pending":
         raise HTTPException(
             status_code=400,
-            detail=f"Job is not completed yet. Current status: {job.status}",
+            detail="Job has not started yet.",
         )
 
-    result_data = job.result_data
-    if not result_data:
-        raise HTTPException(status_code=404, detail="No results found for this job")
+    result_data = job.result_data or {}
 
-    if not result_data.get("structure"):
-        raise HTTPException(status_code=404, detail="No structural analysis data found")
+    if not result_data:
+        raise HTTPException(status_code=404, detail="No results available yet")
 
     try:
-        context = build_visualization_context(job_id, result_data, request_hash=job.request_hash)
+        context = build_visualization_context(
+            job_id,
+            result_data,
+            request_hash=job.request_hash,
+        )
+        context["job_status"] = job.status
+        context["progress"] = job.progress or {}
 
         template_dir = Path(__file__).parent.parent / "templates"
         templates = Jinja2Templates(directory=str(template_dir))

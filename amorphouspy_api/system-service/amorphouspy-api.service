@@ -15,6 +15,7 @@ Environment=SLURM_PARTITION=main_queue
 #Environment=SLURM_RUN_TIME_MAX=7200
 Environment=LAMMPS_CORES=8
 Environment=AMORPHOUSPY_PROJECTS=/net/fileserver1/data_raid/data/amorphouspy_data
+Environment=AMORPHOUSPY_VERSION_PROJECTS=0
 
 [Install]
 WantedBy=multi-user.target
