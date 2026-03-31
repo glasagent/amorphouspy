@@ -84,7 +84,7 @@ def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, d
     structure, _ = run(
         structure=structure,
         temperature=params.temperature_high,
-        n_ionic_steps=10_000,
+        n_ionic_steps=1_000_000,
         initial_temperature=0,
     )
 
@@ -101,7 +101,7 @@ def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, d
     structure, _ = run(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=10_000,
+        n_ionic_steps=1_000_000,
         initial_temperature=0,
         pressure=0.0,
     )
