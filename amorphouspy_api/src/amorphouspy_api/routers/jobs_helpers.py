@@ -299,6 +299,38 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
         store.update_job(job_id, status="running", progress=progress)
 
 
+def _probe_step_caches(
+    job: Job,
+    all_steps: list[str],
+) -> tuple[dict[str, str], dict[str, object], bool]:
+    """Probe per-step caches and return (progress, partial_results, has_failure)."""
+    cache_dir = str(MELTQUENCH_PROJECT_DIR)
+    cache_key = job.request_hash
+    progress: dict[str, str] = {}
+    partial_results: dict[str, object] = dict(job.result_data or {})
+    has_failure = False
+    for step_name in all_steps:
+        step_key = f"{cache_key}_{step_name}"
+        try:
+            step_future = get_future_from_cache(
+                cache_directory=cache_dir,
+                cache_key=step_key,
+            )
+            step_resolved = _resolve_future(step_future, job.job_id)
+            progress[step_name] = step_resolved["status"]
+            if step_resolved["status"] == "completed":
+                partial_results[step_name] = step_resolved["result"]
+            elif step_resolved["status"] == "failed":
+                has_failure = True
+        except FileNotFoundError:
+            progress[step_name] = "pending"
+        except Exception:
+            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
+            progress[step_name] = "failed"
+            has_failure = True
+    return progress, partial_results, has_failure
+
+
 def refresh_job_from_cache(job: Job) -> None:
     """Re-check executor cache for a running job and update DB if resolved.
 
@@ -335,79 +367,27 @@ def refresh_job_from_cache(job: Job) -> None:
     if submission:
         all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
 
-    progress: dict[str, str] = {}
-    has_failure = False
-    for step_name in all_steps:
-        step_key = f"{cache_key}_{step_name}"
-        try:
-            step_future = get_future_from_cache(
-                cache_directory=cache_dir,
-                cache_key=step_key,
-            )
-            step_resolved = _resolve_future(step_future, job.job_id)
-            progress[step_name] = step_resolved["status"]
-            if step_resolved["status"] == "failed":
-                has_failure = True
-        except FileNotFoundError:
-            progress[step_name] = "pending"
-        except Exception:
-            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
-            progress[step_name] = "failed"
-            has_failure = True
+    progress, partial_results, has_failure = _probe_step_caches(job, all_steps)
 
     store = get_job_store()
+    updates: dict[str, object] = {"progress": progress}
+    if partial_results:
+        updates["result_data"] = partial_results
     if has_failure:
-        store.update_job(job.job_id, status="failed", progress=progress)
+        updates["status"] = "failed"
     else:
-        store.update_job(job.job_id, status="running", progress=progress)
+        updates["status"] = "running"
+    store.update_job(job.job_id, **updates)
 
 
-def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
-    """Build the Jinja2 template context from job result data."""
+def _add_optional_analyses(context: dict, result_data: dict) -> None:
+    """Populate context with viscosity / CTE / elastic plots if available."""
     import json
 
     from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
     from amorphouspy_api.workflows.analyses.elastic import prepare_elastic_plots
-    from amorphouspy_api.workflows.analyses.meltquench_viz import (
-        build_temperature_time_plot,
-        prepare_timing_context,
-    )
-    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
     from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
 
-    mq = result_data.get("melt_quench", {})
-
-    # --- Structure analysis (always present) ---
-    context = prepare_structure_context(result_data)
-
-    # Melt-quench metadata
-    mean_temperature = mq.get("mean_temperature", "N/A")
-    if isinstance(mean_temperature, (int, float)):
-        mean_temperature = f"{mean_temperature:.1f}"
-    simulation_steps = mq.get("simulation_steps", "N/A")
-    if isinstance(simulation_steps, int):
-        simulation_steps = f"{simulation_steps:,}"
-
-    context.update(
-        {
-            "job_id": job_id,
-            "composition": mq.get("composition", "N/A"),
-            "mean_temperature": mean_temperature,
-            "simulation_steps": simulation_steps,
-        }
-    )
-
-    # --- Step timings from executorlib cache ---
-    if request_hash:
-        timing_ctx = prepare_timing_context(request_hash)
-        context.update(timing_ctx)
-
-    # --- Temperature-time diagram ---
-    tt_plot = build_temperature_time_plot(mq)
-    if tt_plot:
-        context["temperature_time_plot"] = tt_plot
-
-    # --- Optional analyses ---
     visc_data = result_data.get("viscosity")
     if visc_data:
         context["viscosity_plots"] = prepare_viscosity_plots(visc_data)
@@ -425,5 +405,72 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
         moduli = elastic_data.get("moduli")
         if moduli:
             context["elastic_moduli"] = moduli
+
+
+def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
+    """Build the Jinja2 template context from job result data.
+
+    Handles partial results gracefully — sections whose data is not yet
+    available are simply omitted from the context so the template can
+    conditionally skip them.
+    """
+    from amorphouspy_api.workflows.analyses.meltquench_viz import (
+        build_temperature_time_plot,
+        prepare_timing_context,
+    )
+    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
+
+    mq = result_data.get("melt_quench", {})
+
+    context: dict[str, object] = {"job_id": job_id}
+
+    _STRUCTURE_DEFAULTS: dict[str, object] = {
+        "plotly_json": None,
+        "structure_xyz": "",
+        "density": "N/A",
+        "network_connectivity": "N/A",
+        "network_formers": [],
+        "modifiers": [],
+    }
+
+    # --- Structure analysis (only when available) ---
+    if result_data.get("structure"):
+        try:
+            context.update(prepare_structure_context(result_data))
+        except Exception:
+            logger.warning("Could not render structure analysis for job %s", job_id)
+            context.update(_STRUCTURE_DEFAULTS)
+    else:
+        context.update(_STRUCTURE_DEFAULTS)
+
+    # Melt-quench metadata
+    mean_temperature = mq.get("mean_temperature", "N/A")
+    if isinstance(mean_temperature, (int, float)):
+        mean_temperature = f"{mean_temperature:.1f}"
+    simulation_steps = mq.get("simulation_steps", "N/A")
+    if isinstance(simulation_steps, int):
+        simulation_steps = f"{simulation_steps:,}"
+
+    context.update(
+        {
+            "composition": mq.get("composition", "N/A"),
+            "mean_temperature": mean_temperature,
+            "simulation_steps": simulation_steps,
+        }
+    )
+
+    # --- Step timings from executorlib cache ---
+    if request_hash:
+        timing_ctx = prepare_timing_context(request_hash)
+        context.update(timing_ctx)
+
+    # --- Temperature-time diagram ---
+    if mq:
+        tt_plot = build_temperature_time_plot(mq)
+        if tt_plot:
+            context["temperature_time_plot"] = tt_plot
+
+    # --- Optional analyses ---
+    _add_optional_analyses(context, result_data)
 
     return context

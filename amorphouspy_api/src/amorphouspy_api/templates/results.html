@@ -9,6 +9,27 @@
 </head>
 
 <body>
+    {% if job_status is defined and job_status != 'completed' %}
+    <div class="progress-banner" style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px 24px; margin: 20px auto; max-width: 1300px; display: flex; align-items: center; gap: 16px;">
+        <div style="font-size: 1.6em;">&#9888;</div>
+        <div>
+            <strong>Job in progress</strong> &mdash; showing completed steps so far. Reload to see updates.
+            {% if progress is defined %}
+            <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for step, status in progress.items() %}
+                <span style="display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.85em;
+                    {% if status == 'completed' %}background: #d4edda; color: #155724;
+                    {% elif status == 'running' %}background: #cce5ff; color: #004085;
+                    {% elif status == 'failed' %}background: #f8d7da; color: #721c24;
+                    {% else %}background: #e2e3e5; color: #383d41;{% endif %}
+                ">{{ step }}: {{ status }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="header">
         <h1>Melt-Quench Simulation Results</h1>
         <p>Job ID: {{ job_id }}</p>
@@ -79,6 +100,7 @@
             </div>
         </div>
 
+        {% if structure_xyz %}
         <div class="structure-panel">
             <div class="section-title">Atomic Structure</div>
             <div class="controls">
@@ -101,6 +123,7 @@
                 Hover over atoms for element info.
             </p>
         </div>
+        {% endif %}
     </div>
 
     {% if temperature_time_plot %}
@@ -111,6 +134,7 @@
     </div>
     {% endif %}
 
+    {% if plotly_json %}
     <div class="analysis-container">
         <div class="plot-panel">
             <div class="section-title">Structural Analysis</div>
@@ -120,6 +144,7 @@
             </p>
         </div>
     </div>
+    {% endif %}
 
     {% if viscosity_plots %}
     <div class="analysis-container">
@@ -221,11 +246,13 @@
 
     <script>
         // Pass data from template to JavaScript
-        const plotlyData = {{ plotly_json | safe }};
+        const plotlyData = {{ plotly_json | safe if plotly_json else 'null' }};
         const structureData = `{{ structure_xyz | safe }}`;
         const taskId = '{{ job_id }}';
     </script>
+    {% if plotly_json or structure_xyz %}
     <script src="/static/js/results.js"></script>
+    {% endif %}
 
     {% if temperature_time_plot %}
     <script>
