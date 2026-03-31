@@ -4,14 +4,13 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
-from ase import Atoms
-
 from amorphouspy.workflows.meltquench_protocols import (
     MeltQuenchParams,
     bjp_protocol,
     pmmcs_protocol,
     shik_protocol,
 )
+from ase import Atoms
 
 
 @pytest.fixture

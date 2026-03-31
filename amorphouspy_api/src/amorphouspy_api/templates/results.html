@@ -46,7 +46,7 @@
             </div>
             {% if actual_composition %}
             <div class="property">
-                <span class="property-label">Simulated:</span>
+                <span class="property-label">Simulated (mol%):</span>
                 <span class="property-value">{{ actual_composition }} ({{ n_atoms }} atoms)</span>
             </div>
             {% endif %}
@@ -76,13 +76,9 @@
                 <span class="property-label">Density:</span>
                 <span class="property-value">{{ density }} g/cm³</span>
             </div>
-            <div class="property">
-                <span class="property-label">Network Connectivity:</span>
+            <div class="property" title="Average number of bridging oxygens per network former (Q&#x207F; weighted mean). Q⁴ = fully connected (e.g. pure SiO₂ ≈ 4.0). Lower values indicate a more depolymerized network.">
+                <span class="property-label" style="cursor: help;">Network Connectivity &#9432;:</span>
                 <span class="property-value">{{ network_connectivity }}</span>
-            </div>
-            <div class="property">
-                <span class="property-label">Mean Temperature:</span>
-                <span class="property-value">{{ mean_temperature }} K</span>
             </div>
 
             {% if step_timings %}
@@ -187,16 +183,8 @@
         <div class="plot-panel">
             <div class="section-title">CTE Analysis</div>
 
-            {% if cte_plots.summary or cte_plots.convergence %}
-            <div class="cte-grid">
-                {% if cte_plots.summary %}
-                <div id="cte-summary-div" style="height: 450px;"></div>
-                {% endif %}
-
-                {% if cte_plots.convergence %}
-                <div id="cte-convergence-div" style="height: 450px;"></div>
-                {% endif %}
-            </div>
+            {% if cte_plots.convergence %}
+            <div id="cte-convergence-div" style="height: 450px;"></div>
             {% endif %}
 
             {% if cte_plots.volume_temperature %}
@@ -301,11 +289,6 @@
         {% if cte_plots.convergence %}
         const cteConvergence = {{ cte_plots.convergence | safe }};
         Plotly.newPlot('cte-convergence-div', cteConvergence.data, cteConvergence.layout, ctePlotOpts);
-        {% endif %}
-
-        {% if cte_plots.summary %}
-        const cteSummary = {{ cte_plots.summary | safe }};
-        Plotly.newPlot('cte-summary-div', cteSummary.data, cteSummary.layout, ctePlotOpts);
         {% endif %}
 
         {% if cte_plots.volume_temperature %}

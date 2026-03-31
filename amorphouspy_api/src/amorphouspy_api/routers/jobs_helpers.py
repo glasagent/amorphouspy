@@ -464,6 +464,25 @@ def _compute_total_md_steps(mq: dict) -> str:
     return f"{total:,}"
 
 
+def _format_actual_composition(mq: dict, result_data: dict) -> tuple[str, str]:
+    """Return (n_atoms, actual_composition) from the final structure."""
+    atomic_numbers = _extract_atomic_numbers(mq.get("final_structure"))
+    if atomic_numbers is None:
+        return "N/A", ""
+
+    n_atoms = f"{len(atomic_numbers):,}"
+    # Prefer oxide representation from formula units
+    formula_units = result_data.get("structure_generation", {}).get("atoms_dict", {}).get("formula_units", {})
+    if formula_units:
+        total_fu = sum(formula_units.values())
+        if total_fu > 0:
+            return n_atoms, " - ".join(
+                f"{oxide} {fu / total_fu * 100:.1f}" for oxide, fu in sorted(formula_units.items())
+            )
+    counts = Counter(chemical_symbols[z] for z in atomic_numbers)
+    return n_atoms, " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
+
+
 def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
     """Build the Jinja2 template context from job result data.
 
@@ -500,11 +519,6 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
     else:
         context.update(_STRUCTURE_DEFAULTS)
 
-    # Melt-quench metadata
-    mean_temperature = mq.get("mean_temperature", "N/A")
-    if isinstance(mean_temperature, (int, float)):
-        mean_temperature = f"{mean_temperature:.1f}"
-
     # Format composition as "SiO2 67 - Na2O 18 - CaO 15"
     raw_comp = mq.get("composition", "N/A")
     if isinstance(raw_comp, dict):
@@ -513,13 +527,7 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
         composition_str = str(raw_comp)
 
     # Atom count and actual composition from the final structure
-    n_atoms = "N/A"
-    actual_composition = ""
-    atomic_numbers = _extract_atomic_numbers(mq.get("final_structure"))
-    if atomic_numbers is not None:
-        n_atoms = f"{len(atomic_numbers):,}"
-        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
-        actual_composition = " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
+    n_atoms, actual_composition = _format_actual_composition(mq, result_data)
 
     # Total MD steps from the T-t profile parameters
     total_md_steps = _compute_total_md_steps(mq)
@@ -529,7 +537,6 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
             "composition": composition_str,
             "actual_composition": actual_composition,
             "n_atoms": n_atoms,
-            "mean_temperature": mean_temperature,
             "total_md_steps": total_md_steps,
         }
     )
