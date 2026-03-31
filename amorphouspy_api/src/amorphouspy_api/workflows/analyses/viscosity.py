@@ -15,6 +15,9 @@ from amorphouspy import melt_quench_simulation
 from amorphouspy.workflows.viscosity import get_viscosity, viscosity_simulation
 
 if TYPE_CHECKING:
+    from concurrent.futures import Future
+
+    from executorlib.executor.base import BaseExecutor
     from pydantic import BaseModel
 
     from amorphouspy_api.models import JobSubmission, ViscosityAnalysis
@@ -145,6 +148,168 @@ def run_viscosity_workflow(
         "sacf_data": sacf_data,
         "viscosity_integral": viscosity_integral,
     }
+
+
+# ---------------------------------------------------------------------------
+# Parallelised sub-steps  (used by submit_viscosity_substeps)
+# ---------------------------------------------------------------------------
+
+
+def _run_cooling_chain(submission, config, base_result: dict) -> dict:
+    """Sequential cooling chain from highest to lowest temperature.
+
+    Returns a dict with ``structures`` (mapping temperature → ASE Atoms)
+    and the LAMMPS ``potential`` so that production steps can use them.
+    """
+    from amorphouspy_api.executor import get_lammps_server_kwargs
+
+    structure = base_result["melt_quench"]["final_structure"]
+    potential = base_result["structure_generation"]["potential"]
+    lammps_kwargs = get_lammps_server_kwargs()
+
+    sorted_temps = sorted(config.temperatures, reverse=True)
+    heating_rate = int(submission.simulation.quench_rate * 100)
+    cooling_rate = int(submission.simulation.quench_rate)
+
+    structures: dict[float, Any] = {}
+    structure_current = structure
+
+    for idx, temp in enumerate(sorted_temps):
+        temp_high = 5000.0 if idx == 0 else sorted_temps[idx - 1]
+        logger.info("Viscosity cooling: %.1f K → %.1f K", temp_high, temp)
+        mq_result = melt_quench_simulation(
+            structure=structure_current,
+            potential=potential,
+            temperature_high=float(temp_high),
+            temperature_low=float(temp),
+            timestep=1.0,
+            heating_rate=float(heating_rate),
+            cooling_rate=float(cooling_rate),
+            n_print=1000,
+            langevin=False,
+            server_kwargs=lammps_kwargs,
+        )
+        structure_current = mq_result["structure"]
+        structures[temp] = structure_current
+        logger.info("Cooled to %.1f K, %d atoms", temp, len(structure_current))
+
+    return {"structures": structures, "potential": potential}
+
+
+def _run_viscosity_at_temp(temp: float, cooling_result: dict, config) -> dict:
+    """Run viscosity production + Green-Kubo at a single temperature."""
+    from amorphouspy_api.executor import get_lammps_server_kwargs
+
+    structure = cooling_result["structures"][temp]
+    potential = cooling_result["potential"]
+    lammps_kwargs = get_lammps_server_kwargs()
+
+    logger.info("Running viscosity simulation at %.1f K", temp)
+    visc_result = viscosity_simulation(
+        structure=structure,
+        potential=potential,
+        temperature_sim=float(temp),
+        timestep=float(config.timestep),
+        production_steps=int(config.n_timesteps),
+        n_print=int(config.n_print),
+        langevin=False,
+        seed=12345,
+        server_kwargs=lammps_kwargs,
+    )
+
+    visc_data = get_viscosity(visc_result, timestep=float(config.timestep), max_lag=config.max_lag)
+    logger.info("Viscosity at %.1f K: %.3e Pa·s", temp, visc_data["viscosity"])
+
+    return {
+        "temp": float(temp),
+        "viscosity": float(visc_data["viscosity"]),
+        "max_lag": float(visc_data["max_lag"]),
+        "simulation_steps": int(config.n_timesteps),
+        "lag_times_ps": visc_data.get("lag_time_ps", []),
+        "sacf": visc_data.get("sacf", []),
+        "viscosity_integral": visc_data.get("viscosity_integral", []),
+    }
+
+
+def _merge_viscosity(**temp_results: dict) -> dict:
+    """Assemble per-temperature results into the final viscosity dict."""
+    results = sorted(temp_results.values(), key=lambda r: r["temp"], reverse=True)
+    return {
+        "viscosity": {
+            "temperatures": [r["temp"] for r in results],
+            "viscosities": [r["viscosity"] for r in results],
+            "max_lag": [r["max_lag"] for r in results],
+            "simulation_steps": [r["simulation_steps"] for r in results],
+            "lag_times_ps": [r["lag_times_ps"] for r in results],
+            "sacf_data": [r["sacf"] for r in results],
+            "viscosity_integral": [r["viscosity_integral"] for r in results],
+        }
+    }
+
+
+def submit_viscosity_substeps(
+    executor: BaseExecutor,
+    base_future: Future,
+    submission: JobSubmission,
+    config: ViscosityAnalysis,
+    cache_key: str | None,
+    lammps_rd: dict[str, Any],
+    base_rd: dict[str, Any],
+    *,
+    is_slurm: bool,
+) -> Future:
+    """Submit the viscosity workflow as parallelised executor sub-steps.
+
+    1. **Cooling chain** (sequential, single LAMMPS job):
+       cool from highest to lowest temperature, producing one structure per T.
+    2. **Production runs** (parallel, one LAMMPS job per temperature):
+       ``viscosity_simulation`` + ``get_viscosity`` at each temperature.
+    3. **Merge** (lightweight): assemble per-T results into the final dict.
+
+    Returns a future that resolves to ``{"viscosity": { ... }}``.
+    """
+    sorted_temps = sorted(config.temperatures, reverse=True)
+
+    # --- Step 1: sequential cooling chain ---
+    cool_rd: dict[str, Any] = dict(lammps_rd)
+    if is_slurm:
+        cool_rd["job_name"] = "viscosity_cool"
+    if cache_key is not None:
+        cool_rd["cache_key"] = f"{cache_key}_viscosity_cool"
+
+    cool_future = executor.submit(
+        _run_cooling_chain,
+        resource_dict=cool_rd,
+        submission=submission,
+        config=config,
+        base_result=base_future,
+    )
+
+    # --- Step 2: parallel production runs (fan-out from cooling) ---
+    temp_futures: dict[str, Future] = {}
+    for temp in sorted_temps:
+        rd: dict[str, Any] = dict(lammps_rd)
+        if is_slurm:
+            rd["job_name"] = f"viscosity_{temp:.0f}K"
+        if cache_key is not None:
+            rd["cache_key"] = f"{cache_key}_viscosity_{temp:.0f}K"
+
+        temp_futures[f"T{temp:.0f}"] = executor.submit(
+            _run_viscosity_at_temp,
+            resource_dict=rd,
+            temp=temp,
+            cooling_result=cool_future,
+            config=config,
+        )
+
+    # --- Step 3: merge per-temperature results ---
+    merge_rd: dict[str, Any] = dict(base_rd)
+    if is_slurm:
+        merge_rd["job_name"] = "viscosity_merge"
+    if cache_key is not None:
+        merge_rd["cache_key"] = f"{cache_key}_viscosity"
+
+    return executor.submit(_merge_viscosity, resource_dict=merge_rd, **temp_futures)
 
 
 # ---------------------------------------------------------------------------

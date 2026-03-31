@@ -61,6 +61,22 @@ def _merge_results(base_result: dict, **analysis_results: dict) -> dict:
     return merged
 
 
+def _make_resource_dict(
+    base: dict[str, Any],
+    job_name: str,
+    cache_key: str | None,
+    step_name: str,
+    is_slurm: bool,  # noqa: FBT001
+) -> dict[str, Any]:
+    """Build a resource_dict for a single pipeline step."""
+    rd = dict(base)
+    if is_slurm:
+        rd["job_name"] = job_name
+    if cache_key is not None:
+        rd["cache_key"] = f"{cache_key}_{step_name}"
+    return rd
+
+
 def submit_pipeline(
     executor: BaseExecutor,
     submission: JobSubmission,
@@ -79,22 +95,21 @@ def submit_pipeline(
 
     base_resource_dict = get_base_resource_dict()
     lammps_resource_dict = get_lammps_resource_dict()
+    slurm = _is_slurm()
 
     # Steps that run LAMMPS simulations and need multi-core SBATCH allocation.
     LAMMPS_STEPS = {"melt_quench", "cte", "viscosity", "elastic"}
 
+    def _rd_for(name: str) -> dict[str, Any]:
+        base = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
+        return _make_resource_dict(base, name, cache_key, name, slurm)
+
     # --- Base steps: sequential chain ---
     future = None
     for name in ("structure_generation", "melt_quench"):
-        rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-        resource_dict = dict(rd)
-        if _is_slurm():
-            resource_dict["job_name"] = name
-        if cache_key is not None:
-            resource_dict["cache_key"] = f"{cache_key}_{name}"
         future = executor.submit(
             _accumulate_step,
-            resource_dict=resource_dict,
+            resource_dict=_rd_for(name),
             step_name=name,
             step_fn=STEPS[name],
             submission=submission,
@@ -108,16 +123,23 @@ def submit_pipeline(
     analysis_configs = {a.type: a for a in submission.analyses}
     analysis_futures: dict[str, Future] = {}
     for name, config in analysis_configs.items():
-        if name in ANALYSES:
-            rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-            resource_dict = dict(rd)
-            if _is_slurm():
-                resource_dict["job_name"] = name
-            if cache_key is not None:
-                resource_dict["cache_key"] = f"{cache_key}_{name}"
+        if name == "viscosity":
+            from .analyses.viscosity import submit_viscosity_substeps
+
+            analysis_futures[name] = submit_viscosity_substeps(
+                executor=executor,
+                base_future=base_future,
+                submission=submission,
+                config=config,
+                cache_key=cache_key,
+                lammps_rd=lammps_resource_dict,
+                base_rd=base_resource_dict,
+                is_slurm=slurm,
+            )
+        elif name in ANALYSES:
             analysis_futures[name] = executor.submit(
                 _run_analysis,
-                resource_dict=resource_dict,
+                resource_dict=_rd_for(name),
                 step_name=name,
                 step_fn=ANALYSES[name],
                 submission=submission,
@@ -126,11 +148,9 @@ def submit_pipeline(
             )
 
     # --- Merge step: collects base + all analysis results ---
-    merge_resource: dict[str, Any] = dict(base_resource_dict)
-    if _is_slurm():
-        merge_resource["job_name"] = "merge_results"
+    merge_resource = _make_resource_dict(base_resource_dict, "merge_results", cache_key, "", slurm)
     if cache_key is not None:
-        merge_resource["cache_key"] = cache_key
+        merge_resource["cache_key"] = cache_key  # bare key, no step suffix
     merge_kwargs: dict[str, dict | Future] = {"base_result": base_future}
     merge_kwargs.update(analysis_futures)
 
