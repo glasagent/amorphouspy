@@ -59,7 +59,7 @@ def prepare_structure_context(result_data: dict[str, Any]) -> dict[str, Any]:
         plot_analysis_results_plotly,
     )
 
-    structural_analysis = result_data.get("structure", {})
+    structural_analysis = result_data.get("structure_characterization", {})
     mq = result_data.get("melt_quench", {})
 
     # Build Plotly figure

@@ -1,4 +1,4 @@
-"""Analysis step implementations (structure, viscosity, cte, elastic)."""
+"""Analysis step implementations (structure_characterization, viscosity, cte, elastic)."""
 
 from amorphouspy_api.workflows.analyses.cte import run_cte
 from amorphouspy_api.workflows.analyses.elastic import run_elastic

@@ -162,7 +162,7 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
         )
         for dist, job_id, comp, potential, req_data, completed_at in scored:
             sim = 1.0 / (1.0 + dist)
-            analyses = [a.get("type", "structure") for a in (req_data or {}).get("analyses", [])]
+            analyses = [a.get("type", "structure_characterization") for a in (req_data or {}).get("analyses", [])]
             matches.append(
                 JobSearchMatch(
                     job_id=job_id,

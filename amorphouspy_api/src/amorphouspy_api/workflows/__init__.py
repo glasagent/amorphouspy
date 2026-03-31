@@ -13,7 +13,7 @@ AnalysisFn = Callable[["JobSubmission", "BaseModel", dict], dict]
 STEPS: dict[str, AnalysisFn] = {
     "structure_generation": generate_structure,
     "melt_quench": run_melt_quench,
-    "structure": run_structural_analysis,
+    "structure_characterization": run_structural_analysis,
     "viscosity": run_viscosity,
     "cte": run_cte,
     "elastic": run_elastic,

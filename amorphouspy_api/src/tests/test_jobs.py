@@ -55,7 +55,7 @@ def _mock_result(*, include_structure: bool = True) -> dict[str, Any]:
         },
     }
     if include_structure:
-        result["structure"] = _mock_structural_analysis()
+        result["structure_characterization"] = _mock_structural_analysis()
     return result
 
 
@@ -80,12 +80,12 @@ def _insert_completed_job(
             "composition": composition,
             "potential": potential,
             "simulation": {},
-            "analyses": [{"type": "structure"}],
+            "analyses": [{"type": "structure_characterization"}],
         },
         progress={
             "structure_generation": "completed",
             "melt_quench": "completed",
-            "structure": "completed",
+            "structure_characterization": "completed",
         },
         result_data=result,
         completed_at=datetime.now(UTC),
@@ -108,12 +108,12 @@ def _insert_running_job(job_id: str = "j-running-1") -> None:
             request_data={
                 "composition": "SiO2 100",
                 "potential": "pmmcs",
-                "analyses": [{"type": "structure"}],
+                "analyses": [{"type": "structure_characterization"}],
             },
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "running",
-                "structure": "pending",
+                "structure_characterization": "pending",
             },
         )
     )
@@ -192,7 +192,7 @@ def test_get_job_status_completed() -> None:
     data = resp.json()
     assert data["status"] == "completed"
     assert data["progress"]["melt_quench"] == "completed"
-    assert data["progress"]["analyses"]["structure"] == "completed"
+    assert data["progress"]["analyses"]["structure_characterization"] == "completed"
 
 
 def test_get_job_status_not_found() -> None:
@@ -213,7 +213,7 @@ def test_cancel_running_job() -> None:
     data = resp.json()
     assert data["status"] == "cancelled"
     assert data["progress"]["melt_quench"] == "cancelled"
-    assert data["progress"]["analyses"]["structure"] == "cancelled"
+    assert data["progress"]["analyses"]["structure_characterization"] == "cancelled"
     # Already-completed steps stay completed
     assert data["progress"]["structure_generation"] == "completed"
 
@@ -236,7 +236,7 @@ def test_get_results_completed() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["job_id"] == "j-results-1"
-    assert data["analyses"]["structure"] is not None
+    assert data["analyses"]["structure_characterization"] is not None
 
 
 def test_get_results_no_data() -> None:
@@ -262,10 +262,10 @@ def test_get_results_no_data() -> None:
 def test_get_single_result() -> None:
     _insert_completed_job("j-single-1")
 
-    resp = client.get("/jobs/j-single-1/results/structure")
+    resp = client.get("/jobs/j-single-1/results/structure_characterization")
     assert resp.status_code == 200
     data = resp.json()
-    assert "structure" in data
+    assert "structure_characterization" in data
 
 
 def test_get_single_result_missing() -> None:
@@ -401,7 +401,7 @@ def test_get_glass_properties() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["composition"] == {"Al2O3": 15.0, "CaO": 25.0, "SiO2": 60.0}
-    assert "structure" in data["properties"]
+    assert "structure_characterization" in data["properties"]
 
 
 def test_get_glass_properties_not_found() -> None:
@@ -453,14 +453,14 @@ def _insert_completed_viscosity_job(job_id: str = "j-visc-1") -> None:
                 "potential": "pmmcs",
                 "simulation": {},
                 "analyses": [
-                    {"type": "structure"},
+                    {"type": "structure_characterization"},
                     {"type": "viscosity", "temperatures": [1500, 2000, 2500]},
                 ],
             },
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "completed",
-                "structure": "completed",
+                "structure_characterization": "completed",
                 "viscosity": "completed",
             },
             result_data=result,
@@ -493,7 +493,7 @@ def test_submit_job_with_viscosity() -> None:
             json={
                 "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
                 "analyses": [
-                    {"type": "structure"},
+                    {"type": "structure_characterization"},
                     {"type": "viscosity", "temperatures": [1500, 2000, 2500]},
                 ],
             },
@@ -512,7 +512,7 @@ def test_get_results_with_viscosity() -> None:
     resp = client.get("/jobs/j-visc-results/results")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["analyses"]["structure"] is not None
+    assert data["analyses"]["structure_characterization"] is not None
     assert data["analyses"]["viscosity"] is not None
     assert data["analyses"]["viscosity"]["temperatures"] == [2500.0, 2000.0, 1500.0]
     assert len(data["analyses"]["viscosity"]["viscosities"]) == 3
@@ -550,7 +550,7 @@ def test_job_hash_differs_with_viscosity() -> None:
     sub_with_visc = JobSubmission(
         composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},
         analyses=[
-            {"type": "structure"},
+            {"type": "structure_characterization"},
             {"type": "viscosity", "temperatures": [1500, 2000]},
         ],
     )
@@ -619,14 +619,14 @@ def _insert_completed_cte_job(job_id: str = "j-cte-1") -> None:
                 "potential": "pmmcs",
                 "simulation": {},
                 "analyses": [
-                    {"type": "structure"},
+                    {"type": "structure_characterization"},
                     {"type": "cte"},
                 ],
             },
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "completed",
-                "structure": "completed",
+                "structure_characterization": "completed",
                 "cte": "completed",
             },
             result_data=result,
@@ -659,7 +659,7 @@ def test_submit_job_with_cte() -> None:
             json={
                 "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
                 "analyses": [
-                    {"type": "structure"},
+                    {"type": "structure_characterization"},
                     {"type": "cte"},
                 ],
             },
@@ -771,14 +771,14 @@ def _insert_completed_elastic_job(job_id: str = "j-elastic-1") -> None:
                 "potential": "pmmcs",
                 "simulation": {},
                 "analyses": [
-                    {"type": "structure"},
+                    {"type": "structure_characterization"},
                     {"type": "elastic"},
                 ],
             },
             progress={
                 "structure_generation": "completed",
                 "melt_quench": "completed",
-                "structure": "completed",
+                "structure_characterization": "completed",
                 "elastic": "completed",
             },
             result_data=result,
@@ -811,7 +811,7 @@ def test_submit_job_with_elastic() -> None:
             json={
                 "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
                 "analyses": [
-                    {"type": "structure"},
+                    {"type": "structure_characterization"},
                     {"type": "elastic"},
                 ],
             },

@@ -60,7 +60,7 @@ def test_find_completed_by_hash() -> None:
                 composition="SiO2 80 - Na2O 20",
                 potential="pmmcs",
                 status="completed",
-                result_data={"structural_analysis": {"density": 2.5}},
+                result_data={"structure_characterization": {"density": 2.5}},
             )
         )
 
@@ -173,7 +173,7 @@ def test_list_completed_vectors() -> None:
                 status="completed",
                 result_data={},
                 elemental_vector=vec_sio2,
-                request_data={"analyses": [{"type": "structure"}]},
+                request_data={"analyses": [{"type": "structure_characterization"}]},
             )
         )
         store.create_job(
@@ -185,7 +185,7 @@ def test_list_completed_vectors() -> None:
                 status="completed",
                 result_data={},
                 elemental_vector=vec_binary,
-                request_data={"analyses": [{"type": "structure"}]},
+                request_data={"analyses": [{"type": "structure_characterization"}]},
             )
         )
         # No vector -> should not appear

@@ -152,7 +152,7 @@ class JobStatus(StrEnum):
 class StructureAnalysis(BaseModel):
     """Configuration for structural analysis (RDF, coordination, bond angles)."""
 
-    type: Literal["structure"] = "structure"
+    type: Literal["structure_characterization"] = "structure_characterization"
     rdf_cutoff: float = Field(default=8.0, description="RDF cutoff in Å")
     bin_width: float = Field(default=0.02, description="RDF bin width in Å")
 
@@ -268,7 +268,7 @@ def _analysis_tag(v: object) -> str:
 
 
 Analysis = Annotated[
-    Annotated[StructureAnalysis, Tag("structure")]
+    Annotated[StructureAnalysis, Tag("structure_characterization")]
     | Annotated[ViscosityAnalysis, Tag("viscosity")]
     | Annotated[ElasticAnalysis, Tag("elastic")]
     | Annotated[CTEFluctuations, Tag("cte_fluctuations")]
@@ -356,7 +356,7 @@ class JobProgress(BaseModel):
     melt_quench: StepStatus = StepStatus.PENDING
     analyses: dict[str, StepStatus] = Field(
         default_factory=dict,
-        description="Progress of each analysis (structure, viscosity, cte, elastic, …)",
+        description="Progress of each analysis (structure_characterization, viscosity, cte, elastic, …)",
     )
 
 
@@ -380,7 +380,7 @@ class JobResultsResponse(BaseModel):
     composition: Composition
     analyses: dict[str, dict] = Field(
         default_factory=dict,
-        description="Results keyed by analysis type (structure, viscosity, cte, elastic, …)",
+        description="Results keyed by analysis type (structure_characterization, viscosity, cte, elastic, …)",
     )
 
 
