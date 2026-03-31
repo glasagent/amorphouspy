@@ -190,7 +190,7 @@ def cte_from_fluctuations_simulation(
                        "is_converged" : "True" or "False",
                        "convergence_criterion" : float
                        },
-          'data':  {"run_index" : [1, 2, 3, ...],
+        'data':  {"run_index" : [1, 2, 3, ...],
                     "steps" : [...],
                     "T" : [...],
                     "E_tot" : [...],
