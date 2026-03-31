@@ -15,9 +15,10 @@ COPY pixi.toml pixi.lock ./
 RUN pixi install --locked
 
 COPY LICENSE .
+COPY pyproject.toml .
 COPY amorphouspy amorphouspy/
 COPY amorphouspy_api/ amorphouspy_api/
-RUN pixi run -- pip install --no-deps --no-build-isolation ./amorphouspy ./amorphouspy_api
+RUN pixi run -- pip install --no-deps --no-build-isolation .
 
 EXPOSE 8000
 

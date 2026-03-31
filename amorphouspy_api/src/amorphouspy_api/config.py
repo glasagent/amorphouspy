@@ -29,7 +29,12 @@ PROJECTS_FOLDER = Path(
     ),
 )
 
-MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / f"amorphouspy_{amorphouspy_version}" / "meltquench"
+_version_projects = os.environ.get("AMORPHOUSPY_VERSION_PROJECTS", "1").lower() not in ("0", "false", "no")
+
+if _version_projects:
+    MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / f"amorphouspy_{amorphouspy_version}" / "meltquench"
+else:
+    MELTQUENCH_PROJECT_DIR = PROJECTS_FOLDER / "meltquench"
 
 DB_PATH = PROJECTS_FOLDER / "tasks.db"
 

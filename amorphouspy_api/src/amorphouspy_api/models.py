@@ -37,9 +37,8 @@ class Composition(RootModel[dict[str, float]]):
     Accepts and serialises as a plain ``dict[str, float]``.
     Values represent mol% and will be rescaled to sum to 100% where needed.
 
-    Examples
-    --------
-    >>> c = Composition({"Na2O": 15, "SiO2": 70, "CaO": 15})
+    Examples:
+        >>> c = Composition({"Na2O": 15, "SiO2": 70, "CaO": 15})
     >>> c.canonical
     'CaO 15 - Na2O 15 - SiO2 70'
     """
@@ -331,7 +330,7 @@ class JobSubmission(BaseModel):
     potential: Potential = Field(default=Potential.pmmcs)
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(
-        default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations()],
+        default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
         description="Analyses to run. Each can carry its own parameters. Defaults to all available analyses.",
     )
 
@@ -394,6 +393,20 @@ class JobSearchRequest(BaseModel):
     )
     potential: Potential | None = None
     analyses: list[str] | None = None
+    threshold: float = Field(
+        default=0.05,
+        description=(
+            "Maximum Euclidean distance in elemental atom-fraction space for a "
+            "composition to be included as a close match. Set to 0 for exact "
+            "matches only. Typical values: 0.01-0.1."
+        ),
+    )
+    max_results: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of close matches to return.",
+    )
 
 
 class JobSearchMatch(BaseModel):
@@ -404,6 +417,14 @@ class JobSearchMatch(BaseModel):
     potential: Potential
     analyses: list[str]
     similarity: float = 1.0
+    match_type: str = Field(
+        default="exact",
+        description="'exact' for identical composition, 'close' for nearby.",
+    )
+    distance: float = Field(
+        default=0.0,
+        description="Euclidean distance in elemental atom-fraction space (0 for exact matches).",
+    )
     completed_at: str | None = None
 
 

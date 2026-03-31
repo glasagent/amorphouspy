@@ -29,6 +29,12 @@ pip install amorphouspy
 
 > **Warning:** Without a LAMMPS installation, the simulation workflows (`melt_quench_simulation`, `md_simulation`, `elastic_simulation`, etc.) will not work. Only structure generation and analysis functions will be available.
 
+To also install the API server and its dependencies:
+
+```bash
+pip install amorphouspy[api]
+```
+
 ## Dependencies
 
 Core dependencies installed automatically:

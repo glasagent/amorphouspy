@@ -464,8 +464,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.2-h25fd6f3_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-ng-2.3.3-hceb46e0_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda
-      - pypi: ./amorphouspy
-      - pypi: ./amorphouspy_api
+      - pypi: ./
       osx-64:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/_openmp_mutex-4.5-7_kmp_llvm.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
@@ -879,8 +878,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zlib-1.3.2-hbb4bfdb_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zlib-ng-2.3.3-h8bce59a_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstd-1.5.7-h3eecb57_6.conda
-      - pypi: ./amorphouspy
-      - pypi: ./amorphouspy_api
+      - pypi: ./
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/_openmp_mutex-4.5-7_kmp_llvm.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
@@ -1285,8 +1283,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-ng-2.3.3-hed4e4f5_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
-      - pypi: ./amorphouspy
-      - pypi: ./amorphouspy_api
+      - pypi: ./
   docs:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
@@ -1736,8 +1733,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-1.3.2-h25fd6f3_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zlib-ng-2.3.3-hceb46e0_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/zstd-1.5.7-hb78ec9c_6.conda
-      - pypi: ./amorphouspy
-      - pypi: ./amorphouspy_api
+      - pypi: ./
       osx-64:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/_openmp_mutex-4.5-7_kmp_llvm.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
@@ -2136,8 +2132,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zlib-1.3.2-hbb4bfdb_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zlib-ng-2.3.3-h8bce59a_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/zstd-1.5.7-h3eecb57_6.conda
-      - pypi: ./amorphouspy
-      - pypi: ./amorphouspy_api
+      - pypi: ./
       osx-arm64:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/_openmp_mutex-4.5-7_kmp_llvm.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
@@ -2527,8 +2522,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-1.3.2-h8088a28_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zlib-ng-2.3.3-hed4e4f5_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/zstd-1.5.7-hbf9d68e_6.conda
-      - pypi: ./amorphouspy
-      - pypi: ./amorphouspy_api
+      - pypi: ./
 packages:
 - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
   build_number: 20
@@ -2589,10 +2583,10 @@ packages:
   purls: []
   size: 631452
   timestamp: 1758743294412
-- pypi: ./amorphouspy
+- pypi: ./
   name: amorphouspy
-  version: 0.2.2
-  sha256: 11364f352067108d9f492b0b9123cc0265d2ab221836d154dafd5968424a3e23
+  version: 0.2.5
+  sha256: a787d0655ff206ebec255e94e73bcaa9d774e782440bf177da7382a1f6e9ad1e
   requires_dist:
   - ase
   - numba
@@ -2600,20 +2594,14 @@ packages:
   - lammpsparser
   - pymatgen
   - scipy
+  - executorlib ; extra == 'api'
+  - pysqa ; extra == 'api'
+  - uvicorn ; extra == 'api'
+  - fastapi-mcp ; extra == 'api'
+  - sqlalchemy ; extra == 'api'
+  - jinja2 ; extra == 'api'
   - executorlib ; extra == 'executorlib'
   - sovapy ; extra == 'sovapy'
-- pypi: ./amorphouspy_api
-  name: amorphouspy-api
-  version: 0.0.1
-  sha256: df4eb25f6d4a6f43a27cff0f08f2203bddb97bc5a45c82432f7222a885fa102e
-  requires_dist:
-  - amorphouspy
-  - executorlib
-  - pysqa
-  - uvicorn
-  - fastapi-mcp
-  - sqlalchemy
-  - jinja2
 - conda: https://conda.anaconda.org/conda-forge/noarch/annotated-doc-0.0.4-pyhcf101f3_0.conda
   sha256: cc9fbc50d4ee7ee04e49ee119243e6f1765750f0fd0b4d270d5ef35461b643b1
   md5: 52be5139047efadaeeb19c6a5103f92a

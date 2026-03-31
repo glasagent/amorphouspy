@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import pickle
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,29 +20,39 @@ def _format_runtime(seconds: float) -> str:
     return f"{hours:.1f} h"
 
 
-def get_step_timings(request_hash: str) -> dict[str, float]:
-    """Read per-step wall-clock runtimes from executorlib HDF5 cache.
+def get_step_timings(request_hash: str) -> dict[str, tuple[float, int]]:
+    """Read per-step wall-clock runtimes and core counts from executorlib cache.
+
+    Opens each step's HDF5 output file once and reads both ``runtime``
+    and ``resource_dict`` in a single pass.
 
     Returns:
-        Dict mapping step name to runtime in seconds.
+        Dict mapping step name to ``(runtime_seconds, cores)``.
     """
-    from executorlib.standalone.hdf import get_runtime
+    import h5py
 
     from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 
     cache_dir = MELTQUENCH_PROJECT_DIR
     step_names = ["structure_generation", "melt_quench", "structure", "viscosity", "cte", "elastic"]
-    timings: dict[str, float] = {}
+    timings: dict[str, tuple[float, int]] = {}
 
     for name in step_names:
         h5_path = cache_dir / f"{request_hash}_{name}_o.h5"
-        if h5_path.exists():
-            try:
-                rt = get_runtime(str(h5_path))
-                if rt > 0:
-                    timings[name] = rt
-            except Exception:
-                logger.debug("Could not read runtime for %s", name)
+        if not h5_path.exists():
+            continue
+        try:
+            with h5py.File(h5_path, "r") as hdf:
+                rt = pickle.loads(hdf["runtime"][()])  # noqa: S301
+                if rt <= 0:
+                    continue
+                cores = 1
+                if "resource_dict" in hdf:
+                    rd = pickle.loads(hdf["resource_dict"][()])  # noqa: S301
+                    cores = max(rd.get("cores", 1), rd.get("threads_per_core", 1))
+                timings[name] = (rt, cores)
+        except Exception:
+            logger.debug("Could not read cache for %s", name)
 
     return timings
 
@@ -67,7 +78,7 @@ def prepare_timing_context(request_hash: str) -> dict[str, Any]:
     }
 
     items = []
-    for name, seconds in raw.items():
+    for name, (seconds, _cores) in raw.items():
         items.append(
             {
                 "name": display_names.get(name, name),
@@ -75,10 +86,15 @@ def prepare_timing_context(request_hash: str) -> dict[str, Any]:
             }
         )
 
-    total = sum(raw.values())
+    total = sum(seconds for seconds, _cores in raw.values())
+
+    # Core-hours: multiply each step's wall-clock time by its actual core count
+    core_seconds = sum(seconds * cores for seconds, cores in raw.values())
+    core_hours = core_seconds / 3600
     return {
         "step_timings": items,
         "total_runtime": _format_runtime(total),
+        "total_core_hours": f"{core_hours:.1f} h" if core_hours >= 1 else f"{core_hours * 60:.0f} min",
     }
 
 
@@ -115,7 +131,8 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     long_equil_steps = 100_000
 
     # Build time and temperature arrays
-    times_ps: list[float] = []
+    ps_to_ns = 1e-3
+    times_ns: list[float] = []
     temps: list[float] = []
     t_offset = 0.0
 
@@ -124,9 +141,9 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
         nonlocal t_offset
         t0 = t_offset
         t1 = t_offset + n_steps * dt_ps
-        times_ps.append(t0)
+        times_ns.append(t0 * ps_to_ns)
         temps.append(t_start)
-        times_ps.append(t1)
+        times_ns.append(t1 * ps_to_ns)
         temps.append(t_end)
         t_offset = t1
         return t1
@@ -143,8 +160,7 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     _add_segment(long_equil_steps, t_low, t_low)
 
     # Cooling rate annotation
-    cooling_time_ps = cooling_steps * dt_ps
-    cooling_mid_time = times_ps[4] + cooling_time_ps / 2  # midpoint of cooling stage
+    cooling_mid_time = (times_ns[4] + times_ns[5]) / 2  # midpoint of cooling stage
     cooling_mid_temp = (t_high + t_low) / 2
 
     # Format cooling rate
@@ -156,21 +172,20 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     fig = {
         "data": [
             {
-                "x": times_ps,
+                "x": times_ns,
                 "y": temps,
                 "mode": "lines",
                 "line": {"width": 2.5, "color": "#667eea"},
                 "name": "Temperature",
-                "hovertemplate": "Time: %{x:.1f} ps<br>Temp: %{y:.0f} K<extra></extra>",
+                "hovertemplate": "Time: %{x:.3f} ns<br>Temp: %{y:.0f} K<extra></extra>",
             }
         ],
         "layout": {
-            "title": "Temperature-Time Profile",
-            "xaxis": {"title": "Time (ps)"},
-            "yaxis": {"title": "Temperature (K)"},
+            "xaxis": {"title": {"text": "Time (ns)", "standoff": 10}},
+            "yaxis": {"title": {"text": "Temperature (K)", "standoff": 10}},
             "hovermode": "closest",
             "height": 400,
-            "margin": {"l": 70, "r": 40, "t": 50, "b": 60},
+            "margin": {"l": 80, "r": 20, "t": 20, "b": 60},
             "annotations": [
                 {
                     "x": cooling_mid_time,
@@ -186,9 +201,9 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
             "shapes": [
                 {
                     "type": "line",
-                    "x0": times_ps[4],
+                    "x0": times_ns[4],
                     "y0": t_high,
-                    "x1": times_ps[5],
+                    "x1": times_ns[5],
                     "y1": t_low,
                     "line": {"color": "#d62728", "width": 3},
                     "layer": "above",

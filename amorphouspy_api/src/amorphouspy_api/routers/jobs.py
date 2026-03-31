@@ -44,6 +44,8 @@ from amorphouspy_api.routers.jobs_helpers import (
     _submit_to_executor,
     _update_from_resolved,
     build_visualization_context,
+    find_close_matches,
+    oxide_to_elemental_vector,
     refresh_job_from_cache,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -121,11 +123,19 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
 
 @router.post(":search", response_model=JobSearchResponse)
 def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
-    """Search for existing completed / running jobs matching a spec."""
+    """Search for existing completed / running jobs matching a spec.
+
+    Returns exact composition matches first (similarity=1.0), then
+    close matches within *threshold* Euclidean distance in elemental
+    atom-fraction space, sorted by ascending distance.
+    """
     store = get_job_store()
     norm_comp = request.composition.canonical
-    jobs = store.search_by_composition(norm_comp, request.potential)
+    query_vec = oxide_to_elemental_vector(request.composition.root)
 
+    # --- exact matches ---
+    exact_jobs = store.search_by_composition(norm_comp, request.potential)
+    exact_ids = {j.job_id for j in exact_jobs}
     matches = [
         JobSearchMatch(
             job_id=j.job_id,
@@ -133,10 +143,39 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
             potential=j.potential,
             analyses=_analyses_list(j),
             similarity=1.0,
+            match_type="exact",
+            distance=0.0,
             completed_at=j.completed_at.isoformat() if j.completed_at else None,
         )
-        for j in jobs
+        for j in exact_jobs
     ]
+
+    # --- close matches (if threshold > 0) ---
+    if request.threshold > 0:
+        rows = store.list_completed_vectors(request.potential)
+        scored = find_close_matches(
+            query_vec,
+            rows,
+            exclude_ids=exact_ids,
+            threshold=request.threshold,
+            max_results=request.max_results,
+        )
+        for dist, job_id, comp, potential, req_data, completed_at in scored:
+            sim = 1.0 / (1.0 + dist)
+            analyses = [a.get("type", "structure") for a in (req_data or {}).get("analyses", [])]
+            matches.append(
+                JobSearchMatch(
+                    job_id=job_id,
+                    composition=Composition.from_canonical(comp),
+                    potential=potential,
+                    analyses=analyses,
+                    similarity=round(sim, 4),
+                    match_type="close",
+                    distance=round(dist, 4),
+                    completed_at=completed_at.isoformat() if completed_at else None,
+                )
+            )
+
     return JobSearchResponse(matches=matches)
 
 
@@ -286,21 +325,31 @@ def visualize_job(job_id: str) -> HTMLResponse:
     job = store.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status != "completed":
+
+    # Refresh running jobs so we pick up newly-completed steps
+    if job.status == "running":
+        refresh_job_from_cache(job)
+        job = store.get_job(job_id)
+
+    if job.status == "pending":
         raise HTTPException(
             status_code=400,
-            detail=f"Job is not completed yet. Current status: {job.status}",
+            detail="Job has not started yet.",
         )
 
-    result_data = job.result_data
-    if not result_data:
-        raise HTTPException(status_code=404, detail="No results found for this job")
+    result_data = job.result_data or {}
 
-    if not result_data.get("structure"):
-        raise HTTPException(status_code=404, detail="No structural analysis data found")
+    if not result_data:
+        raise HTTPException(status_code=404, detail="No results available yet")
 
     try:
-        context = build_visualization_context(job_id, result_data, request_hash=job.request_hash)
+        context = build_visualization_context(
+            job_id,
+            result_data,
+            request_hash=job.request_hash,
+        )
+        context["job_status"] = job.status
+        context["progress"] = job.progress or {}
 
         template_dir = Path(__file__).parent.parent / "templates"
         templates = Jinja2Templates(directory=str(template_dir))

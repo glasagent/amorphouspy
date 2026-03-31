@@ -5,8 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections import Counter
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+import numpy as np
+from amorphouspy.structure import element_counts_from_formula_units, normalize
+from ase.data import chemical_symbols
 
 from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 from amorphouspy_api.database import get_job_store
@@ -42,6 +47,149 @@ def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
         sort_keys=True,
     )
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def composition_distance(a: dict[str, float], b: dict[str, float]) -> float:
+    """Euclidean distance between two compositions in elemental atom-fraction space.
+
+    Each dict maps element symbols to atom fractions (values summing to 1).
+    Missing elements are treated as 0.
+    """
+    all_elements = set(a) | set(b)
+    return sum((a.get(el, 0.0) - b.get(el, 0.0)) ** 2 for el in all_elements) ** 0.5
+
+
+# Number of elements in the periodic table (index 0 unused, 1..118 = H..Og).
+N_ELEMENTS = len(chemical_symbols)  # 119 (index 0 is dummy '')
+
+
+def _elem_dict_to_vector(d: dict[str, float]) -> list[float]:
+    """Convert a sparse {symbol: fraction} dict to a fixed-length list[float]."""
+    vec = [0.0] * N_ELEMENTS
+    for el, val in d.items():
+        vec[chemical_symbols.index(el)] = val
+    return vec
+
+
+def _vector_to_elem_dict(vec: list[float]) -> dict[str, float]:
+    """Convert a fixed-length vector back to a sparse dict (non-zero entries only)."""
+    return {chemical_symbols[i]: v for i, v in enumerate(vec) if v != 0.0}
+
+
+def oxide_to_elemental_vector(oxide_comp: dict[str, float]) -> np.ndarray:
+    """Convert oxide mol-% composition to a fixed-length numpy vector."""
+    fracs = oxide_to_elemental_fractions(oxide_comp)
+    vec = np.zeros(N_ELEMENTS)
+    for el, val in fracs.items():
+        vec[chemical_symbols.index(el)] = val
+    return vec
+
+
+def _filter_candidates(
+    rows: list,
+    exclude_ids: set[str],
+) -> list[tuple[str, list, str, str, dict | None, object]]:
+    """Filter rows from list_completed_vectors, dropping excluded/empty entries."""
+    return [
+        (job_id, evec, comp, potential, req_data, completed_at)
+        for job_id, evec, comp, potential, req_data, completed_at in rows
+        if job_id not in exclude_ids and evec is not None
+    ]
+
+
+def find_close_matches(
+    query_vec: np.ndarray,
+    rows: list,
+    *,
+    exclude_ids: set[str],
+    threshold: float,
+    max_results: int,
+) -> list[tuple[float, str, str, str, dict | None, object]]:
+    """Vectorised close-match search using numpy.
+
+    Args:
+        query_vec: Fixed-length (N_ELEMENTS,) numpy array for the query composition.
+        rows: Output of ``store.list_completed_vectors()``.
+        exclude_ids: Job IDs to skip (already matched exactly).
+        threshold: Maximum Euclidean distance to include.
+        max_results: Cap on returned matches.
+
+    Returns:
+        List of ``(distance, job_id, composition, potential, request_data, completed_at)``
+        sorted by ascending distance.
+    """
+    candidates = _filter_candidates(rows, exclude_ids)
+    if not candidates:
+        return []
+
+    # Stack pre-aligned vectors directly — no element-index building needed
+    mat = np.array([evec for _, evec, *_ in candidates])
+    distances = np.linalg.norm(mat - query_vec, axis=1)
+
+    # Filter by threshold and pick top-k
+    idxs = np.where(distances <= threshold)[0]
+    if len(idxs) == 0:
+        return []
+    if len(idxs) > max_results:
+        top_k = np.argpartition(distances[idxs], max_results)[:max_results]
+        idxs = idxs[top_k]
+    idxs = idxs[np.argsort(distances[idxs])]
+
+    return [
+        (
+            float(distances[idx]),
+            candidates[idx][0],  # job_id
+            candidates[idx][2],  # composition
+            candidates[idx][3],  # potential
+            candidates[idx][4],  # request_data
+            candidates[idx][5],  # completed_at
+        )
+        for idx in idxs
+    ]
+
+
+def oxide_to_elemental_fractions(oxide_comp: dict[str, float]) -> dict[str, float]:
+    """Convert an oxide mol-% composition to normalised elemental atom fractions.
+
+    Reuses :func:`~amorphouspy.structure.element_counts_from_formula_units`
+    (which accepts float "formula units" at runtime) and
+    :func:`~amorphouspy.structure.normalize`.
+
+    Example:
+    -------
+    >>> oxide_to_elemental_fractions({"SiO2": 100})
+    {'Si': 0.333..., 'O': 0.666...}
+    """
+    mol_frac = normalize(oxide_comp)
+    raw_counts = element_counts_from_formula_units(mol_frac)  # type: ignore[arg-type]
+    return normalize(raw_counts)
+
+
+def elemental_fractions_from_job(job: Job) -> dict[str, float] | None:
+    """Extract normalised elemental atom fractions from a completed job.
+
+    Prefers the actual structure (atomic numbers) stored in
+    ``result_data["melt_quench"]["final_structure"]``; falls back to the
+    requested oxide composition.
+    """
+    result = job.result_data or {}
+    mq = result.get("melt_quench", {})
+    struct = mq.get("final_structure")
+
+    atomic_numbers = _extract_atomic_numbers(struct)
+    if atomic_numbers is not None:
+        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
+        return normalize(dict(counts))
+
+    # Fallback: derive from the stored oxide composition
+    stored_comp = mq.get("composition")
+    if stored_comp and isinstance(stored_comp, dict):
+        return oxide_to_elemental_fractions(stored_comp)
+
+    # Last resort: derive from the canonical composition on the job record
+    from amorphouspy_api.models import Composition
+
+    return oxide_to_elemental_fractions(Composition.from_canonical(job.composition).root)
 
 
 def _iso_now() -> str:
@@ -122,11 +270,20 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
     if status == "completed":
         result = resolved["result"]
         progress = dict.fromkeys(all_steps, "completed")
+
+        # Compute elemental atom-fraction vector from the result
+        from amorphouspy_api.database import Job as _Job
+
+        _tmp = _Job(result_data=result, composition=submission.composition.canonical if submission else "")
+        evec_dict = elemental_fractions_from_job(_tmp)
+        evec = _elem_dict_to_vector(evec_dict) if evec_dict else None
+
         store.update_job(
             job_id,
             status="completed",
             progress=progress,
             result_data=result,
+            elemental_vector=evec,
             completed_at=datetime.now(UTC),
         )
     elif status == "failed":
@@ -141,6 +298,41 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
         progress = dict.fromkeys(all_steps, "pending")
         progress["structure_generation"] = "running"
         store.update_job(job_id, status="running", progress=progress)
+
+
+def _probe_step_caches(
+    job: Job,
+    all_steps: list[str],
+) -> tuple[dict[str, str], dict[str, object], bool]:
+    """Probe per-step caches and return (progress, partial_results, has_failure)."""
+    cache_dir = str(MELTQUENCH_PROJECT_DIR)
+    cache_key = job.request_hash
+    progress: dict[str, str] = {}
+    partial_results: dict[str, object] = dict(job.result_data or {})
+    has_failure = False
+    for step_name in all_steps:
+        step_key = f"{cache_key}_{step_name}"
+        try:
+            step_future = get_future_from_cache(
+                cache_directory=cache_dir,
+                cache_key=step_key,
+            )
+            step_resolved = _resolve_future(step_future, job.job_id)
+            progress[step_name] = step_resolved["status"]
+            if step_resolved["status"] == "completed":
+                # Each step result is already a dict keyed by step name(s),
+                # e.g. _accumulate_step → {"structure_generation": ..., "melt_quench": ...}
+                #       _run_analysis   → {"structure": ...}
+                partial_results.update(step_resolved["result"])
+            elif step_resolved["status"] == "failed":
+                has_failure = True
+        except FileNotFoundError:
+            progress[step_name] = "pending"
+        except Exception:
+            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
+            progress[step_name] = "failed"
+            has_failure = True
+    return progress, partial_results, has_failure
 
 
 def refresh_job_from_cache(job: Job) -> None:
@@ -179,79 +371,27 @@ def refresh_job_from_cache(job: Job) -> None:
     if submission:
         all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
 
-    progress: dict[str, str] = {}
-    has_failure = False
-    for step_name in all_steps:
-        step_key = f"{cache_key}_{step_name}"
-        try:
-            step_future = get_future_from_cache(
-                cache_directory=cache_dir,
-                cache_key=step_key,
-            )
-            step_resolved = _resolve_future(step_future, job.job_id)
-            progress[step_name] = step_resolved["status"]
-            if step_resolved["status"] == "failed":
-                has_failure = True
-        except FileNotFoundError:
-            progress[step_name] = "pending"
-        except Exception:
-            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
-            progress[step_name] = "failed"
-            has_failure = True
+    progress, partial_results, has_failure = _probe_step_caches(job, all_steps)
 
     store = get_job_store()
+    updates: dict[str, object] = {"progress": progress}
+    if partial_results:
+        updates["result_data"] = partial_results
     if has_failure:
-        store.update_job(job.job_id, status="failed", progress=progress)
+        updates["status"] = "failed"
     else:
-        store.update_job(job.job_id, status="running", progress=progress)
+        updates["status"] = "running"
+    store.update_job(job.job_id, **updates)
 
 
-def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
-    """Build the Jinja2 template context from job result data."""
+def _add_optional_analyses(context: dict, result_data: dict) -> None:
+    """Populate context with viscosity / CTE / elastic plots if available."""
     import json
 
     from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
     from amorphouspy_api.workflows.analyses.elastic import prepare_elastic_plots
-    from amorphouspy_api.workflows.analyses.meltquench_viz import (
-        build_temperature_time_plot,
-        prepare_timing_context,
-    )
-    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
     from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
 
-    mq = result_data.get("melt_quench", {})
-
-    # --- Structure analysis (always present) ---
-    context = prepare_structure_context(result_data)
-
-    # Melt-quench metadata
-    mean_temperature = mq.get("mean_temperature", "N/A")
-    if isinstance(mean_temperature, (int, float)):
-        mean_temperature = f"{mean_temperature:.1f}"
-    simulation_steps = mq.get("simulation_steps", "N/A")
-    if isinstance(simulation_steps, int):
-        simulation_steps = f"{simulation_steps:,}"
-
-    context.update(
-        {
-            "job_id": job_id,
-            "composition": mq.get("composition", "N/A"),
-            "mean_temperature": mean_temperature,
-            "simulation_steps": simulation_steps,
-        }
-    )
-
-    # --- Step timings from executorlib cache ---
-    if request_hash:
-        timing_ctx = prepare_timing_context(request_hash)
-        context.update(timing_ctx)
-
-    # --- Temperature-time diagram ---
-    tt_plot = build_temperature_time_plot(mq)
-    if tt_plot:
-        context["temperature_time_plot"] = tt_plot
-
-    # --- Optional analyses ---
     visc_data = result_data.get("viscosity")
     if visc_data:
         context["viscosity_plots"] = prepare_viscosity_plots(visc_data)
@@ -269,5 +409,143 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
         moduli = elastic_data.get("moduli")
         if moduli:
             context["elastic_moduli"] = moduli
+
+
+def _extract_atomic_numbers(final_structure: object) -> list[int] | None:
+    """Extract atomic numbers list from a final_structure value.
+
+    Handles both dict (with ``numbers`` key) and JSON-string
+    (ASE db format with ``__ndarray__`` encoding).
+    """
+    if final_structure is None:
+        return None
+
+    # Already a dict with a plain list of numbers
+    if isinstance(final_structure, dict) and "numbers" in final_structure:
+        return list(final_structure["numbers"])
+
+    # ASE JSON serialisation: string containing {"1": {"numbers": {"__ndarray__": ...}}}
+    if isinstance(final_structure, str):
+        try:
+            data = json.loads(final_structure)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        # ASE stores atoms keyed by row id (usually "1")
+        for atoms_dict in data.values():
+            if not isinstance(atoms_dict, dict):
+                continue
+            nums = atoms_dict.get("numbers")
+            if nums is None:
+                continue
+            if isinstance(nums, dict) and "__ndarray__" in nums:
+                return list(nums["__ndarray__"][2])
+            if isinstance(nums, list):
+                return nums
+    return None
+
+
+def _compute_total_md_steps(mq: dict) -> str:
+    """Estimate the total MD integration steps from melt-quench parameters."""
+    timestep_fs = mq.get("timestep", 1.0)
+    cooling_rate = mq.get("cooling_rate")
+    heating_rate = mq.get("heating_rate")
+    t_high = mq.get("temperature_high")
+    t_low = mq.get("temperature_low", 300.0)
+
+    if not all([cooling_rate, heating_rate, t_high]):
+        return "N/A"
+
+    seconds_to_fs = 1e15
+    delta_t = t_high - t_low
+    heating_steps = int((delta_t / (timestep_fs * heating_rate)) * seconds_to_fs)
+    cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
+    # Fixed protocol stages: equil_high(10k) + pressure_release(10k) + long_equil(100k)
+    total = heating_steps + 10_000 + cooling_steps + 10_000 + 100_000
+    return f"{total:,}"
+
+
+def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
+    """Build the Jinja2 template context from job result data.
+
+    Handles partial results gracefully — sections whose data is not yet
+    available are simply omitted from the context so the template can
+    conditionally skip them.
+    """
+    from amorphouspy_api.workflows.analyses.meltquench_viz import (
+        build_temperature_time_plot,
+        prepare_timing_context,
+    )
+    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
+
+    mq = result_data.get("melt_quench", {})
+
+    context: dict[str, object] = {"job_id": job_id}
+
+    _STRUCTURE_DEFAULTS: dict[str, object] = {
+        "plotly_json": None,
+        "structure_xyz": "",
+        "density": "N/A",
+        "network_connectivity": "N/A",
+        "network_formers": [],
+        "modifiers": [],
+    }
+
+    # --- Structure analysis (only when available) ---
+    if result_data.get("structure"):
+        try:
+            context.update(prepare_structure_context(result_data))
+        except Exception:
+            logger.warning("Could not render structure analysis for job %s", job_id)
+            context.update(_STRUCTURE_DEFAULTS)
+    else:
+        context.update(_STRUCTURE_DEFAULTS)
+
+    # Melt-quench metadata
+    mean_temperature = mq.get("mean_temperature", "N/A")
+    if isinstance(mean_temperature, (int, float)):
+        mean_temperature = f"{mean_temperature:.1f}"
+
+    # Format composition as "SiO2 67 - Na2O 18 - CaO 15"
+    raw_comp = mq.get("composition", "N/A")
+    if isinstance(raw_comp, dict):
+        composition_str = " - ".join(f"{oxide} {mol:g}" for oxide, mol in sorted(raw_comp.items()))
+    else:
+        composition_str = str(raw_comp)
+
+    # Atom count and actual composition from the final structure
+    n_atoms = "N/A"
+    actual_composition = ""
+    atomic_numbers = _extract_atomic_numbers(mq.get("final_structure"))
+    if atomic_numbers is not None:
+        n_atoms = f"{len(atomic_numbers):,}"
+        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
+        actual_composition = " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
+
+    # Total MD steps from the T-t profile parameters
+    total_md_steps = _compute_total_md_steps(mq)
+
+    context.update(
+        {
+            "composition": composition_str,
+            "actual_composition": actual_composition,
+            "n_atoms": n_atoms,
+            "mean_temperature": mean_temperature,
+            "total_md_steps": total_md_steps,
+        }
+    )
+
+    # --- Step timings from executorlib cache ---
+    if request_hash:
+        timing_ctx = prepare_timing_context(request_hash)
+        context.update(timing_ctx)
+
+    # --- Temperature-time diagram ---
+    if mq:
+        tt_plot = build_temperature_time_plot(mq)
+        if tt_plot:
+            context["temperature_time_plot"] = tt_plot
+
+    # --- Optional analyses ---
+    _add_optional_analyses(context, result_data)
 
     return context
