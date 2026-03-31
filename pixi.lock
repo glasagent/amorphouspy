@@ -2585,8 +2585,8 @@ packages:
   timestamp: 1758743294412
 - pypi: ./
   name: amorphouspy
-  version: 0.2.3
-  sha256: 7f1748310583b0a017dc9eeb2754a8357165e9ce9d90d8f72e1a36f2f0b9c60f
+  version: 0.2.4
+  sha256: d4b40e97ccd89eda7f46fbcb14aae44e9c1a978e88dbefe368d82d0203911627
   requires_dist:
   - ase
   - numba
@@ -2602,7 +2602,6 @@ packages:
   - jinja2 ; extra == 'api'
   - executorlib ; extra == 'executorlib'
   - sovapy ; extra == 'sovapy'
-
 - conda: https://conda.anaconda.org/conda-forge/noarch/annotated-doc-0.0.4-pyhcf101f3_0.conda
   sha256: cc9fbc50d4ee7ee04e49ee119243e6f1765750f0fd0b4d270d5ef35461b643b1
   md5: 52be5139047efadaeeb19c6a5103f92a
