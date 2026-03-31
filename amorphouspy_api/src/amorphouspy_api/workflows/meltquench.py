@@ -81,6 +81,7 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
         timestep=timestep,
         temperature_high=temperature_high,
         temperature_low=temperature_low,
+        equilibration_steps=submission.simulation.equilibration_steps,
         langevin=False,
         server_kwargs=get_lammps_server_kwargs(),
     )
