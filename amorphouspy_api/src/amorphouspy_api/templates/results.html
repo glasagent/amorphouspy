@@ -101,8 +101,9 @@
             </div>
         </div>
 
-        {% if structure_xyz %}
+        {% if structure_xyz or temperature_time_plot %}
         <div class="structure-panel">
+            {% if structure_xyz %}
             <div class="section-title">Atomic Structure</div>
             <div class="controls">
                 <div class="control-group">
@@ -123,17 +124,15 @@
                 Interactive 3D structure. Use mouse to rotate, zoom, and pan.
                 Hover over atoms for element info.
             </p>
+            {% endif %}
+
+            {% if temperature_time_plot %}
+            <div class="section-title" style="margin-top: 25px;">Melt-Quench Protocol</div>
+            <div id="temperature-time-div" style="height: 400px;"></div>
+            {% endif %}
         </div>
         {% endif %}
     </div>
-
-    {% if temperature_time_plot %}
-    <div class="analysis-container">
-        <div class="plot-panel">
-            <div id="temperature-time-div" style="height: 400px;"></div>
-        </div>
-    </div>
-    {% endif %}
 
     {% if plotly_json %}
     <div class="analysis-container">

@@ -115,7 +115,8 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     long_equil_steps = 100_000
 
     # Build time and temperature arrays
-    times_ps: list[float] = []
+    ps_to_ns = 1e-3
+    times_ns: list[float] = []
     temps: list[float] = []
     t_offset = 0.0
 
@@ -124,9 +125,9 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
         nonlocal t_offset
         t0 = t_offset
         t1 = t_offset + n_steps * dt_ps
-        times_ps.append(t0)
+        times_ns.append(t0 * ps_to_ns)
         temps.append(t_start)
-        times_ps.append(t1)
+        times_ns.append(t1 * ps_to_ns)
         temps.append(t_end)
         t_offset = t1
         return t1
@@ -143,8 +144,7 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     _add_segment(long_equil_steps, t_low, t_low)
 
     # Cooling rate annotation
-    cooling_time_ps = cooling_steps * dt_ps
-    cooling_mid_time = times_ps[4] + cooling_time_ps / 2  # midpoint of cooling stage
+    cooling_mid_time = (times_ns[4] + times_ns[5]) / 2  # midpoint of cooling stage
     cooling_mid_temp = (t_high + t_low) / 2
 
     # Format cooling rate
@@ -156,21 +156,20 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     fig = {
         "data": [
             {
-                "x": times_ps,
+                "x": times_ns,
                 "y": temps,
                 "mode": "lines",
                 "line": {"width": 2.5, "color": "#667eea"},
                 "name": "Temperature",
-                "hovertemplate": "Time: %{x:.1f} ps<br>Temp: %{y:.0f} K<extra></extra>",
+                "hovertemplate": "Time: %{x:.3f} ns<br>Temp: %{y:.0f} K<extra></extra>",
             }
         ],
         "layout": {
-            "title": "Temperature-Time Profile",
-            "xaxis": {"title": "Time (ps)"},
-            "yaxis": {"title": "Temperature (K)"},
+            "xaxis": {"title": {"text": "Time (ns)", "standoff": 10}},
+            "yaxis": {"title": {"text": "Temperature (K)", "standoff": 10}},
             "hovermode": "closest",
             "height": 400,
-            "margin": {"l": 70, "r": 40, "t": 50, "b": 60},
+            "margin": {"l": 80, "r": 20, "t": 20, "b": 60},
             "annotations": [
                 {
                     "x": cooling_mid_time,
@@ -186,9 +185,9 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
             "shapes": [
                 {
                     "type": "line",
-                    "x0": times_ps[4],
+                    "x0": times_ns[4],
                     "y0": t_high,
-                    "x1": times_ps[5],
+                    "x1": times_ns[5],
                     "y1": t_low,
                     "line": {"color": "#d62728", "width": 3},
                     "layer": "above",
