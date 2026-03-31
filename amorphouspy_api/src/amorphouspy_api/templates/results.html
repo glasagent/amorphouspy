@@ -10,7 +10,8 @@
 
 <body>
     {% if job_status is defined and job_status != 'completed' %}
-    <div class="progress-banner" style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px 24px; margin: 20px auto; max-width: 1300px; display: flex; align-items: center; gap: 16px;">
+    <div class="progress-banner"
+        style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px 24px; margin: 20px auto; max-width: 1300px; display: flex; align-items: center; gap: 16px;">
         <div style="font-size: 1.6em;">&#9888;</div>
         <div>
             <strong>Job in progress</strong> &mdash; showing completed steps so far. Reload to see updates.

@@ -319,7 +319,10 @@ def _probe_step_caches(
             step_resolved = _resolve_future(step_future, job.job_id)
             progress[step_name] = step_resolved["status"]
             if step_resolved["status"] == "completed":
-                partial_results[step_name] = step_resolved["result"]
+                # Each step result is already a dict keyed by step name(s),
+                # e.g. _accumulate_step → {"structure_generation": ..., "melt_quench": ...}
+                #       _run_analysis   → {"structure": ...}
+                partial_results.update(step_resolved["result"])
             elif step_resolved["status"] == "failed":
                 has_failure = True
         except FileNotFoundError:
