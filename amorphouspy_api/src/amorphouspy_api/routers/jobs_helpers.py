@@ -486,21 +486,32 @@ def _compute_total_md_steps(mq: dict) -> str:
 
 def _format_actual_composition(mq: dict, result_data: dict) -> tuple[str, str]:
     """Return (n_atoms, actual_composition) from the final structure."""
+    atoms_dict = result_data.get("structure_generation", {}).get("atoms_dict", {})
+    formula_units = atoms_dict.get("formula_units", {})
+
     atomic_numbers = _extract_atomic_numbers(mq.get("final_structure"))
-    if atomic_numbers is None:
+    if atomic_numbers is not None:
+        n_atoms = f"{len(atomic_numbers):,}"
+    elif atoms_dict.get("total_atoms"):
+        n_atoms = f"{atoms_dict['total_atoms']:,}"
+    else:
         return "N/A", ""
 
-    n_atoms = f"{len(atomic_numbers):,}"
     # Prefer oxide representation from formula units
-    formula_units = result_data.get("structure_generation", {}).get("atoms_dict", {}).get("formula_units", {})
     if formula_units:
         total_fu = sum(formula_units.values())
         if total_fu > 0:
             return n_atoms, " - ".join(
                 f"{oxide} {fu / total_fu * 100:.1f}" for oxide, fu in sorted(formula_units.items())
             )
-    counts = Counter(chemical_symbols[z] for z in atomic_numbers)
-    return n_atoms, " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
+    if atomic_numbers is not None:
+        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
+        return n_atoms, " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
+    # Fall back to element counts from the generated structure
+    element_counts = atoms_dict.get("element_counts", {})
+    if element_counts:
+        return n_atoms, " ".join(f"{elem}{count}" for elem, count in sorted(element_counts.items()))
+    return n_atoms, ""
 
 
 def build_visualization_context(
@@ -542,11 +553,13 @@ def build_visualization_context(
         context.update(_STRUCTURE_DEFAULTS)
 
     # Format composition as "SiO2 67 - Na2O 18 - CaO 15"
-    raw_comp = mq.get("composition", "N/A")
+    raw_comp = mq.get("composition")
+    if raw_comp is None and request_data:
+        raw_comp = request_data.get("composition")
     if isinstance(raw_comp, dict):
         composition_str = " - ".join(f"{oxide} {mol:g}" for oxide, mol in sorted(raw_comp.items()))
     else:
-        composition_str = str(raw_comp)
+        composition_str = str(raw_comp) if raw_comp is not None else "N/A"
 
     # Atom count and actual composition from the final structure
     n_atoms, actual_composition = _format_actual_composition(mq, result_data)
