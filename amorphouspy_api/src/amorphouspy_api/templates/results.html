@@ -9,6 +9,28 @@
 </head>
 
 <body>
+    {% if job_status is defined and job_status != 'completed' %}
+    <div class="progress-banner"
+        style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px 24px; margin: 20px auto; max-width: 1300px; display: flex; align-items: center; gap: 16px;">
+        <div style="font-size: 1.6em;">&#9888;</div>
+        <div>
+            <strong>Job in progress</strong> &mdash; showing completed steps so far. Reload to see updates.
+            {% if progress is defined %}
+            <div style="margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px;">
+                {% for step, status in progress.items() %}
+                <span style="display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.85em;
+                    {% if status == 'completed' %}background: #d4edda; color: #155724;
+                    {% elif status == 'running' %}background: #cce5ff; color: #004085;
+                    {% elif status == 'failed' %}background: #f8d7da; color: #721c24;
+                    {% else %}background: #e2e3e5; color: #383d41;{% endif %}
+                ">{{ step }}: {{ status }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <div class="header">
         <h1>Melt-Quench Simulation Results</h1>
         <p>Job ID: {{ job_id }}</p>
@@ -17,19 +39,37 @@
 
     <div class="results-container">
         <div class="info-panel">
-            <div class="section-title">Simulation Results</div>
+            <div class="section-title">Composition</div>
             <div class="property">
-                <span class="property-label">Composition:</span>
+                <span class="property-label">Requested (mol%):</span>
                 <span class="property-value">{{ composition }}</span>
             </div>
+            {% if actual_composition %}
             <div class="property">
-                <span class="property-label">Mean Temperature:</span>
-                <span class="property-value">{{ mean_temperature }} K</span>
+                <span class="property-label">Simulated:</span>
+                <span class="property-value">{{ actual_composition }} ({{ n_atoms }} atoms)</span>
             </div>
+            {% endif %}
+            {% if network_formers %}
             <div class="property">
-                <span class="property-label">Simulation Steps:</span>
-                <span class="property-value">{{ simulation_steps }}</span>
+                <span class="property-label">Network Formers:</span>
+                <div class="element-list">
+                    {% for element in network_formers %}
+                    <span class="element-tag">{{ element }}</span>
+                    {% endfor %}
+                </div>
             </div>
+            {% endif %}
+            {% if modifiers %}
+            <div class="property">
+                <span class="property-label">Modifiers:</span>
+                <div class="element-list">
+                    {% for element in modifiers %}
+                    <span class="element-tag">{{ element }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
 
             <div class="section-title" style="margin-top: 25px;">Structural Properties</div>
             <div class="property">
@@ -40,23 +80,9 @@
                 <span class="property-label">Network Connectivity:</span>
                 <span class="property-value">{{ network_connectivity }}</span>
             </div>
-
-            <div class="section-title" style="margin-top: 25px;">Element Classification</div>
             <div class="property">
-                <span class="property-label">Network Formers:</span>
-                <div class="element-list">
-                    {% for element in network_formers %}
-                    <span class="element-tag">{{ element }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-            <div class="property">
-                <span class="property-label">Modifiers:</span>
-                <div class="element-list">
-                    {% for element in modifiers %}
-                    <span class="element-tag">{{ element }}</span>
-                    {% endfor %}
-                </div>
+                <span class="property-label">Mean Temperature:</span>
+                <span class="property-value">{{ mean_temperature }} K</span>
             </div>
 
             {% if step_timings %}
@@ -68,49 +94,58 @@
             </div>
             {% endfor %}
             <div class="property" style="border-top: 2px solid #667eea; font-weight: bold;">
-                <span class="property-label">Total:</span>
+                <span class="property-label">Core Hours:</span>
+                <span class="property-value">{{ total_core_hours }}</span>
+            </div>
+            {% if job_status == 'completed' %}
+            <div class="property" style="font-weight: bold;">
+                <span class="property-label">Wall Time:</span>
                 <span class="property-value">{{ total_runtime }}</span>
             </div>
             {% endif %}
+            {% endif %}
 
             <div class="download-buttons">
-                <button class="download-btn" onclick="downloadPlot('png')">Download PNG</button>
-                <button class="download-btn" onclick="downloadPlot('svg')">Download SVG</button>
+                <button class="download-btn" onclick="window.print()">Save as PDF</button>
             </div>
         </div>
 
+        {% if structure_xyz or temperature_time_plot %}
         <div class="structure-panel">
-            <div class="section-title">Atomic Structure</div>
-            <div class="controls">
-                <div class="control-group">
-                    <span class="control-label">Style:</span>
-                    <select id="style-select" onchange="updateStyle()">
-                        <option value="sphere">Ball & Stick</option>
-                        <option value="stick">Stick</option>
-                        <option value="line">Wireframe</option>
-                        <option value="cross">Cross</option>
-                    </select>
+            {% if structure_xyz %}
+            <div class="structure-3d-viewer">
+                <div class="section-title">Atomic Structure</div>
+                <div class="controls">
+                    <div class="control-group">
+                        <span class="control-label">Style:</span>
+                        <select id="style-select" onchange="updateStyle()">
+                            <option value="sphere">Ball & Stick</option>
+                            <option value="stick">Stick</option>
+                            <option value="line">Wireframe</option>
+                            <option value="cross">Cross</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <button onclick="resetView()">Reset View</button>
+                    </div>
                 </div>
-                <div class="control-group">
-                    <button onclick="resetView()">Reset View</button>
-                </div>
+                <div id="structure-div"></div>
+                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                    Interactive 3D structure. Use mouse to rotate, zoom, and pan.
+                    Hover over atoms for element info.
+                </p>
             </div>
-            <div id="structure-div"></div>
-            <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                Interactive 3D structure. Use mouse to rotate, zoom, and pan.
-                Hover over atoms for element info.
-            </p>
-        </div>
-    </div>
+            {% endif %}
 
-    {% if temperature_time_plot %}
-    <div class="analysis-container">
-        <div class="plot-panel">
+            {% if temperature_time_plot %}
+            <div class="section-title" style="margin-top: 25px;">Melt-Quench Protocol</div>
             <div id="temperature-time-div" style="height: 400px;"></div>
+            {% endif %}
         </div>
+        {% endif %}
     </div>
-    {% endif %}
 
+    {% if plotly_json %}
     <div class="analysis-container">
         <div class="plot-panel">
             <div class="section-title">Structural Analysis</div>
@@ -120,6 +155,7 @@
             </p>
         </div>
     </div>
+    {% endif %}
 
     {% if viscosity_plots %}
     <div class="analysis-container">
@@ -221,11 +257,13 @@
 
     <script>
         // Pass data from template to JavaScript
-        const plotlyData = {{ plotly_json | safe }};
+        const plotlyData = {{ plotly_json | safe if plotly_json else 'null' }};
         const structureData = `{{ structure_xyz | safe }}`;
         const taskId = '{{ job_id }}';
     </script>
+    {% if plotly_json or structure_xyz %}
     <script src="/static/js/results.js"></script>
+    {% endif %}
 
     {% if temperature_time_plot %}
     <script>
@@ -292,6 +330,20 @@
         {% endif %}
     </script>
     {% endif %}
+
+    <script>
+        // Resize all Plotly charts before printing so they fit the page
+        window.addEventListener('beforeprint', function () {
+            document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+                Plotly.relayout(el, { width: el.parentElement.offsetWidth });
+            });
+        });
+        window.addEventListener('afterprint', function () {
+            document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+                Plotly.relayout(el, { width: null, autosize: true });
+            });
+        });
+    </script>
 </body>
 
 </html>

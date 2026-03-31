@@ -330,7 +330,7 @@ class JobSubmission(BaseModel):
     potential: Potential = Field(default=Potential.pmmcs)
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(
-        default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations()],
+        default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
         description="Analyses to run. Each can carry its own parameters. Defaults to all available analyses.",
     )
 

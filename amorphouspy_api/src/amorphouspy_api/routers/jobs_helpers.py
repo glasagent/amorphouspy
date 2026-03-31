@@ -176,8 +176,9 @@ def elemental_fractions_from_job(job: Job) -> dict[str, float] | None:
     mq = result.get("melt_quench", {})
     struct = mq.get("final_structure")
 
-    if struct and isinstance(struct, dict) and "numbers" in struct:
-        counts = Counter(chemical_symbols[z] for z in struct["numbers"])
+    atomic_numbers = _extract_atomic_numbers(struct)
+    if atomic_numbers is not None:
+        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
         return normalize(dict(counts))
 
     # Fallback: derive from the stored oxide composition
@@ -299,6 +300,41 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
         store.update_job(job_id, status="running", progress=progress)
 
 
+def _probe_step_caches(
+    job: Job,
+    all_steps: list[str],
+) -> tuple[dict[str, str], dict[str, object], bool]:
+    """Probe per-step caches and return (progress, partial_results, has_failure)."""
+    cache_dir = str(MELTQUENCH_PROJECT_DIR)
+    cache_key = job.request_hash
+    progress: dict[str, str] = {}
+    partial_results: dict[str, object] = dict(job.result_data or {})
+    has_failure = False
+    for step_name in all_steps:
+        step_key = f"{cache_key}_{step_name}"
+        try:
+            step_future = get_future_from_cache(
+                cache_directory=cache_dir,
+                cache_key=step_key,
+            )
+            step_resolved = _resolve_future(step_future, job.job_id)
+            progress[step_name] = step_resolved["status"]
+            if step_resolved["status"] == "completed":
+                # Each step result is already a dict keyed by step name(s),
+                # e.g. _accumulate_step → {"structure_generation": ..., "melt_quench": ...}
+                #       _run_analysis   → {"structure": ...}
+                partial_results.update(step_resolved["result"])
+            elif step_resolved["status"] == "failed":
+                has_failure = True
+        except FileNotFoundError:
+            progress[step_name] = "pending"
+        except Exception:
+            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
+            progress[step_name] = "failed"
+            has_failure = True
+    return progress, partial_results, has_failure
+
+
 def refresh_job_from_cache(job: Job) -> None:
     """Re-check executor cache for a running job and update DB if resolved.
 
@@ -335,79 +371,27 @@ def refresh_job_from_cache(job: Job) -> None:
     if submission:
         all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
 
-    progress: dict[str, str] = {}
-    has_failure = False
-    for step_name in all_steps:
-        step_key = f"{cache_key}_{step_name}"
-        try:
-            step_future = get_future_from_cache(
-                cache_directory=cache_dir,
-                cache_key=step_key,
-            )
-            step_resolved = _resolve_future(step_future, job.job_id)
-            progress[step_name] = step_resolved["status"]
-            if step_resolved["status"] == "failed":
-                has_failure = True
-        except FileNotFoundError:
-            progress[step_name] = "pending"
-        except Exception:
-            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
-            progress[step_name] = "failed"
-            has_failure = True
+    progress, partial_results, has_failure = _probe_step_caches(job, all_steps)
 
     store = get_job_store()
+    updates: dict[str, object] = {"progress": progress}
+    if partial_results:
+        updates["result_data"] = partial_results
     if has_failure:
-        store.update_job(job.job_id, status="failed", progress=progress)
+        updates["status"] = "failed"
     else:
-        store.update_job(job.job_id, status="running", progress=progress)
+        updates["status"] = "running"
+    store.update_job(job.job_id, **updates)
 
 
-def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
-    """Build the Jinja2 template context from job result data."""
+def _add_optional_analyses(context: dict, result_data: dict) -> None:
+    """Populate context with viscosity / CTE / elastic plots if available."""
     import json
 
     from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
     from amorphouspy_api.workflows.analyses.elastic import prepare_elastic_plots
-    from amorphouspy_api.workflows.analyses.meltquench_viz import (
-        build_temperature_time_plot,
-        prepare_timing_context,
-    )
-    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
     from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
 
-    mq = result_data.get("melt_quench", {})
-
-    # --- Structure analysis (always present) ---
-    context = prepare_structure_context(result_data)
-
-    # Melt-quench metadata
-    mean_temperature = mq.get("mean_temperature", "N/A")
-    if isinstance(mean_temperature, (int, float)):
-        mean_temperature = f"{mean_temperature:.1f}"
-    simulation_steps = mq.get("simulation_steps", "N/A")
-    if isinstance(simulation_steps, int):
-        simulation_steps = f"{simulation_steps:,}"
-
-    context.update(
-        {
-            "job_id": job_id,
-            "composition": mq.get("composition", "N/A"),
-            "mean_temperature": mean_temperature,
-            "simulation_steps": simulation_steps,
-        }
-    )
-
-    # --- Step timings from executorlib cache ---
-    if request_hash:
-        timing_ctx = prepare_timing_context(request_hash)
-        context.update(timing_ctx)
-
-    # --- Temperature-time diagram ---
-    tt_plot = build_temperature_time_plot(mq)
-    if tt_plot:
-        context["temperature_time_plot"] = tt_plot
-
-    # --- Optional analyses ---
     visc_data = result_data.get("viscosity")
     if visc_data:
         context["viscosity_plots"] = prepare_viscosity_plots(visc_data)
@@ -425,5 +409,143 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
         moduli = elastic_data.get("moduli")
         if moduli:
             context["elastic_moduli"] = moduli
+
+
+def _extract_atomic_numbers(final_structure: object) -> list[int] | None:
+    """Extract atomic numbers list from a final_structure value.
+
+    Handles both dict (with ``numbers`` key) and JSON-string
+    (ASE db format with ``__ndarray__`` encoding).
+    """
+    if final_structure is None:
+        return None
+
+    # Already a dict with a plain list of numbers
+    if isinstance(final_structure, dict) and "numbers" in final_structure:
+        return list(final_structure["numbers"])
+
+    # ASE JSON serialisation: string containing {"1": {"numbers": {"__ndarray__": ...}}}
+    if isinstance(final_structure, str):
+        try:
+            data = json.loads(final_structure)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        # ASE stores atoms keyed by row id (usually "1")
+        for atoms_dict in data.values():
+            if not isinstance(atoms_dict, dict):
+                continue
+            nums = atoms_dict.get("numbers")
+            if nums is None:
+                continue
+            if isinstance(nums, dict) and "__ndarray__" in nums:
+                return list(nums["__ndarray__"][2])
+            if isinstance(nums, list):
+                return nums
+    return None
+
+
+def _compute_total_md_steps(mq: dict) -> str:
+    """Estimate the total MD integration steps from melt-quench parameters."""
+    timestep_fs = mq.get("timestep", 1.0)
+    cooling_rate = mq.get("cooling_rate")
+    heating_rate = mq.get("heating_rate")
+    t_high = mq.get("temperature_high")
+    t_low = mq.get("temperature_low", 300.0)
+
+    if not all([cooling_rate, heating_rate, t_high]):
+        return "N/A"
+
+    seconds_to_fs = 1e15
+    delta_t = t_high - t_low
+    heating_steps = int((delta_t / (timestep_fs * heating_rate)) * seconds_to_fs)
+    cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
+    # Fixed protocol stages: equil_high(10k) + pressure_release(10k) + long_equil(100k)
+    total = heating_steps + 10_000 + cooling_steps + 10_000 + 100_000
+    return f"{total:,}"
+
+
+def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
+    """Build the Jinja2 template context from job result data.
+
+    Handles partial results gracefully — sections whose data is not yet
+    available are simply omitted from the context so the template can
+    conditionally skip them.
+    """
+    from amorphouspy_api.workflows.analyses.meltquench_viz import (
+        build_temperature_time_plot,
+        prepare_timing_context,
+    )
+    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
+
+    mq = result_data.get("melt_quench", {})
+
+    context: dict[str, object] = {"job_id": job_id}
+
+    _STRUCTURE_DEFAULTS: dict[str, object] = {
+        "plotly_json": None,
+        "structure_xyz": "",
+        "density": "N/A",
+        "network_connectivity": "N/A",
+        "network_formers": [],
+        "modifiers": [],
+    }
+
+    # --- Structure analysis (only when available) ---
+    if result_data.get("structure"):
+        try:
+            context.update(prepare_structure_context(result_data))
+        except Exception:
+            logger.warning("Could not render structure analysis for job %s", job_id)
+            context.update(_STRUCTURE_DEFAULTS)
+    else:
+        context.update(_STRUCTURE_DEFAULTS)
+
+    # Melt-quench metadata
+    mean_temperature = mq.get("mean_temperature", "N/A")
+    if isinstance(mean_temperature, (int, float)):
+        mean_temperature = f"{mean_temperature:.1f}"
+
+    # Format composition as "SiO2 67 - Na2O 18 - CaO 15"
+    raw_comp = mq.get("composition", "N/A")
+    if isinstance(raw_comp, dict):
+        composition_str = " - ".join(f"{oxide} {mol:g}" for oxide, mol in sorted(raw_comp.items()))
+    else:
+        composition_str = str(raw_comp)
+
+    # Atom count and actual composition from the final structure
+    n_atoms = "N/A"
+    actual_composition = ""
+    atomic_numbers = _extract_atomic_numbers(mq.get("final_structure"))
+    if atomic_numbers is not None:
+        n_atoms = f"{len(atomic_numbers):,}"
+        counts = Counter(chemical_symbols[z] for z in atomic_numbers)
+        actual_composition = " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
+
+    # Total MD steps from the T-t profile parameters
+    total_md_steps = _compute_total_md_steps(mq)
+
+    context.update(
+        {
+            "composition": composition_str,
+            "actual_composition": actual_composition,
+            "n_atoms": n_atoms,
+            "mean_temperature": mean_temperature,
+            "total_md_steps": total_md_steps,
+        }
+    )
+
+    # --- Step timings from executorlib cache ---
+    if request_hash:
+        timing_ctx = prepare_timing_context(request_hash)
+        context.update(timing_ctx)
+
+    # --- Temperature-time diagram ---
+    if mq:
+        tt_plot = build_temperature_time_plot(mq)
+        if tt_plot:
+            context["temperature_time_plot"] = tt_plot
+
+    # --- Optional analyses ---
+    _add_optional_analyses(context, result_data)
 
     return context
