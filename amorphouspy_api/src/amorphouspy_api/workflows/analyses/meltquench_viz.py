@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import pickle
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -19,29 +20,39 @@ def _format_runtime(seconds: float) -> str:
     return f"{hours:.1f} h"
 
 
-def get_step_timings(request_hash: str) -> dict[str, float]:
-    """Read per-step wall-clock runtimes from executorlib HDF5 cache.
+def get_step_timings(request_hash: str) -> dict[str, tuple[float, int]]:
+    """Read per-step wall-clock runtimes and core counts from executorlib cache.
+
+    Opens each step's HDF5 output file once and reads both ``runtime``
+    and ``resource_dict`` in a single pass.
 
     Returns:
-        Dict mapping step name to runtime in seconds.
+        Dict mapping step name to ``(runtime_seconds, cores)``.
     """
-    from executorlib.standalone.hdf import get_runtime
+    import h5py
 
     from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 
     cache_dir = MELTQUENCH_PROJECT_DIR
     step_names = ["structure_generation", "melt_quench", "structure", "viscosity", "cte", "elastic"]
-    timings: dict[str, float] = {}
+    timings: dict[str, tuple[float, int]] = {}
 
     for name in step_names:
         h5_path = cache_dir / f"{request_hash}_{name}_o.h5"
-        if h5_path.exists():
-            try:
-                rt = get_runtime(str(h5_path))
-                if rt > 0:
-                    timings[name] = rt
-            except Exception:
-                logger.debug("Could not read runtime for %s", name)
+        if not h5_path.exists():
+            continue
+        try:
+            with h5py.File(h5_path, "r") as hdf:
+                rt = pickle.loads(hdf["runtime"][()])  # noqa: S301
+                if rt <= 0:
+                    continue
+                cores = 1
+                if "resource_dict" in hdf:
+                    rd = pickle.loads(hdf["resource_dict"][()])  # noqa: S301
+                    cores = max(rd.get("cores", 1), rd.get("threads_per_core", 1))
+                timings[name] = (rt, cores)
+        except Exception:
+            logger.debug("Could not read cache for %s", name)
 
     return timings
 
@@ -67,7 +78,7 @@ def prepare_timing_context(request_hash: str) -> dict[str, Any]:
     }
 
     items = []
-    for name, seconds in raw.items():
+    for name, (seconds, _cores) in raw.items():
         items.append(
             {
                 "name": display_names.get(name, name),
@@ -75,8 +86,11 @@ def prepare_timing_context(request_hash: str) -> dict[str, Any]:
             }
         )
 
-    total = sum(raw.values())
-    core_hours = total / 3600
+    total = sum(seconds for seconds, _cores in raw.values())
+
+    # Core-hours: multiply each step's wall-clock time by its actual core count
+    core_seconds = sum(seconds * cores for seconds, cores in raw.values())
+    core_hours = core_seconds / 3600
     return {
         "step_timings": items,
         "total_runtime": _format_runtime(total),
