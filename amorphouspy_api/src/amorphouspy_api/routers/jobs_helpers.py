@@ -300,38 +300,48 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
         store.update_job(job_id, status="running", progress=progress)
 
 
+def _probe_single_step(cache_dir: str, cache_key: str, step_name: str, job_id: str) -> tuple[str, dict | None]:
+    """Probe a single step's cache and return (status, result_or_None)."""
+    step_key = f"{cache_key}_{step_name}"
+    try:
+        step_future = get_future_from_cache(cache_directory=cache_dir, cache_key=step_key)
+        resolved = _resolve_future(step_future, job_id)
+        status = resolved["status"]
+        result = resolved.get("result") if status == "completed" else None
+        return status, result
+    except FileNotFoundError:
+        return "pending", None
+    except Exception:
+        logger.exception("Job %s step %s failed (cached error)", job_id, step_name)
+        return "failed", None
+
+
 def _probe_step_caches(
     job: Job,
     all_steps: list[str],
 ) -> tuple[dict[str, str], dict[str, object], bool]:
     """Probe per-step caches and return (progress, partial_results, has_failure)."""
     cache_dir = str(MELTQUENCH_PROJECT_DIR)
-    cache_key = job.request_hash
     progress: dict[str, str] = {}
     partial_results: dict[str, object] = dict(job.result_data or {})
     has_failure = False
+    # Track whether the base pipeline (structure_generation + melt_quench) is done.
+    # Analysis steps depend on it, so they should stay "pending" until it completes.
+    base_done = True
     for step_name in all_steps:
-        step_key = f"{cache_key}_{step_name}"
-        try:
-            step_future = get_future_from_cache(
-                cache_directory=cache_dir,
-                cache_key=step_key,
-            )
-            step_resolved = _resolve_future(step_future, job.job_id)
-            progress[step_name] = step_resolved["status"]
-            if step_resolved["status"] == "completed":
-                # Each step result is already a dict keyed by step name(s),
-                # e.g. _accumulate_step → {"structure_generation": ..., "melt_quench": ...}
-                #       _run_analysis   → {"structure": ...}
-                partial_results.update(step_resolved["result"])
-            elif step_resolved["status"] == "failed":
-                has_failure = True
-        except FileNotFoundError:
-            progress[step_name] = "pending"
-        except Exception:
-            logger.exception("Job %s step %s failed (cached error)", job.job_id, step_name)
-            progress[step_name] = "failed"
+        status, result = _probe_single_step(cache_dir, job.request_hash, step_name, job.job_id)
+        is_analysis = step_name not in BASE_STEPS
+        # An analysis step reported as "running" while the base hasn't finished
+        # is actually just waiting — show "pending" instead.
+        if status == "running" and is_analysis and not base_done:
+            status = "pending"
+        progress[step_name] = status
+        if result is not None:
+            partial_results.update(result)
+        if status == "failed":
             has_failure = True
+        if not is_analysis and status != "completed":
+            base_done = False
     return progress, partial_results, has_failure
 
 
@@ -384,7 +394,7 @@ def refresh_job_from_cache(job: Job) -> None:
     store.update_job(job.job_id, **updates)
 
 
-def _add_optional_analyses(context: dict, result_data: dict) -> None:
+def _add_optional_analyses(context: dict, result_data: dict, request_data: dict | None = None) -> None:
     """Populate context with viscosity / CTE / elastic plots if available."""
     import json
 
@@ -398,6 +408,16 @@ def _add_optional_analyses(context: dict, result_data: dict) -> None:
 
     cte_data = result_data.get("cte")
     if cte_data:
+        # Backfill metadata from request_data for jobs computed before metadata was stored
+        if "metadata" not in cte_data and request_data:
+            for analysis in request_data.get("analyses", []):
+                if analysis.get("type") == "cte":
+                    cte_data["metadata"] = {
+                        "temperature": analysis.get("temperature", 300.0),
+                        "production_steps": analysis.get("production_steps", 200_000),
+                        "timestep": analysis.get("timestep", 1.0),
+                    }
+                    break
         context["cte_plots"] = prepare_cte_plots(cte_data)
         summary = cte_data.get("summary")
         if summary:
@@ -483,7 +503,9 @@ def _format_actual_composition(mq: dict, result_data: dict) -> tuple[str, str]:
     return n_atoms, " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
 
 
-def build_visualization_context(job_id: str, result_data: dict, *, request_hash: str = "") -> dict:
+def build_visualization_context(
+    job_id: str, result_data: dict, *, request_hash: str = "", request_data: dict | None = None
+) -> dict:
     """Build the Jinja2 template context from job result data.
 
     Handles partial results gracefully — sections whose data is not yet
@@ -553,6 +575,6 @@ def build_visualization_context(job_id: str, result_data: dict, *, request_hash:
             context["temperature_time_plot"] = tt_plot
 
     # --- Optional analyses ---
-    _add_optional_analyses(context, result_data)
+    _add_optional_analyses(context, result_data, request_data=request_data)
 
     return context

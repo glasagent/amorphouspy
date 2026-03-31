@@ -347,6 +347,7 @@ def visualize_job(job_id: str) -> HTMLResponse:
             job_id,
             result_data,
             request_hash=job.request_hash,
+            request_data=job.request_data,
         )
         context["job_status"] = job.status
         context["progress"] = job.progress or {}
