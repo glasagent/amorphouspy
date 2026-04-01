@@ -218,9 +218,8 @@
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
                 {% if cte_plots.convergence %}
-                CTE computed from enthalpy&ndash;volume fluctuations
-                (&alpha; = &lang;&Delta;H &middot; &Delta;V&rang; / &lang;V&rang; k<sub>B</sub>T&sup2;)
-                via iterative NPT production runs
+                Linear CTE (&alpha;<sub>L</sub> = &alpha;<sub>V</sub> / 3) from
+                enthalpy&ndash;volume fluctuations via iterative NPT production runs
                 {% if cte_params and cte_params.temperature %}at {{ cte_params.temperature | int }} K{% endif %}
                 ({{ "%.2f" | format(cte_params.production_ns) }} ns each, up to
                 {{ cte_params.max_production_runs }} runs).
@@ -248,19 +247,19 @@
                     <div class="section-title" style="font-size: 1em;">Isotropic Moduli</div>
                     <div class="property">
                         <span class="property-label">Bulk Modulus (B):</span>
-                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.B) }} GPa</span>
+                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.B) }} GPa</span>
                     </div>
                     <div class="property">
                         <span class="property-label">Shear Modulus (G):</span>
-                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.G) }} GPa</span>
+                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.G) }} GPa</span>
                     </div>
                     <div class="property">
                         <span class="property-label">Young's Modulus (E):</span>
-                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.E) }} GPa</span>
+                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.E) }} GPa</span>
                     </div>
                     <div class="property">
                         <span class="property-label">Poisson's Ratio (&nu;):</span>
-                        <span class="property-value">{{ "%.4f"|format(elastic_moduli.nu) }}</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.nu) }}</span>
                     </div>
                 </div>
                 {% endif %}

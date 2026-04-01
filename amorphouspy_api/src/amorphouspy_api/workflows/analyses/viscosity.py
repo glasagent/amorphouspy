@@ -345,6 +345,7 @@ def _build_viscosity_vs_temperature_plot(
         "yaxis": {
             "title": {"text": "Viscosity (dPa·s)", "font": {"size": 14}},
             "type": "log",
+            "exponentformat": "e",
             "range": [log_min - 0.2, y_upper],
         },
         "hovermode": "closest",
@@ -441,6 +442,7 @@ def _build_arrhenius_plot(
         "yaxis": {
             "title": {"text": "Viscosity (dPa·s)", "font": {"size": 14}},
             "type": "log",
+            "exponentformat": "e",
             "range": [log_min - 0.2, y_upper],
         },
         "hovermode": "closest",
@@ -479,7 +481,11 @@ def _build_running_viscosity_plot(
         "layout": {
             "title": {"text": "Viscosity Convergence", "font": {"size": 16}},
             "xaxis": {"title": {"text": "Lag Time (ps)", "font": {"size": 14}}, "type": "log"},
-            "yaxis": {"title": {"text": "Viscosity (dPa\u00b7s)", "font": {"size": 14}}, "type": "log"},
+            "yaxis": {
+                "title": {"text": "Viscosity (dPa\u00b7s)", "font": {"size": 14}},
+                "type": "log",
+                "exponentformat": "e",
+            },
             "hovermode": "closest",
             "showlegend": True,
             "height": 500,
