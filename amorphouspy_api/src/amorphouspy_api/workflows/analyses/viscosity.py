@@ -9,6 +9,7 @@ step a production MD run is performed followed by post-processing.
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 from amorphouspy import melt_quench_simulation
@@ -86,7 +87,6 @@ def run_viscosity_workflow(
     all_max_lags: list[float] = []
     sim_steps: list[int] = []
     lag_times_ps: list[list[float]] = []
-    sacf_data: list[list[float]] = []
     viscosity_integral: list[list[float]] = []
 
     structure_current = structure
@@ -132,9 +132,8 @@ def run_viscosity_workflow(
         viscosities.append(float(visc_data["viscosity"]))
         all_max_lags.append(float(visc_data["max_lag"]))
         sim_steps.append(int(n_timesteps))
-        lag_times_ps.append(visc_data.get("lag_time_ps", []))
-        sacf_data.append(visc_data.get("sacf", []))
-        viscosity_integral.append(visc_data.get("viscosity_integral", []))
+        lag_times_ps.append(_downsample_log(visc_data.get("lag_time_ps", [])))
+        viscosity_integral.append(_downsample_log(visc_data.get("viscosity_integral", [])))
 
     return {
         "temperatures": sorted_temps,
@@ -142,9 +141,43 @@ def run_viscosity_workflow(
         "max_lag": all_max_lags,
         "simulation_steps": sim_steps,
         "lag_times_ps": lag_times_ps,
-        "sacf_data": sacf_data,
         "viscosity_integral": viscosity_integral,
     }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_MAX_PLOT_POINTS = 1000
+
+
+def _downsample_log(arr: list[float], max_points: int = _MAX_PLOT_POINTS) -> list[float]:
+    """Downsample *arr* to *max_points* using log-spaced indices.
+
+    The convergence plot uses a logarithmic x-axis, so log-spaced
+    sampling preserves visual fidelity while drastically reducing
+    the amount of data stored in the database.
+    """
+    n = len(arr)
+    if n <= max_points:
+        return arr
+    # log-spaced indices from 0 to n-1, always including the last point
+    indices = sorted({round(v) for v in _logspace(0, n - 1, max_points)})
+    return [arr[i] for i in indices]
+
+
+def _logspace(start: float, stop: float, num: int) -> list[float]:
+    """Return *num* values log-spaced between *start* and *stop* (inclusive)."""
+    if num <= 0:
+        return []
+    if num == 1:
+        return [stop]
+    # shift by 1 so log(0) is avoided
+    log_start = math.log10(start + 1)
+    log_stop = math.log10(stop + 1)
+    step = (log_stop - log_start) / (num - 1)
+    return [10 ** (log_start + i * step) - 1 for i in range(num)]
 
 
 # ---------------------------------------------------------------------------
@@ -204,39 +237,6 @@ def _build_arrhenius_plot(temperatures: list[float], viscosities: list[float]) -
     }
 
 
-def _build_sacf_plot(
-    lag_times_ps: list[list[float]],
-    sacf_data: list[list[float]],
-    temperatures: list[float],
-) -> dict | None:
-    """Build Plotly figure dict for SACF decay curves (one trace per temperature)."""
-    traces = [
-        {
-            "x": lag_times_ps[i],
-            "y": sacf_data[i],
-            "mode": "lines",
-            "name": f"{temperatures[i]} K",
-            "line": {"width": 2},
-        }
-        for i in range(len(temperatures))
-        if lag_times_ps[i] and sacf_data[i]
-    ]
-    if not traces:
-        return None
-    return {
-        "data": traces,
-        "layout": {
-            "title": "Stress Autocorrelation Function",
-            "xaxis": {"title": "Lag Time (ps)", "type": "log"},
-            "yaxis": {"title": "Normalized SACF"},
-            "hovermode": "closest",
-            "showlegend": True,
-            "height": 500,
-            "margin": {"l": 80, "r": 40, "t": 60, "b": 60},
-        },
-    }
-
-
 def _build_running_viscosity_plot(
     lag_times_ps: list[list[float]],
     viscosity_integral: list[list[float]],
@@ -274,14 +274,13 @@ def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, str]:
     """Build JSON-encoded Plotly plots from viscosity result data.
 
     Returns:
-        Dict with keys ``arrhenius``, ``sacf`` (optional), ``convergence`` (optional).
+        Dict with keys ``visc_vs_t``, ``arrhenius``, ``convergence`` (optional).
     """
     import json
 
     temps = visc_data.get("temperatures", [])
     viscosities = visc_data.get("viscosities", [])
     lag_times_ps = visc_data.get("lag_times_ps", [])
-    visc_data.get("sacf_data", [])
     viscosity_integral = visc_data.get("viscosity_integral", [])
 
     plots: dict[str, str] = {}

@@ -82,3 +82,31 @@ The LLM's typical workflow:
 3. If no good match → `submit_simulation` — run new computation (after confirming with user)
 4. `check_simulation_status` — poll until done
 5. `get_simulation_results` — retrieve and present results
+
+### Data Lifecycle Classification
+
+Simulation data falls into three tiers with different retention guarantees:
+
+1. **Ephemeral simulation files** — Raw output files in the LAMMPS working
+   directory (trajectories, log files, restart files).  These are *not* parsed
+   or retained by the API.  If the simulation directory is purged, the data is
+   gone.
+
+2. **Cached intermediate results** — Large data returned by the Python
+   analysis functions that is too voluminous to store in the database.  This
+   includes, for example, the full melt-quench trajectory and the raw
+   stress-autocorrelation arrays from the viscosity calculation.  These live in
+   the **executorlib cache** and can be re-materialised by re-running the
+   function with the same inputs.  However, if the cache is invalidated (e.g.
+   after a Python version upgrade), the data is lost.
+
+3. **Persistent database results** — Compact, presentation-ready data that
+   enters the SQLite `result_data` column and is retained indefinitely.  This
+   includes scalar properties (viscosity values, elastic moduli),
+   per-composition metadata, and downsampled plot data (e.g. convergence curves
+   reduced to ≤ 1 000 points via log-spaced sampling).  These results survive
+   cache purges and are the authoritative record of a completed job.
+
+When adding a new analysis, decide for each output field which tier it belongs
+to.  The guiding rule: **only store in the database what is needed to reproduce
+the plots and summary tables shown in the results page**.
