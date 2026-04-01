@@ -423,7 +423,10 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
 
     visc_data = result_data.get("viscosity")
     if visc_data:
-        context["viscosity_plots"] = prepare_viscosity_plots(visc_data)
+        visc_plots = prepare_viscosity_plots(visc_data)
+        # VFT coefficients are a dict, not JSON — extract before passing to context
+        vft_data = visc_plots.pop("vft", None)
+        context["viscosity_plots"] = visc_plots
         vp = _find_analysis_params(request_data, "viscosity")
         v_timestep = vp.get("timestep", 1.0)
         v_n_timesteps = vp.get("n_timesteps", 10_000_000)
@@ -433,6 +436,8 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
             "production_ns": v_n_timesteps * v_timestep / 1e6,
             "max_lag_ns": (v_max_lag or v_n_timesteps) * v_timestep / 1e6,
         }
+        if vft_data:
+            context["vft"] = vft_data
 
     cte_data = result_data.get("cte")
     if cte_data:

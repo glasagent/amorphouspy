@@ -186,6 +186,18 @@
                 (max correlation lag {{ "%.1f" | format(viscosity_params.max_lag_ns) }} ns).
                 {% endif %}
                 The autocorrelation integration cutoff is determined automatically via a noise-threshold criterion.
+                {% if vft %}
+                <br>
+                Dashed line: VFT extrapolation log<sub>10</sub>(&eta;) = A + B / (T &minus; T<sub>0</sub>)
+                with A = {{ "%.2f" | format(vft.A) }}, B = {{ "%.0f" | format(vft.B) }} K,
+                T<sub>0</sub> = {{ "%.0f" | format(vft.T0) }} K ({{ "%.0f" | format(vft.T0 - 273.15) }} &deg;C).
+                {% if vft.ref_temps %}
+                Reference points:
+                {% for label, temp_c in vft.ref_temps.items() %}
+                {{ label }} = {{ "%.0f" | format(temp_c) }} &deg;C{{ "," if not loop.last else "." }}
+                {% endfor %}
+                {% endif %}
+                {% endif %}
             </p>
         </div>
     </div>
