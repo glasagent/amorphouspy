@@ -432,6 +432,20 @@ def minimum_image_distance(
     return np.sqrt((delta**2).sum())
 
 
+def _check_min_distance(
+    candidate: np.ndarray,
+    positions: np.ndarray,
+    box_length: float,
+    min_dist: float,
+) -> bool:
+    """Return True if candidate is at least min_dist from every position (vectorized)."""
+    if len(positions) == 0:
+        return True
+    delta = np.abs(candidate - positions)
+    delta = np.where(delta > 0.5 * box_length, box_length - delta, delta)
+    return (delta**2).sum(axis=1).min() >= min_dist**2
+
+
 def extract_stoichiometry(composition: dict[str, float]) -> dict[str, dict[str, int]]:
     """Extract the stoichiometry of each component in the composition.
 
@@ -445,6 +459,101 @@ def extract_stoichiometry(composition: dict[str, float]) -> dict[str, dict[str, 
     """
     comp_dict = extract_composition(composition)
     return {oxide: parse_formula(oxide) for oxide in comp_dict}
+
+
+def _counts_from_n_molecules(
+    composition: dict[str, float],
+    n_molecules: int,
+    mode: str,
+    stoichiometry: dict[str, dict[str, int]],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Compute molecule and atom counts from a target molecule count."""
+    if mode.lower() == "weight":
+        mol_frac = get_composition(composition, mode="weight")
+        comp_dict = {ox: mol_frac[ox] for ox in mol_frac}
+    else:
+        comp_dict = extract_composition(composition)
+
+    total_molecules = sum(comp_dict.values())
+    if abs(total_molecules - 1.0) > DENSITY_TOLERANCE:
+        error_msg = f"Composition sum error: {total_molecules:.10f} != 1.0"
+        raise ValueError(error_msg)
+
+    molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
+    diff = n_molecules - sum(molecule_counts.values())
+    if diff:
+        main = max(comp_dict, key=comp_dict.get)
+        molecule_counts[main] += diff
+
+    atom_counts: dict[str, int] = {}
+    for ox, mol_cnt in molecule_counts.items():
+        stoich = stoichiometry.get(ox)
+        if stoich is None:
+            error_msg = f"Unknown oxide formula: {ox}"
+            raise KeyError(error_msg)
+        for elem, num in stoich.items():
+            atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
+
+    return molecule_counts, atom_counts
+
+
+def _place_atoms(
+    atom_counts: dict[str, int],
+    box_length: float,
+    min_distance: float,
+    rng: np.random.Generator,
+    max_attempts_per_atom: int,
+) -> list[dict]:
+    """Place atoms in a periodic cubic box using a cell list for O(1) neighbor lookup."""
+    n_cells = max(1, int(box_length / min_distance))
+    cell_size = box_length / n_cells
+    cell_map: dict[tuple[int, int, int], list[np.ndarray]] = {}
+    min_dist_sq = min_distance**2
+    atoms: list[dict] = []
+
+    _BATCH = 512
+    candidates = rng.uniform(0, box_length, size=(_BATCH, 3))
+    _ci = 0
+
+    for elem, count in atom_counts.items():
+        placed = 0
+        attempts = 0
+        while placed < count:
+            if attempts >= max_attempts_per_atom:
+                error_msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
+                raise RuntimeError(error_msg)
+            if _ci >= _BATCH:
+                candidates = rng.uniform(0, box_length, size=(_BATCH, 3))
+                _ci = 0
+            pos = candidates[_ci]
+            _ci += 1
+            cx = int(pos[0] / cell_size) % n_cells
+            cy = int(pos[1] / cell_size) % n_cells
+            cz = int(pos[2] / cell_size) % n_cells
+            ok = True
+            for dx in range(-1, 2):
+                if not ok:
+                    break
+                for dy in range(-1, 2):
+                    if not ok:
+                        break
+                    for dz in range(-1, 2):
+                        nc = ((cx + dx) % n_cells, (cy + dy) % n_cells, (cz + dz) % n_cells)
+                        for q in cell_map.get(nc, ()):
+                            d = np.abs(pos - q)
+                            d = np.where(d > 0.5 * box_length, box_length - d, d)
+                            if (d * d).sum() < min_dist_sq:
+                                ok = False
+                                break
+            if ok:
+                atoms.append({"element": elem, "position": pos.tolist()})
+                cell_map.setdefault((cx, cy, cz), []).append(pos)
+                placed += 1
+                attempts = 0
+            else:
+                attempts += 1
+
+    return atoms
 
 
 def create_random_atoms(
@@ -494,66 +603,18 @@ def create_random_atoms(
     """
     rng = np.random.default_rng(seed)
 
-    # 1. Determine total atom counts based on input mode
     validate_target_mode(n_molecules, target_atoms)
 
     if stoichiometry is None:
         stoichiometry = extract_stoichiometry(composition)
 
     if target_atoms is not None:
-        # Use target atoms mode
         system_plan = plan_system(composition, target_atoms, mode=mode, target_type="atoms")
-        molecule_counts = system_plan["formula_units"]
         atom_counts = system_plan["element_counts"]
     else:
-        # Use traditional n_molecules mode
-        if mode.lower() == "weight":
-            # Convert weight% to mol% first, then calculate molecule counts
-            mol_frac = get_composition(composition, mode="weight")
-            comp_dict = {ox: mol_frac[ox] for ox in mol_frac}
-        else:
-            # Use molar composition directly
-            comp_dict = extract_composition(composition)
+        _, atom_counts = _counts_from_n_molecules(composition, n_molecules, mode, stoichiometry)
 
-        total_molecules = sum(comp_dict.values())
-        if abs(total_molecules - 1.0) > DENSITY_TOLERANCE:
-            error_msg = f"Composition sum error: {total_molecules:.10f} != 1.0"
-            raise ValueError(error_msg)
-        molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
-        diff = n_molecules - sum(molecule_counts.values())
-        if diff:
-            main = max(comp_dict, key=comp_dict.get)
-            molecule_counts[main] += diff
-
-        atom_counts = {}
-        for ox, mol_cnt in molecule_counts.items():
-            stoich = stoichiometry.get(ox)
-            if stoich is None:
-                error_msg = f"Unknown oxide formula: {ox}"
-                raise KeyError(error_msg)
-            for elem, num in stoich.items():
-                atom_counts[elem] = atom_counts.get(elem, 0) + num * mol_cnt
-
-    # 2. Place atoms with min distance using periodic boundary conditions
-    atoms = []
-    positions = []
-
-    for elem, count in atom_counts.items():
-        placed = 0
-        attempts = 0
-        while placed < count:
-            if attempts >= max_attempts_per_atom:
-                error_msg = f"Failed to place {elem} atoms: increase box or reduce min_distance"
-                raise RuntimeError(error_msg)
-            pos = rng.uniform(0, box_length, size=3)
-            if all(minimum_image_distance(pos, p, box_length) >= min_distance for p in positions):
-                atoms.append({"element": elem, "position": pos.tolist()})
-                positions.append(pos)
-                placed += 1
-                attempts = 0
-            else:
-                attempts += 1
-
+    atoms = _place_atoms(atom_counts, box_length, min_distance, rng, max_attempts_per_atom)
     return atoms, atom_counts
 
 
