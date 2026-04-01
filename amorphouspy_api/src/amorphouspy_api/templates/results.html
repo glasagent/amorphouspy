@@ -248,19 +248,19 @@
                     <div class="section-title" style="font-size: 1em;">Isotropic Moduli</div>
                     <div class="property">
                         <span class="property-label">Bulk Modulus (B):</span>
-                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.B) }} GPa</span>
+                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.B) }} GPa</span>
                     </div>
                     <div class="property">
                         <span class="property-label">Shear Modulus (G):</span>
-                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.G) }} GPa</span>
+                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.G) }} GPa</span>
                     </div>
                     <div class="property">
                         <span class="property-label">Young's Modulus (E):</span>
-                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.E) }} GPa</span>
+                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.E) }} GPa</span>
                     </div>
                     <div class="property">
                         <span class="property-label">Poisson's Ratio (&nu;):</span>
-                        <span class="property-value">{{ "%.4f"|format(elastic_moduli.nu) }}</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.nu) }}</span>
                     </div>
                 </div>
                 {% endif %}
