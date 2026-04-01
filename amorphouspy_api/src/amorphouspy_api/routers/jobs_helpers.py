@@ -354,6 +354,15 @@ def refresh_job_from_cache(job: Job) -> None:
     cache_dir = str(MELTQUENCH_PROJECT_DIR)
     cache_key = job.request_hash
 
+    def _parse_submission() -> JobSubmission | None:
+        if not job.request_data:
+            return None
+        try:
+            return JobSubmission(**job.request_data)
+        except Exception:
+            logger.warning("Could not parse request_data for job %s", job.job_id)
+            return None
+
     # Fast path — final merged result available?
     try:
         future = get_future_from_cache(
@@ -362,7 +371,7 @@ def refresh_job_from_cache(job: Job) -> None:
         )
         resolved = _resolve_future(future, job.job_id)
         if resolved["status"] in ("completed", "failed"):
-            submission = JobSubmission(**job.request_data) if job.request_data else None
+            submission = _parse_submission()
             _update_from_resolved(job.job_id, resolved, submission)
             return
     except FileNotFoundError:
@@ -370,13 +379,13 @@ def refresh_job_from_cache(job: Job) -> None:
     except Exception as exc:
         # get_future_from_cache raises stored errors directly; treat as failed.
         logger.exception("Job %s failed (cached error)", job.job_id)
-        submission = JobSubmission(**job.request_data) if job.request_data else None
+        submission = _parse_submission()
         resolved = {"status": "failed", "error": str(exc)}
         _update_from_resolved(job.job_id, resolved, submission)
         return
 
     # Slow path — probe per-step cache keys
-    submission = JobSubmission(**job.request_data) if job.request_data else None
+    submission = _parse_submission()
     all_steps = list(BASE_STEPS)
     if submission:
         all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
