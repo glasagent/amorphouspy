@@ -76,7 +76,8 @@
                 <span class="property-label">Density:</span>
                 <span class="property-value">{{ density }} g/cm³</span>
             </div>
-            <div class="property" title="Average number of bridging oxygens per network former (Q&#x207F; weighted mean). Q⁴ = fully connected (e.g. pure SiO₂ ≈ 4.0). Lower values indicate a more depolymerized network.">
+            <div class="property"
+                title="Average number of bridging oxygens per network former (Q&#x207F; weighted mean). Q⁴ = fully connected (e.g. pure SiO₂ ≈ 4.0). Lower values indicate a more depolymerized network.">
                 <span class="property-label" style="cursor: help;">Network Connectivity &#9432;:</span>
                 <span class="property-value">{{ network_connectivity }}</span>
             </div>
@@ -147,7 +148,12 @@
             <div class="section-title">Structural Analysis</div>
             <div id="plotly-div"></div>
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-                Interactive plot with zoom, pan, and hover capabilities. Click legend items to show/hide traces.
+                Pair distribution functions (RDF) computed up to r<sub>max</sub> = 10 &Aring; with 2000 bins.
+                Bond cutoffs are automatically determined from the first RDF minimum (Savitzky-Golay smoothed).
+                These cutoffs feed into coordination number distributions, Q<sub>n</sub> speciation &amp; network
+                connectivity,
+                bond-angle distributions, and Guttman ring statistics (up to 40-membered rings).
+                Click legend items to show/hide individual traces.
             </p>
         </div>
     </div>
@@ -172,7 +178,14 @@
             </div>
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-                Viscosity computed via the Green-Kubo formalism from stress autocorrelation functions.
+                Viscosity computed via the Green-Kubo method by integrating off-diagonal stress
+                autocorrelation functions (P<sub>xy</sub>, P<sub>xz</sub>, P<sub>yz</sub>).
+                {% if viscosity_params %}
+                Production runs of {{ "%.1f" | format(viscosity_params.production_ns) }} ns at
+                {{ viscosity_params.temperatures | join(', ') }} K
+                (max correlation lag {{ "%.1f" | format(viscosity_params.max_lag_ns) }} ns).
+                {% endif %}
+                The autocorrelation integration cutoff is determined automatically via a noise-threshold criterion.
             </p>
         </div>
     </div>
@@ -192,48 +205,76 @@
             {% endif %}
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-                Coefficient of Thermal Expansion computed from molecular dynamics simulations.
+                {% if cte_plots.convergence %}
+                CTE computed from enthalpy&ndash;volume fluctuations
+                (&alpha; = &lang;&Delta;H &middot; &Delta;V&rang; / &lang;V&rang; k<sub>B</sub>T&sup2;)
+                via iterative NPT production runs
+                {% if cte_params and cte_params.temperature %}at {{ cte_params.temperature | int }} K{% endif %}
+                ({{ "%.2f" | format(cte_params.production_ns) }} ns each, up to
+                {{ cte_params.max_production_runs }} runs).
+                {% endif %}
+                {% if cte_plots.volume_temperature %}
+                {% if cte_plots.convergence %}Additionally, volume{% else %}Volume{% endif %}
+                vs. temperature data collected from NPT simulations
+                {% if cte_params and cte_params.temperatures %}at {{ cte_params.temperatures | join(', ') }} K{% endif
+                %}
+                ({{ "%.2f" | format(cte_params.production_ns) }} ns each),
+                enabling a linear fit of volumetric thermal expansion.
+                {% endif %}
             </p>
         </div>
     </div>
     {% endif %}
 
     {% if elastic_plots %}
-    <div class="results-container" style="margin-top: 30px;">
-        <div class="info-panel">
-            <div class="section-title">Elastic Moduli</div>
-            {% if elastic_moduli %}
-            <div class="property">
-                <span class="property-label">Bulk Modulus (B):</span>
-                <span class="property-value">{{ "%.2f"|format(elastic_moduli.B) }} GPa</span>
-            </div>
-            <div class="property">
-                <span class="property-label">Shear Modulus (G):</span>
-                <span class="property-value">{{ "%.2f"|format(elastic_moduli.G) }} GPa</span>
-            </div>
-            <div class="property">
-                <span class="property-label">Young's Modulus (E):</span>
-                <span class="property-value">{{ "%.2f"|format(elastic_moduli.E) }} GPa</span>
-            </div>
-            <div class="property">
-                <span class="property-label">Poisson's Ratio (&nu;):</span>
-                <span class="property-value">{{ "%.4f"|format(elastic_moduli.nu) }}</span>
-            </div>
-            {% endif %}
-        </div>
+    <div class="analysis-container" style="margin-top: 30px;">
         <div class="plot-panel">
             <div class="section-title">Elastic Properties</div>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
+                {% if elastic_moduli %}
+                <div style="flex: 0 0 auto; min-width: 220px;">
+                    <div class="section-title" style="font-size: 1em;">Isotropic Moduli</div>
+                    <div class="property">
+                        <span class="property-label">Bulk Modulus (B):</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.B) }} GPa</span>
+                    </div>
+                    <div class="property">
+                        <span class="property-label">Shear Modulus (G):</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.G) }} GPa</span>
+                    </div>
+                    <div class="property">
+                        <span class="property-label">Young's Modulus (E):</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.E) }} GPa</span>
+                    </div>
+                    <div class="property">
+                        <span class="property-label">Poisson's Ratio (&nu;):</span>
+                        <span class="property-value">{{ "%.4f"|format(elastic_moduli.nu) }}</span>
+                    </div>
+                </div>
+                {% endif %}
 
-            {% if elastic_plots.moduli %}
-            <div id="elastic-moduli-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
-
-            {% if elastic_plots.cij_heatmap %}
-            <div id="elastic-cij-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
+                {% if elastic_plots.cij_heatmap %}
+                <div style="flex: 1 1 400px; min-width: 0;">
+                    <div class="section-title" style="font-size: 1em;">Stiffness Tensor C<sub>ij</sub></div>
+                    <div id="elastic-cij-div"></div>
+                </div>
+                {% endif %}
+            </div>
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-                Elastic constants computed via stress-strain finite differences with Voigt-Reuss-Hill averaging.
+                Full 6&times;6 elastic stiffness tensor (C<sub>ij</sub>) computed via the central-difference
+                stress-strain method.
+                {% if elastic_params %}
+                The simulation box is deformed by &plusmn;{{ "%.1f" | format(elastic_params.strain_pct) }}% strain
+                along each of the three normal (xx, yy, zz) and three shear (yz, xz, xy) directions
+                (12 deformations total, {{ elastic_params.temperature | int }} K,
+                {{ "%.3f" | format(elastic_params.production_ns) }} ns production per direction).
+                {% else %}
+                The simulation box is deformed by &plusmn;0.1% strain along each of the
+                three normal (xx, yy, zz) and three shear (yz, xz, xy) directions (12 deformations total).
+                {% endif %}
+                Stress tensors are averaged over the second half of each production run.
+                Isotropic moduli (B, G, E, &nu;) obtained via Voigt-Reuss-Hill averaging.
             </p>
         </div>
     </div>
@@ -301,11 +342,6 @@
     {% if elastic_plots %}
     <script>
         const elasticPlotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
-
-        {% if elastic_plots.moduli %}
-        const elasticModuli = {{ elastic_plots.moduli | safe }};
-        Plotly.newPlot('elastic-moduli-div', elasticModuli.data, elasticModuli.layout, elasticPlotOpts);
-        {% endif %}
 
         {% if elastic_plots.cij_heatmap %}
         const elasticCij = {{ elastic_plots.cij_heatmap | safe }};

@@ -394,6 +394,16 @@ def refresh_job_from_cache(job: Job) -> None:
     store.update_job(job.job_id, **updates)
 
 
+def _find_analysis_params(request_data: dict | None, analysis_type: str) -> dict:
+    """Return the parameter dict for *analysis_type* from request_data, or empty dict."""
+    if not request_data:
+        return {}
+    for analysis in request_data.get("analyses", []):
+        if analysis.get("type") == analysis_type:
+            return analysis
+    return {}
+
+
 def _add_optional_analyses(context: dict, result_data: dict, request_data: dict | None = None) -> None:
     """Populate context with viscosity / CTE / elastic plots if available."""
     import json
@@ -405,6 +415,15 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
     visc_data = result_data.get("viscosity")
     if visc_data:
         context["viscosity_plots"] = prepare_viscosity_plots(visc_data)
+        vp = _find_analysis_params(request_data, "viscosity")
+        v_timestep = vp.get("timestep", 1.0)
+        v_n_timesteps = vp.get("n_timesteps", 10_000_000)
+        v_max_lag = vp.get("max_lag", 1_000_000)
+        context["viscosity_params"] = {
+            "temperatures": sorted(vp.get("temperatures", [1500, 2000, 2500]), reverse=True),
+            "production_ns": v_n_timesteps * v_timestep / 1e6,
+            "max_lag_ns": (v_max_lag or v_n_timesteps) * v_timestep / 1e6,
+        }
 
     cte_data = result_data.get("cte")
     if cte_data:
@@ -422,6 +441,16 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
         summary = cte_data.get("summary")
         if summary:
             context["cte_summary"] = json.dumps(summary)
+        cp = _find_analysis_params(request_data, "cte")
+        c_timestep = cp.get("timestep", 1.0)
+        c_prod_steps = cp.get("production_steps", 200_000)
+        context["cte_params"] = {
+            "method": cp.get("method", "fluctuations"),
+            "temperature": cp.get("temperature"),
+            "temperatures": cp.get("temperatures"),
+            "production_ns": c_prod_steps * c_timestep / 1e6,
+            "max_production_runs": cp.get("max_production_runs", 25),
+        }
 
     elastic_data = result_data.get("elastic")
     if elastic_data:
@@ -429,6 +458,15 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
         moduli = elastic_data.get("moduli")
         if moduli:
             context["elastic_moduli"] = moduli
+        ep = _find_analysis_params(request_data, "elastic")
+        strain = ep.get("strain", 1e-3)
+        e_timestep = ep.get("timestep", 1.0)
+        e_prod_steps = ep.get("production_steps", 10_000)
+        context["elastic_params"] = {
+            "strain_pct": strain * 100,
+            "temperature": ep.get("temperature", 300.0),
+            "production_ns": e_prod_steps * e_timestep / 1e6,
+        }
 
 
 def _extract_atomic_numbers(final_structure: object) -> list[int] | None:

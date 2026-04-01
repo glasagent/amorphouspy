@@ -101,7 +101,7 @@ def _build_cij_heatmap(cij: list[list[float]]) -> dict:
                 "type": "heatmap",
                 "colorscale": "RdBu",
                 "zmid": 0,
-                "colorbar": {"title": "GPa"},
+                "colorbar": {"title": {"text": "GPa", "side": "right"}},
             }
         ],
         "layout": {
