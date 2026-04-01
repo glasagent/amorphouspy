@@ -216,7 +216,8 @@
                 {% if cte_plots.volume_temperature %}
                 {% if cte_plots.convergence %}Additionally, volume{% else %}Volume{% endif %}
                 vs. temperature data collected from NPT simulations
-                {% if cte_params and cte_params.temperatures %}at {{ cte_params.temperatures | join(', ') }} K{% endif %}
+                {% if cte_params and cte_params.temperatures %}at {{ cte_params.temperatures | join(', ') }} K{% endif
+                %}
                 ({{ "%.2f" | format(cte_params.production_ns) }} ns each),
                 enabling a linear fit of volumetric thermal expansion.
                 {% endif %}
@@ -226,38 +227,39 @@
     {% endif %}
 
     {% if elastic_plots %}
-    <div class="results-container" style="margin-top: 30px;">
-        <div class="info-panel">
-            <div class="section-title">Elastic Moduli</div>
-            {% if elastic_moduli %}
-            <div class="property">
-                <span class="property-label">Bulk Modulus (B):</span>
-                <span class="property-value">{{ "%.2f"|format(elastic_moduli.B) }} GPa</span>
-            </div>
-            <div class="property">
-                <span class="property-label">Shear Modulus (G):</span>
-                <span class="property-value">{{ "%.2f"|format(elastic_moduli.G) }} GPa</span>
-            </div>
-            <div class="property">
-                <span class="property-label">Young's Modulus (E):</span>
-                <span class="property-value">{{ "%.2f"|format(elastic_moduli.E) }} GPa</span>
-            </div>
-            <div class="property">
-                <span class="property-label">Poisson's Ratio (&nu;):</span>
-                <span class="property-value">{{ "%.4f"|format(elastic_moduli.nu) }}</span>
-            </div>
-            {% endif %}
-        </div>
+    <div class="analysis-container" style="margin-top: 30px;">
         <div class="plot-panel">
             <div class="section-title">Elastic Properties</div>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
+                {% if elastic_moduli %}
+                <div style="flex: 0 0 auto; min-width: 220px;">
+                    <div class="section-title" style="font-size: 1em;">Isotropic Moduli</div>
+                    <div class="property">
+                        <span class="property-label">Bulk Modulus (B):</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.B) }} GPa</span>
+                    </div>
+                    <div class="property">
+                        <span class="property-label">Shear Modulus (G):</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.G) }} GPa</span>
+                    </div>
+                    <div class="property">
+                        <span class="property-label">Young's Modulus (E):</span>
+                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.E) }} GPa</span>
+                    </div>
+                    <div class="property">
+                        <span class="property-label">Poisson's Ratio (&nu;):</span>
+                        <span class="property-value">{{ "%.4f"|format(elastic_moduli.nu) }}</span>
+                    </div>
+                </div>
+                {% endif %}
 
-            {% if elastic_plots.moduli %}
-            <div id="elastic-moduli-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
-
-            {% if elastic_plots.cij_heatmap %}
-            <div id="elastic-cij-div" style="margin-bottom: 30px;"></div>
-            {% endif %}
+                {% if elastic_plots.cij_heatmap %}
+                <div style="flex: 1 1 400px; min-width: 0;">
+                    <div class="section-title" style="font-size: 1em;">Stiffness Tensor C<sub>ij</sub></div>
+                    <div id="elastic-cij-div"></div>
+                </div>
+                {% endif %}
+            </div>
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
                 Full 6&times;6 elastic stiffness tensor (C<sub>ij</sub>) computed via the central-difference
@@ -340,11 +342,6 @@
     {% if elastic_plots %}
     <script>
         const elasticPlotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
-
-        {% if elastic_plots.moduli %}
-        const elasticModuli = {{ elastic_plots.moduli | safe }};
-        Plotly.newPlot('elastic-moduli-div', elasticModuli.data, elasticModuli.layout, elasticPlotOpts);
-        {% endif %}
 
         {% if elastic_plots.cij_heatmap %}
         const elasticCij = {{ elastic_plots.cij_heatmap | safe }};
