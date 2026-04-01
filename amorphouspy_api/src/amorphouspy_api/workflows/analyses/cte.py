@@ -163,16 +163,21 @@ def _cumulative_mean_and_uncertainty(
 def _build_cte_convergence_plot(data: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Build Plotly figure for CTE convergence (fluctuations method).
 
-    Shows cumulative mean +/- uncertainty for CTE_V in ppm/K
-    versus production run index, with final value annotated at the right end.
+    Shows cumulative mean +/- uncertainty for the linear CTE (average of
+    CTE_x, CTE_y, CTE_z) in ppm/K versus production run index, with final
+    value annotated at the right end.
     """
     run_index = data.get("run_index", [])
     if not run_index:
         return None
 
-    values = data.get("CTE_V", [])
-    if not values:
+    # Compute linear CTE as average of the three directional components
+    cte_x = data.get("CTE_x", [])
+    cte_y = data.get("CTE_y", [])
+    cte_z = data.get("CTE_z", [])
+    if not (cte_x and cte_y and cte_z):
         return None
+    values = [(x + y + z) / 3.0 for x, y, z in zip(cte_x, cte_y, cte_z, strict=False)]
 
     # Extract metadata for title and x-axis
     temperature = metadata.get("temperature", "N/A") if metadata else "N/A"
@@ -202,7 +207,7 @@ def _build_cte_convergence_plot(data: dict[str, Any], metadata: dict[str, Any] |
             "x": x_values,
             "y": means_ppm,
             "mode": "lines",
-            "name": "CTE<sub>V</sub>",
+            "name": "CTE<sub>L</sub>",
             "line": {"color": color, "width": 2},
         },
         {
@@ -234,7 +239,7 @@ def _build_cte_convergence_plot(data: dict[str, Any], metadata: dict[str, Any] |
     ]
 
     # Build title with temperature
-    title_parts = ["CTE Convergence"]
+    title_parts = ["Linear CTE Convergence"]
     if temperature != "N/A":
         title_parts.append(f"T = {temperature} K")
     title = " \u2014 ".join(title_parts)
@@ -255,20 +260,29 @@ def _build_cte_convergence_plot(data: dict[str, Any], metadata: dict[str, Any] |
 
 
 def _build_cte_summary_plot(summary: dict[str, Any]) -> dict[str, Any] | None:
-    """Build Plotly bar chart of final CTE_V value with error bar and temperature."""
-    mean_val = summary.get("CTE_V_mean")
-    unc_val = summary.get("CTE_V_uncertainty", 0.0)
+    """Build Plotly bar chart of final linear CTE value with error bar and temperature."""
+    # Compute linear CTE as average of x, y, z components
+    x_mean = summary.get("CTE_x_mean")
+    y_mean = summary.get("CTE_y_mean")
+    z_mean = summary.get("CTE_z_mean")
+    x_unc = summary.get("CTE_x_uncertainty", 0.0)
+    y_unc = summary.get("CTE_y_uncertainty", 0.0)
+    z_unc = summary.get("CTE_z_uncertainty", 0.0)
     temperature = summary.get("temperature", "N/A")
 
-    if mean_val is None:
+    if x_mean is None or y_mean is None or z_mean is None:
         return None
 
-    title = f"CTE Summary (T = {temperature} K)" if temperature != "N/A" else "CTE Summary"
+    mean_val = (x_mean + y_mean + z_mean) / 3.0
+    # Propagate uncertainty: s_avg = sqrt(s_x^2 + s_y^2 + s_z^2) / 3
+    unc_val = (x_unc**2 + y_unc**2 + z_unc**2) ** 0.5 / 3.0
+
+    title = f"Linear CTE Summary (T = {temperature} K)" if temperature != "N/A" else "Linear CTE Summary"
 
     return {
         "data": [
             {
-                "x": ["CTE_V"],
+                "x": ["CTE<sub>L</sub>"],
                 "y": [mean_val],
                 "type": "bar",
                 "error_y": {"type": "data", "array": [unc_val], "visible": True},

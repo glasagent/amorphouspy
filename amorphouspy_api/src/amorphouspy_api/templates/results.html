@@ -218,9 +218,8 @@
 
             <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
                 {% if cte_plots.convergence %}
-                CTE computed from enthalpy&ndash;volume fluctuations
-                (&alpha; = &lang;&Delta;H &middot; &Delta;V&rang; / &lang;V&rang; k<sub>B</sub>T&sup2;)
-                via iterative NPT production runs
+                Linear CTE (&alpha;<sub>L</sub> = &alpha;<sub>V</sub> / 3) from
+                enthalpy&ndash;volume fluctuations via iterative NPT production runs
                 {% if cte_params and cte_params.temperature %}at {{ cte_params.temperature | int }} K{% endif %}
                 ({{ "%.2f" | format(cte_params.production_ns) }} ns each, up to
                 {{ cte_params.max_production_runs }} runs).
