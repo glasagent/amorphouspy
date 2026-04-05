@@ -4,8 +4,6 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 Compute cavity distribution and associated properties.
 The current implementation is wrapper around the functions implemented in sovapy
-Only Guttman rings are analyzed.
-
 
 If this code is used please cite the relevant papers below
 
@@ -60,7 +58,8 @@ def compute_cavities(
     coords = _atoms.get_positions()
     types = _atoms.get_atomic_numbers()
     cell = _atoms.get_cell()
-    box_size = np.array([cell[0, 0], cell[1, 1], cell[2, 2]])
+    cell_arr = cell.array
+    box_size = np.array([cell_arr[0, 0], cell_arr[1, 1], cell_arr[2, 2]])
     type_dict = type_to_dict(types)
 
     # Use a context manager to ensure the temporary file is cleaned up

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from ase.atoms import Atoms
 
 from amorphouspy.workflows.shared import _run_lammps_md
@@ -78,13 +79,17 @@ def _run_strained_md(structure: Atoms, strain_tensor: np.ndarray, base_kwargs: d
     # Positive strain
     s_pos = apply_strain(structure, strain_tensor)
     _, res_p = _run_lammps_md(structure=s_pos, **base_kwargs)
-    press_p = res_p.get("generic")["pressures"]
+    gen_p = res_p.get("generic")
+    assert gen_p is not None
+    press_p = gen_p["pressures"]
     stress_plus = -np.mean(press_p[base_kwargs["n_ionic_steps"] // 2 :], axis=0)
 
     # Negative strain
     s_neg = apply_strain(structure, -strain_tensor)
     _, res_n = _run_lammps_md(structure=s_neg, **base_kwargs)
-    press_n = res_n.get("generic")["pressures"]
+    gen_n = res_n.get("generic")
+    assert gen_n is not None
+    press_n = gen_n["pressures"]
     stress_minus = -np.mean(press_n[base_kwargs["n_ionic_steps"] // 2 :], axis=0)
 
     return stress_plus - stress_minus
@@ -122,12 +127,12 @@ def isotropic_moduli_from_Cij(cij: np.ndarray) -> dict[str, float]:
     youngs = 9.0 * bulk * shear / (3.0 * bulk + shear)
     poisson = (3.0 * bulk - 2.0 * shear) / (2.0 * (3.0 * bulk + shear))
 
-    return {"B": bulk, "G": shear, "E": youngs, "nu": poisson}
+    return {"B": float(bulk), "G": float(shear), "E": float(youngs), "nu": float(poisson)}
 
 
 def elastic_simulation(
     structure: Atoms,
-    potential: str,
+    potential: pd.DataFrame,
     temperature_sim: float = 300.0,
     pressure: float | None = None,
     timestep: float = 1.0,
@@ -181,7 +186,7 @@ def elastic_simulation(
         ... )
 
     """
-    potential_name = potential.at[0, "Name"]
+    potential_name = potential.loc[0, "Name"]
 
     if potential_name.lower() == "shik":
         exclude_patterns = [
@@ -216,7 +221,9 @@ def elastic_simulation(
 
     # Enforce cubic average cell
 
-    vol_array = np.array(res.get("generic")["volume"])
+    gen0 = res.get("generic")
+    assert gen0 is not None
+    vol_array = np.array(gen0["volume"])
     slice_start = len(vol_array) // 2
     avg_l = np.mean(vol_array[slice_start:]) ** (1.0 / 3.0)
 

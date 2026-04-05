@@ -86,7 +86,12 @@ def potential_and_force(
 
 
 def write_table_file(
-    pair: str, params: dict, rmin: float = 0.1, rmax: float = 10.5, npoints: int = 50000, output_dir: str = "."
+    pair: str,
+    params: dict,
+    rmin: float = 0.1,
+    rmax: float = 10.5,
+    npoints: int = 50000,
+    output_dir: str | Path = ".",
 ) -> Path:
     """Write a LAMMPS table file for a given atomic pair in the specified output directory.
 
@@ -102,15 +107,15 @@ def write_table_file(
         Path to the generated table file.
 
     """
-    output_dir = Path(output_dir).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(output_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     A, B, C, D = params
     r_squared = np.linspace(rmin**2, rmax**2, npoints, dtype=np.float64)
     rs = np.sqrt(r_squared)
     data = np.array([potential_and_force(r, A, B, C, D) for r in rs])
 
-    filename = output_dir / f"table_{pair.replace('-', '_')}.tbl"
+    filename = out_dir / f"table_{pair.replace('-', '_')}.tbl"
     with filename.open("w") as f:
         f.write(f"# LAMMPS potential table for {pair}\n")
         f.write("SHIK_Buck_r24\n")
@@ -183,8 +188,8 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
         >>> shik_pot_no_melt = generate_shik_potential(struct_dict, melt=False)
 
     """
-    output_dir = Path(output_dir).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(output_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     types = get_element_types_dict(atoms_dict)
     species = list(types.keys())
@@ -228,7 +233,7 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
     rvdw = 10.0  # cutoff for the SHIK potential
 
     # --- Generate tables with absolute paths ---
-    lines.extend(_build_pair_coeff_lines(species, types, output_dir, rvdw))
+    lines.extend(_build_pair_coeff_lines(species, types, out_dir, rvdw))
 
     lines.append("\npair_modify shift yes\n\n")
 

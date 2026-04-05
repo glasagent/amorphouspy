@@ -119,7 +119,7 @@ def write_xyz(
     filename: str,
     coords: np.ndarray,
     types: np.ndarray,
-    box_size: np.ndarray = None,
+    box_size: np.ndarray | None = None,
     type_dict: dict[int, str] | None = None,
 ) -> None:
     """Write atomic configuration to an XYZ file.

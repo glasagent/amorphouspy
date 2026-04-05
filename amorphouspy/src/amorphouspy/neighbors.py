@@ -345,7 +345,7 @@ def _build_nl_ortho_numba(  # noqa: PLR0912, C901
                         j = cell_atoms[k]
                         if j == i:
                             continue
-                        type_j = types[j]
+                        type_j = int(types[j])
 
                         if use_neighbor_filter:
                             is_valid_neighbor_type = False
@@ -448,7 +448,7 @@ def _build_nl_tri_numba(  # noqa: PLR0912, C901
                         j = cell_atoms[k]
                         if j == i:
                             continue
-                        type_j = types[j]
+                        type_j = int(types[j])
 
                         if use_neighbor_filter:
                             is_valid_neighbor_type = False
@@ -597,8 +597,10 @@ def _numpy_fallback(
         candidates_arr = np.array(candidates, dtype=np.int32)
 
         if is_orthogonal:
+            assert box_size is not None
             dist_sq_arr, rij = _dist_vec_ortho(coords[i], coords[candidates_arr], box_size)
         else:
+            assert coords_frac is not None
             dist_sq_arr, rij = _dist_vec_tri(coords_frac[i], coords_frac[candidates_arr], cell)
 
         if use_pair_cutoffs:
@@ -625,7 +627,7 @@ def _numpy_fallback(
 # ============================================================================
 
 
-def _extract_atom_ids(atoms: Atoms | tuple) -> np.ndarray:
+def _extract_atom_ids(atoms: Atoms | tuple[np.ndarray, ...]) -> np.ndarray:
     """Return the real atom IDs from an ASE Atoms object or tuple.
 
     Priority:
@@ -720,17 +722,17 @@ def get_neighbors(
     # ------------------------------------------------------------------
     atom_ids = _extract_atom_ids(atoms)
 
-    if isinstance(atoms, Atoms):
+    if not isinstance(atoms, Atoms):
+        coords, types, cell = atoms
+        coords = np.asarray(coords, dtype=np.float64)
+        types = np.asarray(types, dtype=np.int32)
+        cell = np.asarray(cell, dtype=np.float64)
+    else:
         atoms_copy = atoms.copy()
         atoms_copy.wrap()
         coords = atoms_copy.get_positions()
         types = atoms_copy.get_atomic_numbers().astype(np.int32)
         cell = atoms_copy.get_cell().array
-    else:
-        coords, types, cell = atoms
-        coords = np.asarray(coords, dtype=np.float64)
-        types = np.asarray(types, dtype=np.int32)
-        cell = np.asarray(cell, dtype=np.float64)
 
     n_atoms = len(coords)
     is_orthogonal = np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-10)

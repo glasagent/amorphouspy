@@ -78,7 +78,8 @@ class StructureData(BaseModel):
     )
     network: NetworkData = Field(..., description="Network connectivity data")
     distributions: StructuralDistributions = Field(
-        default_factory=StructuralDistributions, description="Structural distributions"
+        default_factory=lambda: StructuralDistributions(bond_angles={}, rings={}),
+        description="Structural distributions",
     )
     rdfs: RadialDistributionData = Field(..., description="Radial distribution function data")
     elements: ElementInfo = Field(..., description="Element classification and properties")
@@ -111,9 +112,12 @@ def find_rdf_minimum(
 
     """
     rdf_smooth1 = gaussian_filter1d(rdf_data, sigma=sigma)
-    rdf_smooth2 = savgol_filter(rdf_smooth1, window_length=window_length, polyorder=polyorder)
+    rdf_smooth2 = np.asarray(
+        savgol_filter(rdf_smooth1, window_length=window_length, polyorder=polyorder),
+        dtype=np.float64,
+    )
 
-    first_peak_idx = np.argmax(rdf_smooth2)
+    first_peak_idx = int(np.argmax(rdf_smooth2))
     dr = r[1] - r[0]  # assuming uniform spacing
     gradient = np.gradient(rdf_smooth2, dr)
 
@@ -307,8 +311,10 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
         ring_statistics_data = {"distribution": rings_dist_str, "mean_size": mean_ring_size}
 
     # Convert data for serialization
-    def to_list(data: np.ndarray | list) -> list:
-        return data.tolist() if hasattr(data, "tolist") else list(data)
+    def to_list(data: np.ndarray | list[float]) -> list[float]:
+        if isinstance(data, np.ndarray):
+            return data.tolist()
+        return list(data)
 
     bond_angle_distributions_serializable = {
         former: (to_list(angles), to_list(counts)) for former, (angles, counts) in bond_angle_distributions.items()
@@ -327,7 +333,11 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
         density=density,
         coordination=CoordinationData(oxygen=O_coord, formers=former_coords, modifiers=modifier_coords),
         network=NetworkData(
-            Qn_distribution=Qn_dist, Qn_distribution_partial=Qn_dist_partial, connectivity=network_connectivity
+            Qn_distribution={k: float(v) for k, v in Qn_dist.items()},
+            Qn_distribution_partial={
+                outer: {inner: float(v) for inner, v in inner_d.items()} for outer, inner_d in Qn_dist_partial.items()
+            },
+            connectivity=network_connectivity,
         ),
         distributions=StructuralDistributions(
             bond_angles=bond_angle_distributions_serializable, rings=ring_statistics_data
@@ -455,6 +465,8 @@ def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[
         and structure_data.distributions.rings["distribution"]
     ):
         ring_dist = structure_data.distributions.rings["distribution"]
+        if not isinstance(ring_dist, dict):
+            return
         ring_sizes = [int(k) for k in ring_dist]
         ring_counts = list(ring_dist.values())
         total_rings = sum(ring_counts)

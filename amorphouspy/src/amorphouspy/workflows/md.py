@@ -5,6 +5,7 @@ Author: Achraf Atila (achraf.atila@bam.de).
 
 from pathlib import Path
 
+import pandas as pd
 from ase.atoms import Atoms
 
 from amorphouspy.workflows.shared import _run_lammps_md
@@ -12,7 +13,7 @@ from amorphouspy.workflows.shared import _run_lammps_md
 
 def md_simulation(
     structure: Atoms,
-    potential: str,
+    potential: pd.DataFrame,
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     production_steps: int = 10_000_000,
@@ -49,7 +50,7 @@ def md_simulation(
     if potential.empty:
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
-    potential_name = potential.at[0, "Name"]
+    potential_name = potential.loc[0, "Name"]
 
     if potential_name.lower() == "shik":
         exclude_patterns = [

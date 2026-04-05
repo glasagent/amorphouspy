@@ -7,7 +7,9 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
+import pandas as pd
 from ase.atoms import Atoms
 from lammpsparser.compatibility.file import lammps_file_interface_function
 
@@ -18,12 +20,12 @@ from amorphouspy.workflows.meltquench_protocols import (
     pmmcs_protocol,
     shik_protocol,
 )
-from amorphouspy.workflows.shared import get_lammps_command
+from amorphouspy.workflows.shared import LammpsPotential, get_lammps_command
 
 
 def _run_lammps_md(  # pragma: no cover
     structure: Atoms,
-    potential: str,
+    potential: LammpsPotential,
     temperature: float | list[float],
     n_ionic_steps: int,
     timestep: float,
@@ -83,7 +85,7 @@ def _run_lammps_md(  # pragma: no cover
             _shell_output, parsed_output, job_crashed = lammps_file_interface_function(
                 working_directory=tmp_path,
                 structure=structure,
-                potential=potential,
+                potential=cast("Any", potential),
                 calc_mode="md",
                 calc_kwargs={
                     "temperature": temp_setting,
@@ -111,7 +113,7 @@ def _run_lammps_md(  # pragma: no cover
             _shell_output, parsed_output, job_crashed = lammps_file_interface_function(
                 working_directory=tmp_path,
                 structure=structure,
-                potential=potential,
+                potential=cast("Any", potential),
                 calc_mode="md",
                 calc_kwargs={
                     "temperature": temp_setting,
@@ -145,7 +147,7 @@ def _run_lammps_md(  # pragma: no cover
 
 def melt_quench_simulation(
     structure: Atoms,
-    potential: str,
+    potential: pd.DataFrame,
     temperature_high: float = 5000.0,
     temperature_low: float = 300.0,
     timestep: float = 1.0,
@@ -200,7 +202,7 @@ def melt_quench_simulation(
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
-    potential_name = potential.at[0, "Name"].lower()
+    potential_name = potential.loc[0, "Name"].lower()
 
     # Map potential names to protocol functions
     protocol_map = {

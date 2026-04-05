@@ -72,7 +72,8 @@ def compute_guttmann_rings(
     coords = _atoms.get_positions()
     types = _atoms.get_atomic_numbers()
     cell = _atoms.get_cell()
-    box_size = np.array([cell[0, 0], cell[1, 1], cell[2, 2]])
+    cell_arr = cell.array
+    box_size = np.array([cell_arr[0, 0], cell_arr[1, 1], cell_arr[2, 2]])
     type_dict = type_to_dict(types)
     with tempfile.NamedTemporaryFile("w+", suffix=".xyz", delete=True) as tmp:
         write_xyz(filename=tmp.name, coords=coords, types=types, box_size=box_size, type_dict=type_dict)
