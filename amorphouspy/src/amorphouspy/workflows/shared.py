@@ -5,17 +5,20 @@ This module contains shared functionality which is reused in the individual work
 
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import pandas as pd
 from ase.atoms import Atoms
 from lammpsparser.compatibility.file import lammps_file_interface_function
 
 from amorphouspy.io_utils import structure_from_parsed_output
 
+LammpsPotential = str | pd.DataFrame | dict[str, Any]
+
 
 def _run_lammps_md(
     structure: Atoms,
-    potential: str,
+    potential: LammpsPotential,
     temperature: float | list[float],
     n_ionic_steps: int,
     timestep: float,
@@ -67,7 +70,7 @@ def _run_lammps_md(
         _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
             working_directory=tmp_path,
             structure=structure,
-            potential=potential,
+            potential=cast("Any", potential),
             calc_mode="md",
             calc_kwargs={
                 "temperature": temp_setting,

@@ -7,8 +7,11 @@ Author
 Achraf Atila (achraf.atila@bam.de)
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from ase.atoms import Atoms
@@ -37,7 +40,7 @@ class MeltQuenchParams:
     """
 
     structure: Atoms
-    potential: pd.DataFrame | dict
+    potential: pd.DataFrame
     temperature_high: float
     temperature_low: float
     heating_steps: int
@@ -47,11 +50,11 @@ class MeltQuenchParams:
     langevin: bool
     seed: int
     server_kwargs: dict | None = None
-    tmp_working_directory: str | None = None
+    tmp_working_directory: str | Path | None = None
     equilibration_steps: int | None = None
 
 
-def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dict]:
+def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation PMMCS protocol.
 
     Args:
@@ -120,7 +123,7 @@ def pmmcs_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, d
     return structure_final, parsed_output
 
 
-def bjp_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dict]:
+def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation BJP protocol.
 
     Args:
@@ -192,7 +195,7 @@ def bjp_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dic
     return structure_final, parsed_output
 
 
-def shik_protocol(runner: callable, params: MeltQuenchParams) -> tuple[Atoms, dict]:
+def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, dict]:
     """Execute the simulation SHIK protocol.
 
     Args:

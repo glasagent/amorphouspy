@@ -88,10 +88,8 @@ def compute_qn(
 
     # Normalise to Q0-Q6 keys
     total_qn_counts = {n: total_qn_counts.get(n, 0) for n in range(7)}
-    for f_type in former_types:
-        partial_qn_counts[f_type] = {n: partial_qn_counts[f_type].get(n, 0) for n in range(7)}
-
-    return total_qn_counts, partial_qn_counts
+    partial_plain = {f_type: {n: partial_qn_counts[f_type].get(n, 0) for n in range(7)} for f_type in former_types}
+    return total_qn_counts, partial_plain
 
 
 def compute_network_connectivity(qn_dist: dict[int, int]) -> float:

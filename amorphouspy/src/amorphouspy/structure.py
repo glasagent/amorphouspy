@@ -225,7 +225,11 @@ def allocate_formula_units_to_target_atoms(
             if diff == 0:
                 break
 
-    return best[2], best[1]
+    Ni, Natoms = best[2], best[1]
+    if Ni is None or Natoms is None:
+        msg = "Could not allocate formula units for the given composition and target size."
+        raise RuntimeError(msg)
+    return Ni, Natoms
 
 
 def element_counts_from_formula_units(Ni: dict[str, int]) -> dict[str, int]:
@@ -283,7 +287,7 @@ def plan_system(composition: dict[str, float], target: int, mode: str = "molar",
             total_atoms_per_mol += fraction * atoms_in_oxide
 
         # Convert molecule target to equivalent atom target
-        target_atoms = target * total_atoms_per_mol
+        target_atoms = round(target * total_atoms_per_mol)
     else:
         error_msg = f"Invalid target_type: {target_type}. Supported types are 'atoms' and 'molecules'."
         raise ValueError(error_msg)
@@ -298,7 +302,7 @@ def plan_system(composition: dict[str, float], target: int, mode: str = "molar",
     }
 
 
-def validate_target_mode(n_molecules: int, target_atoms: int) -> None:
+def validate_target_mode(n_molecules: int | None, target_atoms: int | None) -> None:
     """Validate that exactly one target mode is specified.
 
     Args:
@@ -482,7 +486,7 @@ def _counts_from_n_molecules(
     molecule_counts = {ox: round(frac * n_molecules) for ox, frac in comp_dict.items()}
     diff = n_molecules - sum(molecule_counts.values())
     if diff:
-        main = max(comp_dict, key=comp_dict.get)
+        main = max(comp_dict, key=lambda ox: comp_dict[ox])
         molecule_counts[main] += diff
 
     atom_counts: dict[str, int] = {}
@@ -612,6 +616,7 @@ def create_random_atoms(
         system_plan = plan_system(composition, target_atoms, mode=mode, target_type="atoms")
         atom_counts = system_plan["element_counts"]
     else:
+        assert n_molecules is not None
         _, atom_counts = _counts_from_n_molecules(composition, n_molecules, mode, stoichiometry)
 
     atoms = _place_atoms(atom_counts, box_length, min_distance, rng, max_attempts_per_atom)
@@ -859,6 +864,7 @@ def get_box_from_density(
         atom_counts = system_plan["element_counts"]
     else:
         # Use traditional n_molecules mode
+        assert n_molecules is not None
         if mode.lower() == "weight":
             # Convert weight% to mol% first, then calculate molecule counts
             mol_frac = get_composition(composition, mode="weight")
@@ -871,7 +877,7 @@ def get_box_from_density(
         # Adjust rounding error
         diff = n_molecules - sum(molecule_counts.values())
         if diff:
-            main = max(comp_dict, key=comp_dict.get)
+            main = max(comp_dict, key=lambda ox: comp_dict[ox])
             molecule_counts[main] += diff
 
         # Compute per-element atom counts
@@ -965,11 +971,14 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
                     )
                     atom_id += 1
 
-    return read(
+    atoms_obj = read(
         filename=StringIO("".join(list_of_lines)),
         format="lammps-data",
         atom_style="charge",
     )
+    if isinstance(atoms_obj, list):
+        return atoms_obj[0]
+    return atoms_obj
 
 
 def get_structure_dict(
@@ -1049,12 +1058,13 @@ def get_structure_dict(
         mol_fraction = system_plan["mol_fraction"]
     else:
         # Use traditional n_molecules mode - compute missing info
+        assert n_molecules is not None
         composition_dict = extract_composition(composition)
         molecule_counts = {oxide: round(frac * n_molecules) for oxide, frac in composition_dict.items()}
         # Adjust rounding error
         diff = n_molecules - sum(molecule_counts.values())
         if diff:
-            main = max(composition_dict, key=composition_dict.get)
+            main = max(composition_dict, key=lambda ox: composition_dict[ox])
             molecule_counts[main] += diff
 
         # Compute additional information for consistency

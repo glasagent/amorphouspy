@@ -48,7 +48,7 @@ def count_distribution(coord_numbers: dict[int, int]) -> dict[int, int]:
     return dist
 
 
-def type_to_dict(types: np.array) -> dict[int, str]:
+def type_to_dict(types: np.ndarray) -> dict[int, str]:
     """Generate a dictionary mapping atomic numbers (types) to element symbols from an ASE Atoms structure.
 
     Args:
@@ -68,7 +68,7 @@ def type_to_dict(types: np.array) -> dict[int, str]:
     element_symbols: list[str] = [chemical_symbols[z] for z in unique_types]
 
     # Create the type-to-symbol dictionary
-    type_dict: dict[int, str] = dict(zip(unique_types, element_symbols, strict=False))
+    type_dict: dict[int, str] = dict(zip(unique_types, element_symbols, strict=True))
 
     return type_dict
 

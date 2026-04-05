@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from ase.atoms import Atoms
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
@@ -22,9 +23,13 @@ from amorphouspy.workflows.shared import _run_lammps_md
 NPOINTS = 2
 
 
+def _cutoff_time_ps(c: float | tuple[float, int]) -> float:
+    return float(c[0]) if isinstance(c, tuple) else float(c)
+
+
 def viscosity_simulation(
     structure: Atoms,
-    potential: str,
+    potential: pd.DataFrame,
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     production_steps: int = 10_000_000,
@@ -71,7 +76,7 @@ def viscosity_simulation(
     if potential.empty:
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
-    potential_name = potential.at[0, "Name"]
+    potential_name = potential.loc[0, "Name"]
 
     if potential_name.lower() == "shik":
         exclude_patterns = [
@@ -150,8 +155,9 @@ def autocorrelation_fft(signal: ArrayLike, max_lag: int) -> NDArray[np.float64]:
         >>> acf = autocorrelation_fft(signal, max_lag=50)
 
     """
-    N = len(signal)
-    f = np.fft.fft(signal, n=2 * N)
+    signal_arr = np.asarray(signal)
+    N = len(signal_arr)
+    f = np.fft.fft(signal_arr, n=2 * N)
     acf = np.fft.ifft(f * np.conj(f))[:N].real
     norm = np.arange(N, 0, -1)
     acf /= norm
@@ -173,11 +179,12 @@ def cumulative_trapezoid(acf: ArrayLike, dt: float) -> NDArray[np.float64]:
         >>> integral = cumulative_trapezoid(data, dt=0.1)
 
     """
-    if len(acf) < NPOINTS:
-        return np.zeros_like(acf)
-    out = np.empty_like(acf)
+    acf_arr = np.asarray(acf)
+    if len(acf_arr) < NPOINTS:
+        return np.zeros_like(acf_arr)
+    out = np.empty_like(acf_arr)
     out[0] = 0.0
-    out[1:] = np.cumsum(0.5 * (acf[1:] + acf[:-1]) * dt)
+    out[1:] = np.cumsum(0.5 * (acf_arr[1:] + acf_arr[:-1]) * dt)
     return out
 
 
@@ -307,7 +314,8 @@ def vft_model(T: ArrayLike, log10_eta0: float, B: float, T0: float) -> NDArray[n
         log10(viscosity) evaluated at T.
 
     """
-    return log10_eta0 + (B / (T - T0)) * np.log10(np.e)
+    T_arr = np.asarray(T, dtype=np.float64)
+    return log10_eta0 + (B / (T_arr - T0)) * np.log10(np.e)
 
 
 def fit_vft(
@@ -363,16 +371,18 @@ def get_closest_divisor(target: int, y: int) -> int:
         if target % i == 0:
             for d in (i, target // i):
                 diff = abs(d - y)
-                if diff < min_diff or (diff == min_diff and d < closest):
+                if closest is None or diff < min_diff or (diff == min_diff and d < closest):
                     closest = d
                     min_diff = diff
 
+    assert closest is not None
     return closest
 
 
 def get_viscosity(
     result: dict[str, Any],
-    timestep: float = 1.0,
+    timestep: float = 1.0,  # fs (MD integration timestep)
+    output_frequency: int = 1,  # number of MD steps between stored frames
     max_lag: int | None = 1_000_000,
 ) -> dict[str, float]:
     """Compute viscosity using the Green-Kubo formalism from MD stress data.
@@ -380,6 +390,7 @@ def get_viscosity(
     Args:
         result: Parsed output dictionary from `viscosity_simulation`.
         timestep: MD integration time step in femtoseconds.
+        output_frequency: Number of MD steps between stored frames in the output.
         max_lag: Maximum correlation lag (number of steps). Defaults to 1,000,000.
 
     Returns:
@@ -392,73 +403,96 @@ def get_viscosity(
             - viscosity_integral: Cumulative viscosity integral (Pa·s) vs lag time
 
     Example:
-        >>> result_dict = get_viscosity(simulation_output, timestep=1.0)
+        >>> result_dict = get_viscosity(simulation_output, timestep=1.0, output_frequency=1, max_lag=1000000)
         >>> print(result_dict['viscosity'])
         >>> print(result_dict['sacf'])
         >>> print(result_dict['viscosity_integral'])
 
     """
-    kB = 1.380649e-23  # m2 kg s-2 K-1
-    A2m = 1e-10  # Angstroms to meter
+    kB = 1.380649e-23  # m^2 kg s^-2 K^-1
+    A2m = 1e-10  # Å → m
 
-    pxy = result["result"]["pressures"][:, 0, 1] * 1e9  # in Pa
-    pxz = result["result"]["pressures"][:, 0, 2] * 1e9  # in Pa
-    pyz = result["result"]["pressures"][:, 1, 2] * 1e9  # in Pa
-    volume = np.mean(result["result"]["volume"]) * A2m**3  # volume in m3
-    temperature = np.mean(result["result"]["temperature"])  # in K
-    dt_s = timestep * 1e-15  # in seconds
+    # --- Extract data ---
+    pressures = result["result"]["pressures"]
+    pxy = pressures[:, 0, 1] * 1e9  # Pa
+    pxz = pressures[:, 0, 2] * 1e9  # Pa
+    pyz = pressures[:, 1, 2] * 1e9  # Pa
+
+    volume = np.mean(result["result"]["volume"]) * A2m**3  # m^3
+    temperature = np.mean(result["result"]["temperature"])  # K
+
+    # --- Correct effective timestep ---
+    dt_s = timestep * output_frequency * 1e-15  # seconds
 
     scale = volume / (kB * temperature)
 
     if max_lag is None:
         max_lag = len(pxy)
 
+    # --- First ACF pass ---
     acfxy = autocorrelation_fft(pxy, max_lag)
     acfxz = autocorrelation_fft(pxz, max_lag)
     acfyz = autocorrelation_fft(pyz, max_lag)
 
-    lag_time_s = np.arange(max_lag) * dt_s
+    # enforce consistent length
+    n = min(len(acfxy), len(acfxz), len(acfyz))
+    acfxy = acfxy[:n]
+    acfxz = acfxz[:n]
+    acfyz = acfyz[:n]
+
+    lag_time_s = np.arange(n) * dt_s
     lag_time_ps = lag_time_s * 1e12
 
-    max_lag_1 = [
-        auto_cutoff(acfxy / acfxy[0], lag_time_ps, method="noise_threshold", epsilon=0.0001),
-        auto_cutoff(acfxz / acfxz[0], lag_time_ps, method="noise_threshold", epsilon=0.0001),
-        auto_cutoff(acfyz / acfyz[0], lag_time_ps, method="noise_threshold", epsilon=0.0001),
+    # --- Auto cutoff detection ---
+    cut_times_ps = [
+        auto_cutoff(acfxy / acfxy[0], lag_time_ps, method="noise_threshold", epsilon=1e-4),
+        auto_cutoff(acfxz / acfxz[0], lag_time_ps, method="noise_threshold", epsilon=1e-4),
+        auto_cutoff(acfyz / acfyz[0], lag_time_ps, method="noise_threshold", epsilon=1e-4),
     ]
-    # get the cutoff time in ps
+
+    # --- Convert cutoff times to lag indices ---
+    total_time_ps = len(pxy) * timestep * output_frequency / 1000
+
     max_lag_1 = [
-        (get_closest_divisor(int(len(pxy) * timestep / 1000), int(max_lag_1[0])) * 2),
-        (get_closest_divisor(int(len(pxz) * timestep / 1000), int(max_lag_1[1])) * 2),
-        (get_closest_divisor(int(len(pyz) * timestep / 1000), int(max_lag_1[2])) * 2),
-    ]  # make it even and a divisor of the total time as a safeguard
+        get_closest_divisor(int(total_time_ps), int(_cutoff_time_ps(cut_times_ps[0]))) * 2,
+        get_closest_divisor(int(total_time_ps), int(_cutoff_time_ps(cut_times_ps[1]))) * 2,
+        get_closest_divisor(int(total_time_ps), int(_cutoff_time_ps(cut_times_ps[2]))) * 2,
+    ]
 
-    max_lag = int(np.max(max_lag_1) / (timestep / 1000))
+    # convert ps → steps
+    max_lag = int(np.max(max_lag_1) / (timestep * output_frequency / 1000))
 
+    # --- Second ACF pass (final integration window) ---
     acfxy = autocorrelation_fft(pxy, max_lag)
     acfxz = autocorrelation_fft(pxz, max_lag)
     acfyz = autocorrelation_fft(pyz, max_lag)
 
-    # Recompute lag time arrays with updated max_lag
-    lag_time_s = np.arange(max_lag) * dt_s
+    n = min(len(acfxy), len(acfxz), len(acfyz))
+    acfxy = acfxy[:n]
+    acfxz = acfxz[:n]
+    acfyz = acfyz[:n]
+
+    lag_time_s = np.arange(n) * dt_s
     lag_time_ps = lag_time_s * 1e12
 
-    eta_xy_running = scale * cumulative_trapezoid(acfxy, dt_s)
-    eta_xz_running = scale * cumulative_trapezoid(acfxz, dt_s)
-    eta_yz_running = scale * cumulative_trapezoid(acfyz, dt_s)
-    eta_avg = (eta_xy_running + eta_xz_running + eta_yz_running) / 3
+    # --- Green-Kubo integration ---
+    eta_xy = scale * cumulative_trapezoid(acfxy, dt=dt_s)
+    eta_xz = scale * cumulative_trapezoid(acfxz, dt=dt_s)
+    eta_yz = scale * cumulative_trapezoid(acfyz, dt=dt_s)
 
+    eta_avg = (eta_xy + eta_xz + eta_yz) / 3
     viscosity = eta_avg[-1]
 
-    # Normalized SACF for visualization (averaged over 3 components)
-    sacf_xy_normalized = acfxy / acfxy[0]
-    sacf_xz_normalized = acfxz / acfxz[0]
-    sacf_yz_normalized = acfyz / acfyz[0]
-    sacf_avg = ((sacf_xy_normalized + sacf_xz_normalized + sacf_yz_normalized) / 3).tolist()
+    # --- Normalized SACF ---
+    sacf_xy = acfxy / acfxy[0]
+    sacf_xz = acfxz / acfxz[0]
+    sacf_yz = acfyz / acfyz[0]
+    sacf_avg = ((sacf_xy + sacf_xz + sacf_yz) / 3).tolist()
 
     return {
         "temperature": temperature,
         "viscosity": viscosity,
-        "max_lag": np.max(max_lag_1),
+        "max_lag": int(np.max(max_lag_1)),
         "lag_time_ps": lag_time_ps.tolist(),
         "sacf": sacf_avg,
         "viscosity_integral": eta_avg.tolist(),
