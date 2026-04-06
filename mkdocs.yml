@@ -80,11 +80,13 @@ nav:
     - Architecture: developers/architecture.md
     - API Design: developers/api_design.md
   - API Reference: api_reference.md
-  - API Service (MCP): api_service.md
+  - Web API: api_service.md
 
 plugins:
   - search
   - include-markdown
+  - swagger-ui-tag:
+      defaultModelsExpandDepth: 0
   - mkdocstrings:
       handlers:
         python:

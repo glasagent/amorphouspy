@@ -112,3 +112,7 @@ The API will be available at:
 - **REST API**: `http://localhost:8000`
 - **API Docs**: `http://localhost:8000/docs`
 - **MCP SSE**: `http://localhost:8000/mcp`
+
+## Endpoint Reference
+
+<swagger-ui src="openapi.json" defaultModelsExpandDepth="0"/>
