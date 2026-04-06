@@ -37,10 +37,10 @@ theme:
 
 nav:
   - Home: index.md
-  - Installation: installation.md
   - Tutorial: tutorial.md
   - How-To Guides:
     - Overview: how_to_guides/index.md
+    - Installation: how_to_guides/installation.md
     - Meltquench: notebooks/Meltquench.ipynb
     # - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
     # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb

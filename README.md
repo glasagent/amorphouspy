@@ -1,48 +1,64 @@
 # amorphouspy
 
+<!--content-start-->
+
 A Python package for atomistic simulations of glasses.
 
-It provides end-to-end workflows that span from generating initial structural models through running molecular dynamics simulations with LAMMPS, all the way to computing material properties and performing detailed structural analysis.
+`amorphouspy` provides capabilities in the form of Python functions from generating initial structural models through running molecular dynamics simulations with LAMMPS, all the way to computing material properties and performing detailed structural analysis.
+
+`amorphouspy_api` strings these Python functions together to end-to-end workflows using `executorlib`. It then exposes these workflows through web endpoints, which can e.g. be used by an agent powered by a large language model.
+
+Find the documentation at **[glasagent.github.io/amorphouspy](https://glasagent.github.io/amorphouspy)**.
+
+## Key Features
+
+`amorphouspy`
+
+- **Structure Generation**: Create random oxide glass structures from composition dicts (e.g. `{"SiO2": 75, "Na2O": 15, "CaO": 10}`) with automatic density estimation using Fluegel's empirical model.
+- **Interatomic Potentials**: Built-in support for PMMCS (Pedone), BJP (Bouhadja), and SHIK (Sundararaman) classical force fields with automatic LAMMPS input generation. Support for machine-learning interatomic potentials will come later.
+- **Melt-Quench Simulations**: Multi-stage heating/cooling protocols with potential-specific temperature programs and ensemble control.
+- **Structural Analysis**: RDFs, coordination numbers, Qn distributions, bond angle distributions, ring statistics, cavity analysis.
+- **Property Calculations**: Elastic moduli (stress-strain finite differences), viscosity (Green-Kubo formalism), coefficient of thermal expansion (NPT fluctuations).
+
+`amorphouspy_api`
+
+- **End-to-end Workflows**: Submit a composition, get back the glass and all of its predicted properties
+- **Job management API**: Fully fledged job management API, including results database
+- **Visualization**: Interactive Plotly-based visualizations of glass structure and properties
 
 ## Installation
 
+Install the bleeding edge version via
 ```bash
-pip install amorphouspy
-```
-
-For the full environment including LAMMPS (recommended):
-
-```bash
-# Install pixi (https://pixi.sh)
+# Install pixi (if not already installed)
 curl -fsSL https://pixi.sh/install.sh | bash
 
+# Clone repo and install environment from PyPI/conda-forge
 git clone https://github.com/glasagent/amorphouspy.git
 cd amorphouspy
 pixi install
 ```
 
-See the [Installation guide](https://glasagent.github.io/amorphouspy/installation) for details.
+You can also install the `amorphouspy` package into existing environments from PyPI or conda-forge,
+see the [Installation guide](https://glasagent.github.io/amorphouspy/how_to_guides/installation) for details.
 
 ## Quick Start
 
-```python
-from amorphouspy import get_structure_dict, get_ase_structure, generate_potential
+See the [Tutorial](https://glasagent.github.io/amorphouspy/tutorial) for a step-by-step introduction.
 
-# Generate a soda-lime silicate glass structure (~3000 atoms)
-composition = {"SiO2": 75, "Na2O": 15, "CaO": 10}
-structure_dict = get_structure_dict(composition, target_atoms=3000)
-atoms = get_ase_structure(structure_dict)
 
-# Set up an interatomic potential
-potential = generate_potential(structure_dict, potential_type="pmmcs")
-```
+## Authors
 
-From here you can run melt-quench simulations, structural analysis, elastic moduli calculations, and more. See the [Tutorial](https://glasagent.github.io/amorphouspy/tutorial) and [How-To Guides](https://glasagent.github.io/amorphouspy/how_to_guides/) for complete examples.
+Developed at the [Bundesanstant für Materialforschung und -prüfung (BAM)](https://www.bam.de/Navigation/EN) in collaboration with [SCHOTT AG](https://www.schott.com/) and the [Max Planck Institute for Sustainable MaterialsMPIE](https://www.mpie.de/en).
 
-## Documentation
+- **Achraf Atila** — BAM — Core framework, analysis tools, potentials
+- **Marcel Sadowski** — Schott AG — CTE simulation module
+- **Jan Janssen** — MPIE — pyiron integration, lammpsparser
+- **Leopold Talirz** — Schott AG — API layer, project coordination
 
-**[glasagent.github.io/amorphouspy](https://glasagent.github.io/amorphouspy)**
 
 ## License
 
 BSD 3-Clause. See [LICENSE](LICENSE).
+
+<!--content-end-->

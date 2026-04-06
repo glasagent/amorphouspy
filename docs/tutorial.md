@@ -1,35 +1,36 @@
 # Tutorial
 
-This guide covers common concepts used throughout `amorphouspy` and explains how our core functions typically work.
+## Typical Workflow
 
-## Core Concepts
+The standard workflow for studying oxide glasses with `amorphouspy` follows this pipeline:
 
-Before diving into the workflows, it is important to understand some key concepts that `amorphouspy` relies on.
+```mermaid
+graph TD
+    A[Define composition] --> B[Generate random structure]
+    B --> C[Select interatomic potential]
+    C --> D[Melt-quench simulation]
+    D --> E[Structural analysis]
+    D --> F[Elastic moduli]
+    D --> G[Viscosity]
+    D --> H[CTE]
+    E --> I[Visualization & export]
+    F --> I
+    G --> I
+    H --> I
+```
+## Standard Function Patterns
 
-### The Executor Concept
+Each step is handled by a Python function, whose output feeds naturally into the next step.
 
-Many simulation tasks in `amorphouspy` (especially those involving LAMMPS) are executed via an "executor". This allows simulations to run asynchronously, across multiple cores via MPI, or even on high-performance computing clusters seamlessly. 
+- **Inputs**: They take an [ASE `Atoms`](https://wiki.fysik.dtu.dk/ase/ase/atoms.html) object representing a structure, alongside a pandas DataFrame representing the [Interatomic Potential](theory/potentials/index.md). 
+- **Outputs**: They return structured dictionaries, pandas DataFrames, or dedicated namedtuples (like `StructuralAnalysisData`).
 
-When you call a function that requires a simulation, such as `melt_quench_simulation` or `elastic_simulation`, the function typically:
-1. Prepares the LAMMPS input script.
-2. Submits the task using an executor (e.g., using `executorlib` or standard subprocesses).
-3. Waits for the result or allows you to query it later via a job reference.
-
-### Standard Function Patterns
-
-Most high-level functions in `amorphouspy` follow a consistent pattern:
-- **Inputs**: They take an [ASE `Atoms`](https://wiki.fysik.dtu.dk/ase/ase/atoms.html) object representing your structure, alongside a pandas DataFrame representing the [Interatomic Potential](theory/potentials/index.md). 
-- **Outputs**: They return structured dictionaries, pandas DataFrames, or custom namedtuples (like `StructuralAnalysisData`).
-
-By maintaining this standard, you can easily pipe the output of one function into another.
-
----
 
 ## Quick Start
 
 ### 1. Generate a glass structure
 
-The first step in any simulation is creating an initial atomic configuration. `amorphouspy` takes a composition dict and generates random atom positions in a periodic cubic box with the correct stoichiometry and a physically realistic density.
+The first step in any simulation is creating an initial atomic configuration. `amorphouspy` takes a composition dictionary and generates random atom positions in a periodic cubic box with the correct stoichiometry and a physically realistic density.
 
 ```python
 from amorphouspy import get_structure_dict, get_ase_structure
@@ -125,3 +126,12 @@ print(f"Young's modulus: {elastic_result['E']:.1f} GPa")
 print(f"Bulk modulus: {elastic_result['B']:.1f} GPa")
 print(f"Poisson's ratio: {elastic_result['nu']:.3f}")
 ```
+
+## Submitting Functions with `executorlib`
+
+The functions in `amorphouspy` are plain Python functions, so you _can_ import and run them directly in your Python interpreter.
+However, some of those functions will perform MD simulations with LAMMPS, so they will be long-running, and eventually you may want to submit many of them in parallel.
+
+For this reason, the how-to guides use `executorlib` to submit these functions to run on high-performance computing resources. Note, however, that you can use the functions in `amorphouspy` with any workflow manager of your choosing.
+
+
