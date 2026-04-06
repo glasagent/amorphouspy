@@ -53,6 +53,7 @@ pip-licenses = "*"
 [feature.docs.dependencies]
 mkdocs-material = "*"
 mkdocs-jupyter = "==0.24.8"
+mkdocs-include-markdown-plugin = "*"
 pymdown-extensions = "*"
 mkdocstrings = "*"
 mkdocstrings-python = "*"

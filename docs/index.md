@@ -2,11 +2,11 @@
 
 ![logo](assets/logo.svg)
 
-## Introduction
-
-`amorphouspy` is a Python framework for computational glass science. It provides end-to-end workflows that span from generating initial structural models through running molecular dynamics simulations with LAMMPS, all the way to computing material properties and performing detailed structural analysis.
-
-The package was developed at the [Bundesanstalt für Materialforschung und -prüfung (BAM)](https://www.bam.de/) in collaboration with [Schott AG](https://www.schott.com/) and the [Max-Planck-Institut für Eisenforschung (MPIE)](https://www.mpie.de/).
+{%
+   include-markdown "../README.md"
+   start="A Python package"
+   end="## Documentation"
+%}
 
 ## Key Features
 
@@ -18,8 +18,6 @@ The package was developed at the [Bundesanstalt für Materialforschung und -prü
 - **Visualization**: Interactive Plotly-based plotting of all structural analysis results.
 
 ### Typical Workflow
-
-The standard workflow for studying oxide glasses with `amorphouspy` follows this pipeline:
 
 ```mermaid
 graph TD
@@ -34,7 +32,6 @@ graph TD
     F --> I
     G --> I
     H --> I
-    E --> I[Visualization & export]
 ```
 
 Each step is handled by dedicated functions in the package, and the output of one step feeds naturally into the next.
@@ -46,6 +43,8 @@ Each step is handled by dedicated functions in the package, and the output of on
 - **Jan Janssen** — MPIE — pyiron integration, lammpsparser
 - **Leopold Talirz** — Schott AG — API layer, project coordination
 
+The package was developed at the [Bundesanstalt für Materialforschung und -prüfung (BAM)](https://www.bam.de/) in collaboration with [Schott AG](https://www.schott.com/) and the [Max-Planck-Institut für Eisenforschung (MPIE)](https://www.mpie.de/).
+
 ## License
 
-BSD 3-Clause License. See [LICENSE](https://github.com/achrafatila/amorphouspy/blob/main/LICENSE).
+BSD 3-Clause License. See [LICENSE](https://github.com/glasagent/amorphouspy/blob/main/LICENSE).
