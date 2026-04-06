@@ -78,6 +78,7 @@ nav:
   - Developers:
     - Contributing: developers/contributing.md
     - Architecture: developers/architecture.md
+    - API Design: developers/api_design.md
   - API Reference: api_reference.md
   - API Service (MCP): api_service.md
 
