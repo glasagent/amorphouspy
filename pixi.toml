@@ -48,6 +48,7 @@ ruff = ">=0.12.0"
 pytest = "*"
 pytest-cov = "*"
 nbval = "*"
+pip-licenses = "*"
 
 [feature.docs.dependencies]
 mkdocs-material = "*"
@@ -69,3 +70,6 @@ lint = "ruff check --output-format=github"
 format-check = "ruff format --check --diff"
 docs-build = "mkdocs build --strict"
 docs-serve = "mkdocs serve"
+# Ignored packages: igraph/python-igraph (GPL, transitive via sovapy), lammps (GPL),
+# matplotlib-inline (BSD-3-Clause, misreported as UNKNOWN by pip-licenses)
+license-check = "pip-licenses --partial-match --allow-only='MIT;BSD;Apache;ISC;PSF;Python Software Foundation;MPL;Mozilla;Unlicense;Public Domain;HPND;LGPL' --fail-on='GNU General Public License v3 (GPLv3);GNU General Public License v2 (GPLv2);GNU General Public License (GPL)' -i UNKNOWN amorphouspy amorphouspy-api igraph python-igraph lammps matplotlib-inline --format=plain"
