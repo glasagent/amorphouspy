@@ -26,6 +26,9 @@ Find the documentation at **[glasagent.github.io/amorphouspy](https://glasagent.
 - **Job management API**: Fully fledged job management API, including results database
 - **Visualization**: Interactive Plotly-based visualizations of glass structure and properties
 
+
+
+
 ## Installation
 
 Install the bleeding edge version via

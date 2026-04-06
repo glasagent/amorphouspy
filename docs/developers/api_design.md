@@ -9,6 +9,49 @@ Both layers share the same underlying data store. The materials layer is a view 
 
 Full endpoint documentation is available via the auto-generated OpenAPI docs at `/docs`.
 
+
+## Architecture Overview
+
+``` mermaid
+graph LR
+    A[FastAPI App] --> B[SQLite Cache]
+    B --> C[executorlib]
+    
+    subgraph FastAPI
+    A1[Request hash]
+    A2[Cache lookup]
+    A3[Job creation]
+    end
+    
+    subgraph SQLite
+    B1[Job metadata]
+    B2[Results]
+    B3[Hash index]
+    end
+    
+    subgraph executorlib
+    C1[Local exec]
+    C2[SLURM cluster]
+    C3[Job caching]
+    end
+```
+
+## Key features
+
+- Each simulation request is hashed based on composition, potential, and simulation parameters.
+- Automatic cache lookups prevent duplicate simulations.
+- Results persist across server restarts.
+
+- All job metadata stored in SQLite database (`jobs.db`).
+- Tracks job states: `pending` → `running` → `completed`/`failed`/`cancelled`.
+- Supports local execution (`TestClusterExecutor`) or SLURM cluster (`SlurmClusterExecutor`/`FluxClusterExecutor`).
+- Built-in job caching at the executor level: Re-submitting same job returns cached result or running future.
+
+- Exposes simulation capabilities as MCP tools via `fastapi-mcp`.
+- Compatible with Claude, VS Code, and other MCP clients.
+- Server-Sent Events (SSE) endpoint at `/mcp`.
+
+
 ## Composition Normalization
 
 The server uses a `Composition` model that accepts a dict (e.g. `{"SiO2": 70, "Na2O": 15, "CaO": 15}`) and generates a canonical string internally for database storage and matching. This ensures that `{"SiO2": 70, "Na2O": 15, "CaO": 15}` and `{"Na2O": 15, "SiO2": 70, "CaO": 15}` resolve to the same material. The canonical form (alphabetical oxide ordering, rounded values) is an implementation detail — API consumers always work with dicts.
