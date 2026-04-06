@@ -9,3 +9,8 @@ repos:
       # -------- final formatting pass -----------------------------
       - id: ruff-format
         files: ^(amorphouspy/.*\.py|amorphouspy_api/.*\.py|notebooks/.*\.ipynb)$ # staged files in amorphouspy/, amorphouspy_api/, and notebooks/
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks

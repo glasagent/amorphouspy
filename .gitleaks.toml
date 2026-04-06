@@ -1,0 +1,32 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "schott-reference"
+description = "Reference to Schott detected"
+regex = '''(?i)schott'''
+tags = ["internal"]
+
+  [rules.allowlist]
+  regexTarget = "line"
+  regexes = ['''(?i)@schott\.com''']
+
+[[rules]]
+id = "ip-address"
+description = "IP address detected"
+regex = '''\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'''
+tags = ["internal"]
+
+  [rules.allowlist]
+  regexTarget = "match"
+  paths = [
+    '''(?i)\.lock$''',
+    '''(?i)requirements.*\.txt$''',
+    '''(?i)environment\.yml$''',
+    '''(?i)pixi\.lock$''',
+  ]
+  regexes = [
+    '''127\.0\.0\.1''',
+    '''0\.0\.0\.0''',
+    '''255\.255\.255\.\d+''',
+  ]
