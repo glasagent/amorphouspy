@@ -90,28 +90,6 @@ graph LR
 | `AMORPHOUSPY_PROJECTS` | Directory for project/cache files | `./projects` |
 | `API_BASE_URL` | Base URL for visualization links | - |
 
-## Installation
-
-```bash
-pip install amorphouspy[api]
-```
-
-Or for development (editable install):
-
-```bash
-pip install -e ".[api]"
-```
-
-## Launch API
-
-```bash
-python -m uvicorn amorphouspy_api.app:app
-```
-
-The API will be available at:
-- **REST API**: `http://localhost:8000`
-- **API Docs**: `http://localhost:8000/docs`
-- **MCP SSE**: `http://localhost:8000/mcp`
 
 ## Endpoint Reference
 

@@ -28,18 +28,3 @@ pip install amorphouspy
 ```
 
 > **Warning:** Without a LAMMPS installation, the simulation workflows (`melt_quench_simulation`, `md_simulation`, `elastic_simulation`, etc.) will not work. Only structure generation and analysis functions will be available.
-
-To also install the API server and its dependencies:
-
-```bash
-pip install amorphouspy[api]
-```
-
-For systemd, add these to the unit file under `[Service]`:
-
-```ini
-Environment=EXECUTOR_TYPE=slurm
-Environment=SLURM_PARTITION=batch
-Environment=LAMMPS_CORES=8
-Environment=SLURM_RUN_TIME_MAX=7200
-```

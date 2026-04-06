@@ -85,8 +85,7 @@ nav:
 plugins:
   - search
   - include-markdown
-  - swagger-ui-tag:
-      defaultModelsExpandDepth: 0
+  - swagger-ui-tag
   - mkdocstrings:
       handlers:
         python:

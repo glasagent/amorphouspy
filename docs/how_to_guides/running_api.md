@@ -1,12 +1,25 @@
 # Running the API
 
+When using the `pixi` environment, the API dependencies will already be installed.
+
+When using the pip/conda approach, install the API server and its dependencies via:
+
+```bash
+pip install amorphouspy[api]
+```
+
+
 ## Starting the server
 
 ```bash
 pixi run serve
 ```
 
-This starts uvicorn on `0.0.0.0:8000`. The MCP endpoint is available at `/mcp`.
+The API will be available at:
+- **REST API**: `http://localhost:8000`
+- **API Docs**: `http://localhost:8000/docs`
+- **MCP SSE**: `http://localhost:8000/mcp`
+
 
 ## Configuring the executor backend
 
@@ -78,4 +91,55 @@ SLURM_PARTITION=batch \
 LAMMPS_CORES=8 \
 SLURM_RUN_TIME_MAX=7200 \
 pixi run serve
+```
+
+## Systemd service (production)
+
+The repository includes systemd unit files in `amorphouspy_api/system-service/` for running the API as a persistent service that starts on boot and auto-restarts on failure.
+
+### Installation
+
+As `root` (or via `sudo`):
+
+```bash
+# Copy the unit files
+cp amorphouspy_api/system-service/amorphouspy-api.service /etc/systemd/system/
+cp amorphouspy_api/system-service/amorphouspy-api.path /etc/systemd/system/
+
+# Reload, enable, and start
+systemctl daemon-reload
+systemctl enable --now amorphouspy-api.service
+systemctl enable --now amorphouspy-api.path
+```
+
+The `.path` unit watches the source directory for changes and automatically restarts the service when code is updated.
+
+### Configuration
+
+Edit the `[Service]` section of the unit file to set environment variables:
+
+```ini
+Environment=EXECUTOR_TYPE=slurm
+Environment=SLURM_PARTITION=main_queue
+Environment=LAMMPS_CORES=8
+Environment=AMORPHOUSPY_PROJECTS=/path/to/data
+Environment=AMORPHOUSPY_VERSION_PROJECTS=0
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `AMORPHOUSPY_PROJECTS` | `<package>/projects` | Root directory for project data and the SQLite database |
+| `AMORPHOUSPY_VERSION_PROJECTS` | `1` | Set to `0` to keep cached results accessible across version upgrades |
+
+### Managing the service
+
+```bash
+# Check status
+systemctl status amorphouspy-api
+
+# Restart
+systemctl restart amorphouspy-api
+
+# View logs (follow mode)
+journalctl -u amorphouspy-api -f
 ```
