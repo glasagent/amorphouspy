@@ -16,21 +16,15 @@ pygraphviz = "*"
 jupyter = "*"
 # Prefer conda-forge over PyPI for compiled packages
 ase = "*"
-executorlib = "*"
 lammpsparser = "*"
 numba = "*"
 numpy = "*"
 pandas = "*"
 pymatgen = "*"
-pysqa = "*"
 scipy = "*"
-sqlalchemy = "*"
-uvicorn = "*"
-fastapi-mcp = "*"
 
 # Platform-specific: flux-core not available on osx-*; sovapy not on conda-forge for osx-arm64
 [target.linux-64.dependencies]
-flux-core = ">=0.81.0"
 sovapy = "0.8.3.*"
 
 [target.osx-64.dependencies]
@@ -50,6 +44,16 @@ pytest-cov = "*"
 nbval = "*"
 pip-licenses = "*"
 
+[feature.api.dependencies]
+executorlib = "*"
+pysqa = "*"
+sqlalchemy = "*"
+uvicorn = "*"
+fastapi-mcp = "*"
+
+[feature.api.target.linux-64.dependencies]
+flux-core = ">=0.81.0"
+
 [feature.docs.dependencies]
 mkdocs-material = "*"
 mkdocs-jupyter = "==0.24.8"
@@ -59,7 +63,7 @@ mkdocstrings = "*"
 mkdocstrings-python = "*"
 
 [environments]
-default = { features = ["dev", "docs"], solve-group = "default" }
+default = { features = ["dev", "docs", "api"], solve-group = "default" }
 docs = { features = ["docs"], solve-group = "default" }
 
 [tasks]
