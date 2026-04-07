@@ -8,13 +8,22 @@ Ring analysis determines the distribution of closed loops in the atomic network,
 
 ### Guttman Rings
 
-A ring is defined as the **shortest closed path** through the network graph starting from a given atom and returning to it via bonded neighbors. The ring size is counted in terms of the number of **network-forming cation nodes** (not total atoms) in the loop.
+A **Guttman ring** is a closed path through the T-O-T network that satisfies the *primitiveness* (shortest-path) criterion: no shortcut exists through the rest of the network between any two non-adjacent ring nodes. Specifically, for every pair of non-adjacent ring atoms, the shortest path in the full network graph equals their arc distance along the ring.
+
+The ring size is counted in terms of the number of **network-forming cation nodes** (T atoms, e.g. Si, Al) — not total atoms — in the loop.
 
 For example, in SiO₂:
-- A **3-membered ring** consists of 3 Si atoms connected by bridging oxygens (Si-O-Si-O-Si-O-Si, closing back to the start)
-- A **6-membered ring** (most common in vitreous silica) consists of 6 Si atoms
+- A **3-membered ring** contains 3 Si atoms connected by bridging oxygens: Si-O-Si-O-Si-O-Si
+- A **6-membered ring** (most common in vitreous silica) contains 6 Si atoms
 
-The Guttman algorithm finds the shortest path ring for each atom, providing a complete ring size distribution. This implementation uses the **sovapy** library which wraps an efficient C++ graph search.
+#### Algorithm
+
+The implementation is a pure-Python networkx-based BFS approach:
+
+1. Build a **T-T connectivity graph** where two network formers share an edge if they are both bonded to the same bridging oxygen (coordination ≥ 2).
+2. For every edge (u, v): temporarily remove it, find all shortest paths from u back to v, restore the edge.
+3. Each candidate ring is tested against the **Guttman primitiveness criterion** using shortest-path lengths in the full graph.
+4. Canonical ring forms (rotation- and reflection-invariant) prevent double-counting.
 
 ### Physical Significance
 
@@ -36,45 +45,66 @@ Small rings (3, 4) are energetically strained but kinetically trapped during the
 
 ## Usage
 
-### `compute_guttmann_rings(structure, bond_length_dict)`
+### `compute_guttmann_rings(structure, bond_lengths, max_size)`
 
 ```python
-from amorphouspy import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 
-# Generate default bond length cutoffs from the structure
-bond_lengths = generate_bond_length_dict(glass_structure)
-# Returns: {('Si', 'O'): 2.0, ('Al', 'O'): 2.2, ...}
-
-# Compute ring statistics
-rings = compute_guttmann_rings(
-    structure=glass_structure,
-    bond_length_dict=bond_lengths,
+# Generate bond length cutoffs for all element pairs
+bond_lengths = generate_bond_length_dict(
+    glass_structure,
+    specific_cutoffs={('Si', 'O'): 1.8, ('Al', 'O'): 1.95},
+    default_cutoff=2.0,
 )
 
-# Returns ring size distribution
-print(rings)
-# Example: {3: 0.02, 4: 0.08, 5: 0.22, 6: 0.35, 7: 0.20, 8: 0.10, 9: 0.03}
+# Compute ring statistics
+histogram, mean_size = compute_guttmann_rings(
+    structure=glass_structure,
+    bond_lengths=bond_lengths,
+    max_size=12,
+)
+
+print(f"Mean ring size: {mean_size:.2f}")
+print(histogram)
+# Example: {3: 12, 4: 45, 5: 120, 6: 210, 7: 98, 8: 30}
 ```
 
-### `generate_bond_length_dict(structure)`
+**Parameters:**
 
-Automatically determines bond length cutoffs for all former-oxygen pairs in the structure, typically using the first minimum of the RDF.
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `structure` | `Atoms` | — | ASE Atoms object |
+| `bond_lengths` | `dict[tuple[str, str], float]` | — | Cutoff distances per element pair in Å |
+| `max_size` | `int` | `24` | Maximum ring size (number of T atoms) to search for |
+
+**Returns:** `(histogram, mean_ring_size)` where:
+
+| Value | Type | Description |
+|---|---|---|
+| `histogram` | `dict[int, int]` | Mapping from ring size to ring count |
+| `mean_ring_size` | `float` | Mean ring size weighted by count |
+
+### `generate_bond_length_dict(atoms, specific_cutoffs, default_cutoff)`
+
+Generates all symmetric element-pair combinations from the structure and assigns cutoff values.
 
 ```python
-from amorphouspy import generate_bond_length_dict
+from amorphouspy.analysis.rings import generate_bond_length_dict
 
-bond_lengths = generate_bond_length_dict(glass_structure)
-# Returns: {('Si', 'O'): 2.0, ('Na', 'O'): 3.0, ...}
+bond_lengths = generate_bond_length_dict(
+    glass_structure,
+    specific_cutoffs={('Si', 'O'): 1.8},
+    default_cutoff=-1.0,   # -1.0 marks pairs to ignore (e.g. T-T, O-O)
+)
 ```
 
-**Parameters for `compute_guttmann_rings`:**
+**Parameters:**
 
-| Parameter | Type | Description |
-|---|---|---|
-| `structure` | `Atoms` | ASE Atoms object |
-| `bond_length_dict` | `dict[tuple, float]` | Cutoff distances per pair |
-
-**Returns:** A dictionary mapping ring size (int) to fraction of atoms participating in rings of that size.
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `atoms` | `Atoms` | — | ASE Atoms object (determines element set) |
+| `specific_cutoffs` | `dict` or `None` | `None` | Per-pair cutoff overrides |
+| `default_cutoff` | `float` | `-1.0` | Fallback for unspecified pairs; negative values are ignored by the ring finder |
 
 ---
 
@@ -82,15 +112,15 @@ bond_lengths = generate_bond_length_dict(glass_structure)
 
 ### Vitreous SiO₂ (MD simulation)
 
-| Ring size | Fraction |
+| Ring size | Count (fraction) |
 |---|---|
-| 3 | ~0.01–0.03 |
-| 4 | ~0.05–0.10 |
-| 5 | ~0.20–0.25 |
-| **6** | **~0.30–0.35** (peak) |
-| 7 | ~0.15–0.20 |
-| 8 | ~0.05–0.10 |
-| 9+ | ~0.02–0.05 |
+| 3 | ~1–3% |
+| 4 | ~5–10% |
+| 5 | ~20–25% |
+| **6** | **~30–35%** (peak) |
+| 7 | ~15–20% |
+| 8 | ~5–10% |
+| 9+ | ~2–5% |
 
 ### Effect of modifiers
 
@@ -100,4 +130,10 @@ Adding network modifiers (Na₂O, CaO) to SiO₂:
 - Decreases the 6-membered ring population
 - Can increase the fraction of small (3, 4) rings in some compositions
 
-> **Note:** Ring analysis requires the **sovapy** package. If sovapy is not installed, `compute_guttmann_rings` will raise an `ImportError`.
+---
+
+## References
+
+Guttman, L. Ring structure of the crystalline and amorphous forms of silicon dioxide.
+*J. Non-Cryst. Solids* **116**, 145–147 (1990).
+<https://doi.org/10.1016/0022-3093(90)90686-G>

@@ -24,23 +24,18 @@ pandas = "*"
 pymatgen = "*"
 pysqa = "*"
 scipy = "*"
+networkx = "*"
+scikit-image = "*"
 sqlalchemy = "*"
 uvicorn = "*"
 fastapi-mcp = "*"
 
-# Platform-specific: flux-core not available on osx-*; sovapy not on conda-forge for osx-arm64
+# Platform-specific: flux-core not available on osx-*
 [target.linux-64.dependencies]
 flux-core = ">=0.81.0"
-sovapy = "0.8.3.*"
-
-[target.osx-64.dependencies]
-sovapy = "0.8.3.*"
 
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
-
-[target.osx-arm64.pypi-dependencies]
-sovapy = ">=0.8.3"
 
 [feature.dev.dependencies]
 pre-commit = "*"
@@ -70,6 +65,6 @@ lint = "ruff check --output-format=github"
 format-check = "ruff format --check --diff"
 docs-build = "mkdocs build --strict"
 docs-serve = "mkdocs serve"
-# Ignored packages: igraph/python-igraph (GPL, transitive via sovapy), lammps (GPL),
+# Ignored packages: lammps (GPL, external subprocess only — not a combined work),
 # matplotlib-inline (BSD-3-Clause, misreported as UNKNOWN by pip-licenses)
-license-check = "pip-licenses --partial-match --allow-only='MIT;BSD;Apache;ISC;PSF;Python Software Foundation;MPL;Mozilla;Unlicense;Public Domain;HPND;LGPL' --fail-on='GNU General Public License v3 (GPLv3);GNU General Public License v2 (GPLv2);GNU General Public License (GPL)' -i UNKNOWN amorphouspy amorphouspy-api igraph python-igraph lammps matplotlib-inline --format=plain"
+license-check = "pip-licenses --partial-match --allow-only='MIT;BSD;Apache;ISC;PSF;Python Software Foundation;MPL;Mozilla;Unlicense;Public Domain;HPND;LGPL' --fail-on='GNU General Public License v3 (GPLv3);GNU General Public License v2 (GPLv2);GNU General Public License (GPL)' -i UNKNOWN amorphouspy amorphouspy-api lammps matplotlib-inline --format=plain"

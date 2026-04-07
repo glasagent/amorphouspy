@@ -69,3 +69,45 @@ def test_compute_cavities_custom_cutoff_radii(glass_structure):
         cutoff_radii={"O": 1.52, "Si": 1.10, "Na": 1.86},
     )
     assert "volumes" in result
+
+
+# ---------------------------------------------------------------------------
+# Triclinic cell tests
+# ---------------------------------------------------------------------------
+
+
+def _triclinic_glass():
+    """Sparse Si-O structure in a triclinic box (2 Å shear on b-vector)."""
+    cell = np.array([[10.0, 0.0, 0.0], [2.0, 10.0, 0.0], [0.0, 0.0, 10.0]])
+    positions = [[5.0, 5.0, 5.0], [2.0, 2.0, 2.0], [8.0, 8.0, 8.0]]
+    from ase import Atoms  # noqa: PLC0415
+
+    return Atoms("SiOO", positions=positions, cell=cell, pbc=True)
+
+
+def test_compute_cavities_triclinic_returns_required_keys():
+    """compute_cavities runs without error on a triclinic cell."""
+    result = compute_cavities(_triclinic_glass(), resolution=16)
+    expected_keys = {"volumes", "surface_areas", "asphericities", "acylindricities", "anisotropies"}
+    assert expected_keys.issubset(result.keys())
+
+
+def test_compute_cavities_triclinic_volumes_nonnegative():
+    """All cavity volumes are non-negative for a triclinic structure."""
+    result = compute_cavities(_triclinic_glass(), resolution=16)
+    assert np.all(result["volumes"] >= 0)
+
+
+def test_compute_cavities_triclinic_total_volume_bounded():
+    """Total void volume must be less than the full cell volume."""
+    atoms = _triclinic_glass()
+    cell_volume = float(abs(np.linalg.det(atoms.get_cell().array)))
+    result = compute_cavities(atoms, resolution=16)
+    assert float(result["volumes"].sum()) < cell_volume
+
+
+def test_compute_cavities_triclinic_arrays_same_length():
+    """All property arrays have the same length for a triclinic structure."""
+    result = compute_cavities(_triclinic_glass(), resolution=16)
+    lengths = {k: len(v) for k, v in result.items()}
+    assert len(set(lengths.values())) == 1, f"Mismatched lengths: {lengths}"
