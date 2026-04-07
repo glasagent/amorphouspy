@@ -28,6 +28,11 @@ bjp_params = {
 }
 
 
+def supported_elements() -> set[str]:
+    """Return the set of elements supported by the BJP potential."""
+    return set(bjp_charges)
+
+
 def generate_bjp_potential(atoms_dict: dict) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for CAS glass simulations (Bouhadja et al. 2013).
 

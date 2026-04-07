@@ -36,6 +36,7 @@ from amorphouspy_api.models import (
     JobStatus,
     JobStatusResponse,
     JobSubmission,
+    Potential,
     validate_atoms,
 )
 from amorphouspy_api.routers.jobs_helpers import (
@@ -76,6 +77,60 @@ def _clear_executor_cache(request_hash: str) -> None:
         f.unlink(missing_ok=True)
 
 
+def _composition_elements(composition: dict[str, float]) -> set[str]:
+    """Extract element symbols from a composition dict."""
+    from amorphouspy.structure import parse_formula
+
+    elements: set[str] = set()
+    for oxide in composition:
+        elements.update(parse_formula(oxide))
+    return elements
+
+
+def _validate_or_select_potential(
+    submission: JobSubmission,
+) -> None:
+    """Validate or auto-select the potential for *submission*.
+
+    If the user explicitly chose a potential that doesn't support the
+    composition, raise 422 with suggestions.  If the default (pmmcs) was
+    kept and it doesn't fit, silently pick the best compatible one.
+    """
+    from amorphouspy.potentials.potential import (
+        compatible_potentials,
+        get_supported_elements,
+        select_potential,
+    )
+
+    elements = _composition_elements(submission.composition.root)
+    potential = submission.potential.value
+
+    supported = get_supported_elements(potential)
+    unsupported = elements - supported
+    if not unsupported:
+        return
+
+    # Default was kept → auto-select the best compatible potential
+    if submission.potential == Potential.pmmcs:
+        best = select_potential(elements)
+        if best is not None:
+            logger.info(
+                "Auto-selected '%s' potential (pmmcs missing %s)",
+                best,
+                sorted(unsupported),
+            )
+            submission.potential = Potential(best)
+            return
+
+    # Explicit choice or nothing works at all → 422
+    compat = compatible_potentials(elements)
+    hint = f" Compatible potentials: {compat}." if compat else ""
+    raise HTTPException(
+        status_code=422,
+        detail=(f"The '{potential}' potential does not support element(s): {sorted(unsupported)}.{hint}"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -102,6 +157,9 @@ def submit_job(
 
     # Replace with rescaled mol-% (fractions → percentages summing to 100)
     submission.composition = Composition({ox: frac * 100 for ox, frac in normalised.items()})
+
+    # Validate potential / auto-select if default doesn't fit
+    _validate_or_select_potential(submission)
 
     store = get_job_store()
     norm_comp = submission.composition.canonical
@@ -378,7 +436,8 @@ def visualize_job(job_id: str) -> HTMLResponse:
 
     if job.status == "failed" and not job.result_data:
         errors = job.errors or {}
-        detail = errors.get("pipeline", "Unknown error")
+        # Errors may be keyed by "pipeline" (fast path) or by step name (slow path)
+        detail = "; ".join(f"{k}: {v}" for k, v in errors.items()) or "Unknown error"
         raise HTTPException(
             status_code=422,
             detail=f"Job failed: {detail}",

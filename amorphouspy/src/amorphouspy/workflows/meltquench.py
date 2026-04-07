@@ -11,7 +11,6 @@ from typing import Any, cast
 
 import pandas as pd
 from ase.atoms import Atoms
-from lammpsparser.compatibility.file import lammps_file_interface_function
 
 from amorphouspy.io_utils import structure_from_parsed_output
 from amorphouspy.workflows.meltquench_protocols import (
@@ -20,7 +19,7 @@ from amorphouspy.workflows.meltquench_protocols import (
     pmmcs_protocol,
     shik_protocol,
 )
-from amorphouspy.workflows.shared import LammpsPotential, get_lammps_command
+from amorphouspy.workflows.shared import LammpsPotential, get_lammps_command, run_lammps_with_error_capture
 
 
 def _run_lammps_md(  # pragma: no cover
@@ -82,7 +81,7 @@ def _run_lammps_md(  # pragma: no cover
             # Set scalar pressure for the parser to avoid crashes
             passed_pressure = p_start
             # Sets up the LAMMPS simulations
-            _shell_output, parsed_output, job_crashed = lammps_file_interface_function(
+            parsed_output = run_lammps_with_error_capture(
                 working_directory=tmp_path,
                 structure=structure,
                 potential=cast("Any", potential),
@@ -110,7 +109,7 @@ def _run_lammps_md(  # pragma: no cover
         else:
             passed_pressure = pressure
             # Sets up the LAMMPS simulations
-            _shell_output, parsed_output, job_crashed = lammps_file_interface_function(
+            parsed_output = run_lammps_with_error_capture(
                 working_directory=tmp_path,
                 structure=structure,
                 potential=cast("Any", potential),
@@ -134,10 +133,6 @@ def _run_lammps_md(  # pragma: no cover
                 },
                 lmp_command=get_lammps_command(server_kwargs=server_kwargs),
             )
-
-        if job_crashed or "generic" not in parsed_output:
-            msg = f"LAMMPS crashed. Check logs in {tmp_path}"
-            raise RuntimeError(msg)
 
         # Retrives the final structure from the parsed output
         new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)

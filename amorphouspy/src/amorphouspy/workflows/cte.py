@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from ase.atoms import Atoms
-from lammpsparser.compatibility.file import lammps_file_interface_function
 
 from amorphouspy.io_utils import structure_from_parsed_output
 from amorphouspy.workflows.cte_helpers import (
@@ -26,7 +25,7 @@ from amorphouspy.workflows.cte_helpers import (
     _temperature_scan_input_checker,
     _temperature_scan_merge_results,
 )
-from amorphouspy.workflows.shared import get_lammps_command
+from amorphouspy.workflows.shared import get_lammps_command, run_lammps_with_error_capture
 
 
 def _run_lammps_md(  # pragma: no cover
@@ -85,7 +84,7 @@ def _run_lammps_md(  # pragma: no cover
         tmp_path = str(Path(tmpdir))
 
         # Sets up the LAMMPS simulations
-        _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
+        parsed_output = run_lammps_with_error_capture(
             working_directory=tmp_path,
             structure=structure,
             potential=potential,
@@ -111,10 +110,6 @@ def _run_lammps_md(  # pragma: no cover
                 "thermo_modify": "flush no",
             },
         )
-
-        if _job_crashed or parsed_output.get("generic", None) is None or parsed_output.get("lammps", None) is None:
-            msg = f"LAMMPS crashed. Check logs in {tmp_path}"
-            raise RuntimeError(msg)
 
         new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
 
