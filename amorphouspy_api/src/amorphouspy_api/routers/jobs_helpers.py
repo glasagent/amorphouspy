@@ -300,36 +300,40 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
         store.update_job(job_id, status="running", progress=progress)
 
 
-def _probe_single_step(cache_dir: str, cache_key: str, step_name: str, job_id: str) -> tuple[str, dict | None]:
-    """Probe a single step's cache and return (status, result_or_None)."""
+def _probe_single_step(
+    cache_dir: str, cache_key: str, step_name: str, job_id: str
+) -> tuple[str, dict | None, str | None]:
+    """Probe a single step's cache and return (status, result_or_None, error_or_None)."""
     step_key = f"{cache_key}_{step_name}"
     try:
         step_future = get_future_from_cache(cache_directory=cache_dir, cache_key=step_key)
         resolved = _resolve_future(step_future, job_id)
         status = resolved["status"]
         result = resolved.get("result") if status == "completed" else None
-        return status, result
+        error = resolved.get("error") if status == "failed" else None
+        return status, result, error
     except FileNotFoundError:
-        return "pending", None
-    except Exception:
+        return "pending", None, None
+    except Exception as exc:
         logger.exception("Job %s step %s failed (cached error)", job_id, step_name)
-        return "failed", None
+        return "failed", None, str(exc)
 
 
 def _probe_step_caches(
     job: Job,
     all_steps: list[str],
-) -> tuple[dict[str, str], dict[str, object], bool]:
-    """Probe per-step caches and return (progress, partial_results, has_failure)."""
+) -> tuple[dict[str, str], dict[str, object], bool, dict[str, str]]:
+    """Probe per-step caches and return (progress, partial_results, has_failure, errors)."""
     cache_dir = str(MELTQUENCH_PROJECT_DIR)
     progress: dict[str, str] = {}
     partial_results: dict[str, object] = dict(job.result_data or {})
     has_failure = False
+    errors: dict[str, str] = {}
     # Track whether the base pipeline (structure_generation + melt_quench) is done.
     # Analysis steps depend on it, so they should stay "pending" until it completes.
     base_done = True
     for step_name in all_steps:
-        status, result = _probe_single_step(cache_dir, job.request_hash, step_name, job.job_id)
+        status, result, error = _probe_single_step(cache_dir, job.request_hash, step_name, job.job_id)
         is_analysis = step_name not in BASE_STEPS
         # An analysis step reported as "running" while the base hasn't finished
         # is actually just waiting — show "pending" instead.
@@ -340,9 +344,22 @@ def _probe_step_caches(
             partial_results.update(result)
         if status == "failed":
             has_failure = True
+            if error:
+                errors[step_name] = error
         if not is_analysis and status != "completed":
             base_done = False
-    return progress, partial_results, has_failure
+    return progress, partial_results, has_failure, errors
+
+
+def _parse_submission(job: Job) -> JobSubmission | None:
+    """Try to reconstruct a JobSubmission from stored request_data."""
+    if not job.request_data:
+        return None
+    try:
+        return JobSubmission(**job.request_data)
+    except Exception:
+        logger.warning("Could not parse request_data for job %s", job.job_id)
+        return None
 
 
 def refresh_job_from_cache(job: Job) -> None:
@@ -354,15 +371,6 @@ def refresh_job_from_cache(job: Job) -> None:
     cache_dir = str(MELTQUENCH_PROJECT_DIR)
     cache_key = job.request_hash
 
-    def _parse_submission() -> JobSubmission | None:
-        if not job.request_data:
-            return None
-        try:
-            return JobSubmission(**job.request_data)
-        except Exception:
-            logger.warning("Could not parse request_data for job %s", job.job_id)
-            return None
-
     # Fast path — final merged result available?
     try:
         future = get_future_from_cache(
@@ -371,7 +379,7 @@ def refresh_job_from_cache(job: Job) -> None:
         )
         resolved = _resolve_future(future, job.job_id)
         if resolved["status"] in ("completed", "failed"):
-            submission = _parse_submission()
+            submission = _parse_submission(job)
             _update_from_resolved(job.job_id, resolved, submission)
             return
     except FileNotFoundError:
@@ -379,18 +387,18 @@ def refresh_job_from_cache(job: Job) -> None:
     except Exception as exc:
         # get_future_from_cache raises stored errors directly; treat as failed.
         logger.exception("Job %s failed (cached error)", job.job_id)
-        submission = _parse_submission()
+        submission = _parse_submission(job)
         resolved = {"status": "failed", "error": str(exc)}
         _update_from_resolved(job.job_id, resolved, submission)
         return
 
     # Slow path — probe per-step cache keys
-    submission = _parse_submission()
+    submission = _parse_submission(job)
     all_steps = list(BASE_STEPS)
     if submission:
         all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
 
-    progress, partial_results, has_failure = _probe_step_caches(job, all_steps)
+    progress, partial_results, has_failure, errors = _probe_step_caches(job, all_steps)
 
     store = get_job_store()
     updates: dict[str, object] = {"progress": progress}
@@ -398,6 +406,8 @@ def refresh_job_from_cache(job: Job) -> None:
         updates["result_data"] = partial_results
     if has_failure:
         updates["status"] = "failed"
+        if errors:
+            updates["errors"] = errors
     else:
         updates["status"] = "running"
     store.update_job(job.job_id, **updates)

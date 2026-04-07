@@ -3,6 +3,7 @@
 This module contains shared functionality which is reused in the individual workflows.
 """
 
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +15,49 @@ from lammpsparser.compatibility.file import lammps_file_interface_function
 from amorphouspy.io_utils import structure_from_parsed_output
 
 LammpsPotential = str | pd.DataFrame | dict[str, Any]
+
+
+def run_lammps_with_error_capture(working_directory: str, **kwargs: Any) -> dict:  # noqa: ANN401
+    """Wrap ``lammps_file_interface_function``, capturing LAMMPS output on failure.
+
+    On ``subprocess.CalledProcessError`` the wrapper reads any available stdout,
+    stderr and the tail of ``log.lammps`` from *working_directory* and re-raises
+    as a ``RuntimeError`` so the caller (and eventually the API) gets actionable
+    diagnostics instead of just an exit-code message.
+
+    Also checks the ``job_crashed`` flag and validates that the parsed output
+    contains ``generic`` and ``lammps`` keys, raising on soft failures.
+
+    All keyword arguments are forwarded to ``lammps_file_interface_function``.
+
+    Returns:
+        The parsed LAMMPS output dictionary.
+    """
+    try:
+        _shell_output, parsed_output, job_crashed = lammps_file_interface_function(
+            working_directory=working_directory, **kwargs
+        )
+    except subprocess.CalledProcessError as exc:
+        details = [str(exc)]
+        if exc.output:
+            details.append(f"LAMMPS stdout:\n{exc.output[-2000:]}")
+        if exc.stderr:
+            details.append(f"LAMMPS stderr:\n{exc.stderr[-2000:]}")
+        log_file = Path(working_directory) / "log.lammps"
+        if log_file.exists():
+            log_tail = log_file.read_text()[-2000:]
+            details.append(f"log.lammps (last 2000 chars):\n{log_tail}")
+        raise RuntimeError("\n".join(details)) from exc
+
+    if job_crashed or parsed_output.get("generic") is None or parsed_output.get("lammps") is None:
+        details = [f"LAMMPS crashed in {working_directory}."]
+        log_file = Path(working_directory) / "log.lammps"
+        if log_file.exists():
+            log_tail = log_file.read_text()[-2000:]
+            details.append(f"log.lammps (last 2000 chars):\n{log_tail}")
+        raise RuntimeError("\n".join(details))
+
+    return parsed_output
 
 
 def _run_lammps_md(
@@ -67,7 +111,7 @@ def _run_lammps_md(
         temp_setting = temperature
 
         # Sets up the LAMMPS simulations
-        _shell_output, parsed_output, _job_crashed = lammps_file_interface_function(
+        parsed_output = run_lammps_with_error_capture(
             working_directory=tmp_path,
             structure=structure,
             potential=cast("Any", potential),
@@ -93,10 +137,6 @@ def _run_lammps_md(
             },
             lmp_command=get_lammps_command(server_kwargs=server_kwargs),
         )
-
-        if _job_crashed or parsed_output.get("generic") is None or parsed_output.get("lammps") is None:
-            msg = f"LAMMPS crashed. Check logs in {tmp_path}"
-            raise RuntimeError(msg)
 
         # Retrieves the final structure from the parsed output
         new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
