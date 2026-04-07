@@ -23,7 +23,7 @@ from amorphouspy.shared import get_element_types_dict
 ELEMENT = re.compile(r"([A-Z][a-z]*)(\d*)")
 
 DENSITY_TOLERANCE = 1e-10
-COMPOSITION_TOLERANCE = 1e-10
+COMPOSITION_TOLERANCE = 0.001
 
 # Predefined list of trace oxides for the "Remainder" term
 TRACE_OXIDES = {
@@ -352,7 +352,10 @@ def check_neutral_oxide(oxide: str) -> None:
         raise ValueError(error_msg)
 
 
-def extract_composition(composition: dict[str, float]) -> dict[str, float]:
+def extract_composition(
+    composition: dict[str, float],
+    tolerance: float = COMPOSITION_TOLERANCE,
+) -> dict[str, float]:
     """Validate and normalize a composition dictionary.
 
     Handles both fractional (0.0-1.0) and percentage (0-100) inputs. Always returns
@@ -361,6 +364,9 @@ def extract_composition(composition: dict[str, float]) -> dict[str, float]:
     Args:
         composition: A dictionary mapping oxide formulas to their fractions,
             e.g. {"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5}.
+        tolerance: Maximum allowed fractional deviation from 1.0 (or equivalently
+            ``100 * tolerance`` in percentage mode). Defaults to
+            ``COMPOSITION_TOLERANCE``.
 
     Returns:
         A dictionary mapping oxide formulas to their molar fractions.
@@ -400,16 +406,18 @@ def extract_composition(composition: dict[str, float]) -> dict[str, float]:
         error_msg = "Total composition sum is zero"
         raise ValueError(error_msg)
 
-    if abs(total - 100) <= COMPOSITION_TOLERANCE:
-        comp_dict = {oxide: frac / 100 for oxide, frac in comp_dict.items()}
-    elif 1.0 + COMPOSITION_TOLERANCE < total < 100 - COMPOSITION_TOLERANCE:
-        error_msg = f"Invalid composition sum ({total:.4f}). "
+    pct_tol = 100 * tolerance
+
+    if abs(total - 100) <= pct_tol or abs(total - 1.0) <= tolerance:
+        comp_dict = {oxide: frac / total for oxide, frac in comp_dict.items()}
+    elif total > 100 + pct_tol:
+        error_msg = f"Total exceeds 100% + {pct_tol}% tolerance: {total:.2f}%"
         raise ValueError(error_msg)
-    elif total > 100 + COMPOSITION_TOLERANCE:
-        error_msg = f"Total exceeds 100%: {total:.2f}%"
+    elif total < 1.0 - tolerance:
+        error_msg = f"Component sum ({total:.4f}) is less than allowed minimum"
         raise ValueError(error_msg)
-    elif total < 1.0 - COMPOSITION_TOLERANCE:
-        error_msg = f"Component sum ({total:.4f}) is less than 1.00"
+    else:
+        error_msg = f"Invalid composition sum ({total:.4f}). Expected ~100 mol% or ~1.0 fractional."
         raise ValueError(error_msg)
 
     return comp_dict

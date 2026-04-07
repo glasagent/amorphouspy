@@ -46,6 +46,24 @@ Both layers share the same underlying data store. The materials layer is a view 
 Full endpoint documentation is available via the auto-generated OpenAPI docs at `/docs`.
 
 
+## Authentication
+
+The API supports optional bearer-token authentication via the `API_TOKEN` environment variable.
+
+**Without `API_TOKEN`** (default): The API is open — no credentials required. A warning is logged at startup.
+
+**With `API_TOKEN` set**: All requests (except docs endpoints) must include the token:
+
+```bash
+# Set the token when starting the server
+API_TOKEN=my-secret-token pixi run serve
+
+# Include it in requests
+curl -H "Authorization: Bearer my-secret-token" http://localhost:8000/jobs
+```
+
+The docs UI (`/docs`, `/redoc`) and OpenAPI schema (`/openapi.json`) remain accessible without a token.
+
 ## Configuring the executor backend
 
 The API uses [executorlib](https://executorlib.readthedocs.io/) to run simulation jobs.
@@ -116,7 +134,7 @@ pixi run serve
 
 ## Systemd service (production)
 
-The repository includes systemd unit files in `amorphouspy_api/system-service/` for running the API as a persistent service that starts on boot and auto-restarts on failure.
+The repository includes systemd unit files in `docs/system-service/` for running the API as a persistent service that starts on boot and auto-restarts on failure.
 
 ### Installation
 
@@ -124,8 +142,8 @@ As `root` (or via `sudo`):
 
 ```bash
 # Copy the unit files
-cp amorphouspy_api/system-service/amorphouspy-api.service /etc/systemd/system/
-cp amorphouspy_api/system-service/amorphouspy-api.path /etc/systemd/system/
+cp docs/system-service/amorphouspy-api.service /etc/systemd/system/
+cp docs/system-service/amorphouspy-api.path /etc/systemd/system/
 
 # Reload, enable, and start
 systemctl daemon-reload
@@ -145,12 +163,14 @@ Environment=SLURM_PARTITION=main_queue
 Environment=LAMMPS_CORES=8
 Environment=AMORPHOUSPY_PROJECTS=/path/to/data
 Environment=AMORPHOUSPY_VERSION_PROJECTS=0
+Environment=API_TOKEN=<your-secret-token>
 ```
 
 | Variable | Default | Description |
 |---|---|---|
 | `AMORPHOUSPY_PROJECTS` | `<package>/projects` | Root directory for project data and the SQLite database |
 | `AMORPHOUSPY_VERSION_PROJECTS` | `1` | Set to `0` to keep cached results accessible across version upgrades |
+| `API_TOKEN` | — | Bearer token for API authentication. If not set, the API is open (a warning is logged at startup). |
 
 ### Managing the service
 

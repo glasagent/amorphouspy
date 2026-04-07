@@ -12,6 +12,7 @@ The `amorphouspy-api` is a FastAPI-based service that provides a Model Context P
 | `SLURM_MEMORY_MAX` | Max memory per job in GB (slurm only) | - |
 | `AMORPHOUSPY_PROJECTS` | Directory for project/cache files | `./projects` |
 | `API_BASE_URL` | Base URL for visualization links | - |
+| `API_TOKEN` | Bearer token for API authentication. If not set, the API runs without authentication (a warning is logged). When set, requests must include `Authorization: Bearer <token>`. | - |
 
 
 ## Endpoint Reference

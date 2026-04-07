@@ -1,8 +1,0 @@
-[Unit]
-Description=Watch amorphouspy API source for changes
-
-[Path]
-PathModified=/home/amorphouspy/amorphouspy/amorphouspy_api/src/amorphouspy_api
-
-[Install]
-WantedBy=multi-user.target

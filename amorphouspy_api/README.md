@@ -8,4 +8,4 @@ FastAPI service that exposes `amorphouspy` via REST and Model Context Protocol (
 
 - `src/amorphouspy_api/` — Application source (endpoints, models, executor)
 - `src/tests/` — Unit and integration tests
-- `system-service/` — Systemd unit files for production deployment
+- Systemd unit files for production deployment are in `docs/system-service/`

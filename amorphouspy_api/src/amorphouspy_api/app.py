@@ -4,6 +4,7 @@ FastAPI application that manages long-running glass simulation jobs.
 """
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,8 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_mcp import FastApiMCP
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from .config import DB_PATH, PROJECTS_FOLDER
+from .config import API_TOKEN, DB_PATH, PROJECTS_FOLDER
 from .database import close_job_store, init_job_store
 from .routers.glasses import router as glasses_router
 from .routers.jobs import router as jobs_router
@@ -30,9 +32,38 @@ logger.info("Using project directory: %s", PROJECTS_FOLDER)
 PROJECTS_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
+class BearerTokenMiddleware(BaseHTTPMiddleware):
+    """Reject requests without a valid ``Authorization: Bearer <token>`` header."""
+
+    async def dispatch(self, request: Request, call_next):
+        """Check the Authorization header and reject invalid tokens."""
+        # Allow OpenAPI docs / schema without auth
+        if request.url.path in ("/docs", "/redoc", "/openapi.json", "/"):
+            return await call_next(request)
+
+        # Allow read-only access to individual job results (job ID acts as secret)
+        path = request.url.path
+        if request.method == "GET" and path.startswith("/jobs/") and path != "/jobs/":
+            return await call_next(request)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return JSONResponse(status_code=401, content={"detail": "Missing bearer token"})
+
+        token = auth_header.removeprefix("Bearer ")
+        if not secrets.compare_digest(token, API_TOKEN):  # type: ignore[arg-type]
+            return JSONResponse(status_code=403, content={"detail": "Invalid bearer token"})
+
+        return await call_next(request)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan — startup and shutdown."""
+    if API_TOKEN:
+        logger.info("Bearer-token authentication is enabled")
+    else:
+        logger.warning("API_TOKEN is not set — the API is open with no authentication!")
     logger.info("Job store database path: %s", DB_PATH)
     init_job_store(DB_PATH)
     yield
@@ -54,6 +85,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if API_TOKEN:
+    app.add_middleware(BearerTokenMiddleware)
 
 # Static files
 static_dir = Path(__file__).parent / "static"

@@ -18,6 +18,7 @@ from io import StringIO
 from typing import Annotated
 from uuid import uuid4
 
+from amorphouspy.structure import extract_composition
 from ase.io import write as ase_write
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
@@ -67,6 +68,12 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
     The server resolves the dependency DAG internally.
     If an identical job already completed, the cached result is returned.
     """
+    # Validate composition eagerly so errors surface as HTTP 422
+    try:
+        extract_composition(submission.composition.root, tolerance=0.03)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     store = get_job_store()
     norm_comp = submission.composition.canonical
     req_hash = _job_hash(submission, norm_comp)
