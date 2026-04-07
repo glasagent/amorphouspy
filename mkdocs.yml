@@ -80,8 +80,9 @@ nav:
     - developers/contributing.md
     - developers/architecture.md
     - developers/api_design.md
-  - API Reference: api_reference.md
-  - Web API: api_service.md
+  - API Reference:
+    - Python API: api_reference.md
+    - Web API: api_service.md
 
 plugins:
   - search

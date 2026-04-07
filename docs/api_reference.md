@@ -1,4 +1,4 @@
-# API Reference
+# Python API Reference
 
 The public API of `amorphouspy` is defined by what is importable directly from the top-level package:
 

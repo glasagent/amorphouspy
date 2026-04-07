@@ -1,4 +1,4 @@
-# API Service (MCP)
+# Web API Reference
 
 The `amorphouspy-api` is a FastAPI-based service that provides a Model Context Protocol (MCP) interface for running oxide glass simulations with intelligent caching.
 
@@ -15,5 +15,7 @@ The `amorphouspy-api` is a FastAPI-based service that provides a Model Context P
 
 
 ## Endpoint Reference
+
+Complete endpoint reference created from the OpenAPI schema, as found on `/docs` of the running API.
 
 <swagger-ui src="openapi.json" defaultModelsExpandDepth="0"/>
