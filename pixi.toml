@@ -16,21 +16,15 @@ pygraphviz = "*"
 jupyter = "*"
 # Prefer conda-forge over PyPI for compiled packages
 ase = "*"
-executorlib = "*"
 lammpsparser = "*"
 numba = "*"
 numpy = "*"
 pandas = "*"
 pymatgen = "*"
-pysqa = "*"
 scipy = "*"
-sqlalchemy = "*"
-uvicorn = "*"
-fastapi-mcp = "*"
 
 # Platform-specific: flux-core not available on osx-*; sovapy not on conda-forge for osx-arm64
 [target.linux-64.dependencies]
-flux-core = ">=0.81.0"
 sovapy = "0.8.3.*"
 
 [target.osx-64.dependencies]
@@ -50,16 +44,30 @@ pytest-cov = "*"
 nbval = "*"
 pip-licenses = "*"
 
+[feature.api.dependencies]
+executorlib = "*"
+pysqa = "*"
+sqlalchemy = "*"
+uvicorn = "*"
+fastapi-mcp = "*"
+
+[feature.api.target.linux-64.dependencies]
+flux-core = ">=0.81.0"
+
 [feature.docs.dependencies]
 mkdocs-material = "*"
 mkdocs-jupyter = "==0.24.8"
+mkdocs-include-markdown-plugin = "*"
 pymdown-extensions = "*"
 mkdocstrings = "*"
 mkdocstrings-python = "*"
 
+[feature.docs.pypi-dependencies]
+mkdocs-swagger-ui-tag = ">=0.8.0, <0.9"
+
 [environments]
-default = { features = ["dev", "docs"], solve-group = "default" }
-docs = { features = ["docs"], solve-group = "default" }
+default = { features = ["dev", "docs", "api"], solve-group = "default" }
+docs = { features = ["docs", "api"], solve-group = "default" }
 
 [tasks]
 test-lib = { cmd = "python -m pytest src/tests --durations=0 --cov=src/amorphouspy --cov-report=xml --cov-report=term", cwd = "amorphouspy" }
@@ -68,8 +76,9 @@ test-notebooks = { cmd = "pytest --durations=0 --nbval-lax ../notebooks/*ipynb -
 serve = "uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 8000 --log-level info --backlog 1 --timeout-keep-alive 60"
 lint = "ruff check --output-format=github"
 format-check = "ruff format --check --diff"
-docs-build = "mkdocs build --strict"
-docs-serve = "mkdocs serve"
+export-openapi = "python docs/export_openapi.py"
+docs-build = { cmd = "mkdocs build --strict", depends-on = ["export-openapi"] }
+docs-serve = { cmd = "mkdocs serve", depends-on = ["export-openapi"] }
 # Ignored packages: igraph/python-igraph (GPL, transitive via sovapy), lammps (GPL),
 # matplotlib-inline (BSD-3-Clause, misreported as UNKNOWN by pip-licenses)
 license-check = "pip-licenses --partial-match --allow-only='MIT;BSD;Apache;ISC;PSF;Python Software Foundation;MPL;Mozilla;Unlicense;Public Domain;HPND;LGPL' --fail-on='GNU General Public License v3 (GPLv3);GNU General Public License v2 (GPLv2);GNU General Public License (GPL)' -i UNKNOWN amorphouspy amorphouspy-api igraph python-igraph lammps matplotlib-inline --format=plain"

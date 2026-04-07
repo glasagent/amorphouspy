@@ -11,3 +11,4 @@ __pycache__/
 *.tbl
 !amorphouspy/src/tests/data/*.dump
 site/
+docs/openapi.json
