@@ -132,6 +132,47 @@ print(f"Poisson's ratio: {elastic_result['nu']:.3f}")
 The functions in `amorphouspy` are plain Python functions, so you _can_ import and run them directly in your Python interpreter.
 However, some of those functions will perform MD simulations with LAMMPS, so they will be long-running, and eventually you may want to submit many of them in parallel.
 
-For this reason, the how-to guides use `executorlib` to submit these functions to run on high-performance computing resources. Note, however, that you can use the functions in `amorphouspy` with any workflow manager of your choosing.
+For this reason, the how-to guides use [executorlib](https://executorlib.readthedocs.io/) to submit these functions to run on high-performance computing resources. Note, however, that you can use the functions in `amorphouspy` with any workflow manager of your choosing.
+
+The basic pattern is:
+
+```python
+from executorlib import SingleNodeExecutor
+
+with SingleNodeExecutor() as exe:
+    # Submit functions — each returns a future
+    atoms_dict_future = exe.submit(
+        get_structure_dict,
+        composition={"SiO2": 75, "Na2O": 15, "CaO": 10},
+        target_atoms=3000,
+    )
+
+    # Pass futures as arguments to build a dependency graph
+    structure_future = exe.submit(get_ase_structure, atoms_dict=atoms_dict_future)
+    potential_future = exe.submit(
+        generate_potential,
+        atoms_dict=atoms_dict_future,
+        potential_type="pmmcs",
+    )
+
+    # Downstream tasks automatically wait for their dependencies
+    result_future = exe.submit(
+        melt_quench_simulation,
+        structure=structure_future,
+        potential=potential_future,
+    )
+
+    # Block until the result is ready
+    result = result_future.result()
+```
+
+Key points:
+
+- `exe.submit(fn, **kwargs)` returns a `Future` — the function runs asynchronously.
+- Passing a `Future` as an argument to another `submit` call creates a dependency — `executorlib` ensures tasks run in the correct order.
+- `.result()` blocks until the computation is complete and returns the output.
+- Replace `SingleNodeExecutor` with `SlurmClusterExecutor` or `FluxClusterExecutor` to run on HPC clusters — no code changes needed beyond the executor.
+
+See the [How-To Guides](how_to_guides/index.md) for complete examples.
 
 
