@@ -76,7 +76,8 @@ test-notebooks = { cmd = "pytest --durations=0 --nbval-lax ../notebooks/*ipynb -
 serve = "uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 8000 --log-level info --backlog 1 --timeout-keep-alive 60"
 lint = "ruff check --output-format=github"
 format-check = "ruff format --check --diff"
-docs-build = "mkdocs build --strict"
+generate-openapi = "python docs/export_openapi.py"
+docs-build = { depends-on = ["generate-openapi"], cmd = "mkdocs build --strict" }
 docs-serve = "mkdocs serve"
 # Ignored packages: lammps (GPL, external subprocess only — not a combined work),
 # matplotlib-inline (BSD-3-Clause, misreported as UNKNOWN by pip-licenses)
