@@ -272,9 +272,37 @@ def test_extract_composition_negative_raises():
 
 
 def test_extract_composition_invalid_sum_raises():
-    """Sum between 1 and 100 (exclusive) raises ValueError."""
+    """Sum too far from 100 or 1.0 raises ValueError."""
     with pytest.raises(ValueError, match="Invalid composition sum"):
         ps.extract_composition({"SiO2": 50.0, "Na2O": 10.0})
+
+
+def test_extract_composition_within_tolerance_rescales():
+    """Sum within default tolerance of 100 is accepted and rescaled to 1.0."""
+    result = ps.extract_composition({"SiO2": 74.95, "Na2O": 25.0})
+    total = sum(result.values())
+    assert pytest.approx(total) == 1.0
+    assert pytest.approx(result["SiO2"]) == 74.95 / 99.95
+
+
+def test_extract_composition_exceeds_tolerance_raises():
+    """Sum more than default tolerance away from 100 raises ValueError."""
+    with pytest.raises(ValueError, match="Invalid composition sum"):
+        ps.extract_composition({"SiO2": 74.0, "Na2O": 25.0})
+
+
+def test_extract_composition_custom_tolerance():
+    """Custom tolerance of 0.03 accepts sums within 3% of 100."""
+    result = ps.extract_composition({"SiO2": 74.0, "Na2O": 25.0}, tolerance=0.03)
+    total = sum(result.values())
+    assert pytest.approx(total) == 1.0
+    assert pytest.approx(result["SiO2"]) == 74.0 / 99.0
+
+
+def test_extract_composition_custom_tolerance_exceeded():
+    """Sum exceeding custom tolerance raises ValueError."""
+    with pytest.raises(ValueError, match="Total exceeds"):
+        ps.extract_composition({"SiO2": 80.0, "Na2O": 25.0}, tolerance=0.03)
 
 
 # ---------------------------------------------------------------------------
