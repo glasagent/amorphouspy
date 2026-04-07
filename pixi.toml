@@ -45,6 +45,7 @@ pip-licenses = "*"
 
 [feature.api.dependencies]
 executorlib = "*"
+h5py = "*"
 pysqa = "*"
 sqlalchemy = "*"
 uvicorn = "*"
