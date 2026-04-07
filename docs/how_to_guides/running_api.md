@@ -1,13 +1,13 @@
-# Running the API
+# Use the Web API
+
+## Installation
 
 When using the `pixi` environment, the API dependencies will already be installed.
 
 When using the pip/conda approach, install the API server and its dependencies via:
-
 ```bash
 pip install amorphouspy[api]
 ```
-
 
 ## Starting the server
 
@@ -19,6 +19,31 @@ The API will be available at:
 - **REST API**: `http://localhost:8000`
 - **API Docs**: `http://localhost:8000/docs`
 - **MCP SSE**: `http://localhost:8000/mcp`
+
+## Key features
+
+- Each simulation request is hashed based on composition, potential, and simulation parameters.
+- Automatic cache lookups prevent duplicate simulations.
+- Results persist across server restarts.
+
+- All job metadata stored in SQLite database (`jobs.db`).
+- Tracks job states: `pending` → `running` → `completed`/`failed`/`cancelled`.
+- Supports local execution (`TestClusterExecutor`) or SLURM cluster (`SlurmClusterExecutor`/`FluxClusterExecutor`).
+- Built-in job caching at the executor level: Re-submitting same job returns cached result or running future.
+
+- Exposes simulation capabilities as MCP tools at `/mcp` via `fastapi-mcp`.
+- Compatible with Claude, VS Code, and other MCP clients.
+
+## Using the API
+
+The API follows a two-layer design:
+
+- **Jobs layer** (`/jobs`): Simulation-centric. "Run this computation."
+- **Materials layer** (`/glasses`): Read-only, property-centric. "What do we know about this glass?"
+
+Both layers share the same underlying data store. The materials layer is a view over completed jobs.
+
+Full endpoint documentation is available via the auto-generated OpenAPI docs at `/docs`.
 
 
 ## Configuring the executor backend
@@ -34,15 +59,11 @@ The backend is selected via the `EXECUTOR_TYPE` environment variable.
 
 ### Local execution
 
-No extra configuration needed — this is the default:
-
-```bash
-EXECUTOR_TYPE=single pixi run serve
-```
+No extra configuration needed — this is the default.
 
 ### SLURM cluster
 
-Set the following environment variables:
+Set the following environment variables before running `pixi run serve`:
 
 | Variable | Description | Example |
 |---|---|---|

@@ -42,7 +42,7 @@ nav:
   - How-To Guides:
     - how_to_guides/index.md
     - how_to_guides/installation.md
-    - Running the API: how_to_guides/running_api.md
+    - how_to_guides/running_api.md
     - Meltquench: notebooks/Meltquench.ipynb
     # - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
     # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
@@ -77,9 +77,9 @@ nav:
         - Structure Factor: theory/analysis/structure_factor.md
         - CTE Analysis: theory/analysis/cte_analysis.md
   - Developers:
-    - Contributing: developers/contributing.md
-    - Architecture: developers/architecture.md
-    - API Design: developers/api_design.md
+    - developers/contributing.md
+    - developers/architecture.md
+    - developers/api_design.md
   - API Reference: api_reference.md
   - Web API: api_service.md
 

@@ -1,4 +1,4 @@
-# Developers & Architecture
+# Architecture
 
 For more information on the internal workings, this section provides an overview of how `amorphouspy` is organized internally.
 

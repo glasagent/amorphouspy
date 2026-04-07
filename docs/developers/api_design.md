@@ -1,16 +1,7 @@
-# API Design Decisions
-
-The API service (`amorphouspy_api`) follows a two-layer design:
-
-- **Materials layer** (`/glasses`): Read-only, property-centric. "What do we know about this glass?"
-- **Jobs layer** (`/jobs`): Simulation-centric. "Run this computation."
-
-Both layers share the same underlying data store. The materials layer is a view over completed jobs.
-
-Full endpoint documentation is available via the auto-generated OpenAPI docs at `/docs`.
+# Web API Design
 
 
-## Architecture Overview
+## Architecture
 
 ``` mermaid
 graph LR
@@ -35,21 +26,6 @@ graph LR
     C3[Job caching]
     end
 ```
-
-## Key features
-
-- Each simulation request is hashed based on composition, potential, and simulation parameters.
-- Automatic cache lookups prevent duplicate simulations.
-- Results persist across server restarts.
-
-- All job metadata stored in SQLite database (`jobs.db`).
-- Tracks job states: `pending` → `running` → `completed`/`failed`/`cancelled`.
-- Supports local execution (`TestClusterExecutor`) or SLURM cluster (`SlurmClusterExecutor`/`FluxClusterExecutor`).
-- Built-in job caching at the executor level: Re-submitting same job returns cached result or running future.
-
-- Exposes simulation capabilities as MCP tools via `fastapi-mcp`.
-- Compatible with Claude, VS Code, and other MCP clients.
-- Server-Sent Events (SSE) endpoint at `/mcp`.
 
 
 ## Composition Normalization
