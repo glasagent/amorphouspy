@@ -92,11 +92,16 @@ def submit_job(
     If an identical job already completed, the cached result is returned
     unless ``force=true`` is set.
     """
-    # Validate composition eagerly so errors surface as HTTP 422
+    # Validate and normalise composition so downstream code always sees
+    # fractions that sum to exactly 1.0 (the pipeline uses the default
+    # tight tolerance of 0.001).
     try:
-        extract_composition(submission.composition.root, tolerance=0.03)
+        normalised = extract_composition(submission.composition.root, tolerance=0.03)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Replace with rescaled mol-% (fractions → percentages summing to 100)
+    submission.composition = Composition({ox: frac * 100 for ox, frac in normalised.items()})
 
     store = get_job_store()
     norm_comp = submission.composition.canonical
