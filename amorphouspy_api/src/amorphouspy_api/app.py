@@ -41,6 +41,11 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         if request.url.path in ("/docs", "/redoc", "/openapi.json", "/"):
             return await call_next(request)
 
+        # Allow read-only access to individual job results (job ID acts as secret)
+        path = request.url.path
+        if request.method == "GET" and path.startswith("/jobs/") and path != "/jobs/":
+            return await call_next(request)
+
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
             return JSONResponse(status_code=401, content={"detail": "Missing bearer token"})
