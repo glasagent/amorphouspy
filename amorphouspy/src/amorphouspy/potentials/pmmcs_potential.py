@@ -39,6 +39,11 @@ pmmcs_potential_params = {
 }
 
 
+def supported_elements() -> set[str]:
+    """Return the set of elements supported by the PMMCS potential."""
+    return set(pmmcs_potential_params)
+
+
 def generate_pmmcs_potential(atoms_dict: dict) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 

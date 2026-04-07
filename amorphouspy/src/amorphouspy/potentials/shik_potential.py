@@ -57,6 +57,11 @@ shik_params = {
 }
 
 
+def supported_elements() -> set[str]:
+    """Return the set of elements supported by the SHIK potential."""
+    return set(shik_charges)
+
+
 # ================================================================
 # Core Buckingham + r^-24 potential functions
 # ================================================================
