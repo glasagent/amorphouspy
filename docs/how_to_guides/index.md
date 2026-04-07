@@ -1,5 +1,5 @@
 # How-To Guides
 
-This section covers practical, goal-oriented tasks. The guides in this section take the form of Jupyter Notebooks that you can run interactively.
+This section covers practical, goal-oriented tasks, mostly via statically rendered versions of the Jupyter Notebooks from the `notebooks/` folder of the `amorphouspy` repository. In order to run them yourself, just open the Jupyter Notebook locally.
 
-These Jupyter notebooks are integrated directly into the documentation, meaning you can view all code and outputs from the browser. For learning the theoretical details underlying these calculations, or simply getting started, check the [Theory](../theory/index.md) and [Tutorial](../tutorial.md) pages.
+The theory underlying these calculations is covered in [Theory](../theory/index.md).

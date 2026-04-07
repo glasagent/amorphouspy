@@ -22,7 +22,7 @@ Find the documentation at **[glasagent.github.io/amorphouspy](https://glasagent.
 
 `amorphouspy_api`
 
-- **End-to-end Workflows**: Submit a composition, get back the glass and all of its predicted properties
+- **End-to-end Workflows**: Submit a composition, get back the glass structure and all of its predicted properties
 - **Job management API**: Fully fledged job management API, including results database
 - **Visualization**: Interactive Plotly-based visualizations of glass structure and properties
 
@@ -52,7 +52,7 @@ See the [Tutorial](https://glasagent.github.io/amorphouspy/tutorial) for a step-
 
 ## Authors
 
-Developed at the [Bundesanstant für Materialforschung und -prüfung (BAM)](https://www.bam.de/Navigation/EN) in collaboration with [SCHOTT AG](https://www.schott.com/) and the [Max Planck Institute for Sustainable MaterialsMPIE](https://www.mpie.de/en).
+Developed at the [Bundesanstant für Materialforschung und -prüfung (BAM)](https://www.bam.de/Navigation/EN) in collaboration with [SCHOTT AG](https://www.schott.com/) and the [Max Planck Institute for Sustainable Materials](https://www.mpie.de/en).
 
 - **Achraf Atila** — BAM — Core framework, analysis tools, potentials
 - **Marcel Sadowski** — Schott AG — CTE simulation module

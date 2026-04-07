@@ -27,6 +27,7 @@ theme:
     - navigation.instant
     - navigation.tracking
     - navigation.top
+    - navigation.indexes
     - content.code.copy
     - content.code.annotate
     - search.highlight
@@ -39,7 +40,7 @@ nav:
   - Home: index.md
   - Tutorial: tutorial.md
   - How-To Guides:
-    - Overview: how_to_guides/index.md
+    - how_to_guides/index.md
     - how_to_guides/installation.md
     - Running the API: how_to_guides/running_api.md
     - Meltquench: notebooks/Meltquench.ipynb
@@ -52,22 +53,22 @@ nav:
     - CTE: notebooks/CTE.ipynb
     # - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
   - Theory:
-    - Overview: theory/index.md
+    - theory/index.md
     - Structure generation: theory/structure.md
     - Interatomic Potentials:
-        - Overview: theory/potentials/index.md
+        - theory/potentials/index.md
         - PMMCS (Pedone): theory/potentials/pmmcs.md
         - BJP (Bouhadja): theory/potentials/bjp.md
         - SHIK (Sundararaman): theory/potentials/shik.md
     - Simulation Workflows:
-        - Overview: theory/workflows/index.md
+        - theory/workflows/index.md
         - Melt-Quench: theory/workflows/melt_quench.md
         - Molecular Dynamics: theory/workflows/md.md
         - Elastic Moduli: theory/workflows/elastic.md
         - Viscosity: theory/workflows/viscosity.md
         - CTE: theory/workflows/cte.md
     - Structural Analysis:
-        - Overview: theory/analysis/index.md
+        - theory/analysis/index.md
         - RDF & Coordination: theory/analysis/rdf.md
         - Qn Distribution: theory/analysis/qn.md
         - Bond Angles: theory/analysis/bond_angles.md
