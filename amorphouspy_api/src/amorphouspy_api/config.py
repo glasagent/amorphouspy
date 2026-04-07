@@ -43,3 +43,9 @@ DB_PATH = PROJECTS_FOLDER / "tasks.db"
 # ---------------------------------------------------------------------------
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "")
+
+# ---------------------------------------------------------------------------
+# Optional bearer-token authentication
+# ---------------------------------------------------------------------------
+
+API_TOKEN: str | None = os.environ.get("API_TOKEN")
