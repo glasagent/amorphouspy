@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from amorphouspy_api.auth import verify_token
 from amorphouspy_api.database import get_job_store
 from amorphouspy_api.models import (
     AvailableStructure,
@@ -22,7 +23,7 @@ from amorphouspy_api.workflows import ANALYSES
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/glasses", tags=["tool"])
+router = APIRouter(prefix="/glasses", tags=["tool"], dependencies=[Depends(verify_token)])
 
 
 @router.get("", response_model=GlassListResponse)
