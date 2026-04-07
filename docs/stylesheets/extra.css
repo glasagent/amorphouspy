@@ -1,5 +1,26 @@
 /* ===== amorphouspy Custom Theme ===== */
 
+/* ---------- Show logo instead of site name in sidebar ---------- */
+.md-nav--primary > .md-nav__title {
+  font-size: 0;
+  line-height: 0;
+  padding: 0;
+}
+
+.md-nav--primary > .md-nav__title::before {
+  content: "";
+  display: block;
+  background: url("../assets/logo.svg") no-repeat center center;
+  background-size: contain;
+  width: 80%;
+  margin: 0 auto;
+  aspect-ratio: 254 / 224;
+}
+
+[data-md-color-scheme="slate"] .md-nav--primary > .md-nav__title::before {
+  background-image: url("../assets/logo_inverted.svg");
+}
+
 /* ---------- Custom color palette ---------- */
 :root {
   --md-primary-fg-color: #1a237e;
@@ -280,6 +301,28 @@ html {
 .md-typeset .pill-outline {
   border: 1.5px solid var(--md-primary-fg-color);
   color: var(--md-primary-fg-color);
+}
+
+/* ---------- Homepage logo ---------- */
+.md-typeset .logo-light,
+.md-typeset .logo-dark {
+  max-width: 300px;
+  width: 100%;
+  display: block;
+  margin: 0 auto;
+}
+
+/* Light mode: show light logo, hide dark */
+[data-md-color-scheme="default"] .md-typeset .logo-dark { display: none; }
+[data-md-color-scheme="default"] .md-typeset .logo-light { display: block; }
+
+/* Dark mode: show inverted logo, hide light */
+[data-md-color-scheme="slate"] .md-typeset .logo-light { display: none; }
+[data-md-color-scheme="slate"] .md-typeset .logo-dark { display: block; }
+
+/* ---------- Header logo swap (dark mode) ---------- */
+[data-md-color-scheme="slate"] .md-header__button.md-logo img {
+  content: url('../assets/logo_inverted.svg');
 }
 
 /* ---------- Responsive tweaks ---------- */
