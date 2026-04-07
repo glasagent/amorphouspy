@@ -282,6 +282,28 @@ html {
   color: var(--md-primary-fg-color);
 }
 
+/* ---------- Homepage logo ---------- */
+.md-typeset .logo-light,
+.md-typeset .logo-dark {
+  max-width: 300px;
+  width: 100%;
+  display: block;
+  margin: 0 auto;
+}
+
+/* Light mode: show light logo, hide dark */
+[data-md-color-scheme="default"] .md-typeset .logo-dark { display: none; }
+[data-md-color-scheme="default"] .md-typeset .logo-light { display: block; }
+
+/* Dark mode: show inverted logo, hide light */
+[data-md-color-scheme="slate"] .md-typeset .logo-light { display: none; }
+[data-md-color-scheme="slate"] .md-typeset .logo-dark { display: block; }
+
+/* ---------- Header logo swap (dark mode) ---------- */
+[data-md-color-scheme="slate"] .md-header__button.md-logo img {
+  content: url('../assets/logo_inverted.svg');
+}
+
 /* ---------- Responsive tweaks ---------- */
 @media (max-width: 768px) {
   .md-typeset .hero h1 { font-size: 1.8rem; }

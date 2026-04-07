@@ -1,5 +1,12 @@
 # amorphouspy
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo_inverted.png">
+    <img src="docs/assets/logo.png" alt="amorphouspy logo" width="400"/>
+  </picture>
+</p>
+
 <!--content-start-->
 
 A Python package for atomistic simulations of glasses.

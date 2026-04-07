@@ -84,6 +84,9 @@ nav:
     - Python API: api_reference.md
     - Web API: api_service.md
 
+watch:
+  - notebooks/
+
 plugins:
   - search
   - include-markdown
