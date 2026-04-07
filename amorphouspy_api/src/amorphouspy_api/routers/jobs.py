@@ -20,9 +20,10 @@ from uuid import uuid4
 
 from amorphouspy.structure import extract_composition
 from ase.io import write as ase_write
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
+from amorphouspy_api.auth import verify_token
 from amorphouspy_api.database import Job, get_job_store
 from amorphouspy_api.models import (
     Composition,
@@ -61,7 +62,7 @@ router = APIRouter(prefix="/jobs", tags=["tool"])
 # ---------------------------------------------------------------------------
 
 
-@router.post("", response_model=JobCreatedResponse)
+@router.post("", response_model=JobCreatedResponse, dependencies=[Depends(verify_token)])
 def submit_job(submission: JobSubmission) -> JobCreatedResponse:
     """Submit a new simulation job.
 
@@ -128,7 +129,7 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
     )
 
 
-@router.post(":search", response_model=JobSearchResponse)
+@router.post(":search", response_model=JobSearchResponse, dependencies=[Depends(verify_token)])
 def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
     """Search for existing completed / running jobs matching a spec.
 
@@ -211,7 +212,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
     )
 
 
-@router.post("/{job_id}:cancel")
+@router.post("/{job_id}:cancel", dependencies=[Depends(verify_token)])
 def cancel_job(job_id: str) -> JobStatusResponse:
     """Cancel a running job."""
     store = get_job_store()
