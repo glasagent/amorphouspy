@@ -1,6 +1,106 @@
-# Developers & Architecture
+# Architecture
 
 For more information on the internal workings, this section provides an overview of how `amorphouspy` is organized internally.
+
+## Workflow Overview
+
+The following diagram shows the full simulation pipeline, from user input through workflows to output properties:
+
+```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 60}} }%%
+flowchart LR
+
+   subgraph "User Input"
+      UserStructure[User Structure]
+      Database["Internal/External<br/>Database"]
+      InputStructure["Initial<br/>Structure"]
+      AdhocGeneration["Structure Generation"]
+      Composition["Composition"]
+      Density["Density"]
+   end
+
+
+    TemperatureProgram["Temperature<br/>Program"]
+    Strain[Strain/Stress]
+    GenericSimulationSettings["Generic Simulation<br/>Settings"]
+    Others[...]
+    FF[Interatomic Potential]
+
+   subgraph "Workflows"
+      WorkflowSettings["Workflow<br/>Settings"]
+      MeltQuench["Melt-Quench<br/>Simulation"]
+      StructureAnalysis["Structure<br/>Analysis"]
+      ElasticModuliSimulation["Elastic Moduli<br/>Simulation"]
+      ViscositySimulation["Viscosity<br/>Simulation"]
+      CTESimulation["CTE<br/>Simulation"]
+      AnisotropyAnalysis["Anisotropy<br/>Analysis"]
+      OthersWorkflow[...]
+   end
+
+   subgraph "Output"
+      GlassStructure["Glass<br/>Structure"]
+      RDF[RDF]
+      BondAngleDistribution["Bond Angle<br/>Distribution"]
+      QnDistribution["Qn Values"]
+      NetworkAnalysis["Network<br/>Analysis"]
+      ElasticModuli["Elastic<br/>Moduli"]
+      Viscosity[Viscosity]
+      CTE[CTE]
+      Anisotropy[Anisotropy]
+      OthersOutput[...]
+   end
+
+   subgraph "Legend"
+      Future[Future]
+      Underway[Underway]
+      Implemented[Implemented]
+      Validated[Validated]
+   end
+
+
+   
+   UserStructure --> InputStructure
+   Database --> InputStructure
+   AdhocGeneration --> InputStructure
+   Density --> AdhocGeneration
+   Composition --> AdhocGeneration
+   
+   InputStructure --> WorkflowSettings
+   FF --> WorkflowSettings
+   GenericSimulationSettings --> WorkflowSettings
+   TemperatureProgram --> WorkflowSettings
+   Strain --> WorkflowSettings
+   Others --> WorkflowSettings
+   
+
+   GlassStructure --> InputStructure
+   WorkflowSettings --> MeltQuench --> GlassStructure 
+   WorkflowSettings --> StructureAnalysis
+   WorkflowSettings --> ElasticModuliSimulation --> ElasticModuli
+   WorkflowSettings --> ViscositySimulation --> Viscosity
+   WorkflowSettings --> CTESimulation --> CTE
+   WorkflowSettings --> AnisotropyAnalysis --> Anisotropy
+   WorkflowSettings --> OthersWorkflow --> OthersOutput
+   StructureAnalysis --> RDF
+   StructureAnalysis --> BondAngleDistribution
+   StructureAnalysis --> NetworkAnalysis
+   StructureAnalysis --> QnDistribution 
+
+
+%% Styling
+   classDef future fill:#ea580c,stroke:#f97316,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef implemented fill:#bbf7d0,stroke:#10b981,stroke-width:2px,color:#166534,font-weight:bold,font-size:22px;
+   classDef validated fill:#059669,stroke:#10b981,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef underway fill:#7c3aed,stroke:#8b5cf6,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+   classDef none fill:#333333,stroke:#ffffff,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
+
+
+class Implemented,Density,Composition,AdhocGeneration,InputStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings implemented
+class Validated validated
+class Underway,ViscositySimulation,ElasticModuliSimulation,Strain,FF underway
+class Future,CTESimulation,AnisotropyAnalysis,Database, future
+class ElasticModuli,Viscosity,CTE,Anisotropy,Others,OthersWorkflow,OthersOutput none
+```
 
 ## Package Organization
 
@@ -33,80 +133,3 @@ amorphouspy/
     ├── structural_analysis.py  # Comprehensive analysis pipeline + Plotly plotting
     └── shared.py               # LAMMPS command builder utility
 ```
-
-## API Design Decisions
-
-The API service (`amorphouspy_api`) follows a two-layer design:
-
-- **Materials layer** (`/glasses`): Read-only, property-centric. "What do we know about this glass?"
-- **Jobs layer** (`/jobs`): Simulation-centric. "Run this computation."
-
-Both layers share the same underlying data store. The materials layer is a view over completed jobs.
-
-Full endpoint documentation is available via the auto-generated OpenAPI docs at `/docs`.
-
-### Composition Normalization
-
-The server uses a `Composition` model that accepts a dict (e.g. `{"SiO2": 70, "Na2O": 15, "CaO": 15}`) and generates a canonical string internally for database storage and matching. This ensures that `{"SiO2": 70, "Na2O": 15, "CaO": 15}` and `{"Na2O": 15, "SiO2": 70, "CaO": 15}` resolve to the same material. The canonical form (alphabetical oxide ordering, rounded values) is an implementation detail — API consumers always work with dicts.
-
-### DAG Resolution
-
-The user never specifies intermediate steps. If they request `elastic`, the server knows it needs structure generation → melt-quench → elastic. The `progress` dict on the job status response exposes the resolved pipeline so the user can see what's happening.
-
-### Error Handling
-
-- Job-level status is `completed` even if some analyses failed. Only core pipeline failure (melt-quench crash) results in job status `failed`.
-- Individual analysis failures appear in the `errors` dict on the job status and are omitted from results.
-- The `missing` field on the `/glasses` endpoint tells the LLM what hasn't been computed yet.
-
-### Google Custom Method Convention
-
-Actions that don't map to CRUD use the colon convention: `/jobs:search`, `/jobs/{id}:cancel`. This avoids polluting the resource ID namespace (e.g., `search` being confused with a job ID) and clearly signals "this is a verb, not a noun."
-
-### MCP Tool Mapping
-
-The API is designed to map cleanly to MCP tools:
-
-| MCP Tool | Endpoint |
-|---|---|
-| `get_glass_properties` | `POST /glasses:lookup` |
-| `search_simulations` | `POST /jobs:search` |
-| `submit_simulation` | `POST /jobs` |
-| `check_simulation_status` | `GET /jobs/{id}` |
-| `get_simulation_results` | `GET /jobs/{id}/results` |
-| `cancel_simulation` | `POST /jobs/{id}:cancel` |
-
-The LLM's typical workflow:
-1. `get_glass_properties` — check what's already known
-2. If missing properties → `search_simulations` — check for cached/similar jobs
-3. If no good match → `submit_simulation` — run new computation (after confirming with user)
-4. `check_simulation_status` — poll until done
-5. `get_simulation_results` — retrieve and present results
-
-### Data Lifecycle Classification
-
-Simulation data falls into three tiers with different retention guarantees:
-
-1. **Ephemeral simulation files** — Raw output files in the LAMMPS working
-   directory (trajectories, log files, restart files).  These are *not* parsed
-   or retained by the API.  If the simulation directory is purged, the data is
-   gone.
-
-2. **Cached intermediate results** — Large data returned by the Python
-   analysis functions that is too voluminous to store in the database.  This
-   includes, for example, the full melt-quench trajectory and the raw
-   stress-autocorrelation arrays from the viscosity calculation.  These live in
-   the **executorlib cache** and can be re-materialised by re-running the
-   function with the same inputs.  However, if the cache is invalidated (e.g.
-   after a Python version upgrade), the data is lost.
-
-3. **Persistent database results** — Compact, presentation-ready data that
-   enters the SQLite `result_data` column and is retained indefinitely.  This
-   includes scalar properties (viscosity values, elastic moduli),
-   per-composition metadata, and downsampled plot data (e.g. convergence curves
-   reduced to ≤ 1 000 points via log-spaced sampling).  These results survive
-   cache purges and are the authoritative record of a completed job.
-
-When adding a new analysis, decide for each output field which tier it belongs
-to.  The guiding rule: **only store in the database what is needed to reproduce
-the plots and summary tables shown in the results page**.
