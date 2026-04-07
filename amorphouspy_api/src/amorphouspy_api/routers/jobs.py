@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from io import StringIO
+from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
@@ -58,16 +59,38 @@ router = APIRouter(prefix="/jobs", tags=["tool"])
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _clear_executor_cache(request_hash: str) -> None:
+    """Delete executorlib HDF5 cache files for *request_hash* (all steps + merge)."""
+    from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
+
+    cache_dir = Path(MELTQUENCH_PROJECT_DIR)
+    if not cache_dir.is_dir():
+        return
+    # Matches: {hash}_i.h5, {hash}_o.h5, {hash}_{step}_i.h5, {hash}_{step}_o.h5
+    for f in cache_dir.glob(f"{request_hash}*.h5"):
+        logger.info("Removing cached file %s (force re-run)", f.name)
+        f.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
 
 @router.post("", response_model=JobCreatedResponse, dependencies=[Depends(verify_token)])
-def submit_job(submission: JobSubmission) -> JobCreatedResponse:
+def submit_job(
+    submission: JobSubmission,
+    force: Annotated[bool, Query(description="Skip cache and force a fresh run")] = False,
+) -> JobCreatedResponse:
     """Submit a new simulation job.
 
     The server resolves the dependency DAG internally.
-    If an identical job already completed, the cached result is returned.
+    If an identical job already completed, the cached result is returned
+    unless ``force=true`` is set.
     """
     # Validate composition eagerly so errors surface as HTTP 422
     try:
@@ -79,17 +102,22 @@ def submit_job(submission: JobSubmission) -> JobCreatedResponse:
     norm_comp = submission.composition.canonical
     req_hash = _job_hash(submission, norm_comp)
 
-    # Check for cached result
-    cached = store.find_completed_by_hash(req_hash)
-    if cached:
-        logger.info("Returning cached job %s", cached.job_id)
-        return JobCreatedResponse(
-            id=cached.job_id,
-            status=JobStatus(cached.status),
-            composition=Composition.from_canonical(cached.composition),
-            potential=cached.potential,
-            created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
-        )
+    # Check for cached result (skipped when force=True)
+    if not force:
+        cached = store.find_completed_by_hash(req_hash)
+        if cached:
+            logger.info("Returning cached job %s", cached.job_id)
+            return JobCreatedResponse(
+                id=cached.job_id,
+                status=JobStatus(cached.status),
+                composition=Composition.from_canonical(cached.composition),
+                potential=cached.potential,
+                created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
+            )
+
+    # When forcing, remove stale executor cache files so executorlib runs fresh
+    if force:
+        _clear_executor_cache(req_hash)
 
     # Create new job record
     job_id = str(uuid4())
@@ -325,8 +353,6 @@ def get_structure(
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
 def visualize_job(job_id: str) -> HTMLResponse:
     """Interactive HTML visualization of completed results."""
-    from pathlib import Path
-
     from fastapi.templating import Jinja2Templates
 
     store = get_job_store()
@@ -343,6 +369,14 @@ def visualize_job(job_id: str) -> HTMLResponse:
         raise HTTPException(
             status_code=400,
             detail="Job has not started yet.",
+        )
+
+    if job.status == "failed" and not job.result_data:
+        errors = job.errors or {}
+        detail = errors.get("pipeline", "Unknown error")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Job failed: {detail}",
         )
 
     result_data = job.result_data or {}
