@@ -306,9 +306,12 @@ class ViscosityResultData(BaseModel):
 class MeltQuenchParams(BaseModel):
     """Parameters for the melt-quench MD simulation."""
 
-    melt_temperature: float = Field(default=5000, description="Melt temperature in K")
+    melt_temperature: float = Field(
+        default=None,
+        description="Melt temperature in K. If None, protocol-specific melt temperature is used. ",
+    )
     quench_rate: float = Field(default=1e12, description="Quench rate in K/s")
-    n_atoms: int = Field(default=3000, description="Number of atoms")
+    n_atoms: int = Field(default=6000, description="Number of atoms")
     timestep: float = Field(default=1.0, description="MD timestep in fs")
     equilibration_steps: int | None = Field(
         default=None,
