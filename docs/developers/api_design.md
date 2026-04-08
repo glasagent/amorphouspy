@@ -1,4 +1,36 @@
-# Web API Design
+# Web API
+
+## Design guidelines
+
+The Web API service aims to be a computational companion to experimental glass development.
+In the GlasAgent project, experimental glass developers will interact with the Web API through a chatbot powered by a large language model.
+
+#### Ease of use
+
+Experimental glass developers should be able to use the the API and understand the results.
+
+1. When mediated by a large language model, using the web API should not require expertise in the underlying computational methods.
+2. Explain what is computed and how.
+
+#### Time to result: "overnight"
+
+Time to result matters when integrating with experimental glass development cycles.
+
+<ol start="3">
+<li>Aim to provide results "overnight".</li>
+<li>Save time by parallelization where possible.</li>
+</ol>
+
+#### Accuracy: useful for glass development
+
+The atomistic simulation of glasses comes with many potential sources of error vs. experiment (interatomic potentials, cooling rate, system size, equilibration times, ...).
+Aim to provide useful insights into structure-property relationships and their trends rather than quantitative predictions.
+
+<ol start="5">
+<li>Provide insight into trends in structure-property relationships.</li>
+<li>Communicate statistical uncertainty in results.</li>
+<li>Results should be reproducible and meaningful. If in doubt, warn the user.</li>
+</ol>
 
 
 ## Architecture
@@ -66,7 +98,7 @@ The LLM's typical workflow:
 4. `check_simulation_status` — poll until done
 5. `get_simulation_results` — retrieve and present results
 
-## Data Lifecycle Classification
+## Simulation Data Lifecycle
 
 Simulation data falls into three tiers with different retention guarantees:
 
