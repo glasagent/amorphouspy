@@ -20,8 +20,18 @@ References:
 from __future__ import annotations
 
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from itertools import combinations_with_replacement
 from typing import TYPE_CHECKING
+
+try:
+    from tqdm import tqdm as _tqdm
+except ImportError:
+
+    def _tqdm(iterable: object, **_: object) -> object:  # type: ignore[no-redef]
+        """No-op fallback when tqdm is not installed."""
+        return iterable
+
 
 import networkx as nx
 import numpy as np
@@ -215,9 +225,149 @@ def _ring_is_primitive(ring_nodes: list[int], full_graph: nx.Graph) -> bool:
     return True
 
 
+def _process_edge(
+    args: tuple[int, int, list[tuple[int, int]], int],
+) -> list[tuple[int, tuple[int, ...]]]:
+    """Process a single graph edge to find primitive rings passing through it.
+
+    This is a module-level function so it is picklable for use with
+    ``ProcessPoolExecutor``. The graph is reconstructed from a serialisable
+    edge list inside each worker, avoiding any shared mutable state.
+
+    Args:
+        args: Tuple of (node_u, node_v, graph_edges, max_ring_size) where
+            graph_edges is the full edge list of the T-T connectivity graph
+            *before* removing (node_u, node_v).
+
+    Returns:
+        List of (ring_size, canonical_form) pairs for every primitive ring
+        found through this edge. May be empty.
+    """
+    node_u, node_v, graph_edges, max_ring_size = args
+
+    # Reconstruct a local copy — no shared state with other workers
+    g = nx.Graph(graph_edges)
+    g.remove_edge(node_u, node_v)
+
+    if not nx.has_path(g, node_u, node_v):
+        return []
+
+    shortest_path_length = nx.shortest_path_length(g, node_u, node_v)
+    ring_size = shortest_path_length + 1
+
+    if not (_SMALLEST_ALLOWED_RING <= ring_size <= max_ring_size):
+        return []
+
+    all_shortest_paths = list(nx.all_shortest_paths(g, node_u, node_v))
+
+    # Restore edge before primitiveness check (full graph required)
+    g.add_edge(node_u, node_v)
+
+    results: list[tuple[int, tuple[int, ...]]] = []
+    for path in all_shortest_paths:
+        canonical_form = _canonical_ring(path)
+        if _ring_is_primitive(path, g):
+            results.append((ring_size, canonical_form))
+
+    return results
+
+
+def _collect_rings(
+    batches: object,
+    found_canonical_rings: set[tuple[int, ...]],
+    ring_counts: defaultdict[int, int],
+) -> None:
+    """Merge (ring_size, canonical_form) batches into the running tallies.
+
+    Args:
+        batches: Iterable of lists returned by ``_process_edge`` (parallel)
+            or assembled inline (sequential).
+        found_canonical_rings: Mutable set of already-seen canonical rings;
+            updated in-place to prevent double-counting.
+        ring_counts: Mutable counter mapping ring size to count; updated
+            in-place.
+    """
+    for batch in batches:
+        for ring_size, canonical_form in batch:
+            if canonical_form not in found_canonical_rings:
+                found_canonical_rings.add(canonical_form)
+                ring_counts[ring_size] += 1
+
+
+def _find_rings_sequential(
+    former_graph: nx.Graph,
+    edges: list[tuple[int, int]],
+    max_ring_size: int,
+    found_canonical_rings: set[tuple[int, ...]],
+    ring_counts: defaultdict[int, int],
+) -> None:
+    """Sequential ring search — mutates ``former_graph`` in-place per edge.
+
+    Args:
+        former_graph: T-T connectivity graph; edges are temporarily removed
+            and restored via ``try/finally``.
+        edges: Pre-computed list of graph edges to iterate over.
+        max_ring_size: Maximum ring size to consider.
+        found_canonical_rings: Updated in-place with newly found rings.
+        ring_counts: Updated in-place with ring size counts.
+    """
+    for node_u, node_v in _tqdm(edges, desc="Finding rings", unit="edge"):
+        former_graph.remove_edge(node_u, node_v)
+        try:
+            if not nx.has_path(former_graph, node_u, node_v):
+                continue
+            shortest_path_length = nx.shortest_path_length(former_graph, node_u, node_v)
+            ring_size = shortest_path_length + 1
+            if not (_SMALLEST_ALLOWED_RING <= ring_size <= max_ring_size):
+                continue
+            all_shortest_paths = list(nx.all_shortest_paths(former_graph, node_u, node_v))
+        finally:
+            # Restore edge even if an exception is raised mid-loop
+            former_graph.add_edge(node_u, node_v)
+
+        _collect_rings(
+            (
+                [ring_size, canonical]
+                for path in all_shortest_paths
+                if _ring_is_primitive(path, former_graph)
+                for canonical in [_canonical_ring(path)]
+            ),
+            found_canonical_rings,
+            ring_counts,
+        )
+
+
+def _find_rings_parallel(
+    edges: list[tuple[int, int]],
+    graph_edges: list[tuple[int, int]],
+    max_ring_size: int,
+    workers: int | None,
+    found_canonical_rings: set[tuple[int, ...]],
+    ring_counts: defaultdict[int, int],
+) -> None:
+    """Parallel ring search using ``ProcessPoolExecutor``.
+
+    Args:
+        edges: List of graph edges to distribute across workers.
+        graph_edges: Serialisable edge-list snapshot of the full graph.
+        max_ring_size: Maximum ring size to consider.
+        workers: Number of worker processes (``None`` = all CPUs).
+        found_canonical_rings: Updated in-place with newly found rings.
+        ring_counts: Updated in-place with ring size counts.
+    """
+    task_args = [(u, v, graph_edges, max_ring_size) for u, v in edges]
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        _collect_rings(
+            _tqdm(pool.map(_process_edge, task_args), total=len(task_args), desc="Finding rings", unit="edge"),
+            found_canonical_rings,
+            ring_counts,
+        )
+
+
 def _find_guttman_rings(
     former_graph: nx.Graph,
     max_ring_size: int,
+    n_cpus: int = 1,
 ) -> dict[int, int]:
     """Find all Guttman primitive rings up to ``max_ring_size``.
 
@@ -226,10 +376,19 @@ def _find_guttman_rings(
     candidate ring that passes the Guttman primitiveness check. Canonical
     forms prevent counting rotations and reflections of the same ring twice.
 
+    When ``n_cpus != 1`` the edge loop is distributed across worker processes
+    using ``ProcessPoolExecutor``. Each worker operates on a local graph copy
+    reconstructed from a serialisable edge-list snapshot, so there is no
+    shared mutable state between workers.
+
     Args:
         former_graph: Undirected T-T connectivity graph from
-            ``_build_former_graph_fast``.
+            ``_build_former_graph``.
         max_ring_size: Maximum number of former atoms in a ring.
+        n_cpus: Number of worker processes.
+            ``1``  — sequential (default, no process overhead).
+            ``N``  — use N worker processes.
+            ``-1`` — use all logical CPUs (``os.cpu_count()``).
 
     Returns:
         Mapping from ring size (number of T atoms) to ring count.
@@ -242,35 +401,17 @@ def _find_guttman_rings(
         >>> counts[6]
         1
     """
+    edges = list(former_graph.edges())
     found_canonical_rings: set[tuple[int, ...]] = set()
     ring_counts: defaultdict[int, int] = defaultdict(int)
 
-    for node_u, node_v in list(former_graph.edges()):
-        former_graph.remove_edge(node_u, node_v)
-
-        if not nx.has_path(former_graph, node_u, node_v):
-            former_graph.add_edge(node_u, node_v)
-            continue
-
-        shortest_path_length = nx.shortest_path_length(former_graph, node_u, node_v)
-        ring_size = shortest_path_length + 1
-
-        if not (_SMALLEST_ALLOWED_RING <= ring_size <= max_ring_size):
-            former_graph.add_edge(node_u, node_v)
-            continue
-
-        all_shortest_paths = list(nx.all_shortest_paths(former_graph, node_u, node_v))
-
-        # Restore edge before primitiveness check (full graph required)
-        former_graph.add_edge(node_u, node_v)
-
-        for path in all_shortest_paths:
-            canonical_form = _canonical_ring(path)
-            if canonical_form in found_canonical_rings:
-                continue
-            if _ring_is_primitive(path, former_graph):
-                found_canonical_rings.add(canonical_form)
-                ring_counts[ring_size] += 1
+    if n_cpus == 1:
+        _find_rings_sequential(former_graph, edges, max_ring_size, found_canonical_rings, ring_counts)
+    else:
+        workers = None if n_cpus == -1 else n_cpus
+        _find_rings_parallel(
+            edges, list(former_graph.edges()), max_ring_size, workers, found_canonical_rings, ring_counts
+        )
 
     return dict(ring_counts)
 
@@ -284,7 +425,7 @@ def compute_guttmann_rings(
     structure: Atoms,
     bond_lengths: dict[tuple[str, str], float],
     max_size: int = 24,
-    n_cpus: int = 1,  # noqa: ARG001
+    n_cpus: int = 1,
 ) -> tuple[dict[int, int], float]:
     """Compute the Guttman ring size distribution and mean ring size.
 
@@ -301,7 +442,10 @@ def compute_guttmann_rings(
             ``{('Si', 'O'): 1.8, ('Al', 'O'): 1.95}``. All T-O pairs must
             be specified; T-T and O-O pairs are ignored.
         max_size: Maximum ring size (number of T atoms) to search for.
-        n_cpus: Unused; kept for API compatibility.
+        n_cpus: Number of worker processes for parallel ring search.
+            ``1``  — sequential execution (default).
+            ``N``  — distribute edge loop across N worker processes.
+            ``-1`` — use all logical CPUs (``os.cpu_count()``).
 
     Returns:
         histogram: Mapping from ring size to ring count.
@@ -319,7 +463,18 @@ def compute_guttmann_rings(
         ...     bond_lengths={('Si', 'O'): 1.8},
         ...     max_size=12,
         ... )
-        >>> print(mean_size)
+        >>> # Parallel on 4 cores
+        >>> histogram, mean_size = compute_guttmann_rings(
+        ...     structure,
+        ...     bond_lengths={('Si', 'O'): 1.8},
+        ...     n_cpus=4,
+        ... )
+        >>> # Parallel using all available cores
+        >>> histogram, mean_size = compute_guttmann_rings(
+        ...     structure,
+        ...     bond_lengths={('Si', 'O'): 1.8},
+        ...     n_cpus=-1,
+        ... )
     """
     z_cutoffs, former_atomic_numbers = _symbols_to_z_cutoffs(bond_lengths)
 
@@ -339,7 +494,7 @@ def compute_guttmann_rings(
         _OXYGEN_ATOMIC_NUMBER,
     )
 
-    ring_counts = _find_guttman_rings(former_graph, max_size)
+    ring_counts = _find_guttman_rings(former_graph, max_size, n_cpus=n_cpus)
 
     if not ring_counts:
         return {}, 0.0
