@@ -1,21 +1,7 @@
-"""Structural analysis functions for multicomponent glass systems.
+"""I/O utilities for amorphouspy: reading and writing structural data files.
 
 Author: Achraf Atila (achraf.atila@bam.de)
-
-
-It includes a lightweight parser for LAMMPS dump files and methods
-for handling wrapped and unwrapped atomic coordinates.
-
-Currently implemented:
-
-- read_lammps_dump: Efficiently reads LAMMPS dump files (including
-  gzipped files), extracts atom IDs, types, coordinates (wrapped or
-  unwrapped), and simulation box dimensions. Designed for use in
-  structural analyses of disordered materials.
-
 """
-
-# implement ASE based parser using a wrapper around ase.io.read
 
 from pathlib import Path
 
@@ -24,7 +10,7 @@ from ase import Atoms
 
 
 def write_distribution_to_file(
-    composition: float,
+    composition: float | str,
     filepath: str,
     dist: dict[int, int],
     label: str,
@@ -139,10 +125,10 @@ def write_xyz(
         msg = "type_dict must be provided"
         raise ValueError(msg)
 
-    N = coords.shape[0]
+    n_atoms = coords.shape[0]
     path = Path(filename)
     with path.open("w") as f:
-        f.write(f"{N}\n")
+        f.write(f"{n_atoms}\n")
         if box_size is not None:
             f.write(f"CUB {box_size[0]:.8f} {box_size[1]:.8f} {box_size[2]:.8f}\n")
         else:

@@ -45,7 +45,9 @@ def run_lammps_with_error_capture(working_directory: str, **kwargs: Any) -> dict
             details.append(f"LAMMPS stderr:\n{exc.stderr[-2000:]}")
         log_file = Path(working_directory) / "log.lammps"
         if log_file.exists():
-            log_tail = log_file.read_text()[-2000:]
+            with log_file.open("rb") as _lf:
+                _lf.seek(max(0, log_file.stat().st_size - 2000))
+                log_tail = _lf.read().decode(errors="replace")
             details.append(f"log.lammps (last 2000 chars):\n{log_tail}")
         raise RuntimeError("\n".join(details)) from exc
 
@@ -53,7 +55,9 @@ def run_lammps_with_error_capture(working_directory: str, **kwargs: Any) -> dict
         details = [f"LAMMPS crashed in {working_directory}."]
         log_file = Path(working_directory) / "log.lammps"
         if log_file.exists():
-            log_tail = log_file.read_text()[-2000:]
+            with log_file.open("rb") as _lf:
+                _lf.seek(max(0, log_file.stat().st_size - 2000))
+                log_tail = _lf.read().decode(errors="replace")
             details.append(f"log.lammps (last 2000 chars):\n{log_tail}")
         raise RuntimeError("\n".join(details))
 
@@ -156,5 +160,5 @@ def get_lammps_command(server_kwargs: dict | None = None) -> str:
     """
     lmp_command = "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
     if server_kwargs is not None and isinstance(server_kwargs, dict) and "cores" in server_kwargs:
-        lmp_command = "mpiexec -n {} --oversubscribe lmp_mpi -in lmp.in".format(str(server_kwargs["cores"]))
+        lmp_command = f"mpiexec -n {server_kwargs['cores']} --oversubscribe lmp_mpi -in lmp.in"
     return lmp_command

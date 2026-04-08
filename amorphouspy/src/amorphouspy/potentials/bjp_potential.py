@@ -1,6 +1,8 @@
-"""LAMMPS potential generation for oxide glass simulations."""
+"""LAMMPS potential generation for oxide glass simulations using BJP (Bouhadja) parameters.
 
-# Author: Achraf Atila (achraf.atila@bam.de)
+Author: Achraf Atila (achraf.atila@bam.de)
+"""
+
 import pandas as pd
 
 from amorphouspy.shared import get_element_types_dict
@@ -43,7 +45,7 @@ def generate_bjp_potential(atoms_dict: dict) -> pd.DataFrame:
         DataFrame containing potential configuration.
 
     """
-    types = get_element_types_dict(atoms_dict)
+    types = get_element_types_dict(atoms_dict["atoms"])
     species = list(types.keys())
 
     # Validate that all pairs exist in BJP parameters

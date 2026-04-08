@@ -6,7 +6,7 @@ from ase.data import chemical_symbols
 
 # See issue #31: It could be beneficial to hardcode
 # every element type to be able to always identify the elements
-def get_element_types_dict(atoms_dict: dict) -> dict[str, int]:
+def get_element_types_dict(atoms: list[dict]) -> dict[str, int]:
     """Get a dictionary mapping element symbols to unique integer types.
 
     Elements are ordered alphabetically and assigned a type starting from 1.
@@ -14,17 +14,15 @@ def get_element_types_dict(atoms_dict: dict) -> dict[str, int]:
     a unique identifier (not to be confused with the position in the periodic table).
 
     Args:
-        atoms_dict: A dictionary containing atom information,
-            typically with a key "atoms" that is a list of atom dictionaries.
+        atoms: A list of atom dictionaries, each containing at least an "element" key.
 
     Returns:
         A dictionary mapping element symbols to unique integer types.
 
     Example:
-        >>> types = get_element_types_dict(struct_dict)
+        >>> types = get_element_types_dict(struct_dict["atoms"])
 
     """
-    atoms = atoms_dict["atoms"]
     elements = sorted({atom["element"] for atom in atoms})
     return {elem: i + 1 for i, elem in enumerate(elements)}
 
@@ -73,7 +71,7 @@ def type_to_dict(types: np.ndarray) -> dict[int, str]:
     return type_dict
 
 
-def running_mean(data: list | np.ndarray, N: int) -> np.ndarray:
+def running_mean(data: list | np.ndarray, n: int) -> np.ndarray:
     """Calculate running mean of an array-like dataset.
 
     The initial and final values of the returned array are NaN, as the running mean is not defined
@@ -81,17 +79,17 @@ def running_mean(data: list | np.ndarray, N: int) -> np.ndarray:
 
     Args:
         data: Input data for which the running mean should be calculated.
-        N: Width of the averaging window.
+        n: Width of the averaging window.
 
     Returns:
         Array of same size as input data containing the running mean values.
 
     """
     data = np.asarray(data)
-    if N == 1:
+    if n == 1:
         return data
-    retArray = np.zeros(data.size) * np.nan
-    padL = int(N / 2)
-    padR = N - padL - 1
-    retArray[padL:-padR] = np.convolve(data, np.ones((N,)) / N, mode="valid")
-    return retArray
+    ret_array = np.full(data.size, np.nan)
+    pad_left = int(n / 2)
+    pad_right = n - pad_left - 1
+    ret_array[pad_left:-pad_right] = np.convolve(data, np.ones((n,)) / n, mode="valid")
+    return ret_array

@@ -179,12 +179,11 @@ def test_compute_rdf_returns_correct_shapes() -> None:
         assert arr.shape == (100,)
 
 
-def test_compute_rdf_rmax_clamping(capsys: pytest.CaptureFixture[str]) -> None:
-    """r_max larger than half the box height is clamped with a printed warning."""
+def test_compute_rdf_rmax_clamping() -> None:
+    """r_max larger than half the box height is clamped with a UserWarning."""
     atoms = _simple_sio2_atoms()  # 10 Å box → max allowed = 5 Å
-    r, _rdfs, _cn = compute_rdf(atoms, r_max=8.0, n_bins=50)
-    captured = capsys.readouterr()
-    assert "Warning" in captured.out
+    with pytest.warns(UserWarning, match="r_max=8.0000"):
+        r, _rdfs, _cn = compute_rdf(atoms, r_max=8.0, n_bins=50)
     # r should be <= adjusted r_max (floor of 5.0 = 5)
     assert r.max() <= 5.0 + 1e-6
 

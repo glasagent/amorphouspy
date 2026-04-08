@@ -7,23 +7,21 @@ from amorphouspy.shared import count_distribution, get_element_types_dict, runni
 
 def test_get_element_types_dict_basic() -> None:
     """Elements are sorted alphabetically and assigned 1-based integer types."""
-    atoms_dict = {
-        "atoms": [
-            {"element": "Si"},
-            {"element": "O"},
-            {"element": "O"},
-            {"element": "Na"},
-        ]
-    }
-    result = get_element_types_dict(atoms_dict)
+    atoms = [
+        {"element": "Si"},
+        {"element": "O"},
+        {"element": "O"},
+        {"element": "Na"},
+    ]
+    result = get_element_types_dict(atoms)
     # Alphabetical: Na=1, O=2, Si=3
     assert result == {"Na": 1, "O": 2, "Si": 3}
 
 
 def test_get_element_types_dict_single_element() -> None:
     """Single-element system returns type 1."""
-    atoms_dict = {"atoms": [{"element": "Si"}, {"element": "Si"}]}
-    result = get_element_types_dict(atoms_dict)
+    atoms = [{"element": "Si"}, {"element": "Si"}]
+    result = get_element_types_dict(atoms)
     assert result == {"Si": 1}
 
 
@@ -67,22 +65,22 @@ def test_type_to_dict_single() -> None:
 def test_running_mean_n1_returns_unchanged() -> None:
     """N=1 returns the original data unchanged."""
     data = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    result = running_mean(data, N=1)
+    result = running_mean(data, n=1)
     np.testing.assert_array_equal(result, data)
 
 
 def test_running_mean_basic() -> None:
     """N=3 on constant data returns all 1s in the valid window."""
     data = np.ones(7)
-    result = running_mean(data, N=3)
-    # padL=1, padR=1 → indices [1:-1] are valid
+    result = running_mean(data, n=3)
+    # pad_left=1, pad_right=1 → indices [1:-1] are valid
     np.testing.assert_array_almost_equal(result[1:-1], np.ones(5))
 
 
 def test_running_mean_nan_edges() -> None:
     """Edges outside the valid window are NaN."""
     data = np.ones(6)
-    result = running_mean(data, N=3)
+    result = running_mean(data, n=3)
     assert np.isnan(result[0])
     assert np.isnan(result[-1])
 
@@ -90,14 +88,14 @@ def test_running_mean_nan_edges() -> None:
 def test_running_mean_shape() -> None:
     """Output has the same shape as the input."""
     data = np.arange(10, dtype=float)
-    result = running_mean(data, N=3)
+    result = running_mean(data, n=3)
     assert result.shape == data.shape
 
 
 def test_running_mean_correctness() -> None:
     """Spot-check values against manual calculation."""
     data = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    result = running_mean(data, N=3)
+    result = running_mean(data, n=3)
     # Valid range: indices 1 to 3
     assert result[1] == pytest.approx(2.0)
     assert result[2] == pytest.approx(3.0)
