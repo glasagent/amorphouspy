@@ -12,6 +12,7 @@ authors = [
   { name = "Jan Janssen", email = "janssen@mpie.de" },
   { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
 ]
+license = "Apache-2.0"
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.12"
