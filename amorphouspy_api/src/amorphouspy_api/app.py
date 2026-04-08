@@ -3,6 +3,7 @@
 FastAPI application that manages long-running glass simulation jobs.
 """
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -11,6 +12,16 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+
+
+class PrettyJSONResponse(JSONResponse):
+    """JSONResponse subclass that renders indented JSON for readability."""
+
+    def render(self, content) -> bytes:
+        """Serialize *content* as indented JSON."""
+        return json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8")
+
+
 from fastapi_mcp import FastApiMCP
 
 from .config import API_TOKEN, DB_PATH, PROJECTS_FOLDER
@@ -49,6 +60,7 @@ app = FastAPI(
     description="API for managing glass simulation jobs using amorphouspy",
     version="0.2.0",
     lifespan=lifespan,
+    default_response_class=PrettyJSONResponse,
 )
 
 app.add_middleware(
