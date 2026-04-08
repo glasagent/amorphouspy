@@ -14,10 +14,9 @@ from ase.atoms import Atoms
 
 from amorphouspy.io_utils import structure_from_parsed_output
 from amorphouspy.workflows.meltquench_protocols import (
+    DEFAULT_MELT_TEMPERATURES,
+    PROTOCOL_MAP,
     MeltQuenchParams,
-    bjp_protocol,
-    pmmcs_protocol,
-    shik_protocol,
 )
 from amorphouspy.workflows.shared import LammpsPotential, get_lammps_command, run_lammps_with_error_capture
 
@@ -143,7 +142,7 @@ def _run_lammps_md(  # pragma: no cover
 def melt_quench_simulation(
     structure: Atoms,
     potential: pd.DataFrame,
-    temperature_high: float = 5000.0,
+    temperature_high: float | None = None,
     temperature_low: float = 300.0,
     timestep: float = 1.0,
     heating_rate: float = 1e12,
@@ -165,7 +164,8 @@ def melt_quench_simulation(
     Args:
         structure: The initial atomic structure to be melted and quenched.
         potential: The potential file to be used for the simulation.
-        temperature_high: The high temperature to which the structure will be heated (default is 5000.0 K).
+        temperature_high: The high temperature to which the structure will be heated.
+            If None, the protocol's default melt temperature is used (e.g. 4000 K for SHIK, 5000 K for others).
         temperature_low: The low temperature to which the structure will be cooled (default is 300.0 K).
         timestep: Time step for integration in femtoseconds (default is 1.0 fs).
         heating_rate: The rate at which the temperature is increased during the heating phase,
@@ -194,21 +194,17 @@ def melt_quench_simulation(
 
     """
     seconds_to_femtos = 1e15
+    potential_name = potential.loc[0, "Name"].lower()
+
+    if temperature_high is None:
+        temperature_high = DEFAULT_MELT_TEMPERATURES.get(potential_name, 5000.0)
+
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
-    potential_name = potential.loc[0, "Name"].lower()
-
-    # Map potential names to protocol functions
-    protocol_map = {
-        "pmmcs": pmmcs_protocol,
-        "bjp": bjp_protocol,
-        "shik": shik_protocol,
-    }
-
     # Check if protocol exists
-    if potential_name not in protocol_map:
-        available = ", ".join(protocol_map.keys())
+    if potential_name not in PROTOCOL_MAP:
+        available = ", ".join(PROTOCOL_MAP.keys())
         msg = f"Unknown potential: {potential_name}. Available protocols: {available}"
         raise ValueError(msg)
 
@@ -230,7 +226,7 @@ def melt_quench_simulation(
     )
 
     # Run the protocol using the function-based approach
-    protocol_func = protocol_map[potential_name]
+    protocol_func = PROTOCOL_MAP[potential_name]
     structure_final, parsed_output = protocol_func(_run_lammps_md, params)
 
     result = parsed_output.get("generic", None)
