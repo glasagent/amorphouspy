@@ -70,11 +70,13 @@ Developed at the [Bundesanstant für Materialforschung und -prüfung (BAM)](http
 
 Supported by the [Federal Ministry of Research, Technology and Space](https://www.bmftr.bund.de/EN) via the [GlasAgent MaterialDigital 3 project](https://www.materialdigital.de/project/28).
 
-<div align="center">
-  <a href="https://www.bmbf.de/"><img src="docs/assets/BMFTR_logo_en.svg" alt="BMFTR logo" height="80"/></a>
-  &emsp;&emsp;
-  <a href="https://www.materialdigital.de/"><img src="docs/assets/Logo_MaterialDigital.svg" alt="MaterialDigital logo" width="200"/></a>
-</div>
+<p align="center">
+  <a href="https://www.bmbf.de/"><img src="docs/assets/BMFTR_logo_en.svg" alt="BMFTR logo" width="165"/></a>
+  &emsp;&emsp;&emsp;
+  <a href="https://www.materialdigital.de/"><img src="docs/assets/Logo_MaterialDigital.svg" alt="MaterialDigital logo" width="141"/></a>
+  &emsp;&emsp;&emsp;
+  <a href="https://www.materialdigital.de/project/28"><img src="docs/assets/glasagent-logo.png" alt="GlasAgent logo" width="80"/></a>
+</p>
 
 ## License
 
