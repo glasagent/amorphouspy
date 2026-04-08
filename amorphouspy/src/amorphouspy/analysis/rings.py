@@ -325,16 +325,10 @@ def _find_rings_sequential(
             # Restore edge even if an exception is raised mid-loop
             former_graph.add_edge(node_u, node_v)
 
-        _collect_rings(
-            (
-                [ring_size, canonical]
-                for path in all_shortest_paths
-                if _ring_is_primitive(path, former_graph)
-                for canonical in [_canonical_ring(path)]
-            ),
-            found_canonical_rings,
-            ring_counts,
-        )
+        batch = [
+            (ring_size, _canonical_ring(path)) for path in all_shortest_paths if _ring_is_primitive(path, former_graph)
+        ]
+        _collect_rings([batch], found_canonical_rings, ring_counts)
 
 
 def _find_rings_parallel(
