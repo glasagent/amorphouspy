@@ -87,6 +87,6 @@ Supported by the [Federal Ministry of Research, Technology and Space](https://ww
 
 ## License
 
-BSD 3-Clause. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE).
 
 <!--content-end-->
