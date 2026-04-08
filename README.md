@@ -66,6 +66,15 @@ Developed at the [Bundesanstant für Materialforschung und -prüfung (BAM)](http
 - **Jan Janssen** — MPIE — pyiron integration, lammpsparser
 - **Leopold Talirz** — Schott AG — API layer, project coordination
 
+## Acknowledgement
+
+Supported by the [Federal Ministry of Research, Technology and Space](https://www.bmftr.bund.de/EN) via the [GlasAgent MaterialDigital 3 project](https://www.materialdigital.de/project/28).
+
+<div align="center">
+  <a href="https://www.bmbf.de/"><img src="docs/assets/BMFTR_logo_en.svg" alt="BMFTR logo" height="80"/></a>
+  &emsp;&emsp;
+  <a href="https://www.materialdigital.de/"><img src="docs/assets/Logo_MaterialDigital.svg" alt="MaterialDigital logo" width="200"/></a>
+</div>
 
 ## License
 

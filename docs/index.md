@@ -4,5 +4,5 @@
    include-markdown "../README.md"
    start="<!--content-start-->"
    end="<!--content-end-->"
-   rewrite-relative-urls=false
+   rewrite-relative-urls=true
 %}
