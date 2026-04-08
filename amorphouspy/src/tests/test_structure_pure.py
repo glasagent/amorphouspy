@@ -1,6 +1,7 @@
 """Tests for pure helper functions in amorphouspy.structure."""
 
 import amorphouspy.structure as ps
+import amorphouspy.structure.planner as ps_planner
 import numpy as np
 import pytest
 
@@ -124,14 +125,14 @@ def test_get_composition_invalid_mode():
 
 def test_atoms_per_fu_map():
     """SiO2 has 3 and Na2O has 3 atoms per formula unit."""
-    result = ps._atoms_per_fu_map({"SiO2": 0.7, "Na2O": 0.3})  # noqa: SLF001
+    result = ps_planner._atoms_per_fu_map({"SiO2": 0.7, "Na2O": 0.3})  # noqa: SLF001
     assert result["SiO2"] == 3
     assert result["Na2O"] == 3
 
 
 def test_atoms_per_fu_map_al2o3():
     """Al2O3 has 5 atoms per formula unit."""
-    result = ps._atoms_per_fu_map({"Al2O3": 1.0})  # noqa: SLF001
+    result = ps_planner._atoms_per_fu_map({"Al2O3": 1.0})  # noqa: SLF001
     assert result["Al2O3"] == 5
 
 
@@ -143,14 +144,14 @@ def test_atoms_per_fu_map_al2o3():
 def test_integer_fu_from_total_sums_to_target():
     """Allocated formula units sum exactly to Nfu_target."""
     mol_frac = {"SiO2": 0.75, "Na2O": 0.25}
-    result = ps._integer_fu_from_total(100, mol_frac)  # noqa: SLF001
+    result = ps_planner._integer_fu_from_total(100, mol_frac)  # noqa: SLF001
     assert sum(result.values()) == 100
 
 
 def test_integer_fu_from_total_proportional():
     """Allocation is proportional to molar fractions."""
     mol_frac = {"SiO2": 0.75, "Na2O": 0.25}
-    result = ps._integer_fu_from_total(100, mol_frac)  # noqa: SLF001
+    result = ps_planner._integer_fu_from_total(100, mol_frac)  # noqa: SLF001
     assert result["SiO2"] == 75
     assert result["Na2O"] == 25
 

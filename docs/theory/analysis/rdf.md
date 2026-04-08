@@ -140,4 +140,6 @@ print(f"Al-O coordination: {coord['Al-O']:.2f}")  # Should be ~4.0–5.0
 | `structure` | `Atoms` | ASE Atoms object |
 | `cutoff_dict` | `dict[tuple, float]` | Cutoff distance for each (element1, element2) pair |
 
+> **`r_max` clamping:** If `r_max` exceeds half the smallest perpendicular cell height, it is automatically reduced to the largest integer that stays within the limit and a `UserWarning` is emitted. To suppress it: `warnings.filterwarnings("ignore", category=UserWarning, module="amorphouspy")`.
+
 > **Tip:** The cutoff should be set at the first minimum of the corresponding partial RDF. Compute the RDF first, then read the minimum position. A common default for Si-O is 2.0 Å and for most modifier-O pairs is 2.8–3.2 Å.

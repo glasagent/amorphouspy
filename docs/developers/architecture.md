@@ -106,7 +106,12 @@ class ElasticModuli,Viscosity,CTE,Anisotropy,Others,OthersWorkflow,OthersOutput 
 
 ```
 amorphouspy/
-├── structure.py          # Composition parsing, structure generation, density model
+├── structure/
+│   ├── __init__.py       # Re-exports all public symbols for backward compatibility
+│   ├── composition.py    # Formula parsing, normalization, charge-neutrality checks
+│   ├── density.py        # Fluegel empirical density model
+│   ├── planner.py        # Formula-unit allocation, box sizing, system planning
+│   └── geometry.py       # Random atom placement, ASE structure builder
 ├── mass.py               # Atomic mass utilities (wraps ASE data)
 ├── neighbors.py          # Cell-list neighbor search with periodic boundary conditions
 ├── io_utils.py           # LAMMPS I/O, XYZ writer, ASE Atoms helpers

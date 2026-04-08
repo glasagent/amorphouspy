@@ -1,30 +1,82 @@
-"""Structural analysis functions for multicomponent glass systems.
+"""I/O utilities for amorphouspy: reading and writing structural data files.
 
 Author: Achraf Atila (achraf.atila@bam.de)
-
-
-It includes a lightweight parser for LAMMPS dump files and methods
-for handling wrapped and unwrapped atomic coordinates.
-
-Currently implemented:
-
-- read_lammps_dump: Efficiently reads LAMMPS dump files (including
-  gzipped files), extracts atom IDs, types, coordinates (wrapped or
-  unwrapped), and simulation box dimensions. Designed for use in
-  structural analyses of disordered materials.
-
 """
-
-# implement ASE based parser using a wrapper around ase.io.read
 
 from pathlib import Path
 
+import ase.io
 import numpy as np
 from ase import Atoms
 
 
+def load_lammps_dump(
+    path: str | Path,
+    type_map: dict[int, str] | None = None,
+    *,
+    return_atoms_dict: bool = False,
+) -> Atoms | tuple[dict, Atoms]:
+    """Read a LAMMPS dump file and return an ASE Atoms object with correct chemical symbols.
+
+    Args:
+        path: Path to the LAMMPS dump file.
+        type_map: Mapping from LAMMPS integer type to element symbol,
+            e.g. ``{1: "O", 2: "Si"}``. When ``None``, the ``element``
+            column stored in the dump file is used.
+        return_atoms_dict: When ``True``, also return an amorphouspy
+            ``atoms_dict`` alongside the ``ase.Atoms`` object (default ``False``).
+
+    Returns:
+        - ``ase_atoms`` (``ase.Atoms``) when *return_atoms_dict* is ``False``
+        - ``(atoms_dict, ase_atoms)`` when *return_atoms_dict* is ``True``,
+          where ``atoms_dict`` contains ``"atoms"``, ``"box"``, and ``"total_atoms"``
+
+    Raises:
+        ValueError: If *type_map* is ``None`` and the dump file does not contain
+            an ``element`` column.
+
+    Example:
+        >>> ase_atoms = load_lammps_dump("final.lammpstrj", type_map={1: "O", 2: "Si"})
+        >>> atoms_dict, ase_atoms = load_lammps_dump(
+        ...     "final.lammpstrj", type_map={1: "O", 2: "Si"}, return_atoms_dict=True
+        ... )
+
+    """
+    ase_atoms: Atoms = ase.io.read(str(path), format="lammps-dump-text", index=0)
+
+    if type_map is not None:
+        symbols = [type_map[int(t)] for t in ase_atoms.arrays["type"]]
+        ase_atoms.set_chemical_symbols(symbols)
+    elif "element" in ase_atoms.arrays:
+        ase_atoms.set_chemical_symbols(list(ase_atoms.arrays["element"]))
+    else:
+        msg = (
+            "type_map is required when the dump file does not contain an 'element' column. "
+            "Either pass type_map={1: 'O', 2: 'Si', ...} or add "
+            "'dump_modify element O Si ...' to your LAMMPS input script."
+        )
+        raise ValueError(msg)
+
+    box_length = float(ase_atoms.get_cell()[0][0])
+    atoms_list = [
+        {"element": sym, "position": list(pos)}
+        for sym, pos in zip(ase_atoms.get_chemical_symbols(), ase_atoms.get_positions(), strict=True)
+    ]
+
+    if not return_atoms_dict:
+        return ase_atoms
+
+    atoms_dict = {
+        "atoms": atoms_list,
+        "box": box_length,
+        "total_atoms": len(atoms_list),
+    }
+
+    return ase_atoms, atoms_dict
+
+
 def write_distribution_to_file(
-    composition: float,
+    composition: float | str,
     filepath: str,
     dist: dict[int, int],
     label: str,
@@ -139,10 +191,10 @@ def write_xyz(
         msg = "type_dict must be provided"
         raise ValueError(msg)
 
-    N = coords.shape[0]
+    n_atoms = coords.shape[0]
     path = Path(filename)
     with path.open("w") as f:
-        f.write(f"{N}\n")
+        f.write(f"{n_atoms}\n")
         if box_size is not None:
             f.write(f"CUB {box_size[0]:.8f} {box_size[1]:.8f} {box_size[2]:.8f}\n")
         else:

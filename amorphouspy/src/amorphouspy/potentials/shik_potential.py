@@ -1,6 +1,8 @@
-"""LAMMPS potential generation for oxide glass simulations using SHIK parameters."""
+"""LAMMPS potential generation for oxide glass simulations using SHIK parameters.
 
-# Author: Achraf Atila (achraf.atila@bam.de)
+Author: Achraf Atila (achraf.atila@bam.de)
+"""
+
 from collections import Counter
 from pathlib import Path
 
@@ -196,7 +198,7 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    types = get_element_types_dict(atoms_dict)
+    types = get_element_types_dict(atoms_dict["atoms"])
     species = list(types.keys())
 
     q_O = compute_oxygen_charge(atoms_dict, shik_charges)

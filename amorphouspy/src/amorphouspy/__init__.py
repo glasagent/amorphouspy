@@ -18,7 +18,6 @@ from amorphouspy.io_utils import (
 )
 from amorphouspy.mass import get_atomic_mass
 from amorphouspy.neighbors import get_neighbors
-from amorphouspy.potentials import potential
 from amorphouspy.potentials.potential import generate_potential
 from amorphouspy.shared import count_distribution, running_mean, type_to_dict
 from amorphouspy.structure import (
@@ -75,7 +74,6 @@ __all__ = [
     "parse_formula",
     "plan_system",
     "plot_analysis_results_plotly",
-    "potential",
     "running_mean",
     "structure_from_parsed_output",
     "temperature_scan_simulation",

@@ -5,6 +5,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 import math
+import warnings
 from itertools import combinations_with_replacement
 
 import numpy as np
@@ -298,11 +299,13 @@ def compute_rdf(
                 "integer cutoff exists. Use a larger simulation box."
             )
             raise ValueError(msg)
-        print(  # noqa: T201
-            f"Warning: r_max={r_max:.4f} Å exceeds half the smallest perpendicular "
+        warnings.warn(
+            f"r_max={r_max:.4f} Å exceeds half the smallest perpendicular "
             f"cell height ({r_max_allowed:.4f} Å). r_max has been automatically "
             f"adjusted to {r_max_adjusted:.1f} Å (largest integer not exceeding "
-            f"the limit)."
+            f"the limit).",
+            UserWarning,
+            stacklevel=2,
         )
         r_max = r_max_adjusted
 

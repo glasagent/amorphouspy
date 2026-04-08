@@ -1,6 +1,8 @@
-"""LAMMPS potential generation for oxide glass simulations."""
+"""LAMMPS potential generation for oxide glass simulations.
 
-# Author: Achraf Atila (achraf.atila@bam.de)
+Author: Achraf Atila (achraf.atila@bam.de)
+"""
+
 import pandas as pd
 
 from . import bjp_potential as bjp
