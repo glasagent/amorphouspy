@@ -485,17 +485,45 @@ def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[
         )
 
 
+def _classify_rdf_pairs(
+    structure_data: StructureData,
+) -> dict[str, list[tuple[str, list[float]]]]:
+    """Classify RDF pairs into O-O, former-O and modifier-O categories."""
+    formers = set(structure_data.elements.formers)
+    modifiers = set(structure_data.elements.modifiers)
+
+    classified: dict[str, list[tuple[str, list[float]]]] = {"oo": [], "former": [], "modifier": []}
+
+    for pair, rdf_data in structure_data.rdfs.rdfs.items():
+        e1, sep, e2 = pair.partition("-")
+        if not sep:
+            continue
+        if e1 == "O" and e2 == "O":
+            classified["oo"].append((pair, rdf_data))
+        elif (e1 in formers and e2 == "O") or (e1 == "O" and e2 in formers):
+            classified["former"].append((pair, rdf_data))
+        elif (e1 in modifiers and e2 == "O") or (e1 == "O" and e2 in modifiers):
+            classified["modifier"].append((pair, rdf_data))
+
+    return classified
+
+
 def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
     """Add radial distribution function plots to the figure."""
     if not structure_data.rdfs.rdfs:
         return
 
-    plot_positions = [(3, 1), (3, 2), (3, 3)]  # All three RDFs in row 3
-    rdf_pairs = list(structure_data.rdfs.rdfs.items())
+    classified = _classify_rdf_pairs(structure_data)
 
-    for idx, (row, col) in enumerate(plot_positions):
-        if idx < len(rdf_pairs):
-            pair, rdf_data = rdf_pairs[idx]
+    # Map categories to subplot positions: (row, col)
+    category_map = [
+        ((3, 1), classified["oo"]),
+        ((3, 2), classified["former"]),
+        ((3, 3), classified["modifier"]),
+    ]
+
+    for (row, col), pairs in category_map:
+        for i, (pair, rdf_data) in enumerate(pairs):
             if rdf_data and structure_data.rdfs.r:
                 # RDF trace
                 fig.add_trace(
@@ -504,7 +532,7 @@ def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[s
                         y=rdf_data,
                         mode="lines",
                         name=f"g(r) {pair}",
-                        line={"color": colors[0], "width": 2},
+                        line={"color": colors[i % len(colors)], "width": 2},
                         showlegend=True,
                         yaxis="y",
                     ),
@@ -520,7 +548,7 @@ def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[s
                             y=structure_data.rdfs.cumulative_coordination[pair],
                             mode="lines",
                             name=f"CN(r) {pair}",
-                            line={"color": colors[1], "width": 2, "dash": "dash"},
+                            line={"color": colors[i % len(colors)], "width": 2, "dash": "dash"},
                             showlegend=True,
                             yaxis="y",
                         ),
