@@ -16,6 +16,13 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
+# Default melt temperatures per protocol (K)
+DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
+    "pmmcs": 5000.0,
+    "bjp": 5000.0,
+    "shik": 4000.0,
+}
+
 
 @dataclass
 class MeltQuenchParams:
@@ -297,3 +304,11 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
 
     return structure_final, parsed_output
+
+
+# Map potential names to protocol functions
+PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, dict]]] = {
+    "pmmcs": pmmcs_protocol,
+    "bjp": bjp_protocol,
+    "shik": shik_protocol,
+}
