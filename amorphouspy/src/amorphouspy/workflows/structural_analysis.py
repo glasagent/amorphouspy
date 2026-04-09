@@ -602,11 +602,38 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     _add_ring_plots(fig, structure_data, colors)
     _add_rdf_plots(fig, structure_data, colors)
 
+    # Position legends inside each subplot (top-right corner)
+    axis_to_legend: dict[str, str] = {}
+    legend_layout: dict[str, dict] = {}
+
+    for idx in range(1, 10):
+        ax_suffix = str(idx) if idx > 1 else ""
+        x_ref = f"x{ax_suffix}"
+        legend_name = f"legend{idx}" if idx > 1 else "legend"
+
+        x_domain = getattr(fig.layout, f"xaxis{ax_suffix}").domain
+        y_domain = getattr(fig.layout, f"yaxis{ax_suffix}").domain
+
+        axis_to_legend[x_ref] = legend_name
+        legend_layout[legend_name] = {
+            "x": x_domain[1],
+            "y": y_domain[1],
+            "xanchor": "right",
+            "yanchor": "top",
+            "bgcolor": "rgba(255,255,255,0.7)",
+            "font": {"size": 10},
+        }
+
+    for trace in fig.data:
+        x_ref = trace.xaxis or "x"
+        if x_ref in axis_to_legend:
+            trace.update(legend=axis_to_legend[x_ref])
+
     # Update layout and axes
     fig.update_layout(
         height=1000,
         showlegend=True,
-        legend={"orientation": "v", "yanchor": "top", "y": 1, "xanchor": "left", "x": 1.02},
+        **legend_layout,
     )
 
     # Row 1: Coordination plots
