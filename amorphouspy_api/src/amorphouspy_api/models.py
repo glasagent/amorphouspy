@@ -341,6 +341,10 @@ class JobSubmission(BaseModel):
         default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
         description="Analyses to run. Each can carry its own parameters. Defaults to all available analyses.",
     )
+    tags: list[str] = Field(
+        default_factory=list,
+        description=("User-defined tags for labelling or grouping jobs (e.g. project names, batch identifiers)."),
+    )
 
 
 def _job_urls(job_id: str) -> dict[str, str]:
@@ -367,6 +371,7 @@ class JobCreatedResponse(BaseModel):
     status: JobStatus = Field(default=JobStatus.PENDING)
     composition: Composition
     potential: Potential
+    tags: list[str] = Field(default_factory=list)
     created_at: str
     urls: dict[str, str] = Field(
         default_factory=dict,
@@ -396,6 +401,7 @@ class JobStatusResponse(BaseModel):
     status: JobStatus
     composition: Composition
     potential: Potential
+    tags: list[str] = Field(default_factory=list)
     progress: JobProgress
     errors: dict[str, str] = Field(default_factory=dict)
     created_at: str
@@ -438,6 +444,10 @@ class JobSearchRequest(BaseModel):
     )
     potential: Potential | None = None
     analyses: list[str] | None = None
+    tags: list[str] | None = Field(
+        default=None,
+        description="Filter results to jobs that have all of the specified tags.",
+    )
     threshold: float = Field(
         default=0.05,
         description=(
@@ -460,6 +470,7 @@ class JobSearchMatch(BaseModel):
     job_id: str
     composition: Composition
     potential: Potential
+    tags: list[str] = Field(default_factory=list)
     analyses: list[str]
     similarity: float = 1.0
     match_type: str = Field(
@@ -481,6 +492,22 @@ class JobSearchResponse(BaseModel):
     """Response for ``POST /jobs:search``."""
 
     matches: list[JobSearchMatch]
+
+
+class TagsUpdate(BaseModel):
+    """Request body for ``PUT /jobs/{id}/tags``."""
+
+    tags: list[str] = Field(
+        ...,
+        description="New set of tags for the job (replaces existing tags).",
+    )
+
+
+class TagsResponse(BaseModel):
+    """Response for tag operations on a job."""
+
+    job_id: str
+    tags: list[str]
 
 
 # ---------------------------------------------------------------------------

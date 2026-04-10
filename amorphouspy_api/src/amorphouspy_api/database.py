@@ -50,6 +50,9 @@ class Job(Base):
     # Populated on completion from the actual structure.
     elemental_vector = Column(JSON, nullable=True)
 
+    # User-defined tags for labelling / grouping jobs (e.g. project names).
+    tags = Column(JSON, nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -191,6 +194,14 @@ class JobStore:
             if potential:
                 q = q.filter(Job.potential == potential)
             return q.order_by(Job.created_at.desc()).all()
+
+    def get_tags_for_jobs(self, job_ids: list[str]) -> dict[str, list[str]]:
+        """Return {job_id: tags} for the given IDs."""
+        if not job_ids:
+            return {}
+        with self.session() as s:
+            rows = s.query(Job.job_id, Job.tags).filter(Job.job_id.in_(job_ids)).all()
+            return {jid: (tags or []) for jid, tags in rows}
 
 
 # ---------------------------------------------------------------------------

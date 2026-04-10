@@ -853,3 +853,187 @@ def test_elastic_progress_tracking() -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["progress"]["analyses"]["elastic"] == "completed"
+
+
+# ---------------------------------------------------------------------------
+# Tags
+# ---------------------------------------------------------------------------
+
+
+def _insert_completed_job_with_tags(
+    job_id: str = "j-tag-1",
+    *,
+    tags: list[str] | None = None,
+    composition: str = "Al2O3 15 - CaO 25 - SiO2 60",
+    request_hash: str = "taghash1234",
+) -> None:
+    from amorphouspy_api.routers.jobs_helpers import _elem_dict_to_vector, elemental_fractions_from_job
+
+    store = get_job_store()
+    result = _mock_result(include_structure=True)
+    job = Job(
+        job_id=job_id,
+        request_hash=request_hash,
+        composition=composition,
+        potential="pmmcs",
+        status="completed",
+        request_data={
+            "composition": composition,
+            "potential": "pmmcs",
+            "simulation": {},
+            "analyses": [{"type": "structure_characterization"}],
+        },
+        progress={
+            "structure_generation": "completed",
+            "melt_quench": "completed",
+            "structure_characterization": "completed",
+        },
+        result_data=result,
+        tags=tags,
+        completed_at=datetime.now(UTC),
+    )
+    fracs = elemental_fractions_from_job(job)
+    job.elemental_vector = _elem_dict_to_vector(fracs) if fracs else None
+    store.create_job(job)
+
+
+def test_submit_job_with_tags() -> None:
+    """Tags provided at submission time are stored and returned."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "tags": ["project-alpha", "batch-1"],
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert sorted(data["tags"]) == ["batch-1", "project-alpha"]
+
+
+def test_submit_job_without_tags() -> None:
+    """Submitting without tags returns an empty tag list."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={"composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15}},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == []
+
+
+def test_get_job_status_includes_tags() -> None:
+    """GET /jobs/{id} includes tags in the response."""
+    _insert_completed_job_with_tags("j-tag-status", tags=["my-project"])
+
+    resp = client.get("/jobs/j-tag-status")
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == ["my-project"]
+
+
+def test_update_tags() -> None:
+    """PUT /jobs/{id}/tags replaces the tag set."""
+    _insert_completed_job_with_tags("j-tag-update", tags=["old-tag"])
+
+    resp = client.put(
+        "/jobs/j-tag-update/tags",
+        json={"tags": ["new-tag", "project-beta"]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["job_id"] == "j-tag-update"
+    assert sorted(data["tags"]) == ["new-tag", "project-beta"]
+
+    # Verify persisted
+    resp2 = client.get("/jobs/j-tag-update")
+    assert sorted(resp2.json()["tags"]) == ["new-tag", "project-beta"]
+
+
+def test_update_tags_not_found() -> None:
+    """PUT /jobs/{id}/tags returns 404 for unknown job."""
+    resp = client.put("/jobs/nonexistent/tags", json={"tags": ["x"]})
+    assert resp.status_code == 404
+
+
+def test_update_tags_deduplicates() -> None:
+    """Duplicate tags are collapsed."""
+    _insert_completed_job_with_tags("j-tag-dedup", tags=[])
+
+    resp = client.put(
+        "/jobs/j-tag-dedup/tags",
+        json={"tags": ["a", "b", "a"]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["tags"] == ["a", "b"]
+
+
+def test_search_jobs_returns_tags() -> None:
+    """POST /jobs:search includes tags on each match."""
+    _insert_completed_job_with_tags(
+        "j-tag-search",
+        tags=["project-x"],
+        request_hash="tagsearchhash",
+    )
+
+    resp = client.post(
+        "/jobs:search",
+        json={"composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15}},
+    )
+    assert resp.status_code == 200
+    match = next(m for m in resp.json()["matches"] if m["job_id"] == "j-tag-search")
+    assert match["tags"] == ["project-x"]
+
+
+def test_search_jobs_filter_by_tags() -> None:
+    """POST /jobs:search with tags filter returns only matching jobs."""
+    _insert_completed_job_with_tags(
+        "j-tag-filter-yes",
+        tags=["project-x", "batch-1"],
+        request_hash="tagfilter1",
+    )
+    _insert_completed_job_with_tags(
+        "j-tag-filter-no",
+        tags=["project-y"],
+        request_hash="tagfilter2",
+    )
+
+    resp = client.post(
+        "/jobs:search",
+        json={
+            "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+            "tags": ["project-x"],
+        },
+    )
+    assert resp.status_code == 200
+    ids = [m["job_id"] for m in resp.json()["matches"]]
+    assert "j-tag-filter-yes" in ids
+    assert "j-tag-filter-no" not in ids
