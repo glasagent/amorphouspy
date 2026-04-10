@@ -317,6 +317,10 @@ class MeltQuenchParams(BaseModel):
         default=None,
         description="Override for all fixed equilibration stages. If None, protocol-specific defaults are used.",
     )
+    target_density: float | None = Field(
+        default=None,
+        description="Target density in g/cm³ for initial structure generation. If None, estimated from Fluegel's empirical model.",
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -155,11 +155,17 @@ def test_submit_job_new() -> None:
 
 def test_submit_job_returns_cached() -> None:
     """Test that submitting a duplicate request returns the cached job."""
-    from amorphouspy_api.models import JobSubmission
+    from amorphouspy.structure.composition import extract_composition
+    from amorphouspy.structure.density import get_glass_density_from_model
+    from amorphouspy_api.models import Composition, JobSubmission
     from amorphouspy_api.routers.jobs_helpers import _job_hash
 
-    # Build the same submission the client will send
+    # Build the same submission the client will send, mirroring the
+    # normalisation and density resolution that submit_job performs.
     sub = JobSubmission(composition={"SiO2": 60, "CaO": 25, "Al2O3": 15})
+    normalised = extract_composition(sub.composition.root, tolerance=0.03)
+    sub.composition = Composition({ox: frac * 100 for ox, frac in normalised.items()})
+    sub.simulation.target_density = get_glass_density_from_model(sub.composition.root)
     norm = sub.composition.canonical
     real_hash = _job_hash(sub, norm)
 

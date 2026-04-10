@@ -164,6 +164,24 @@ def submit_job(
     # Validate potential / auto-select if default doesn't fit
     _validate_or_select_potential(submission)
 
+    # Resolve target density: predict from model if not supplied, fail fast
+    # if the model cannot handle the composition.
+    if submission.simulation.target_density is None:
+        from amorphouspy.structure.density import get_glass_density_from_model
+
+        try:
+            submission.simulation.target_density = get_glass_density_from_model(
+                submission.composition.root,
+            )
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Cannot estimate density for the given composition: {exc}. "
+                    "Please provide an explicit 'target_density' in the simulation parameters."
+                ),
+            ) from exc
+
     store = get_job_store()
     norm_comp = submission.composition.canonical
     req_hash = _job_hash(submission, norm_comp)
