@@ -212,7 +212,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     modifier_types = [z for z, sym in type_map.items() if sym in modifiers]
     O_type = [z for z, sym in type_map.items() if sym == "O"]
 
-    r, rdfs, cumcn = compute_rdf(atoms, r_max=10, n_bins=2000)
+    r, rdfs, cumcn = compute_rdf(atoms)
 
     def _canonical(a: int, b: int) -> tuple[int, int]:
         return (min(a, b), max(a, b))
