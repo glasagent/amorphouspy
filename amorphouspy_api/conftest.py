@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from amorphouspy_api.database import close_job_store, init_job_store
 
 

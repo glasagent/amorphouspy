@@ -29,6 +29,7 @@ api = [
   "executorlib",
   "pysqa",
   "uvicorn",
+  "fastapi",
   "mcp>=1.6.0",
   "sqlalchemy",
   "jinja2",

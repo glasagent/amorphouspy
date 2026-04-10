@@ -24,7 +24,7 @@ class PrettyJSONResponse(JSONResponse):
 
 from .config import API_TOKEN, DB_PATH, PROJECTS_FOLDER
 from .database import close_job_store, init_job_store
-from .mcp_server import MCPRouteMiddleware
+from .mcp_server import MCPRouteMiddleware, register_tools
 from .routers.glasses import router as glasses_router
 from .routers.jobs import router as jobs_router
 
@@ -79,6 +79,9 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 # Routers
 app.include_router(jobs_router)
 app.include_router(glasses_router)
+
+# Register endpoint functions as MCP tools (after routers to avoid circular imports)
+register_tools()
 
 
 @app.get("/")

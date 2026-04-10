@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
 from amorphouspy_api.auth import verify_token
 from amorphouspy_api.database import get_job_store
@@ -44,14 +44,13 @@ def list_glasses() -> GlassListResponse:
 
 
 @router.post(":lookup", response_model=GlassPropertiesResponse)
-def lookup_glass(request: Request, body: GlassLookupRequest) -> GlassPropertiesResponse:
+def lookup_glass(body: GlassLookupRequest) -> GlassPropertiesResponse:
     """Get aggregated properties for a specific composition.
 
     Accepts a JSON body with a composition dict, e.g.::
 
         {"composition": {"SiO2": 70, "Na2O": 15, "CaO": 15}}
     """
-    base = str(request.base_url).rstrip("/")
     store = get_job_store()
     norm = body.composition.canonical
     jobs = store.search_by_composition(norm)
@@ -87,7 +86,7 @@ def lookup_glass(request: Request, body: GlassLookupRequest) -> GlassPropertiesR
                 job_id=j.job_id,
                 potential=j.potential,
                 n_atoms=n_atoms,
-                visualization_url=_job_urls(j.job_id, base)["visualization"],
+                visualization_url=_job_urls(j.job_id)["visualization"],
             )
         )
 

@@ -33,6 +33,7 @@ flux-core = ">=0.81.0"
 
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
+fastapi = "*"
 mcp = ">=1.6.0"
 
 [feature.dev.dependencies]

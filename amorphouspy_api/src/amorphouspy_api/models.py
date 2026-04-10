@@ -343,15 +343,15 @@ class JobSubmission(BaseModel):
     )
 
 
-def _job_urls(job_id: str, request_base_url: str = "") -> dict[str, str]:
+def _job_urls(job_id: str) -> dict[str, str]:
     """Build user-facing URLs for a job.
 
-    Uses ``API_BASE_URL`` if set, otherwise falls back to the base URL
-    derived from the incoming request (so it works without configuration).
+    Uses the ``API_BASE_URL`` environment variable.  When unset the URLs
+    will contain relative paths only (empty base).
     """
     from amorphouspy_api.config import API_BASE_URL
 
-    base = (API_BASE_URL or request_base_url).rstrip("/")
+    base = API_BASE_URL.rstrip("/")
     return {
         "status": f"{base}/jobs/{job_id}",
         "results": f"{base}/jobs/{job_id}/results",
