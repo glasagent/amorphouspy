@@ -81,15 +81,14 @@ No extra configuration needed — this is the default.
 
 ### SLURM cluster
 
-Set the following environment variables before running `pixi run serve`:
+Set the following environment variables before running `pixi run serve`
+(see the [Web API Reference](../api_service.md#environment-variables) for the full list):
 
-| Variable | Description | Example |
-|---|---|---|
-| `EXECUTOR_TYPE` | Must be `slurm` | `slurm` |
-| `LAMMPS_CORES` | MPI cores for LAMMPS jobs (default: `4`) | `8` |
-| `SLURM_PARTITION` | SLURM partition name | `batch` |
-| `SLURM_RUN_TIME_MAX` | Max run time per job in seconds | `7200` |
-| `SLURM_MEMORY_MAX` | Max memory per job in GB | `16` |
+- `EXECUTOR_TYPE=slurm`
+- `LAMMPS_CORES` — MPI cores for LAMMPS jobs (default: `4`)
+- `SLURM_PARTITION` — SLURM partition name
+- `SLURM_RUN_TIME_MAX` — Max run time per job in seconds (optional)
+- `SLURM_MEMORY_MAX` — Max memory per job in GB (optional)
 
 For most setups, `EXECUTOR_TYPE`, `LAMMPS_CORES`, and `SLURM_PARTITION` are sufficient.
 
@@ -155,7 +154,8 @@ The `.path` unit watches the source directory for changes and automatically rest
 
 ### Configuration
 
-Edit the `[Service]` section of the unit file to set environment variables:
+Edit the `[Service]` section of the unit file to set environment variables
+(see the [Web API Reference](../api_service.md#environment-variables) for the full list):
 
 ```ini
 Environment=EXECUTOR_TYPE=slurm
@@ -165,12 +165,6 @@ Environment=AMORPHOUSPY_PROJECTS=/path/to/data
 Environment=AMORPHOUSPY_VERSION_PROJECTS=0
 Environment=API_TOKEN=<your-secret-token>
 ```
-
-| Variable | Default | Description |
-|---|---|---|
-| `AMORPHOUSPY_PROJECTS` | `<package>/projects` | Root directory for project data and the SQLite database |
-| `AMORPHOUSPY_VERSION_PROJECTS` | `1` | Set to `0` to keep cached results accessible across version upgrades |
-| `API_TOKEN` | — | Bearer token for API authentication. If not set, the API is open (a warning is logged at startup). |
 
 ### Managing the service
 
