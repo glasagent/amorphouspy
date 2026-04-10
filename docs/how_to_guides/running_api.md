@@ -31,7 +31,7 @@ The API will be available at:
 - Supports local execution (`TestClusterExecutor`) or SLURM cluster (`SlurmClusterExecutor`/`FluxClusterExecutor`).
 - Built-in job caching at the executor level: Re-submitting same job returns cached result or running future.
 
-- Exposes simulation capabilities as MCP tools at `/mcp` via `fastapi-mcp`.
+- Exposes simulation capabilities as MCP tools at `/mcp` via `fastmcp`.
 - Compatible with Claude, VS Code, and other MCP clients.
 
 ## Using the API

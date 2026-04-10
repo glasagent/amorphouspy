@@ -26,7 +26,7 @@ networkx = "*"
 scikit-image = "*"
 sqlalchemy = "*"
 uvicorn = "*"
-fastapi-mcp = "*"
+fastmcp = "*"
 
 # Platform-specific: flux-core not available on osx-*
 [target.linux-64.dependencies]
@@ -49,7 +49,8 @@ h5py = "*"
 pysqa = "*"
 sqlalchemy = "*"
 uvicorn = "*"
-fastapi-mcp = "*"
+fastapi = "*"
+fastmcp = "*"
 
 [feature.api.target.linux-64.dependencies]
 flux-core = ">=0.81.0"

@@ -22,7 +22,9 @@ class PrettyJSONResponse(JSONResponse):
         return json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8")
 
 
-from fastapi_mcp import FastApiMCP
+from fastmcp import FastMCP
+from fastmcp.server.providers.openapi import MCPType, RouteMap
+from fastmcp.utilities.lifespan import combine_lifespans
 
 from .config import API_TOKEN, DB_PATH, PROJECTS_FOLDER
 from .database import close_job_store, init_job_store
@@ -42,7 +44,7 @@ PROJECTS_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def db_lifespan(app: FastAPI):
     """Manage application lifespan — startup and shutdown."""
     if API_TOKEN:
         logger.info("Bearer-token authentication is enabled")
@@ -59,7 +61,6 @@ app = FastAPI(
     title="amorphouspy Simulation API",
     description="API for managing glass simulation jobs using amorphouspy",
     version="0.2.0",
-    lifespan=lifespan,
     default_response_class=PrettyJSONResponse,
 )
 
@@ -80,8 +81,24 @@ app.include_router(jobs_router)
 app.include_router(glasses_router)
 
 # MCP (expose all "tool"-tagged endpoints)
-mcp = FastApiMCP(app, include_tags=["tool"])
-mcp.mount_http(mount_path="/mcp")
+mcp = FastMCP.from_fastapi(
+    app=app,
+    name="amorphouspy Simulation API",
+    route_maps=[
+        RouteMap(tags={"tool"}, mcp_type=MCPType.TOOL),
+        RouteMap(mcp_type=MCPType.EXCLUDE),
+    ],
+)
+mcp.instructions = (
+    "When presenting job results to the user, ALWAYS include the "
+    "visualization URL from the response (found in the `urls.visualization` "
+    "field or the `visualization_url` field). This is a link to an "
+    "interactive HTML dashboard where the user can explore plots and "
+    "analysis results. Present it as a clickable link."
+)
+mcp_app = mcp.http_app(path="/")
+app.router.lifespan_context = combine_lifespans(db_lifespan, mcp_app.lifespan)
+app.mount("/mcp", mcp_app)
 
 
 @app.get("/")
