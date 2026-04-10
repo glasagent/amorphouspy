@@ -26,7 +26,6 @@ networkx = "*"
 scikit-image = "*"
 sqlalchemy = "*"
 uvicorn = "*"
-fastapi-mcp = "*"
 
 # Platform-specific: flux-core not available on osx-*
 [target.linux-64.dependencies]
@@ -34,6 +33,7 @@ flux-core = ">=0.81.0"
 
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
+mcp = ">=1.6.0"
 
 [feature.dev.dependencies]
 pre-commit = "*"
@@ -49,7 +49,6 @@ h5py = "*"
 pysqa = "*"
 sqlalchemy = "*"
 uvicorn = "*"
-fastapi-mcp = "*"
 
 [feature.api.target.linux-64.dependencies]
 flux-core = ">=0.81.0"
