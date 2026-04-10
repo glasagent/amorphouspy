@@ -30,7 +30,7 @@ api = [
   "pysqa",
   "uvicorn",
   "fastapi",
-  "fastmcp",
+  "fastmcp>=3.2.3",
   "sqlalchemy",
   "jinja2",
 ]
