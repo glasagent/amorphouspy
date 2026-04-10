@@ -37,6 +37,7 @@ from amorphouspy_api.models import (
     JobStatusResponse,
     JobSubmission,
     Potential,
+    _job_urls,
     validate_atoms,
 )
 from amorphouspy_api.routers.jobs_helpers import (
@@ -176,6 +177,7 @@ def submit_job(
                 composition=Composition.from_canonical(cached.composition),
                 potential=cached.potential,
                 created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
+                urls=_job_urls(cached.job_id),
             )
 
     # When forcing, remove stale executor cache files so executorlib runs fresh
@@ -217,6 +219,7 @@ def submit_job(
         composition=Composition.from_canonical(norm_comp),
         potential=submission.potential,
         created_at=(final.created_at.isoformat() if final and final.created_at else _iso_now()),
+        urls=_job_urls(job_id),
     )
 
 
@@ -245,6 +248,7 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
             match_type="exact",
             distance=0.0,
             completed_at=j.completed_at.isoformat() if j.completed_at else None,
+            visualization_url=_job_urls(j.job_id)["visualization"],
         )
         for j in exact_jobs
     ]
@@ -272,6 +276,7 @@ def search_jobs(request: JobSearchRequest) -> JobSearchResponse:
                     match_type="close",
                     distance=round(dist, 4),
                     completed_at=completed_at.isoformat() if completed_at else None,
+                    visualization_url=_job_urls(job_id)["visualization"],
                 )
             )
 
@@ -300,6 +305,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
         errors=job.errors or {},
         created_at=job.created_at.isoformat() if job.created_at else _iso_now(),
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
+        urls=_job_urls(job.job_id),
     )
 
 
@@ -332,6 +338,7 @@ def cancel_job(job_id: str) -> JobStatusResponse:
         errors=job.errors or {},
         created_at=job.created_at.isoformat() if job.created_at else _iso_now(),
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
+        urls=_job_urls(job.job_id),
     )
 
 
@@ -354,6 +361,7 @@ def get_job_results(job_id: str) -> JobResultsResponse:
         job_id=job.job_id,
         composition=Composition.from_canonical(job.composition),
         analyses=analyses,
+        visualization_url=_job_urls(job.job_id)["visualization"],
     )
 
 
