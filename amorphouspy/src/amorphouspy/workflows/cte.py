@@ -124,7 +124,9 @@ def cte_from_fluctuations_simulation(
     timestep: float = 1.0,
     equilibration_steps: int = 100_000,
     production_steps: int = 200_000,
-    min_production_runs: int = 2,
+    # n=5 corresponds to relative uncertainty of the standard deviation
+    # delta sigma/sigma = (2(n-1))**-0.5 of ~35%
+    min_production_runs: int = 5,
     max_production_runs: int = 25,
     CTE_uncertainty_criterion: float = 1e-6,
     n_dump: int = 100000,
