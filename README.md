@@ -9,6 +9,9 @@
 
 <!--content-start-->
 
+> [!WARNING]
+> This project is under active development and is **not yet ready for production use**. APIs and functionality may change without notice. Contributions and feedback are very welcome — feel free to [open an issue](https://github.com/glasagent/amorphouspy/issues) or submit a pull request!
+
 A Python package for atomistic simulations of glasses.
 
 `amorphouspy` provides capabilities in the form of Python functions from generating initial structural models through running molecular dynamics simulations with LAMMPS, all the way to computing material properties and performing detailed structural analysis.
