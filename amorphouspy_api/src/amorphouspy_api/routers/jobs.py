@@ -37,6 +37,8 @@ from amorphouspy_api.models import (
     JobStatusResponse,
     JobSubmission,
     Potential,
+    TagsResponse,
+    TagsUpdate,
     _job_urls,
     validate_atoms,
 )
@@ -171,11 +173,18 @@ def submit_job(
         cached = store.find_completed_by_hash(req_hash)
         if cached:
             logger.info("Returning cached job %s", cached.job_id)
+            # Merge any new tags into the cached job
+            if submission.tags:
+                existing = set(cached.tags or [])
+                merged = sorted(existing | set(submission.tags))
+                if merged != sorted(existing):
+                    store.update_job(cached.job_id, tags=merged)
             return JobCreatedResponse(
                 id=cached.job_id,
                 status=JobStatus(cached.status),
                 composition=Composition.from_canonical(cached.composition),
                 potential=cached.potential,
+                tags=sorted(set(cached.tags or []) | set(submission.tags)),
                 created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
                 urls=_job_urls(cached.job_id),
             )
@@ -195,6 +204,7 @@ def submit_job(
         status="pending",
         request_data=submission.model_dump(),
         progress=_initial_progress(submission),
+        tags=submission.tags or None,
     )
     store.create_job(job)
     logger.info("Created job %s (hash=%s)", job_id, req_hash)
@@ -218,6 +228,7 @@ def submit_job(
         status=JobStatus(final.status) if final else JobStatus.PENDING,
         composition=Composition.from_canonical(norm_comp),
         potential=submission.potential,
+        tags=final.tags or [] if final else submission.tags,
         created_at=(final.created_at.isoformat() if final and final.created_at else _iso_now()),
         urls=_job_urls(job_id),
     )
@@ -243,6 +254,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
             job_id=j.job_id,
             composition=Composition.from_canonical(j.composition),
             potential=j.potential,
+            tags=j.tags or [],
             analyses=_analyses_list(j),
             similarity=1.0,
             match_type="exact",
@@ -263,6 +275,10 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
             threshold=body.threshold,
             max_results=body.max_results,
         )
+        # Batch-fetch tags for close matches
+        close_ids = [job_id for _, job_id, *_ in scored]
+        tags_map = store.get_tags_for_jobs(close_ids) if close_ids else {}
+
         for dist, job_id, comp, potential, req_data, completed_at in scored:
             sim = 1.0 / (1.0 + dist)
             analyses = [a.get("type", "structure_characterization") for a in (req_data or {}).get("analyses", [])]
@@ -271,6 +287,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
                     job_id=job_id,
                     composition=Composition.from_canonical(comp),
                     potential=potential,
+                    tags=tags_map.get(job_id, []),
                     analyses=analyses,
                     similarity=round(sim, 4),
                     match_type="close",
@@ -279,6 +296,11 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
                     visualization_url=_job_urls(job_id)["visualization"],
                 )
             )
+
+    # --- filter by tags (if requested) ---
+    if body.tags:
+        required = set(body.tags)
+        matches = [m for m in matches if required <= set(m.tags)]
 
     return JobSearchResponse(matches=matches)
 
@@ -301,6 +323,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
         status=JobStatus(job.status),
         composition=Composition.from_canonical(job.composition),
         potential=job.potential,
+        tags=job.tags or [],
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
         created_at=job.created_at.isoformat() if job.created_at else _iso_now(),
@@ -334,12 +357,24 @@ def cancel_job(job_id: str) -> JobStatusResponse:
         status=JobStatus(job.status),
         composition=Composition.from_canonical(job.composition),
         potential=job.potential,
+        tags=job.tags or [],
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
         created_at=job.created_at.isoformat() if job.created_at else _iso_now(),
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
         urls=_job_urls(job.job_id),
     )
+
+
+@router.put("/{job_id}/tags", response_model=TagsResponse, dependencies=[Depends(verify_token)])
+def update_tags(job_id: str, body: TagsUpdate) -> TagsResponse:
+    """Replace the tags on a job."""
+    store = get_job_store()
+    job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    store.update_job(job_id, tags=sorted(set(body.tags)))
+    return TagsResponse(job_id=job_id, tags=sorted(set(body.tags)))
 
 
 @router.get("/{job_id}/results", response_model=JobResultsResponse)
@@ -465,6 +500,7 @@ def visualize_job(job_id: str) -> HTMLResponse:
         )
         context["job_status"] = job.status
         context["progress"] = job.progress or {}
+        context["tags"] = job.tags or []
 
         template_dir = Path(__file__).parent.parent / "templates"
         templates = Jinja2Templates(directory=str(template_dir))
