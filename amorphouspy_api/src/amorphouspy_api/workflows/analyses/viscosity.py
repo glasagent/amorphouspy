@@ -12,8 +12,9 @@ import logging
 import math
 from typing import TYPE_CHECKING, Any
 
-from amorphouspy import melt_quench_simulation
 from amorphouspy.workflows.viscosity import get_viscosity, viscosity_simulation
+
+from amorphouspy import melt_quench_simulation
 
 if TYPE_CHECKING:
     from pydantic import BaseModel

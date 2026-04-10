@@ -22,10 +22,9 @@ class PrettyJSONResponse(JSONResponse):
         return json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8")
 
 
-from fastapi_mcp import FastApiMCP
-
 from .config import API_TOKEN, DB_PATH, PROJECTS_FOLDER
 from .database import close_job_store, init_job_store
+from .mcp_server import MCPRouteMiddleware, register_tools
 from .routers.glasses import router as glasses_router
 from .routers.jobs import router as jobs_router
 
@@ -63,6 +62,8 @@ app = FastAPI(
     default_response_class=PrettyJSONResponse,
 )
 
+app.add_middleware(MCPRouteMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -79,9 +80,8 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(jobs_router)
 app.include_router(glasses_router)
 
-# MCP (expose all "tool"-tagged endpoints)
-mcp = FastApiMCP(app, include_tags=["tool"])
-mcp.mount_http(mount_path="/mcp")
+# Register endpoint functions as MCP tools (after routers to avoid circular imports)
+register_tools()
 
 
 @app.get("/")

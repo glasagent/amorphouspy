@@ -6,10 +6,9 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from fastapi.testclient import TestClient
-
 from amorphouspy_api.app import app
 from amorphouspy_api.database import Job, get_job_store
+from fastapi.testclient import TestClient
 
 client = TestClient(app)
 

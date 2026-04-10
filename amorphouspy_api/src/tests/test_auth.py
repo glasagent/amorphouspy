@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-
 from amorphouspy_api.database import Job, get_job_store
+from fastapi.testclient import TestClient
 
 TEST_TOKEN = "test-secret-token"  # noqa: S105
 

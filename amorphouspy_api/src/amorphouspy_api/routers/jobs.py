@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from amorphouspy.structure import extract_composition
 from ase.io import write as ase_write
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
 from amorphouspy_api.auth import verify_token
@@ -58,11 +58,6 @@ from amorphouspy_api.workflows import ANALYSES
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["tool"])
-
-
-def _request_base_url(request: Request) -> str:
-    """Derive the public base URL from the incoming request."""
-    return str(request.base_url).rstrip("/")
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +139,6 @@ def _validate_or_select_potential(
 
 @router.post("", response_model=JobCreatedResponse, dependencies=[Depends(verify_token)])
 def submit_job(
-    request: Request,
     submission: JobSubmission,
     force: Annotated[bool, Query(description="Skip cache and force a fresh run")] = False,
 ) -> JobCreatedResponse:
@@ -177,14 +171,13 @@ def submit_job(
         cached = store.find_completed_by_hash(req_hash)
         if cached:
             logger.info("Returning cached job %s", cached.job_id)
-            base = _request_base_url(request)
             return JobCreatedResponse(
                 id=cached.job_id,
                 status=JobStatus(cached.status),
                 composition=Composition.from_canonical(cached.composition),
                 potential=cached.potential,
                 created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
-                urls=_job_urls(cached.job_id, base),
+                urls=_job_urls(cached.job_id),
             )
 
     # When forcing, remove stale executor cache files so executorlib runs fresh
@@ -220,26 +213,24 @@ def submit_job(
 
     # Re-read to get final state
     final = store.get_job(job_id)
-    base = _request_base_url(request)
     return JobCreatedResponse(
         id=job_id,
         status=JobStatus(final.status) if final else JobStatus.PENDING,
         composition=Composition.from_canonical(norm_comp),
         potential=submission.potential,
         created_at=(final.created_at.isoformat() if final and final.created_at else _iso_now()),
-        urls=_job_urls(job_id, base),
+        urls=_job_urls(job_id),
     )
 
 
 @router.post(":search", response_model=JobSearchResponse, dependencies=[Depends(verify_token)])
-def search_jobs(request: Request, body: JobSearchRequest) -> JobSearchResponse:
+def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
     """Search for existing completed / running jobs matching a spec.
 
     Returns exact composition matches first (similarity=1.0), then
     close matches within *threshold* Euclidean distance in elemental
     atom-fraction space, sorted by ascending distance.
     """
-    base = _request_base_url(request)
     store = get_job_store()
     norm_comp = body.composition.canonical
     query_vec = oxide_to_elemental_vector(body.composition.root)
@@ -257,7 +248,7 @@ def search_jobs(request: Request, body: JobSearchRequest) -> JobSearchResponse:
             match_type="exact",
             distance=0.0,
             completed_at=j.completed_at.isoformat() if j.completed_at else None,
-            visualization_url=_job_urls(j.job_id, base)["visualization"],
+            visualization_url=_job_urls(j.job_id)["visualization"],
         )
         for j in exact_jobs
     ]
@@ -285,7 +276,7 @@ def search_jobs(request: Request, body: JobSearchRequest) -> JobSearchResponse:
                     match_type="close",
                     distance=round(dist, 4),
                     completed_at=completed_at.isoformat() if completed_at else None,
-                    visualization_url=_job_urls(job_id, base)["visualization"],
+                    visualization_url=_job_urls(job_id)["visualization"],
                 )
             )
 
@@ -293,7 +284,7 @@ def search_jobs(request: Request, body: JobSearchRequest) -> JobSearchResponse:
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)
-def get_job_status(request: Request, job_id: str) -> JobStatusResponse:
+def get_job_status(job_id: str) -> JobStatusResponse:
     """Poll job status with per-step progress."""
     store = get_job_store()
     job = store.get_job(job_id)
@@ -314,12 +305,12 @@ def get_job_status(request: Request, job_id: str) -> JobStatusResponse:
         errors=job.errors or {},
         created_at=job.created_at.isoformat() if job.created_at else _iso_now(),
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
-        urls=_job_urls(job.job_id, _request_base_url(request)),
+        urls=_job_urls(job.job_id),
     )
 
 
 @router.post("/{job_id}:cancel", dependencies=[Depends(verify_token)])
-def cancel_job(request: Request, job_id: str) -> JobStatusResponse:
+def cancel_job(job_id: str) -> JobStatusResponse:
     """Cancel a running job."""
     store = get_job_store()
     job = store.get_job(job_id)
@@ -347,12 +338,12 @@ def cancel_job(request: Request, job_id: str) -> JobStatusResponse:
         errors=job.errors or {},
         created_at=job.created_at.isoformat() if job.created_at else _iso_now(),
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
-        urls=_job_urls(job.job_id, _request_base_url(request)),
+        urls=_job_urls(job.job_id),
     )
 
 
 @router.get("/{job_id}/results", response_model=JobResultsResponse)
-def get_job_results(request: Request, job_id: str) -> JobResultsResponse:
+def get_job_results(job_id: str) -> JobResultsResponse:
     """All completed analysis results for a job."""
     store = get_job_store()
     job = store.get_job(job_id)
@@ -370,7 +361,7 @@ def get_job_results(request: Request, job_id: str) -> JobResultsResponse:
         job_id=job.job_id,
         composition=Composition.from_canonical(job.composition),
         analyses=analyses,
-        visualization_url=_job_urls(job.job_id, _request_base_url(request))["visualization"],
+        visualization_url=_job_urls(job.job_id)["visualization"],
     )
 
 
