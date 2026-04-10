@@ -343,6 +343,23 @@ class JobSubmission(BaseModel):
     )
 
 
+def _job_urls(job_id: str, request_base_url: str = "") -> dict[str, str]:
+    """Build user-facing URLs for a job.
+
+    Uses ``API_BASE_URL`` if set, otherwise falls back to the base URL
+    derived from the incoming request (so it works without configuration).
+    """
+    from amorphouspy_api.config import API_BASE_URL
+
+    base = (API_BASE_URL or request_base_url).rstrip("/")
+    return {
+        "status": f"{base}/jobs/{job_id}",
+        "results": f"{base}/jobs/{job_id}/results",
+        "visualization": f"{base}/jobs/{job_id}/visualize",
+        "structure": f"{base}/jobs/{job_id}/structure",
+    }
+
+
 class JobCreatedResponse(BaseModel):
     """Response for ``POST /jobs``."""
 
@@ -351,6 +368,14 @@ class JobCreatedResponse(BaseModel):
     composition: Composition
     potential: Potential
     created_at: str
+    urls: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Useful URLs for this job: 'status' to poll progress, "
+            "'results' for analysis data, 'visualization' for an interactive "
+            "HTML dashboard, 'structure' to download the quenched structure."
+        ),
+    )
 
 
 class JobProgress(BaseModel):
@@ -375,6 +400,14 @@ class JobStatusResponse(BaseModel):
     errors: dict[str, str] = Field(default_factory=dict)
     created_at: str
     completed_at: str | None = None
+    urls: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Useful URLs for this job: 'status' to poll progress, "
+            "'results' for analysis data, 'visualization' for an interactive "
+            "HTML dashboard, 'structure' to download the quenched structure."
+        ),
+    )
 
 
 class JobResultsResponse(BaseModel):
@@ -385,6 +418,10 @@ class JobResultsResponse(BaseModel):
     analyses: dict[str, dict] = Field(
         default_factory=dict,
         description="Results keyed by analysis type (structure_characterization, viscosity, cte, elastic, …)",
+    )
+    visualization_url: str = Field(
+        default="",
+        description="URL for an interactive HTML visualization dashboard of these results.",
     )
 
 
@@ -434,6 +471,10 @@ class JobSearchMatch(BaseModel):
         description="Euclidean distance in elemental atom-fraction space (0 for exact matches).",
     )
     completed_at: str | None = None
+    visualization_url: str = Field(
+        default="",
+        description="URL for an interactive HTML visualization dashboard of this job's results.",
+    )
 
 
 class JobSearchResponse(BaseModel):
@@ -474,6 +515,10 @@ class AvailableStructure(BaseModel):
     job_id: str
     potential: Potential
     n_atoms: int
+    visualization_url: str = Field(
+        default="",
+        description="URL for an interactive HTML visualization dashboard of this job's results.",
+    )
 
 
 class GlassLookupRequest(BaseModel):

@@ -39,7 +39,8 @@ else:
 DB_PATH = PROJECTS_FOLDER / "tasks.db"
 
 # ---------------------------------------------------------------------------
-# API base URL for visualization links (e.g. behind a reverse proxy)
+# Optional override for the public base URL in API responses.
+# When unset the URL is auto-detected from the incoming request.
 # ---------------------------------------------------------------------------
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "")

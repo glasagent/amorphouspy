@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from amorphouspy_api.auth import verify_token
 from amorphouspy_api.database import get_job_store
@@ -18,6 +18,7 @@ from amorphouspy_api.models import (
     GlassLookupRequest,
     GlassPropertiesResponse,
     GlassSummary,
+    _job_urls,
 )
 from amorphouspy_api.workflows import ANALYSES
 
@@ -43,15 +44,16 @@ def list_glasses() -> GlassListResponse:
 
 
 @router.post(":lookup", response_model=GlassPropertiesResponse)
-def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
+def lookup_glass(request: Request, body: GlassLookupRequest) -> GlassPropertiesResponse:
     """Get aggregated properties for a specific composition.
 
     Accepts a JSON body with a composition dict, e.g.::
 
         {"composition": {"SiO2": 70, "Na2O": 15, "CaO": 15}}
     """
+    base = str(request.base_url).rstrip("/")
     store = get_job_store()
-    norm = request.composition.canonical
+    norm = body.composition.canonical
     jobs = store.search_by_composition(norm)
     if not jobs:
         raise HTTPException(status_code=404, detail=f"No completed jobs for composition: {norm}")
@@ -85,6 +87,7 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
                 job_id=j.job_id,
                 potential=j.potential,
                 n_atoms=n_atoms,
+                visualization_url=_job_urls(j.job_id, base)["visualization"],
             )
         )
 
@@ -93,7 +96,7 @@ def lookup_glass(request: GlassLookupRequest) -> GlassPropertiesResponse:
     missing = [t for t in ANALYSES if t not in computed]
 
     return GlassPropertiesResponse(
-        composition=request.composition,
+        composition=body.composition,
         properties=properties,
         available_structures=available_structures,
         missing=missing,
