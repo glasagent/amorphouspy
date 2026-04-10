@@ -80,11 +80,13 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(jobs_router)
 app.include_router(glasses_router)
 
-# MCP (expose all "tool"-tagged endpoints)
+# MCP (expose all "tool"-tagged endpoints, excluding human-facing ones)
 mcp = FastMCP.from_fastapi(
     app=app,
     name="amorphouspy Simulation API",
     route_maps=[
+        RouteMap(pattern=r".*/visualize$", mcp_type=MCPType.EXCLUDE),
+        RouteMap(pattern=r".*/structure$", mcp_type=MCPType.EXCLUDE),
         RouteMap(tags={"tool"}, mcp_type=MCPType.TOOL),
         RouteMap(mcp_type=MCPType.EXCLUDE),
     ],
