@@ -629,12 +629,44 @@ def build_visualization_context(
     # Total MD steps from the T-t profile parameters
     total_md_steps = _compute_total_md_steps(mq)
 
+    # Potential type
+    potential_type = None
+    if request_data:
+        potential_type = request_data.get("potential")
+    potential_label = potential_type.upper() if potential_type else "N/A"
+
+    # Protocol description based on potential
+    _protocol_descriptions: dict[str, str] = {
+        "pmmcs": (
+            "PMMCS (Pedone-Menziani-Morse-Coulomb-Short) protocol: "
+            "NVT heating ramp, NVT high-temperature equilibration (1\u2009ns), "
+            "NVT cooling ramp, NPT pressure release at P\u2009=\u20090 (1\u2009ns), "
+            "and final NVT equilibration (0.1\u2009ns)."
+        ),
+        "bjp": (
+            "BJP (Born-Mayer-Huggins) protocol: "
+            "NPT heating ramp at P\u2009=\u20090, NPT high-temperature equilibration (0.1\u2009ns), "
+            "NPT cooling ramp, NPT pressure release (0.1\u2009ns), "
+            "and final NVT equilibration (0.1\u2009ns)."
+        ),
+        "shik": (
+            "SHIK (Buckingham + r\u207b\u00b2\u2074 repulsion) protocol: "
+            "NVT Langevin heating, NVT equilibration (~0.1\u2009ns), "
+            "NPT equilibration at 0.1\u2009GPa (~0.7\u2009ns), "
+            "NPT cooling with pressure ramp 0.1\u2009\u2192\u20090\u2009GPa, "
+            "and NPT anneal at 0\u2009GPa (~0.1\u2009ns)."
+        ),
+    }
+    protocol_description = _protocol_descriptions.get(potential_type, "") if potential_type else ""
+
     context.update(
         {
             "composition": composition_str,
             "actual_composition": actual_composition,
             "n_atoms": n_atoms,
             "total_md_steps": total_md_steps,
+            "potential": potential_label,
+            "protocol_description": protocol_description,
         }
     )
 
