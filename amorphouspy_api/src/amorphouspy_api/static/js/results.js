@@ -43,7 +43,6 @@ function init3DViewer() {
     containerDiv.innerHTML = '';
 
     viewer = $3Dmol.createViewer(containerDiv, {
-        defaultcolors: $3Dmol.rasmolElementColors,
         hoverDuration: 250  // Try to reduce hover delay (if supported)
     });
 
@@ -52,8 +51,8 @@ function init3DViewer() {
 
     // Set initial style with hover labels
     viewer.setStyle({}, {
-        sphere: { radius: 0.5 },
-        stick: { radius: 0.2 }
+        sphere: { radius: 0.5, colorscheme: 'Jmol' },
+        stick: { radius: 0.2, colorscheme: 'Jmol' }
     });
 
     // Enable hover detection for all atoms
@@ -89,7 +88,46 @@ function init3DViewer() {
     viewer.setBackgroundColor('white');
     viewer.zoomTo();
     viewer.render();
+    buildLegend();
     console.log('3D viewer initialized successfully');
+}
+
+// Build a color legend from unique elements in the loaded structure
+function buildLegend() {
+    const legendDiv = document.getElementById('structure-legend');
+    if (!legendDiv || !viewer) return;
+
+    // Extract unique elements from the XYZ data
+    const lines = structureData.trim().split('\n');
+    const numAtoms = parseInt(lines[0], 10);
+    const elements = new Set();
+    for (let i = 2; i < 2 + numAtoms && i < lines.length; i++) {
+        const parts = lines[i].trim().split(/\s+/);
+        if (parts.length > 0) elements.add(parts[0]);
+    }
+
+    if (elements.size === 0) return;
+
+    // Use Jmol colors — same scheme set in viewer styles
+    const colorMap = ($3Dmol.elementColors && $3Dmol.elementColors.Jmol) || {};
+    legendDiv.innerHTML = '';
+    const sorted = Array.from(elements).sort();
+    sorted.forEach(function (elem) {
+        const colorVal = colorMap[elem];
+        let css = '#aaaaaa';
+        if (colorVal !== undefined && colorVal !== null) {
+            if (typeof colorVal === 'number') {
+                css = '#' + ('000000' + colorVal.toString(16)).slice(-6);
+            } else if (typeof colorVal === 'string') {
+                css = colorVal;
+            }
+        }
+        const item = document.createElement('span');
+        item.className = 'legend-item';
+        item.innerHTML =
+            '<span class="legend-swatch" style="background:' + css + '"></span>' + elem;
+        legendDiv.appendChild(item);
+    });
 }
 
 // Add unit cell visualization for extended XYZ format
@@ -175,23 +213,23 @@ function updateStyle() {
     switch (style) {
         case 'sphere':
             viewer.setStyle({}, {
-                sphere: { radius: 0.5 },
-                stick: { radius: 0.2 }
+                sphere: { radius: 0.5, colorscheme: 'Jmol' },
+                stick: { radius: 0.2, colorscheme: 'Jmol' }
             });
             break;
         case 'stick':
             viewer.setStyle({}, {
-                stick: { radius: 0.3 }
+                stick: { radius: 0.3, colorscheme: 'Jmol' }
             });
             break;
         case 'line':
             viewer.setStyle({}, {
-                line: { linewidth: 2 }
+                line: { linewidth: 2, colorscheme: 'Jmol' }
             });
             break;
         case 'cross':
             viewer.setStyle({}, {
-                cross: { radius: 0.5 }
+                cross: { radius: 0.5, colorscheme: 'Jmol' }
             });
             break;
     }
