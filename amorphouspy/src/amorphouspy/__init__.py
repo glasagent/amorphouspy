@@ -37,7 +37,7 @@ from amorphouspy.workflows.elastic_mod import elastic_simulation
 from amorphouspy.workflows.md import md_simulation
 from amorphouspy.workflows.meltquench import melt_quench_simulation
 from amorphouspy.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results_plotly
-from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_simulation
+from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
 
 __all__ = [
     "analyze_structure",
@@ -78,6 +78,7 @@ __all__ = [
     "structure_from_parsed_output",
     "temperature_scan_simulation",
     "type_to_dict",
+    "viscosity_ensemble",
     "viscosity_simulation",
     "write_angle_distribution",
     "write_distribution_to_file",

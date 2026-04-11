@@ -49,7 +49,7 @@ nav:
     # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
     - Structure Analysis: notebooks/StructureAnalysis.ipynb
     - Elastic Properties: notebooks/ElasticProperties.ipynb
-    - Viscosity: notebooks/Viscosity.ipynb
+    - Viscosity: notebooks/ViscosityTutorial.ipynb
     - CTE: notebooks/CTE.ipynb
     # - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
   - Theory:
