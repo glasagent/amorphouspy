@@ -46,23 +46,29 @@ pixi run docs-serve
 
 ## Tagging Pull Requests
 
-Pull requests should be labeled for two purposes: categorizing release notes and triggering automatic version bumps.
-
-### Release notes labels
+Every pull request should have a label so it lands in the right section of the release notes.
 
 | Category | Labels |
 |---|---|
-| 💥 Breaking Changes | `major`, `breaking` |
-| 🚀 Features | `minor`, `feature`, `enhancement` |
-| 🐛 Bug Fixes | `patch`, `fix`, `bugfix`, `bug` |
+| 💥 Breaking Changes | `breaking` |
+| 🚀 Features | `feature`, `enhancement` |
+| 🐛 Bug Fixes | `bug` |
 | 📚 Documentation | `documentation`, `docs` |
-| 🔧 Maintenance | `chore`, `dependencies`, `ci`, `refactor` |
+| 🔧 Maintenance | `dependencies`, `ci`, `refactor` |
 
 Use `skip-changelog` to exclude a PR from the release notes entirely.
 
-### Version bump labels
+## Making a Release (maintainers only)
 
-The labels `patch`, `minor`, and `major` also trigger an automatic version bump when the PR is merged. Other categorization labels (e.g. `bug`, `enhancement`) do **not** trigger a bump on their own — add one of the three version labels as well if you want the bump to happen automatically.
+Releases are intentional acts — not every merged PR needs one. When you are ready to cut a release, add one of the version-bump labels to the PR before merging:
+
+| Label | Effect |
+|---|---|
+| `patch` | Bumps `0.4.1` → `0.4.2` |
+| `minor` | Bumps `0.4.1` → `0.5.0` |
+| `major` | Bumps `0.4.1` → `1.0.0` |
+
+These labels trigger the version-bump workflow, which updates `pyproject.toml`, commits the change, and pushes a new tag. Regular contributors should not add these labels.
 
 ## Making a Release
 
