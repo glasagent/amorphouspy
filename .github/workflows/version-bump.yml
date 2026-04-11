@@ -11,9 +11,18 @@ on:
           - patch
           - minor
           - major
+  pull_request:
+    types: [closed]
+    branches: [main]
 
 jobs:
   bump-version:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       (contains(github.event.pull_request.labels.*.name, 'patch') ||
+        contains(github.event.pull_request.labels.*.name, 'minor') ||
+        contains(github.event.pull_request.labels.*.name, 'major')))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -31,12 +40,30 @@ jobs:
 
     - uses: prefix-dev/setup-pixi@v0.8.8
 
+    - name: Determine bump type
+      id: bump-type
+      env:
+        IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+        DISPATCH_TYPE: ${{ github.event.inputs.bump_type }}
+        HAS_MAJOR: ${{ contains(github.event.pull_request.labels.*.name, 'major') }}
+        HAS_MINOR: ${{ contains(github.event.pull_request.labels.*.name, 'minor') }}
+      run: |
+        if [ "$IS_DISPATCH" = "true" ]; then
+          echo "type=$DISPATCH_TYPE" >> $GITHUB_OUTPUT
+        elif [ "$HAS_MAJOR" = "true" ]; then
+          echo "type=major" >> $GITHUB_OUTPUT
+        elif [ "$HAS_MINOR" = "true" ]; then
+          echo "type=minor" >> $GITHUB_OUTPUT
+        else
+          echo "type=patch" >> $GITHUB_OUTPUT
+        fi
+
     - name: Bump version
       run: |
         import re
         import sys
 
-        bump_type = "${{ github.event.inputs.bump_type }}"
+        bump_type = "${{ steps.bump-type.outputs.type }}"
         if bump_type not in ('major', 'minor', 'patch'):
             print(f"Invalid bump type: {bump_type}")
             sys.exit(1)
