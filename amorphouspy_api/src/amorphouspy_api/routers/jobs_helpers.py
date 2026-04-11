@@ -7,7 +7,7 @@ import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from amorphouspy.structure import element_counts_from_formula_units, normalize
@@ -88,7 +88,7 @@ def oxide_to_elemental_vector(oxide_comp: dict[str, float]) -> np.ndarray:
 def _filter_candidates(
     rows: list,
     exclude_ids: set[str],
-) -> list[tuple[str, list, str, str, dict | None, object]]:
+) -> list[tuple[str, list, str, str, dict | None, datetime | None]]:
     """Filter rows from list_completed_vectors, dropping excluded/empty entries."""
     return [
         (job_id, evec, comp, potential, req_data, completed_at)
@@ -104,7 +104,7 @@ def find_close_matches(
     exclude_ids: set[str],
     threshold: float,
     max_results: int,
-) -> list[tuple[float, str, str, str, dict | None, object]]:
+) -> list[tuple[float, str, str, str, dict | None, datetime | None]]:
     """Vectorised close-match search using numpy.
 
     Args:
@@ -161,7 +161,7 @@ def oxide_to_elemental_fractions(oxide_comp: dict[str, float]) -> dict[str, floa
     {'Si': 0.333..., 'O': 0.666...}
     """
     mol_frac = normalize(oxide_comp)
-    raw_counts = element_counts_from_formula_units(mol_frac)  # type: ignore[arg-type]
+    raw_counts = element_counts_from_formula_units(mol_frac)
     return normalize(raw_counts)
 
 
@@ -493,7 +493,7 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
         }
 
 
-def _extract_atomic_numbers(final_structure: object) -> list[int] | None:
+def _extract_atomic_numbers(final_structure: dict[str, Any] | str | None) -> list[int] | None:
     """Extract atomic numbers list from a final_structure value.
 
     Handles both dict (with ``numbers`` key) and JSON-string
@@ -504,7 +504,8 @@ def _extract_atomic_numbers(final_structure: object) -> list[int] | None:
 
     # Already a dict with a plain list of numbers
     if isinstance(final_structure, dict) and "numbers" in final_structure:
-        return [int(n) for n in final_structure["numbers"]]
+        nums = final_structure["numbers"]
+        return [int(n) for n in nums]
 
     # ASE JSON serialisation: string containing {"1": {"numbers": {"__ndarray__": ...}}}
     if isinstance(final_structure, str):

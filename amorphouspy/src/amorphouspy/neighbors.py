@@ -32,7 +32,7 @@ except ImportError:
 
         return decorator
 
-    prange = range  # type: ignore[assignment]
+    prange = range  # type: ignore[ty:invalid-assignment]
 
 # Precompute 3D shift grid for neighbor cells (used in NumPy path)
 SHIFT_GRID_3D = np.stack(
@@ -315,7 +315,7 @@ def _build_nl_ortho_numba(  # noqa: PLR0912, C901
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
 
-    for i in prange(n_atoms):
+    for i in prange(n_atoms):  # type: ignore[ty:not-iterable]
         type_i = types[i]
         if use_target_filter:
             is_target_type = False
@@ -418,7 +418,7 @@ def _build_nl_tri_numba(  # noqa: PLR0912, C901
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
 
-    for i in prange(n_atoms):
+    for i in prange(n_atoms):  # type: ignore[ty:not-iterable]
         type_i = types[i]
         if use_target_filter:
             is_target_type = False

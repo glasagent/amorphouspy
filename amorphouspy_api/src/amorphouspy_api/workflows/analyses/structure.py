@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from ase import Atoms
     from pydantic import BaseModel
 
     from amorphouspy_api.models import JobSubmission
@@ -27,7 +28,7 @@ def run_structural_analysis(submission: JobSubmission, config: BaseModel, result
 # ---------------------------------------------------------------------------
 
 
-def _atoms_to_xyz_string(atoms: object) -> str:
+def _atoms_to_xyz_string(atoms: Atoms | dict | str | None) -> str:
     """Convert ASE Atoms object to extended XYZ format string for 3Dmol.js."""
     if atoms is None:
         return ""

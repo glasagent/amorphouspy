@@ -24,11 +24,14 @@ from concurrent.futures import ProcessPoolExecutor
 from itertools import combinations_with_replacement
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable as _Iterable
+
 try:
     from tqdm import tqdm as _tqdm
 except ImportError:
 
-    def _tqdm(iterable: object, **_: object) -> object:  # type: ignore[no-redef]
+    def _tqdm(iterable: _Iterable, **_: object) -> _Iterable:  # type: ignore[no-redef]
         """No-op fallback when tqdm is not installed."""
         return iterable
 
@@ -41,6 +44,8 @@ from amorphouspy.neighbors import get_neighbors
 from amorphouspy.shared import type_to_dict
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from ase import Atoms
 
 _OXYGEN_ATOMIC_NUMBER: int = 8
@@ -273,7 +278,7 @@ def _process_edge(
 
 
 def _collect_rings(
-    batches: list[list[tuple[int, tuple[int, ...]]]],
+    batches: Iterable[list[tuple[int, tuple[int, ...]]]],
     found_canonical_rings: set[tuple[int, ...]],
     ring_counts: defaultdict[int, int],
 ) -> None:

@@ -3,6 +3,8 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from collections.abc import Mapping
+
 import numpy as np
 from scipy.constants import Avogadro
 
@@ -95,7 +97,7 @@ def allocate_formula_units_to_target_atoms(
     return ni, n_atoms
 
 
-def element_counts_from_formula_units(ni: dict[str, int]) -> dict[str, int]:
+def element_counts_from_formula_units(ni: Mapping[str, int | float]) -> dict[str, int | float]:
     """Calculate total element counts from oxide formula units.
 
     Args:
@@ -105,7 +107,7 @@ def element_counts_from_formula_units(ni: dict[str, int]) -> dict[str, int]:
         A dictionary mapping element symbols to their total counts in the system.
 
     """
-    counts: dict[str, int] = {}
+    counts: dict[str, int | float] = {}
     for ox, nfu in ni.items():
         sto = parse_formula(ox)
         for el, c in sto.items():

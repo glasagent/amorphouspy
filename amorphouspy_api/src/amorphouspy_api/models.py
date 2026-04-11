@@ -5,7 +5,7 @@ Defines request/response schemas for the ``/jobs`` and ``/glasses`` endpoints.
 
 from enum import StrEnum
 from io import StringIO
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, cast
 
 from ase import Atoms
 from ase.io import read, write
@@ -98,7 +98,7 @@ def validate_atoms(v: Atoms | dict | str | None) -> Atoms | None:
         try:
             result = read(StringIO(v), format="json")
             if isinstance(result, list):
-                return result[-1]
+                return cast("Atoms", result[-1])
             return result
         except Exception as e:
             msg = f"Could not parse Atoms from string: {e}"
@@ -253,7 +253,7 @@ CTEAnalysis = Annotated[
 ]
 
 
-def _analysis_tag(v: object) -> str:
+def _analysis_tag(v: dict[str, Any] | BaseModel) -> str:
     """Return a unique tag for each Analysis variant.
 
     Most types are identified by their ``type`` field alone.  CTE variants
@@ -344,7 +344,7 @@ class JobSubmission(BaseModel):
     )
     potential: Potential = Field(default=Potential.pmmcs)
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
-    analyses: list[Analysis] = Field(
+    analyses: list[Analysis] = Field(  # type: ignore[ty:invalid-assignment]
         default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
         description="Analyses to run. Each can carry its own parameters. Defaults to all available analyses.",
     )

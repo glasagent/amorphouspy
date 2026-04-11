@@ -4,6 +4,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 from pathlib import Path
+from typing import cast
 
 import ase.io
 import numpy as np
@@ -15,7 +16,7 @@ def load_lammps_dump(
     type_map: dict[int, str] | None = None,
     *,
     return_atoms_dict: bool = False,
-) -> Atoms | tuple[dict, Atoms]:
+) -> Atoms | tuple[Atoms, dict]:
     """Read a LAMMPS dump file and return an ASE Atoms object with correct chemical symbols.
 
     Args:
@@ -43,7 +44,7 @@ def load_lammps_dump(
 
     """
     ase_atoms_result = ase.io.read(str(path), format="lammps-dump-text", index=0)
-    ase_atoms: Atoms = ase_atoms_result[-1] if isinstance(ase_atoms_result, list) else ase_atoms_result
+    ase_atoms = cast("Atoms", ase_atoms_result[-1] if isinstance(ase_atoms_result, list) else ase_atoms_result)
 
     if type_map is not None:
         symbols = [type_map[int(t)] for t in ase_atoms.arrays["type"]]

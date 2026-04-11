@@ -122,11 +122,11 @@ def cte_from_npt_fluctuations(
         H_fluctuations = np.array(enthalpy) - np.mean(enthalpy)
         V_fluctuations = np.array(volume) - np.mean(volume)
 
-    V_mean = np.mean(volume) if padL is None else np.mean(volume[padL:-padR])
+    V_mean = np.mean(volume) if padL is None or padR is None else np.mean(volume[padL:-padR])
     T_target = (
         temperature
         if isinstance(temperature, (int, float))
-        else (np.mean(temperature) if padL is None else np.mean(temperature[padL:-padR]))
+        else (np.mean(temperature) if padL is None or padR is None else np.mean(temperature[padL:-padR]))
     )
 
     kB = 8.617333262145e-5  # eV/K

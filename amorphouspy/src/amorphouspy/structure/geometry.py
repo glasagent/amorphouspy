@@ -4,6 +4,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 from io import StringIO
+from typing import cast
 
 import numpy as np
 from ase.atoms import Atoms
@@ -254,7 +255,7 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
         atom_style="charge",
     )
     if isinstance(atoms_obj, list):
-        return atoms_obj[0]  # type: ignore[return-value]
+        return cast("Atoms", atoms_obj[0])
     return atoms_obj
 
 

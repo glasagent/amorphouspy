@@ -6,7 +6,7 @@ Single ``Job`` table backs both ``/jobs`` and ``/glasses`` endpoints.
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import JSON, DateTime, Index, String, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -174,8 +174,8 @@ class JobStore:
     def list_completed_vectors(
         self,
         potential: str | None = None,
-    ) -> list[tuple[str, dict, str, str | None]]:
-        """Return (job_id, elemental_vector, potential, completed_at) for fuzzy search.
+    ) -> list[tuple[str, list | None, str, str, dict | None, datetime | None]]:
+        """Return (job_id, elemental_vector, composition, potential, request_data, completed_at) for fuzzy search.
 
         Only includes completed jobs that have an elemental_vector stored.
         """
@@ -193,7 +193,8 @@ class JobStore:
             )
             if potential:
                 q = q.filter(Job.potential == potential)
-            return q.order_by(Job.created_at.desc()).all()
+            rows = q.order_by(Job.created_at.desc()).all()
+            return cast("list[tuple[str, list | None, str, str, dict | None, datetime | None]]", rows)
 
     def get_tags_for_jobs(self, job_ids: list[str]) -> dict[str, list[str]]:
         """Return {job_id: tags} for the given IDs."""
@@ -212,24 +213,25 @@ class JobStore:
 def _serialise_atoms_in_result(result: dict) -> dict:
     """Deep-copy *result* and recursively convert non-JSON-serialisable objects."""
     import copy
+    from typing import Any
 
     import numpy as np
     from ase import Atoms
 
-    def _walk(obj: object) -> object:
+    def _walk(obj: Any) -> Any:  # noqa: ANN401
         if isinstance(obj, Atoms):
             return serialize_atoms(obj)
         if isinstance(obj, np.ndarray):
-            return obj.tolist()  # type: ignore[no-any-return]
+            return obj.tolist()
         if isinstance(obj, (np.integer, np.floating)):
             return obj.item()
         if isinstance(obj, dict):
             return {k: _walk(v) for k, v in obj.items()}
         if isinstance(obj, list):
             return [_walk(v) for v in obj]
-        return _walk(obj.to_dict()) if hasattr(obj, "to_dict") else obj  # type: ignore[union-attr]
+        return _walk(obj.to_dict()) if hasattr(obj, "to_dict") else obj
 
-    return _walk(copy.deepcopy(result))  # type: ignore[return-value]
+    return _walk(copy.deepcopy(result))
 
 
 # ---------------------------------------------------------------------------

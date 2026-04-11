@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 
 def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
     """Multi-temperature viscosity analysis on the quenched glass."""
+    from typing import cast
+
     from amorphouspy_api.executor import get_lammps_server_kwargs
 
-    cfg: ViscosityAnalysis = config  # type: ignore[assignment]
+    cfg = cast("ViscosityAnalysis", config)
 
     return run_viscosity_workflow(
         structure=result["melt_quench"]["final_structure"],
@@ -119,7 +121,7 @@ def run_viscosity_workflow(
             potential=potential,
             temperature_sim=float(temp),
             timestep=float(timestep),
-            production_steps=int(n_timesteps),  # type: ignore[call-arg]
+            initial_production_steps=int(n_timesteps),
             n_print=int(n_print),
             langevin=False,
             seed=12345,
@@ -133,8 +135,10 @@ def run_viscosity_workflow(
         viscosities.append(float(visc_data["viscosity"]))
         all_max_lags.append(float(visc_data["max_lag"]))
         sim_steps.append(int(n_timesteps))
-        lag_times_ps.append(_downsample_log(visc_data.get("lag_time_ps", [])))
-        viscosity_integral.append(_downsample_log(visc_data.get("viscosity_integral", [])))
+        raw_lag: list[float] = list(visc_data.get("lag_time_ps") or [])  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
+        raw_visc: list[float] = list(visc_data.get("viscosity_integral") or [])  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
+        lag_times_ps.append(_downsample_log(raw_lag))
+        viscosity_integral.append(_downsample_log(raw_visc))
 
     return {
         "temperatures": sorted_temps,

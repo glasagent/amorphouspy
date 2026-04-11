@@ -18,6 +18,7 @@ from amorphouspy_api.models import (
     GlassLookupRequest,
     GlassPropertiesResponse,
     GlassSummary,
+    Potential,
     _job_urls,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -84,7 +85,7 @@ def lookup_glass(body: GlassLookupRequest) -> GlassPropertiesResponse:
         available_structures.append(
             AvailableStructure(
                 job_id=j.job_id,
-                potential=j.potential,
+                potential=Potential(j.potential),
                 n_atoms=n_atoms,
                 visualization_url=_job_urls(j.job_id)["visualization"],
             )

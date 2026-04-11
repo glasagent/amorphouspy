@@ -131,7 +131,7 @@ def submit_pipeline(
         merge_resource["job_name"] = "merge_results"
     if cache_key is not None:
         merge_resource["cache_key"] = cache_key
-    merge_kwargs: dict[str, dict | Future] = {"base_result": base_future}
+    merge_kwargs: dict[str, dict | Future | None] = {"base_result": base_future}
     merge_kwargs.update(analysis_futures)
 
     return executor.submit(_merge_results, resource_dict=merge_resource, **merge_kwargs)
