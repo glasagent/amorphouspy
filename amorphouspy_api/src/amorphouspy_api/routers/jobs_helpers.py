@@ -358,7 +358,7 @@ def _parse_submission(job: Job) -> JobSubmission | None:
     try:
         return JobSubmission(**job.request_data)
     except Exception:
-        logger.warning("Could not parse request_data for job %s", job.job_id)
+        logger.exception("Could not parse request_data for job %s", job.job_id)
         return None
 
 

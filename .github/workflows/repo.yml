@@ -44,3 +44,13 @@ jobs:
           locked: true
       - name: Check dependency licenses
         run: pixi run license-check
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          locked: true
+      - name: Type check with ty
+        run: pixi run typecheck

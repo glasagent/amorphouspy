@@ -43,6 +43,7 @@ pytest = "*"
 pytest-cov = "*"
 nbval = "*"
 pip-licenses = "*"
+ty = ">=0.0.29,<0.0.30"
 
 [feature.api.dependencies]
 executorlib = "*"
@@ -76,6 +77,7 @@ test-notebooks = { cmd = "pytest --durations=0 --nbval-lax ../notebooks/*ipynb -
 serve = "uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 8000 --log-level info --backlog 1 --timeout-keep-alive 60"
 lint = "ruff check --output-format=github"
 format-check = "ruff format --check --diff"
+typecheck = "ty check amorphouspy_api/src/amorphouspy_api/ amorphouspy/src/amorphouspy/"
 generate-openapi = "python docs/export_openapi.py"
 docs-build = { depends-on = ["generate-openapi"], cmd = "mkdocs build --strict" }
 docs-serve = "mkdocs serve"
