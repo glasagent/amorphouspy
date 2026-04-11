@@ -794,7 +794,8 @@ def viscosity_simulation(
         ...     potential=my_potential_df,
         ...     temperature_sim=3000.0,
         ... )
-        >>> print(result["viscosity_data"]['viscosity'])
+        >>> converged = result["converged"]
+        >>> print(converged)
 
     """
     max_steps = int(max_total_time_ns * 1e6 / timestep)
