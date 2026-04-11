@@ -10,14 +10,12 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
-    from amorphouspy_api.models import JobSubmission
+    from amorphouspy_api.models import CTEFluctuations, CTETemperatureScan, JobSubmission
 
 logger = logging.getLogger(__name__)
 
 
-def run_cte(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+def run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperatureScan, result: dict) -> dict:
     """CTE analysis via fluctuations or temperature scan."""
     from amorphouspy_api.executor import get_lammps_server_kwargs
     from amorphouspy_api.models import CTEFluctuations, CTETemperatureScan

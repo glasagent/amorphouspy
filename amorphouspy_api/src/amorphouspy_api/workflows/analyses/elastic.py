@@ -10,40 +10,34 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
     from amorphouspy_api.models import ElasticAnalysis, JobSubmission
 
 logger = logging.getLogger(__name__)
 
 
-def run_elastic(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+def run_elastic(submission: JobSubmission, config: ElasticAnalysis, result: dict) -> dict:
     """Elastic moduli analysis on the quenched glass."""
-    from typing import cast
-
     from amorphouspy import elastic_simulation
     from amorphouspy_api.executor import get_lammps_server_kwargs
 
-    cfg = cast("ElasticAnalysis", config)
-
     logger.info(
         "Running elastic simulation at %.1f K (strain=%.1e, eq=%d, prod=%d)",
-        cfg.temperature,
-        cfg.strain,
-        cfg.equilibration_steps,
-        cfg.production_steps,
+        config.temperature,
+        config.strain,
+        config.equilibration_steps,
+        config.production_steps,
     )
 
     raw = elastic_simulation(
         structure=result["melt_quench"]["final_structure"],
         potential=result["structure_generation"]["potential"],
-        temperature_sim=cfg.temperature,
-        pressure=cfg.pressure,
-        timestep=cfg.timestep,
-        equilibration_steps=cfg.equilibration_steps,
-        production_steps=cfg.production_steps,
-        n_print=cfg.n_print,
-        strain=cfg.strain,
+        temperature_sim=config.temperature,
+        pressure=config.pressure,
+        timestep=config.timestep,
+        equilibration_steps=config.equilibration_steps,
+        production_steps=config.production_steps,
+        n_print=config.n_print,
+        strain=config.strain,
         server_kwargs=get_lammps_server_kwargs(),
     )
 

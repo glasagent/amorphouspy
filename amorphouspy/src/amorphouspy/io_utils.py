@@ -44,7 +44,7 @@ def load_lammps_dump(
 
     """
     ase_atoms_result = ase.io.read(str(path), format="lammps-dump-text", index=0)
-    ase_atoms = cast("Atoms", ase_atoms_result[-1] if isinstance(ase_atoms_result, list) else ase_atoms_result)
+    ase_atoms = cast("Atoms", ase_atoms_result[0] if isinstance(ase_atoms_result, list) else ase_atoms_result)
 
     if type_map is not None:
         symbols = [type_map[int(t)] for t in ase_atoms.arrays["type"]]

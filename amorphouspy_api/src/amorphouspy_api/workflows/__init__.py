@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from .analyses import run_cte, run_elastic, run_structural_analysis, run_viscosity
 from .meltquench import generate_structure, run_melt_quench
 
-AnalysisFn = Callable[["JobSubmission", "BaseModel", dict], dict]
+AnalysisFn = Callable[..., dict]
 
 STEPS: dict[str, AnalysisFn] = {
     "structure_generation": generate_structure,
@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from concurrent.futures import Future
 
     from executorlib.executor.base import BaseExecutor
-    from pydantic import BaseModel
 
     from amorphouspy_api.models import JobSubmission
 

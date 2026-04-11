@@ -8,14 +8,13 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ase import Atoms
-    from pydantic import BaseModel
 
-    from amorphouspy_api.models import JobSubmission
+    from amorphouspy_api.models import JobSubmission, StructureAnalysis
 
 logger = logging.getLogger(__name__)
 
 
-def run_structural_analysis(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+def run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
     from amorphouspy.workflows.structural_analysis import analyze_structure
 

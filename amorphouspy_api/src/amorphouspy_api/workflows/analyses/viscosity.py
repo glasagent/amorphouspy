@@ -17,31 +17,25 @@ from amorphouspy.workflows.viscosity import get_viscosity, viscosity_simulation
 from amorphouspy import melt_quench_simulation
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
     from amorphouspy_api.models import JobSubmission, ViscosityAnalysis
 
 logger = logging.getLogger(__name__)
 
 
-def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+def run_viscosity(submission: JobSubmission, config: ViscosityAnalysis, result: dict) -> dict:
     """Multi-temperature viscosity analysis on the quenched glass."""
-    from typing import cast
-
     from amorphouspy_api.executor import get_lammps_server_kwargs
-
-    cfg = cast("ViscosityAnalysis", config)
 
     return run_viscosity_workflow(
         structure=result["melt_quench"]["final_structure"],
         potential=result["structure_generation"]["potential"],
-        temperatures=cfg.temperatures,
+        temperatures=config.temperatures,
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),
-        timestep=cfg.timestep,
-        n_timesteps=cfg.n_timesteps,
-        n_print=cfg.n_print,
-        max_lag=cfg.max_lag,
+        timestep=config.timestep,
+        n_timesteps=config.n_timesteps,
+        n_print=config.n_print,
+        max_lag=config.max_lag,
         lammps_resource_dict=get_lammps_server_kwargs(),
     )
 
