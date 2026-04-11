@@ -24,13 +24,14 @@ from amorphouspy.workflows.shared import LammpsPotential, get_lammps_command, ru
 def _run_lammps_md(  # pragma: no cover
     structure: Atoms,
     potential: LammpsPotential,
-    temperature: float | list[float],
+    temperature: float,
     n_ionic_steps: int,
     timestep: float,
     n_print: int,
     initial_temperature: float,
     temperature_end: float | None = None,
-    pressure: float | list[float] | None = None,
+    pressure: float | None = None,
+    pressure_end: float | None = None,
     server_kwargs: dict | None = None,
     *,
     langevin: bool = False,
@@ -42,7 +43,7 @@ def _run_lammps_md(  # pragma: no cover
     Args:
         structure: The atomic structure to simulate.
         potential: The potential file to be used for the simulation.
-        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
+        temperature: Start temperature for the MD run.
         n_ionic_steps: Number of MD steps to run.
         timestep: Time step for integration in femtoseconds.
         n_print: Frequency of output writing in simulation steps.
@@ -50,8 +51,9 @@ def _run_lammps_md(  # pragma: no cover
             temperature will be twice the target temperature (which would go immediately down to the target temperature
             as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
             initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-        temperature_end: Final temperature for ramping. If None, no temperature ramp is applied.
-        pressure: Target pressure for NPT simulations. If None, NVT is used.
+        temperature_end: End temperature for a linear ramp. If None, temperature is held constant.
+        pressure: Start pressure in GPa for NPT simulations. If None, NVT is used.
+        pressure_end: End pressure in GPa for a linear pressure ramp. Requires ``pressure`` to be set.
         server_kwargs: Additional keyword arguments for the server.
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
@@ -61,79 +63,57 @@ def _run_lammps_md(  # pragma: no cover
         A tuple containing the final structure and the simulation output dictionary.
 
     """
+    if pressure_end is not None and pressure is None:
+        msg = "pressure must be set when pressure_end is specified."
+        raise ValueError(msg)
+
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
 
-        # defines the temperature protocol
-        temp_setting = [temperature, temperature_end] if temperature_end is not None else temperature
+        temp_setting: float | list[float] = (
+            [temperature, temperature_end] if temperature_end is not None else temperature
+        )
+        t_start = temperature
+        t_end = temperature_end if temperature_end is not None else temperature
 
-        # If pressure is a list [P_start, P_end], create a custom fix command
-        # This bypasses the parser's inability to handle pressure ramps
-        if isinstance(pressure, list) and len(pressure) == 2:  # noqa: PLR2004
-            p_start, p_end = pressure[0] * 10000, pressure[1] * 10000
-            # Convert to metal units (bar) if necessary, or use as is for GPa
-            t_start = temperature if not isinstance(temperature, list) else temperature[0]
-            t_end = temperature_end if temperature_end is not None else t_start
+        input_control: dict[str, Any] = {
+            "dump_modify": f"1 every {n_ionic_steps} first yes",
+            "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
+            "thermo_modify": "flush yes",
+        }
 
-            custom_fix = f"ensemble all npt temp {t_start} {t_end} 0.1 iso {p_start} {p_end} 1.0"
-            # Set scalar pressure for the parser to avoid crashes
-            passed_pressure = p_start
-            # Sets up the LAMMPS simulations
-            parsed_output = run_lammps_with_error_capture(
-                working_directory=tmp_path,
-                structure=structure,
-                potential=cast("Any", potential),
-                calc_mode="md",
-                calc_kwargs={
-                    "temperature": temp_setting,
-                    "n_ionic_steps": n_ionic_steps,
-                    "time_step": timestep,
-                    "n_print": n_print,
-                    "initial_temperature": initial_temperature,
-                    "seed": seed,
-                    "pressure": passed_pressure,
-                    "langevin": langevin,
-                },
-                units="metal",
-                write_restart_file=False,
-                read_restart_file=False,
-                restart_file="restart.out",
-                input_control_file={
-                    "thermo_modify": "flush yes",
-                    "fix": custom_fix,
-                },
-                lmp_command=get_lammps_command(server_kwargs=server_kwargs),
-            )
+        if pressure_end is not None:
+            p_start_bar = pressure * 10_000  # GPa → bar
+            p_end_bar = pressure_end * 10_000
+            input_control["fix"] = f"ensemble all npt temp {t_start} {t_end} 0.1 iso {p_start_bar} {p_end_bar} 1.0"
+            passed_pressure: float | None = pressure
         else:
             passed_pressure = pressure
-            # Sets up the LAMMPS simulations
-            parsed_output = run_lammps_with_error_capture(
-                working_directory=tmp_path,
-                structure=structure,
-                potential=cast("Any", potential),
-                calc_mode="md",
-                calc_kwargs={
-                    "temperature": temp_setting,
-                    "n_ionic_steps": n_ionic_steps,
-                    "time_step": timestep,
-                    "n_print": n_print,
-                    "initial_temperature": initial_temperature,
-                    "seed": seed,
-                    "pressure": passed_pressure,
-                    "langevin": langevin,
-                },
-                units="metal",
-                write_restart_file=False,
-                read_restart_file=False,
-                restart_file="restart.out",
-                input_control_file={
-                    "thermo_modify": "flush yes",
-                },
-                lmp_command=get_lammps_command(server_kwargs=server_kwargs),
-            )
 
-        # Retrives the final structure from the parsed output
+        parsed_output = run_lammps_with_error_capture(
+            working_directory=tmp_path,
+            structure=structure,
+            potential=cast("Any", potential),
+            calc_mode="md",
+            calc_kwargs={
+                "temperature": temp_setting,
+                "n_ionic_steps": n_ionic_steps,
+                "time_step": timestep,
+                "n_print": n_print,
+                "initial_temperature": initial_temperature,
+                "seed": seed,
+                "pressure": passed_pressure,
+                "langevin": langevin,
+            },
+            units="metal",
+            write_restart_file=False,
+            read_restart_file=False,
+            restart_file="restart.out",
+            input_control_file=input_control,
+            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
+        )
+
         new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
 
     return new_structure, parsed_output
@@ -227,11 +207,9 @@ def melt_quench_simulation(
 
     # Run the protocol using the function-based approach
     protocol_func = PROTOCOL_MAP[potential_name]
-    structure_final, parsed_output = protocol_func(_run_lammps_md, params)
-
-    result = parsed_output.get("generic", None)
+    structure_final, history = protocol_func(_run_lammps_md, params)
 
     return {
         "structure": structure_final,
-        "result": result,
+        "result": history,
     }

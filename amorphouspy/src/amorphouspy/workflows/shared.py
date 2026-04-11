@@ -67,12 +67,14 @@ def run_lammps_with_error_capture(working_directory: str, **kwargs: Any) -> dict
 def _run_lammps_md(
     structure: Atoms,
     potential: LammpsPotential,
-    temperature: float | list[float],
+    temperature: float,
     n_ionic_steps: int,
     timestep: float,
     n_print: int,
     initial_temperature: float,
+    temperature_end: float | None = None,
     pressure: float | None = None,
+    pressure_end: float | None = None,
     server_kwargs: dict[str, Any] | None = None,
     *,
     langevin: bool = False,
@@ -84,7 +86,7 @@ def _run_lammps_md(
     Args:
         structure: The atomic structure to simulate.
         potential: The potential file to be used for the simulation.
-        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
+        temperature: Start temperature (or constant temperature when ``temperature_end`` is None).
         n_ionic_steps: Number of MD steps to run.
         timestep: Time step for integration in femtoseconds.
         n_print: Frequency of output writing in simulation steps.
@@ -92,7 +94,11 @@ def _run_lammps_md(
             temperature will be twice the target temperature (which would go immediately down to the target temperature
             as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
             initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-        pressure: Target pressure for NPT simulations. If None, NVT is used.
+        temperature_end: End temperature for a linear temperature ramp. If None, temperature is held constant.
+        pressure: Start pressure in GPa for NPT simulations. If None, NVT is used.
+        pressure_end: End pressure in GPa for a linear pressure ramp. Requires ``pressure`` to be set.
+            The pressure ramp is injected as a custom LAMMPS ``fix npt`` command because the parser does not
+            support pressure ramps natively.
         server_kwargs: Additional keyword arguments for the server.
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
@@ -107,12 +113,35 @@ def _run_lammps_md(
             - parsed_output: The parsed output dictionary.
 
     """
+    if pressure_end is not None and pressure is None:
+        msg = "pressure must be set when pressure_end is specified."
+        raise ValueError(msg)
+
     # Creates a temporary directory for the simulation in the specified working directory.
     with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
 
-        # defines the temperature protocol
-        temp_setting = temperature
+        temp_setting: float | list[float] = (
+            [temperature, temperature_end] if temperature_end is not None else temperature
+        )
+        t_start = temperature
+        t_end = temperature_end if temperature_end is not None else temperature
+
+        input_control: dict[str, Any] = {
+            "dump_modify": f"1 every {n_ionic_steps} first yes",
+            "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
+            "thermo_modify": "flush yes",
+        }
+
+        # Pressure ramp: the parser cannot express [P_start → P_end] natively, so inject a
+        # custom fix npt command that overrides whatever the parser would generate.
+        if pressure_end is not None:
+            p_start_bar = pressure * 10_000  # GPa → bar (LAMMPS metal units)
+            p_end_bar = pressure_end * 10_000
+            input_control["fix"] = f"ensemble all npt temp {t_start} {t_end} 0.1 iso {p_start_bar} {p_end_bar} 1.0"
+            passed_pressure: float | None = pressure  # scalar to put parser in NPT mode
+        else:
+            passed_pressure = pressure
 
         # Sets up the LAMMPS simulations
         parsed_output = run_lammps_with_error_capture(
@@ -127,18 +156,14 @@ def _run_lammps_md(
                 "n_print": n_print,
                 "initial_temperature": initial_temperature,
                 "seed": seed,
-                "pressure": pressure,
+                "pressure": passed_pressure,
                 "langevin": langevin,
             },
             units="metal",
             write_restart_file=False,
             read_restart_file=False,
             restart_file="restart.out",
-            input_control_file={
-                "dump_modify": f"1 every {n_ionic_steps} first yes",
-                "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
-                "thermo_modify": "flush yes",
-            },
+            input_control_file=input_control,
             lmp_command=get_lammps_command(server_kwargs=server_kwargs),
         )
 
