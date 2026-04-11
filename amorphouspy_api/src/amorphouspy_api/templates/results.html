@@ -131,12 +131,15 @@
                     </div>
                     <div class="control-group">
                         <button onclick="resetView()">Reset View</button>
+                        <button id="show-all-btn" onclick="showAllAtoms()" style="display: none;">Show All</button>
                     </div>
+                    <div id="structure-legend"></div>
                 </div>
                 <div id="structure-div"></div>
                 <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                    Interactive 3D structure. Use mouse to rotate, zoom, and pan.
-                    Hover over atoms for element info.
+                    Glass structure after melt-quench procedure. 
+                    Rotate and zoom with mouse.
+                    Hover over atoms for element info. Click on an atom to cut out its 5 Å neighbourhood.
                 </p>
             </div>
             {% endif %}
