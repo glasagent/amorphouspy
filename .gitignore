@@ -14,3 +14,4 @@ site/
 docs/openapi.json
 coverage.xml
 *.egg-info
+notebooks/tutorial_ensemble_cache/viscosity_ensemble_seeds.json
