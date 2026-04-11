@@ -1,5 +1,7 @@
 name: Version Bump
 
+# Requires: Settings → Branches → main → "Allow specified actors to bypass required pull requests" → add github-actions[bot]
+
 on:
   workflow_dispatch:
     inputs:
@@ -39,6 +41,8 @@ jobs:
         python-version: '3.13'
 
     - uses: prefix-dev/setup-pixi@v0.8.8
+      with:
+        locked: false  # this workflow regenerates the lock; other workflows keep locked: true
 
     - name: Determine bump type
       id: bump-type
@@ -61,6 +65,7 @@ jobs:
     - name: Bump version
       run: |
         import re
+        import subprocess
         import sys
 
         bump_type = "${{ steps.bump-type.outputs.type }}"
@@ -70,7 +75,6 @@ jobs:
 
         print(f"Bump type: {bump_type}")
 
-        # Read current version from pyproject.toml
         with open('pyproject.toml', 'r') as f:
             content = f.read()
 
@@ -82,6 +86,11 @@ jobs:
         major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
         print(f"Current version: {major}.{minor}.{patch}")
 
+        # Fetch all remote tags once
+        result = subprocess.run(["git", "ls-remote", "--tags", "origin"], capture_output=True, text=True)
+        existing_tags = set(re.findall(r"refs/tags/(v[\d.]+)$", result.stdout, re.MULTILINE))
+        print(f"Existing tags: {sorted(existing_tags)}")
+
         if bump_type == 'major':
             major += 1
             minor = 0
@@ -92,10 +101,19 @@ jobs:
         elif bump_type == 'patch':
             patch += 1
 
+        # Skip ahead if the computed tag already exists
+        while f"v{major}.{minor}.{patch}" in existing_tags:
+            print(f"Tag v{major}.{minor}.{patch} already exists, skipping ahead")
+            if bump_type == 'major':
+                major += 1
+            elif bump_type == 'minor':
+                minor += 1
+            elif bump_type == 'patch':
+                patch += 1
+
         new_version = f"{major}.{minor}.{patch}"
         print(f"New version: {new_version}")
 
-        # Update pyproject.toml
         new_content = re.sub(
             r'version = "\d+\.\d+\.\d+"',
             f'version = "{new_version}"',
@@ -107,7 +125,6 @@ jobs:
 
         print("Updated pyproject.toml")
 
-        # Save new version for next step
         with open('new_version.txt', 'w') as f:
             f.write(new_version)
 
@@ -118,16 +135,15 @@ jobs:
 
     - name: Create commit, tag, and push
       run: |
+        set -e
         NEW_VERSION=$(cat new_version.txt)
 
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 
         git add pyproject.toml pixi.lock
-
         git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
 
         git tag "v$NEW_VERSION"
-
         git push origin main
         git push origin "v$NEW_VERSION"
