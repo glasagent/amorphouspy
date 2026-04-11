@@ -306,7 +306,7 @@ class ViscosityResultData(BaseModel):
 class MeltQuenchParams(BaseModel):
     """Parameters for the melt-quench MD simulation."""
 
-    melt_temperature: float = Field(
+    melt_temperature: float | None = Field(
         default=None,
         description="Melt temperature in K. If None, protocol-specific melt temperature is used. ",
     )
