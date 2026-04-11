@@ -4,23 +4,23 @@ change-title-escapes: '\<*_&'
 
 categories:
   - title: '💥 Breaking Changes'
-    labels: ['breaking', 'major']
+    labels: ['breaking']
   - title: '🚀 Features'
-    labels: ['feature', 'enhancement', 'minor']
+    labels: ['feature', 'enhancement']
   - title: '🐛 Bug Fixes'
-    labels: ['fix', 'bugfix', 'bug', 'patch']
+    labels: ['bug']
   - title: '📚 Documentation'
     labels: ['documentation', 'docs']
   - title: '🔧 Maintenance'
-    labels: ['chore', 'dependencies', 'ci', 'refactor']
+    labels: ['dependencies', 'ci', 'refactor']
 
 version-resolver:
   major:
-    labels: ['major', 'breaking']
+    labels: ['breaking', 'major']
   minor:
-    labels: ['minor', 'feature', 'enhancement']
+    labels: ['feature', 'enhancement', 'minor']
   patch:
-    labels: ['patch', 'fix', 'bugfix', 'bug']
+    labels: ['bug', 'patch']
   default: patch
 
 exclude-labels:
