@@ -7,14 +7,14 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
+    from ase import Atoms
 
-    from amorphouspy_api.models import JobSubmission
+    from amorphouspy_api.models import JobSubmission, StructureAnalysis
 
 logger = logging.getLogger(__name__)
 
 
-def run_structural_analysis(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+def run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
     from amorphouspy.workflows.structural_analysis import analyze_structure
 
@@ -27,7 +27,7 @@ def run_structural_analysis(submission: JobSubmission, config: BaseModel, result
 # ---------------------------------------------------------------------------
 
 
-def _atoms_to_xyz_string(atoms: object) -> str:
+def _atoms_to_xyz_string(atoms: Atoms | dict | str | None) -> str:
     """Convert ASE Atoms object to extended XYZ format string for 3Dmol.js."""
     if atoms is None:
         return ""
@@ -39,6 +39,8 @@ def _atoms_to_xyz_string(atoms: object) -> str:
         from amorphouspy_api.models import validate_atoms
 
         atoms_obj = validate_atoms(atoms)
+        if atoms_obj is None:
+            return ""
         xyz_buffer = StringIO()
         write(xyz_buffer, atoms_obj, format="extxyz")
         return xyz_buffer.getvalue()

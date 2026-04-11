@@ -17,29 +17,25 @@ from amorphouspy.workflows.viscosity import get_viscosity, viscosity_simulation
 from amorphouspy import melt_quench_simulation
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
     from amorphouspy_api.models import JobSubmission, ViscosityAnalysis
 
 logger = logging.getLogger(__name__)
 
 
-def run_viscosity(submission: JobSubmission, config: BaseModel, result: dict) -> dict:
+def run_viscosity(submission: JobSubmission, config: ViscosityAnalysis, result: dict) -> dict:
     """Multi-temperature viscosity analysis on the quenched glass."""
     from amorphouspy_api.executor import get_lammps_server_kwargs
-
-    cfg: ViscosityAnalysis = config  # type: ignore[assignment]
 
     return run_viscosity_workflow(
         structure=result["melt_quench"]["final_structure"],
         potential=result["structure_generation"]["potential"],
-        temperatures=cfg.temperatures,
+        temperatures=config.temperatures,
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),
-        timestep=cfg.timestep,
-        n_timesteps=cfg.n_timesteps,
-        n_print=cfg.n_print,
-        max_lag=cfg.max_lag,
+        timestep=config.timestep,
+        n_timesteps=config.n_timesteps,
+        n_print=config.n_print,
+        max_lag=config.max_lag,
         lammps_resource_dict=get_lammps_server_kwargs(),
     )
 
@@ -119,7 +115,7 @@ def run_viscosity_workflow(
             potential=potential,
             temperature_sim=float(temp),
             timestep=float(timestep),
-            production_steps=int(n_timesteps),
+            initial_production_steps=int(n_timesteps),
             n_print=int(n_print),
             langevin=False,
             seed=12345,
@@ -133,8 +129,10 @@ def run_viscosity_workflow(
         viscosities.append(float(visc_data["viscosity"]))
         all_max_lags.append(float(visc_data["max_lag"]))
         sim_steps.append(int(n_timesteps))
-        lag_times_ps.append(_downsample_log(visc_data.get("lag_time_ps", [])))
-        viscosity_integral.append(_downsample_log(visc_data.get("viscosity_integral", [])))
+        raw_lag: list[float] = list(visc_data.get("lag_time_ps") or [])  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
+        raw_visc: list[float] = list(visc_data.get("viscosity_integral") or [])  # type: ignore[ty:invalid-argument-type, ty:invalid-assignment]
+        lag_times_ps.append(_downsample_log(raw_lag))
+        viscosity_integral.append(_downsample_log(raw_visc))
 
     return {
         "temperatures": sorted_temps,

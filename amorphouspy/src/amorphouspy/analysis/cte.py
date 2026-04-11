@@ -114,17 +114,19 @@ def cte_from_npt_fluctuations(
     padL, padR = _input_checks(enthalpy, volume, temperature, N_points, use_running_mean=use_running_mean)
 
     if use_running_mean:
+        assert padR is not None
+        assert padL is not None
         H_fluctuations = np.array(np.array(enthalpy) - running_mean(enthalpy, N_points))[padL:-padR]
         V_fluctuations = np.array(np.array(volume) - running_mean(volume, N_points))[padL:-padR]
     else:
         H_fluctuations = np.array(enthalpy) - np.mean(enthalpy)
         V_fluctuations = np.array(volume) - np.mean(volume)
 
-    V_mean = np.mean(volume) if padL is None else np.mean(volume[padL:-padR])
+    V_mean = np.mean(volume) if padL is None or padR is None else np.mean(volume[padL:-padR])
     T_target = (
         temperature
         if isinstance(temperature, (int, float))
-        else (np.mean(temperature) if padL is None else np.mean(temperature[padL:-padR]))
+        else (np.mean(temperature) if padL is None or padR is None else np.mean(temperature[padL:-padR]))
     )
 
     kB = 8.617333262145e-5  # eV/K
@@ -136,7 +138,7 @@ def cte_from_volume_temperature_data(
     temperature: list | np.ndarray,
     volume: list | np.ndarray,
     reference_volume: float | None = None,
-) -> float:
+) -> tuple[float, float]:
     """Compute the CTE from slope of a linear fit to volume-temperature data.
 
     This can be done from by performing various constant pressure, constant temperature NPT simulation
