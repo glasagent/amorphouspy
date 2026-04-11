@@ -113,6 +113,10 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     if not all([cooling_rate, heating_rate, t_high]):
         return None
 
+    assert cooling_rate is not None
+    assert heating_rate is not None
+    assert t_high is not None
+
     fs_to_ps = 1e-3
     seconds_to_fs = 1e15
     dt_ps = timestep_fs * fs_to_ps

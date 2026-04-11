@@ -273,7 +273,7 @@ def _process_edge(
 
 
 def _collect_rings(
-    batches: object,
+    batches: list[list[tuple[int, tuple[int, ...]]]],
     found_canonical_rings: set[tuple[int, ...]],
     ring_counts: defaultdict[int, int],
 ) -> None:

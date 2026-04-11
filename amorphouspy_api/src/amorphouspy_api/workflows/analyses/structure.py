@@ -39,6 +39,8 @@ def _atoms_to_xyz_string(atoms: object) -> str:
         from amorphouspy_api.models import validate_atoms
 
         atoms_obj = validate_atoms(atoms)
+        if atoms_obj is None:
+            return ""
         xyz_buffer = StringIO()
         write(xyz_buffer, atoms_obj, format="extxyz")
         return xyz_buffer.getvalue()

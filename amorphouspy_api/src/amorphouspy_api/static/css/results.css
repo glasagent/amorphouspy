@@ -89,6 +89,31 @@ body {
     overflow: hidden;
 }
 
+#structure-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+    padding: 6px 4px;
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.85em;
+    color: #333;
+}
+
+.legend-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1px solid #999;
+    flex-shrink: 0;
+}
+
 .property {
     display: flex;
     align-items: baseline;

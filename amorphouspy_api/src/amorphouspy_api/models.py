@@ -96,7 +96,10 @@ def validate_atoms(v: Atoms | dict | str | None) -> Atoms | None:
             raise ValueError(msg) from e
     if isinstance(v, str):
         try:
-            return read(StringIO(v), format="json")
+            result = read(StringIO(v), format="json")
+            if isinstance(result, list):
+                return result[-1]
+            return result
         except Exception as e:
             msg = f"Could not parse Atoms from string: {e}"
             raise ValueError(msg) from e
@@ -257,7 +260,7 @@ def _analysis_tag(v: object) -> str:
     share ``type="cte"`` and are further distinguished by ``method``.
     """
     if isinstance(v, dict):
-        t = v.get("type", "")
+        t = str(v.get("type", ""))
         if t == "cte":
             return f"cte_{v.get('method', 'fluctuations')}"
         return t

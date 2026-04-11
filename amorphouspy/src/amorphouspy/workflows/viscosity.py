@@ -914,6 +914,7 @@ def viscosity_simulation(
         )
 
         ext_result = ext_parsed.get("generic", None)
+        assert ext_result is not None
         acc["pressures"] = np.concatenate([acc["pressures"], ext_result["pressures"]])
         acc["volume"] = np.concatenate([acc["volume"], ext_result["volume"]])
         acc["temperature"] = np.concatenate([acc["temperature"], ext_result["temperature"]])

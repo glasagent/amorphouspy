@@ -304,7 +304,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
                 JobSearchMatch(
                     job_id=job_id,
                     composition=Composition.from_canonical(comp),
-                    potential=potential,
+                    potential=Potential(potential),
                     tags=tags_map.get(job_id, []),
                     analyses=analyses,
                     similarity=round(sim, 4),
@@ -335,6 +335,8 @@ def get_job_status(job_id: str) -> JobStatusResponse:
     if job.status == "running":
         refresh_job_from_cache(job)
         job = store.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
     return JobStatusResponse(
         id=job.job_id,
@@ -369,6 +371,8 @@ def cancel_job(job_id: str) -> JobStatusResponse:
 
     store.update_job(job_id, status="cancelled", progress=progress)
     job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
     return JobStatusResponse(
         id=job.job_id,
@@ -488,6 +492,8 @@ def visualize_job(job_id: str) -> HTMLResponse:
     if job.status == "running":
         refresh_job_from_cache(job)
         job = store.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status == "pending":
         raise HTTPException(

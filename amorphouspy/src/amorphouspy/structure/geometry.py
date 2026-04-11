@@ -254,7 +254,7 @@ def get_ase_structure(atoms_dict: dict, replicate: tuple[int, int, int] = (1, 1,
         atom_style="charge",
     )
     if isinstance(atoms_obj, list):
-        return atoms_obj[0]
+        return atoms_obj[0]  # type: ignore[return-value]
     return atoms_obj
 
 

@@ -32,7 +32,7 @@ except ImportError:
 
         return decorator
 
-    prange = range
+    prange = range  # type: ignore[assignment]
 
 # Precompute 3D shift grid for neighbor cells (used in NumPy path)
 SHIFT_GRID_3D = np.stack(

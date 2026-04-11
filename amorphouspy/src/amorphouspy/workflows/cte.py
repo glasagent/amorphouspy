@@ -119,7 +119,7 @@ def _run_lammps_md(  # pragma: no cover
 def cte_from_fluctuations_simulation(
     structure: Atoms,
     potential: str,
-    temperature: float | list[int | float] = 300,
+    temperature: float = 300,
     pressure: float = 1e-4,
     timestep: float = 1.0,
     equilibration_steps: int = 100_000,
@@ -464,6 +464,9 @@ def temperature_scan_simulation(
     """
     # Logging setup
     logger = _create_logger()
+
+    if temperature is None:
+        temperature = [300, 400, 500, 600]
 
     # Check and adjust input parameters if necessary
     n_dump = _temperature_scan_input_checker(temperature, production_steps, n_dump, logger)

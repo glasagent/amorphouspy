@@ -94,7 +94,7 @@ def potential_and_force(
 
 def write_table_file(
     pair: str,
-    params: dict,
+    params: tuple[float, float, float, float],
     rmin: float = 0.1,
     rmax: float = 10.5,
     npoints: int = 50000,

@@ -504,7 +504,7 @@ def _extract_atomic_numbers(final_structure: object) -> list[int] | None:
 
     # Already a dict with a plain list of numbers
     if isinstance(final_structure, dict) and "numbers" in final_structure:
-        return list(final_structure["numbers"])
+        return [int(n) for n in final_structure["numbers"]]
 
     # ASE JSON serialisation: string containing {"1": {"numbers": {"__ndarray__": ...}}}
     if isinstance(final_structure, str):

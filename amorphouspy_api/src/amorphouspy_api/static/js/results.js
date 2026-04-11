@@ -89,7 +89,46 @@ function init3DViewer() {
     viewer.setBackgroundColor('white');
     viewer.zoomTo();
     viewer.render();
+    buildLegend();
     console.log('3D viewer initialized successfully');
+}
+
+// Build a color legend from unique elements in the loaded structure
+function buildLegend() {
+    const legendDiv = document.getElementById('structure-legend');
+    if (!legendDiv || !viewer) return;
+
+    // Extract unique elements from the XYZ data
+    const lines = structureData.trim().split('\n');
+    const numAtoms = parseInt(lines[0], 10);
+    const elements = new Set();
+    for (let i = 2; i < 2 + numAtoms && i < lines.length; i++) {
+        const parts = lines[i].trim().split(/\s+/);
+        if (parts.length > 0) elements.add(parts[0]);
+    }
+
+    if (elements.size === 0) return;
+
+    // Look up Rasmol colors from 3Dmol
+    const colorMap = $3Dmol.rasmolElementColors || {};
+    legendDiv.innerHTML = '';
+    const sorted = Array.from(elements).sort();
+    sorted.forEach(function (elem) {
+        const colorObj = colorMap[elem];
+        let css = '#aaaaaa';
+        if (colorObj) {
+            // 3Dmol Color objects expose r, g, b in 0-1 range
+            const r = Math.round((colorObj.r !== undefined ? colorObj.r : 0) * 255);
+            const g = Math.round((colorObj.g !== undefined ? colorObj.g : 0) * 255);
+            const b = Math.round((colorObj.b !== undefined ? colorObj.b : 0) * 255);
+            css = 'rgb(' + r + ',' + g + ',' + b + ')';
+        }
+        const item = document.createElement('span');
+        item.className = 'legend-item';
+        item.innerHTML =
+            '<span class="legend-swatch" style="background:' + css + '"></span>' + elem;
+        legendDiv.appendChild(item);
+    });
 }
 
 // Add unit cell visualization for extended XYZ format

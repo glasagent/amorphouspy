@@ -119,7 +119,7 @@ def run_viscosity_workflow(
             potential=potential,
             temperature_sim=float(temp),
             timestep=float(timestep),
-            production_steps=int(n_timesteps),
+            production_steps=int(n_timesteps),  # type: ignore[call-arg]
             n_print=int(n_print),
             langevin=False,
             seed=12345,
