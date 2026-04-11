@@ -46,20 +46,23 @@ pixi run docs-serve
 
 ## Tagging Pull Requests
 
-Pull requests should always be labeled so the release drafter can categorize changes automatically. The following labels are recognized:
+Pull requests should be labeled for two purposes: categorizing release notes and triggering automatic version bumps.
+
+### Release notes labels
 
 | Category | Labels |
 |---|---|
-| 💥 Breaking Changes | `breaking` |
-| 🚀 Features | `enhancement` |
-| 🐛 Bug Fixes | `bug` |
-| 📚 Documentation | `documentation` |
-| 🔧 Maintenance | `dependencies`, `ci`, `refactor` |
+| 💥 Breaking Changes | `major`, `breaking` |
+| 🚀 Features | `minor`, `feature`, `enhancement` |
+| 🐛 Bug Fixes | `patch`, `fix`, `bugfix`, `bug` |
+| 📚 Documentation | `documentation`, `docs` |
+| 🔧 Maintenance | `chore`, `dependencies`, `ci`, `refactor` |
 
 Use `skip-changelog` to exclude a PR from the release notes entirely.
 
-Labels also drive automatic version bumping (see below).
+### Version bump labels
 
+The labels `patch`, `minor`, and `major` also trigger an automatic version bump when the PR is merged. Other categorization labels (e.g. `bug`, `enhancement`) do **not** trigger a bump on their own — add one of the three version labels as well if you want the bump to happen automatically.
 
 ## Making a Release
 
@@ -67,7 +70,7 @@ Releases are made whenever convenient, and can be made by any maintainer (push r
 
 **Release procedure:**
 
-1. Merge a pull request that is labeled with one of the version labels (`patch`, `minor`, or `major`). This automatically bumps the version and creates a new tag.
+1. Merge a pull request labeled with `patch`, `minor`, or `major`. This automatically bumps the version in `pyproject.toml`, commits it, and creates a new tag.
 2. Go to [GitHub Releases](https://github.com/glasagent/amorphouspy/releases)
 3. Edit the latest draft release (pre-populated automatically by the release drafter action) and select the newly created tag
     - Note: you can also use the "Generate release notes" button, but it won't filter commits into different categories
