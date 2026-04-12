@@ -319,8 +319,11 @@ function buildLegend() {
         legendDiv.appendChild(item);
     }
 
-    if (!hasMetadata) {
-        // Plain Jmol legend (fallback)
+    var currentStyle = document.getElementById('style-select').value;
+    var isGlassMode = (currentStyle === 'glass' || currentStyle === 'network');
+
+    if (!hasMetadata || !isGlassMode) {
+        // Plain Jmol legend: one swatch per element
         var lines = structureData.trim().split('\n');
         var n = parseInt(lines[0], 10);
         var elems = new Set();
@@ -352,16 +355,22 @@ function buildLegend() {
         addSwatch(Jmol[elem] || 0x909090, elem);
     });
 
-    // Oxygen classes
-    var oClassLabels = { BO: 'O', NBO: 'O (NBO)', free: 'O (free)', tri: 'O (tricluster)' };
-    ['BO', 'NBO', 'free', 'tri'].forEach(function (cls) {
-        if (oClasses.has(cls)) {
-            addSwatch(O_CLASS_COLORS[cls] || O_DEFAULT_COLOR, oClassLabels[cls] || cls);
+    // Oxygen classes (only in network view)
+    if (currentStyle === 'network') {
+        var oClassLabels = { BO: 'O', NBO: 'O (NBO)', free: 'O (free)', tri: 'O (tricluster)' };
+        ['BO', 'NBO', 'free', 'tri'].forEach(function (cls) {
+            if (oClasses.has(cls)) {
+                addSwatch(O_CLASS_COLORS[cls] || O_DEFAULT_COLOR, oClassLabels[cls] || cls);
+            }
+        });
+    } else {
+        // Single O swatch for oxide glass view
+        if (oClasses.size > 0) {
+            addSwatch(O_DEFAULT_COLOR, 'O');
         }
-    });
+    }
 
     // Modifiers (hidden in network-only mode)
-    var currentStyle = document.getElementById('style-select').value;
     if (currentStyle !== 'network') {
         Array.from(modifierElems).sort().forEach(function (elem) {
             addSwatch(Jmol[elem] || 0x909090, elem);
@@ -616,6 +625,8 @@ function getStyleForMode(mode) {
             return { sphere: { radius: 0.5, colorscheme: 'Jmol' }, stick: { radius: 0.2, colorscheme: 'Jmol' } };
         case 'stick':
             return { stick: { radius: 0.3, colorscheme: 'Jmol' } };
+        case 'vdw':
+            return { sphere: { colorscheme: 'Jmol' } };
         default:
             return { sphere: { radius: 0.5, colorscheme: 'Jmol' }, stick: { radius: 0.2, colorscheme: 'Jmol' } };
     }
