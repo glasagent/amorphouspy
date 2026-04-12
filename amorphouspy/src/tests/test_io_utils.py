@@ -1,14 +1,116 @@
 """Tests for amorphouspy.io_utils."""
 
+import textwrap
+
 import numpy as np
 import pytest
 from amorphouspy.io_utils import (
+    load_lammps_dump,
     structure_from_parsed_output,
     write_angle_distribution,
     write_distribution_to_file,
     write_xyz,
 )
 from ase import Atoms
+
+# ---------------------------------------------------------------------------
+# Helpers / fixtures
+# ---------------------------------------------------------------------------
+
+
+def _dump_frame(timestep: int, x: float) -> str:
+    """Return one LAMMPS dump frame with a single Si atom at (x, 0, 0)."""
+    return textwrap.dedent(f"""\
+        ITEM: TIMESTEP
+        {timestep}
+        ITEM: NUMBER OF ATOMS
+        1
+        ITEM: BOX BOUNDS pp pp pp
+        0.0 10.0
+        0.0 10.0
+        0.0 10.0
+        ITEM: ATOMS id type x y z
+        1 1 {x} 0.0 0.0
+        """)
+
+
+@pytest.fixture
+def dump_5frames(tmp_path):
+    """Write a 5-frame dump (type 1 = Si) and return the path."""
+    p = tmp_path / "traj.lammpstrj"
+    p.write_text("".join(_dump_frame(i, float(i)) for i in range(5)))
+    return p
+
+
+# ---------------------------------------------------------------------------
+# load_lammps_dump
+# ---------------------------------------------------------------------------
+
+
+def test_load_full_trajectory_returns_list(dump_5frames):
+    """Default call returns all 5 frames as a list."""
+    result = load_lammps_dump(dump_5frames, type_map={1: "Si"})
+    assert isinstance(result, list)
+    assert len(result) == 5
+
+
+def test_load_single_frame_returns_atoms(dump_5frames):
+    """frame=2 returns a single Atoms object, not a list."""
+    result = load_lammps_dump(dump_5frames, type_map={1: "Si"}, frame=2)
+    assert isinstance(result, Atoms)
+    assert len(result) == 1
+
+
+def test_load_single_frame_correct_position(dump_5frames):
+    """frame=3 has the atom at x=3 (matching the fixture)."""
+    atoms = load_lammps_dump(dump_5frames, type_map={1: "Si"}, frame=3)
+    assert isinstance(atoms, Atoms)
+    np.testing.assert_allclose(atoms.get_positions()[0, 0], 3.0)
+
+
+def test_load_frame_range(dump_5frames):
+    """start=1, stop=4 returns frames 1, 2, 3 (3 frames)."""
+    result = load_lammps_dump(dump_5frames, type_map={1: "Si"}, start=1, stop=4)
+    assert isinstance(result, list)
+    assert len(result) == 3
+
+
+def test_load_frame_stride(dump_5frames):
+    """start=0, stop=5, step=2 returns frames 0, 2, 4 (3 frames)."""
+    result = load_lammps_dump(dump_5frames, type_map={1: "Si"}, start=0, stop=5, step=2)
+    assert isinstance(result, list)
+    assert len(result) == 3
+    # atom x positions should be 0.0, 2.0, 4.0
+    xs = [a.get_positions()[0, 0] for a in result]
+    np.testing.assert_allclose(xs, [0.0, 2.0, 4.0])
+
+
+def test_load_frame_and_range_raises(dump_5frames):
+    """Combining frame with start/stop/step raises ValueError."""
+    with pytest.raises(ValueError, match="cannot be combined"):
+        load_lammps_dump(dump_5frames, type_map={1: "Si"}, frame=0, start=1)
+
+
+def test_load_full_trajectory_with_atoms_dict(dump_5frames):
+    """return_atoms_dict=True with full trajectory returns list of (Atoms, dict)."""
+    result = load_lammps_dump(dump_5frames, type_map={1: "Si"}, return_atoms_dict=True)
+    assert isinstance(result, list)
+    assert len(result) == 5
+    atoms, d = result[0]
+    assert isinstance(atoms, Atoms)
+    assert "atoms" in d
+    assert "box" in d
+    assert "total_atoms" in d
+
+
+def test_load_single_frame_with_atoms_dict(dump_5frames):
+    """return_atoms_dict=True with frame= returns a single (Atoms, dict) tuple."""
+    result = load_lammps_dump(dump_5frames, type_map={1: "Si"}, frame=1, return_atoms_dict=True)
+    assert isinstance(result, tuple)
+    atoms, d = result
+    assert isinstance(atoms, Atoms)
+    assert d["total_atoms"] == 1
+
 
 # ---------------------------------------------------------------------------
 # Helpers
