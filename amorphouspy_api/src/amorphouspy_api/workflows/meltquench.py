@@ -88,13 +88,16 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
         server_kwargs=get_lammps_server_kwargs(),
     )
 
+    last_stage = next((s for s in reversed(mq["result"]) if s is not None), {})
+
     return {
         "composition": submission.composition.root,
         "final_structure": mq["structure"],
-        "mean_temperature": float(np.mean(mq["result"]["temperature"])),
-        "simulation_steps": len(mq["result"]["steps"]),
-        "temperature_trajectory": [float(t) for t in mq["result"]["temperature"]],
-        "steps_trajectory": [int(s) for s in mq["result"]["steps"]],
+        "mean_temperature": float(np.mean(last_stage["temperature"])),
+        "simulation_steps": len(last_stage["steps"]),
+        "temperature_trajectory": [float(t) for t in last_stage["temperature"]],
+        "steps_trajectory": [int(s) for s in last_stage["steps"]],
+        "simulation_history": mq["result"],
         "timestep": timestep,
         "cooling_rate": cooling_rate,
         "heating_rate": heating_rate,
