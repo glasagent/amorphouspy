@@ -136,6 +136,7 @@ def _run_lammps_md(
         # Pressure ramp: the parser cannot express [P_start → P_end] natively, so inject a
         # custom fix npt command that overrides whatever the parser would generate.
         if pressure_end is not None:
+            assert pressure is not None, "pressure must be set when pressure_end is given"
             p_start_bar = pressure * 10_000  # GPa → bar (LAMMPS metal units)
             p_end_bar = pressure_end * 10_000
             input_control["fix"] = f"ensemble all npt temp {t_start} {t_end} 0.1 iso {p_start_bar} {p_end_bar} 1.0"
