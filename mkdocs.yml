@@ -43,11 +43,12 @@ nav:
     - how_to_guides/index.md
     - how_to_guides/installation.md
     - how_to_guides/running_api.md
-    - Meltquench: notebooks/Meltquench.ipynb
+    - MD Tutorial: notebooks/MDTutorial.ipynb
+    - Meltquench Tutorial: notebooks/MeltquenchTutorial.ipynb
     # - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
     # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
     # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
-    - Structure Analysis: notebooks/StructureAnalysis.ipynb
+    - Structure Tutorial: notebooks/StructureTutorial.ipynb
     - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/ViscosityTutorial.ipynb
     - CTE: notebooks/CTE.ipynb

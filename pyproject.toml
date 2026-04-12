@@ -142,3 +142,6 @@ fixable  = ["ALL"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ty.environment]
+python = ".pixi/envs/default"
