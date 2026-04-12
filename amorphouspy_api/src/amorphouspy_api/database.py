@@ -6,10 +6,10 @@ Single ``Job`` table backs both ``/jobs`` and ``/glasses`` endpoints.
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import JSON, Column, DateTime, Index, String, create_engine, func
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy import JSON, DateTime, Index, String, create_engine, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from .models import serialize_atoms
@@ -26,35 +26,35 @@ class Job(Base):
 
     __tablename__ = "jobs"
 
-    job_id = Column(String(36), primary_key=True)
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     # Deterministic hash of (normalised composition + potential + simulation params)
-    request_hash = Column(String(64), nullable=False, index=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     # Canonical composition string (via Composition.canonical)
-    composition = Column(String(256), nullable=False, index=True)
-    potential = Column(String(20), nullable=False)
-    status = Column(String(20), nullable=False, default="pending")
+    composition: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    potential: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
 
     # Full JobSubmission.model_dump()
-    request_data = Column(JSON, nullable=True)
+    request_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Per-step progress: {"structure_generation": "completed", …}
-    progress = Column(JSON, nullable=True)
+    progress: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Analysis results keyed by type: {"structure_characterization": {…}}
-    result_data = Column(JSON, nullable=True)
+    result_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Errors keyed by step name: {"viscosity": "…"}
-    errors = Column(JSON, nullable=True)
+    errors: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Fixed-length elemental atom-fraction vector (length 119, indexed by Z).
     # Populated on completion from the actual structure.
-    elemental_vector = Column(JSON, nullable=True)
+    elemental_vector: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     # User-defined tags for labelling / grouping jobs (e.g. project names).
-    tags = Column(JSON, nullable=True)
+    tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
-    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_jobs_composition_status", "composition", "status"),
@@ -174,8 +174,8 @@ class JobStore:
     def list_completed_vectors(
         self,
         potential: str | None = None,
-    ) -> list[tuple[str, dict, str, str | None]]:
-        """Return (job_id, elemental_vector, potential, completed_at) for fuzzy search.
+    ) -> list[tuple[str, list | None, str, str, dict | None, datetime | None]]:
+        """Return (job_id, elemental_vector, composition, potential, request_data, completed_at) for fuzzy search.
 
         Only includes completed jobs that have an elemental_vector stored.
         """
@@ -193,7 +193,8 @@ class JobStore:
             )
             if potential:
                 q = q.filter(Job.potential == potential)
-            return q.order_by(Job.created_at.desc()).all()
+            rows = q.order_by(Job.created_at.desc()).all()
+            return cast("list[tuple[str, list | None, str, str, dict | None, datetime | None]]", rows)
 
     def get_tags_for_jobs(self, job_ids: list[str]) -> dict[str, list[str]]:
         """Return {job_id: tags} for the given IDs."""
@@ -212,11 +213,12 @@ class JobStore:
 def _serialise_atoms_in_result(result: dict) -> dict:
     """Deep-copy *result* and recursively convert non-JSON-serialisable objects."""
     import copy
+    from typing import Any
 
     import numpy as np
     from ase import Atoms
 
-    def _walk(obj: object) -> object:
+    def _walk(obj: Any) -> Any:  # noqa: ANN401
         if isinstance(obj, Atoms):
             return serialize_atoms(obj)
         if isinstance(obj, np.ndarray):

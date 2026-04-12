@@ -1,5 +1,6 @@
 // Global variables for 3D visualization
 let viewer;
+let isolatedAtom = null; // tracks whether we're in isolation mode
 
 // Initialize when page loads
 window.onload = function () {
@@ -43,7 +44,6 @@ function init3DViewer() {
     containerDiv.innerHTML = '';
 
     viewer = $3Dmol.createViewer(containerDiv, {
-        defaultcolors: $3Dmol.rasmolElementColors,
         hoverDuration: 250  // Try to reduce hover delay (if supported)
     });
 
@@ -52,8 +52,8 @@ function init3DViewer() {
 
     // Set initial style with hover labels
     viewer.setStyle({}, {
-        sphere: { radius: 0.5 },
-        stick: { radius: 0.2 }
+        sphere: { radius: 0.5, colorscheme: 'Jmol' },
+        stick: { radius: 0.2, colorscheme: 'Jmol' }
     });
 
     // Enable hover detection for all atoms
@@ -83,13 +83,57 @@ function init3DViewer() {
         }
     });
 
+    // Enable click-to-isolate: clicking an atom hides everything beyond 5 Å
+    viewer.setClickable({}, true, function (atom) {
+        isolateAtom(atom);
+    });
+
     // Add unit cell visualization if available
     addUnitCell();
 
     viewer.setBackgroundColor('white');
     viewer.zoomTo();
     viewer.render();
+    buildLegend();
     console.log('3D viewer initialized successfully');
+}
+
+// Build a color legend from unique elements in the loaded structure
+function buildLegend() {
+    const legendDiv = document.getElementById('structure-legend');
+    if (!legendDiv || !viewer) return;
+
+    // Extract unique elements from the XYZ data
+    const lines = structureData.trim().split('\n');
+    const numAtoms = parseInt(lines[0], 10);
+    const elements = new Set();
+    for (let i = 2; i < 2 + numAtoms && i < lines.length; i++) {
+        const parts = lines[i].trim().split(/\s+/);
+        if (parts.length > 0) elements.add(parts[0]);
+    }
+
+    if (elements.size === 0) return;
+
+    // Use Jmol colors — same scheme set in viewer styles
+    const colorMap = ($3Dmol.elementColors && $3Dmol.elementColors.Jmol) || {};
+    legendDiv.innerHTML = '';
+    const sorted = Array.from(elements).sort();
+    sorted.forEach(function (elem) {
+        const colorVal = colorMap[elem];
+        let css = '#aaaaaa';
+        if (colorVal !== undefined && colorVal !== null) {
+            if (typeof colorVal === 'number') {
+                css = '#' + ('000000' + colorVal.toString(16)).slice(-6);
+            } else if (typeof colorVal === 'string') {
+                css = colorVal;
+            }
+        }
+        const item = document.createElement('span');
+        item.className = 'legend-item';
+        item.innerHTML =
+            '<span class="legend-swatch" style="background:' + css + '"></span>' + elem;
+        legendDiv.appendChild(item);
+    });
 }
 
 // Add unit cell visualization for extended XYZ format
@@ -172,28 +216,11 @@ function updateStyle() {
     viewer.addModel(structureData, 'xyz');
 
     // Apply the selected style
-    switch (style) {
-        case 'sphere':
-            viewer.setStyle({}, {
-                sphere: { radius: 0.5 },
-                stick: { radius: 0.2 }
-            });
-            break;
-        case 'stick':
-            viewer.setStyle({}, {
-                stick: { radius: 0.3 }
-            });
-            break;
-        case 'line':
-            viewer.setStyle({}, {
-                line: { linewidth: 2 }
-            });
-            break;
-        case 'cross':
-            viewer.setStyle({}, {
-                cross: { radius: 0.5 }
-            });
-            break;
+    viewer.setStyle({}, getStyleForMode(style));
+
+    // If in isolation mode, re-apply isolation
+    if (isolatedAtom) {
+        isolateAtom(isolatedAtom);
     }
 
     // Re-add hover functionality
@@ -223,6 +250,11 @@ function updateStyle() {
         }
     });
 
+    // Re-add click-to-isolate
+    viewer.setClickable({}, true, function (atom) {
+        isolateAtom(atom);
+    });
+
     // Re-add unit cell (unit cell shapes persist across model changes)
     addUnitCell();
 
@@ -234,6 +266,62 @@ function resetView() {
     if (viewer) {
         viewer.zoomTo();
         viewer.render();
+    }
+}
+
+// Isolate atoms within 5 Å of the clicked atom
+function isolateAtom(atom) {
+    if (!viewer) return;
+    const cx = atom.x, cy = atom.y, cz = atom.z;
+    const radius = 5.0;
+    const allAtoms = viewer.getModel().selectedAtoms({});
+    const nearIndices = [];
+
+    allAtoms.forEach(function (a) {
+        const dx = a.x - cx, dy = a.y - cy, dz = a.z - cz;
+        if (dx * dx + dy * dy + dz * dz <= radius * radius) {
+            nearIndices.push(a.index);
+        }
+    });
+
+    // Hide all atoms, then show only nearby ones with the current style
+    viewer.setStyle({}, { sphere: { hidden: true }, stick: { hidden: true } });
+
+    const style = document.getElementById('style-select').value;
+    const visStyle = getStyleForMode(style);
+    nearIndices.forEach(function (idx) {
+        viewer.setStyle({ index: idx }, visStyle);
+    });
+
+    isolatedAtom = atom;
+    document.getElementById('show-all-btn').style.display = 'inline-block';
+
+    viewer.render();
+}
+
+// Show all atoms again
+function showAllAtoms() {
+    if (!viewer) return;
+    const style = document.getElementById('style-select').value;
+    viewer.setStyle({}, getStyleForMode(style));
+    isolatedAtom = null;
+    document.getElementById('show-all-btn').style.display = 'none';
+    viewer.render();
+}
+
+// Return the 3Dmol style object for a given mode name
+function getStyleForMode(mode) {
+    switch (mode) {
+        case 'sphere':
+            return { sphere: { radius: 0.5, colorscheme: 'Jmol' }, stick: { radius: 0.2, colorscheme: 'Jmol' } };
+        case 'stick':
+            return { stick: { radius: 0.3, colorscheme: 'Jmol' } };
+        case 'line':
+            return { line: { linewidth: 2, colorscheme: 'Jmol' } };
+        case 'cross':
+            return { cross: { radius: 0.5, colorscheme: 'Jmol' } };
+        default:
+            return { sphere: { radius: 0.5, colorscheme: 'Jmol' }, stick: { radius: 0.2, colorscheme: 'Jmol' } };
     }
 }
 

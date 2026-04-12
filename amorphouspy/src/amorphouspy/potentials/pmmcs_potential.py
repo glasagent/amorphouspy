@@ -103,7 +103,9 @@ def generate_pmmcs_potential(atoms_dict: dict) -> pd.DataFrame:
     for elem in species:
         if elem == "O":
             i_type = types[elem]
-            dij, a, r0 = pmmcs_potential_params[elem]["morse"]
+            morse = pmmcs_potential_params[elem]["morse"]
+            assert isinstance(morse, tuple)
+            dij, a, r0 = morse
             cij = pmmcs_potential_params[elem]["repulsion"]
             config_lines.append(
                 f"pair_coeff {i_type} {o_type} pedone {dij} {a} {r0} {cij}\n",
@@ -111,7 +113,9 @@ def generate_pmmcs_potential(atoms_dict: dict) -> pd.DataFrame:
 
         if elem != "O":
             i_type = types[elem]
-            dij, a, r0 = pmmcs_potential_params[elem]["morse"]
+            morse = pmmcs_potential_params[elem]["morse"]
+            assert isinstance(morse, tuple)
+            dij, a, r0 = morse
             cij = pmmcs_potential_params[elem]["repulsion"]
             config_lines.append(
                 f"pair_coeff {i_type} {o_type} pedone {dij} {a} {r0} {cij}\n",

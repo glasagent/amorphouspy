@@ -9,3 +9,12 @@ repos:
       # -------- final formatting pass -----------------------------
       - id: ruff-format
         files: ^(amorphouspy/.*\.py|amorphouspy_api/.*\.py|notebooks/.*\.ipynb)$ # staged files in amorphouspy/, amorphouspy_api/, and notebooks/
+
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty type-check
+        entry: pixi run ty check amorphouspy_api/src/amorphouspy_api/ amorphouspy/src/amorphouspy/
+        language: system
+        types: [python]
+        pass_filenames: false

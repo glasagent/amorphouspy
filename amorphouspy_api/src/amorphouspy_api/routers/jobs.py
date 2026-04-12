@@ -201,7 +201,7 @@ def submit_job(
                 id=cached.job_id,
                 status=JobStatus(cached.status),
                 composition=Composition.from_canonical(cached.composition),
-                potential=cached.potential,
+                potential=Potential(cached.potential),
                 tags=sorted(set(cached.tags or []) | set(submission.tags)),
                 created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
                 urls=_job_urls(cached.job_id),
@@ -271,7 +271,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
         JobSearchMatch(
             job_id=j.job_id,
             composition=Composition.from_canonical(j.composition),
-            potential=j.potential,
+            potential=Potential(j.potential),
             tags=j.tags or [],
             analyses=_analyses_list(j),
             similarity=1.0,
@@ -304,7 +304,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
                 JobSearchMatch(
                     job_id=job_id,
                     composition=Composition.from_canonical(comp),
-                    potential=potential,
+                    potential=Potential(potential),
                     tags=tags_map.get(job_id, []),
                     analyses=analyses,
                     similarity=round(sim, 4),
@@ -335,12 +335,14 @@ def get_job_status(job_id: str) -> JobStatusResponse:
     if job.status == "running":
         refresh_job_from_cache(job)
         job = store.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
     return JobStatusResponse(
         id=job.job_id,
         status=JobStatus(job.status),
         composition=Composition.from_canonical(job.composition),
-        potential=job.potential,
+        potential=Potential(job.potential),
         tags=job.tags or [],
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
@@ -369,12 +371,14 @@ def cancel_job(job_id: str) -> JobStatusResponse:
 
     store.update_job(job_id, status="cancelled", progress=progress)
     job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
 
     return JobStatusResponse(
         id=job.job_id,
         status=JobStatus(job.status),
         composition=Composition.from_canonical(job.composition),
-        potential=job.potential,
+        potential=Potential(job.potential),
         tags=job.tags or [],
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
@@ -488,6 +492,8 @@ def visualize_job(job_id: str) -> HTMLResponse:
     if job.status == "running":
         refresh_job_from_cache(job)
         job = store.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
 
     if job.status == "pending":
         raise HTTPException(
