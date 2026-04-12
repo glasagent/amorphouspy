@@ -69,8 +69,8 @@ function init3DViewer() {
     // Add model — 3Dmol will parse the basic xyz (element + xyz coords)
     viewer.addModel(structureData, 'xyz');
 
-    // Apply glass-science styles
-    applyGlassStyles();
+    // Apply default glass-science styles (all atoms)
+    applyGlassStyles(false);
 
     // Enable hover detection for all atoms
     viewer.setHoverable({}, true, function (atom, viewer, event, container) {
@@ -169,7 +169,8 @@ function parseExtXYZMeta() {
 // ───── Apply glass-science styles ─────
 // Custom per-group colors and radii based on role/o_class.
 // Former-O bonds are drawn via 3Dmol's built-in stick renderer (GPU-accelerated).
-function applyGlassStyles() {
+// If networkOnly=true, modifiers and "other" atoms are hidden.
+function applyGlassStyles(networkOnly) {
     if (!viewer) return;
     var allAtoms = viewer.getModel().selectedAtoms({});
     var hasMetadata = atomMeta.length === allAtoms.length && atomMeta.some(function (m) { return m.role; });
@@ -188,12 +189,12 @@ function applyGlassStyles() {
     assignGlassBonds(allAtoms);
 
     // Group atom indices by (role, o_class, element) for batched setStyle calls
-    var groups = {};  // key -> {indices:[], color:number, radius:number, hasStick:boolean}
+    var groups = {};  // key -> {indices:[], color:number, radius:number, hasStick:boolean, hidden:boolean}
 
     allAtoms.forEach(function (a, idx) {
         var meta = atomMeta[idx] || {};
         var elem = a.elem || a.element || '';
-        var color, radius, key, hasStick;
+        var color, radius, key, hasStick, hidden;
 
         if (meta.role === 'oxygen') {
             var cls = meta.o_class || 'default';
@@ -201,35 +202,43 @@ function applyGlassStyles() {
             color = O_CLASS_COLORS[cls] || O_DEFAULT_COLOR;
             radius = RADII.oxygen;
             hasStick = true;
+            hidden = false;
         } else if (meta.role === 'former') {
             key = 'f_' + elem;
             color = Jmol[elem] || 0x909090;
             radius = RADII.former;
             hasStick = true;
+            hidden = false;
         } else if (meta.role === 'modifier') {
             key = 'm_' + elem;
             color = Jmol[elem] || 0x909090;
             radius = RADII.modifier;
             hasStick = false;
+            hidden = networkOnly; // hide in network-only mode
         } else {
             key = 'x_' + elem;
             color = Jmol[elem] || 0x909090;
             radius = RADII.other;
             hasStick = false;
+            hidden = networkOnly; // hide in network-only mode
         }
 
-        if (!groups[key]) groups[key] = { indices: [], color: color, radius: radius, hasStick: hasStick };
+        if (!groups[key]) groups[key] = { indices: [], color: color, radius: radius, hasStick: hasStick, hidden: hidden };
         groups[key].indices.push(idx);
     });
 
     // One setStyle call per group — sticks on formers+oxygens, spheres on all
     Object.keys(groups).forEach(function (key) {
         var g = groups[key];
-        var style = { sphere: { radius: g.radius, color: g.color } };
-        if (g.hasStick) {
-            style.stick = { radius: STICK_RADIUS, color: 0x888888 };
+        if (g.hidden) {
+            viewer.setStyle({ index: g.indices }, { sphere: { hidden: true }, stick: { hidden: true } });
+        } else {
+            var style = { sphere: { radius: g.radius, color: g.color } };
+            if (g.hasStick) {
+                style.stick = { radius: STICK_RADIUS, color: 0x888888 };
+            }
+            viewer.setStyle({ index: g.indices }, style);
         }
-        viewer.setStyle({ index: g.indices }, style);
     });
 }
 
@@ -344,17 +353,20 @@ function buildLegend() {
     });
 
     // Oxygen classes
-    var oClassLabels = { BO: 'O (bridging)', NBO: 'O (non-bridging)', free: 'O (free)', tri: 'O (tricluster)' };
+    var oClassLabels = { BO: 'O', NBO: 'O (NBO)', free: 'O (free)', tri: 'O (tricluster)' };
     ['BO', 'NBO', 'free', 'tri'].forEach(function (cls) {
         if (oClasses.has(cls)) {
             addSwatch(O_CLASS_COLORS[cls] || O_DEFAULT_COLOR, oClassLabels[cls] || cls);
         }
     });
 
-    // Modifiers
-    Array.from(modifierElems).sort().forEach(function (elem) {
-        addSwatch(Jmol[elem] || 0x909090, elem);
-    });
+    // Modifiers (hidden in network-only mode)
+    var currentStyle = document.getElementById('style-select').value;
+    if (currentStyle !== 'network') {
+        Array.from(modifierElems).sort().forEach(function (elem) {
+            addSwatch(Jmol[elem] || 0x909090, elem);
+        });
+    }
 }
 
 // Add unit cell visualization for extended XYZ format
@@ -439,7 +451,9 @@ function updateStyle() {
 
     // Apply style
     if (style === 'glass') {
-        applyGlassStyles();
+        applyGlassStyles(false);
+    } else if (style === 'network') {
+        applyGlassStyles(true);
     } else {
         viewer.setStyle({}, getStyleForMode(style));
     }
@@ -512,7 +526,9 @@ function isolateAtom(atom) {
     });
 
     const style = document.getElementById('style-select').value;
-    if (style === 'glass') {
+    var isGlass = (style === 'glass' || style === 'network');
+    var isNetwork = (style === 'network');
+    if (isGlass) {
         // Hide all, then show only nearby atoms with glass colors + sticks
         // Bonds are already set in the model by assignGlassBonds()
         viewer.setStyle({}, { sphere: { hidden: true }, stick: { hidden: true } });
@@ -524,34 +540,39 @@ function isolateAtom(atom) {
             var meta = atomMeta[idx] || {};
             var a = allAtoms[idx];
             var elem = a.elem || a.element || '';
-            var color, rad, key, hasStick;
+            var color, rad, key, hasStick, hidden;
             if (meta.role === 'oxygen') {
                 var cls = meta.o_class || 'default';
                 key = 'o_' + cls;
                 color = O_CLASS_COLORS[cls] || O_DEFAULT_COLOR;
                 rad = RADII.oxygen;
                 hasStick = true;
+                hidden = false;
             } else if (meta.role === 'former') {
                 key = 'f_' + elem;
                 color = Jmol[elem] || 0x909090;
                 rad = RADII.former;
                 hasStick = true;
+                hidden = false;
             } else if (meta.role === 'modifier') {
                 key = 'm_' + elem;
                 color = Jmol[elem] || 0x909090;
                 rad = RADII.modifier;
                 hasStick = false;
+                hidden = isNetwork;
             } else {
                 key = 'x_' + elem;
                 color = Jmol[elem] || 0x909090;
                 rad = RADII.other;
                 hasStick = false;
+                hidden = isNetwork;
             }
-            if (!groups[key]) groups[key] = { indices: [], color: color, radius: rad, hasStick: hasStick };
+            if (!groups[key]) groups[key] = { indices: [], color: color, radius: rad, hasStick: hasStick, hidden: hidden };
             groups[key].indices.push(idx);
         });
         Object.keys(groups).forEach(function (key) {
             var g = groups[key];
+            if (g.hidden) return; // already hidden from the blanket hide-all
             var s = { sphere: { radius: g.radius, color: g.color } };
             if (g.hasStick) s.stick = { radius: STICK_RADIUS, color: 0x888888 };
             viewer.setStyle({ index: g.indices }, s);
@@ -575,8 +596,9 @@ function showAllAtoms() {
     if (!viewer) return;
     var style = document.getElementById('style-select').value;
     if (style === 'glass') {
-        // Bonds already in model; just re-apply full glass styles
-        applyGlassStyles();
+        applyGlassStyles(false);
+    } else if (style === 'network') {
+        applyGlassStyles(true);
     } else {
         viewer.setStyle({}, getStyleForMode(style));
     }
@@ -594,10 +616,6 @@ function getStyleForMode(mode) {
             return { sphere: { radius: 0.5, colorscheme: 'Jmol' }, stick: { radius: 0.2, colorscheme: 'Jmol' } };
         case 'stick':
             return { stick: { radius: 0.3, colorscheme: 'Jmol' } };
-        case 'line':
-            return { line: { linewidth: 2, colorscheme: 'Jmol' } };
-        case 'cross':
-            return { cross: { radius: 0.5, colorscheme: 'Jmol' } };
         default:
             return { sphere: { radius: 0.5, colorscheme: 'Jmol' }, stick: { radius: 0.2, colorscheme: 'Jmol' } };
     }
