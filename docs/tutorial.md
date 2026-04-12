@@ -86,7 +86,36 @@ glass_structure = result["structure"]  # Quenched glass
 
 > **Tip:** For production runs, use the potential-specific protocols which include optimized multi-stage temperature programs. See [Simulation Workflows](how_to_guides/index.md) for details.
 
-### 4. Analyze the glass structure
+### 4. Load a LAMMPS dump trajectory
+
+Simulation results saved as LAMMPS dump files can be read back with `load_lammps_dump`.
+By default the full trajectory is returned as a list of `Atoms` objects.
+
+```python
+from amorphouspy import load_lammps_dump
+
+# Full trajectory (list of Atoms)
+frames = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"})
+print(f"{len(frames)} frames loaded")
+
+# Single frame (returns Atoms directly, not a list)
+last_frame = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"}, frame=-1)
+
+# Slice: frames 100 to 499
+subset = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"}, start=100, stop=500)
+
+# Every 10th frame from 0 to 999
+strided = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"}, start=0, stop=1000, step=10)
+```
+
+If the dump file was written with `dump_modify element O Si …` (i.e. it contains an `element` column),
+you can omit `type_map` entirely:
+
+```python
+frames = load_lammps_dump("run.lammpstrj")
+```
+
+### 5. Analyze the glass structure
 
 Run a comprehensive structural analysis with a single function call:
 
@@ -108,7 +137,7 @@ fig = plot_analysis_results_plotly(data)
 fig.show()
 ```
 
-### 5. Compute material properties
+### 6. Compute material properties
 
 ```python
 from amorphouspy import elastic_simulation

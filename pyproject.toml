@@ -75,6 +75,9 @@ fixable  = ["ALL"]
 "amorphouspy_api/conftest.py" = [
   "INP001",
 ]
+"docs/*.py" = [
+  "INP001",
+]
 "amorphouspy_api/**" = [
   "PLR0915",
   "S113",

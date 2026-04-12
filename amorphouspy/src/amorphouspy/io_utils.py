@@ -4,7 +4,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import ase.io
 import numpy as np
@@ -15,66 +15,96 @@ def load_lammps_dump(
     path: str | Path,
     type_map: dict[int, str] | None = None,
     *,
+    frame: int | None = None,
+    start: int | None = None,
+    stop: int | None = None,
+    step: int | None = None,
     return_atoms_dict: bool = False,
-) -> Atoms | tuple[Atoms, dict]:
-    """Read a LAMMPS dump file and return an ASE Atoms object with correct chemical symbols.
+) -> Atoms | list[Atoms] | tuple[Atoms, dict[str, Any]] | list[tuple[Atoms, dict[str, Any]]]:
+    """Read a LAMMPS dump file and return ASE Atoms object(s) with correct chemical symbols.
+
+    By default the full trajectory is returned as a list.  Pass *frame* to get a
+    single frame, or *start* / *stop* / *step* to slice the trajectory.
 
     Args:
         path: Path to the LAMMPS dump file.
         type_map: Mapping from LAMMPS integer type to element symbol,
             e.g. ``{1: "O", 2: "Si"}``. When ``None``, the ``element``
             column stored in the dump file is used.
-        return_atoms_dict: When ``True``, also return an amorphouspy
-            ``atoms_dict`` alongside the ``ase.Atoms`` object (default ``False``).
+        frame: Zero-based index of a single frame to read.  Mutually exclusive
+            with *start* / *stop* / *step*.
+        start: First frame index of the slice (inclusive, default 0).
+        stop: Last frame index of the slice (exclusive, default end of file).
+        step: Stride between selected frames (default 1).
+        return_atoms_dict: When ``True``, also return amorphouspy ``atoms_dict``
+            objects alongside the ``ase.Atoms`` objects (default ``False``).
 
     Returns:
-        - ``ase_atoms`` (``ase.Atoms``) when *return_atoms_dict* is ``False``
-        - ``(atoms_dict, ase_atoms)`` when *return_atoms_dict* is ``True``,
-          where ``atoms_dict`` contains ``"atoms"``, ``"box"``, and ``"total_atoms"``
+        - Single frame (``frame`` given, *return_atoms_dict* ``False``): ``Atoms``
+        - Single frame (``frame`` given, *return_atoms_dict* ``True``): ``(Atoms, dict)``
+        - Multiple frames (*return_atoms_dict* ``False``): ``list[Atoms]``
+        - Multiple frames (*return_atoms_dict* ``True``): ``list[tuple[Atoms, dict]]``
+
+        Each ``atoms_dict`` contains ``"atoms"``, ``"box"``, and ``"total_atoms"``.
 
     Raises:
+        ValueError: If *frame* is combined with *start* / *stop* / *step*.
         ValueError: If *type_map* is ``None`` and the dump file does not contain
             an ``element`` column.
 
     Example:
-        >>> ase_atoms = load_lammps_dump("final.lammpstrj", type_map={1: "O", 2: "Si"})
-        >>> atoms_dict, ase_atoms = load_lammps_dump(
-        ...     "final.lammpstrj", type_map={1: "O", 2: "Si"}, return_atoms_dict=True
-        ... )
+        >>> # Full trajectory
+        >>> frames = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"})
+        >>> # Single frame
+        >>> ase_atoms = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"}, frame=0)
+        >>> # Frames 30-49
+        >>> frames = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"}, start=30, stop=50)
+        >>> # Every 10th frame from 0 to 99
+        >>> frames = load_lammps_dump("run.lammpstrj", type_map={1: "O", 2: "Si"}, start=0, stop=100, step=10)
 
     """
-    ase_atoms_result = ase.io.read(str(path), format="lammps-dump-text", index=0)
-    ase_atoms = cast("Atoms", ase_atoms_result[0] if isinstance(ase_atoms_result, list) else ase_atoms_result)
-
-    if type_map is not None:
-        symbols = [type_map[int(t)] for t in ase_atoms.arrays["type"]]
-        ase_atoms.set_chemical_symbols(symbols)
-    elif "element" in ase_atoms.arrays:
-        ase_atoms.set_chemical_symbols(list(ase_atoms.arrays["element"]))
-    else:
-        msg = (
-            "type_map is required when the dump file does not contain an 'element' column. "
-            "Either pass type_map={1: 'O', 2: 'Si', ...} or add "
-            "'dump_modify element O Si ...' to your LAMMPS input script."
-        )
+    if frame is not None and any(x is not None for x in (start, stop, step)):
+        msg = "'frame' cannot be combined with 'start', 'stop', or 'step'"
         raise ValueError(msg)
 
-    box_length = float(ase_atoms.get_cell()[0][0])
-    atoms_list = [
-        {"element": sym, "position": list(pos)}
-        for sym, pos in zip(ase_atoms.get_chemical_symbols(), ase_atoms.get_positions(), strict=True)
-    ]
+    single_frame = frame is not None
+    index: int | slice = frame if frame is not None else slice(start, stop, step)
+
+    raw = ase.io.read(str(path), format="lammps-dump-text", index=index)
+    if single_frame:
+        frames_list: list[Atoms] = [cast("Atoms", raw)]
+    else:
+        frames_list = [cast("Atoms", a) for a in (raw if isinstance(raw, list) else [raw])]
+
+    def _apply_symbols(atoms: Atoms) -> None:
+        if type_map is not None:
+            atoms.set_chemical_symbols([type_map[int(t)] for t in atoms.arrays["type"]])
+        elif "element" in atoms.arrays:
+            atoms.set_chemical_symbols(list(atoms.arrays["element"]))
+        else:
+            msg = (
+                "type_map is required when the dump file does not contain an 'element' column. "
+                "Either pass type_map={1: 'O', 2: 'Si', ...} or add "
+                "'dump_modify element O Si ...' to your LAMMPS input script."
+            )
+            raise ValueError(msg)
+
+    for atoms in frames_list:
+        _apply_symbols(atoms)
 
     if not return_atoms_dict:
-        return ase_atoms
+        return frames_list[0] if single_frame else frames_list
 
-    atoms_dict = {
-        "atoms": atoms_list,
-        "box": box_length,
-        "total_atoms": len(atoms_list),
-    }
+    def _to_dict(atoms: Atoms) -> dict[str, Any]:
+        box_length = float(atoms.get_cell()[0][0])
+        atoms_list = [
+            {"element": sym, "position": list(pos)}
+            for sym, pos in zip(atoms.get_chemical_symbols(), atoms.get_positions(), strict=True)
+        ]
+        return {"atoms": atoms_list, "box": box_length, "total_atoms": len(atoms_list)}
 
-    return ase_atoms, atoms_dict
+    pairs = [(atoms, _to_dict(atoms)) for atoms in frames_list]
+    return pairs[0] if single_frame else pairs
 
 
 def write_distribution_to_file(
