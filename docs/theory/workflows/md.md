@@ -14,18 +14,14 @@ from amorphouspy import md_simulation
 result = md_simulation(
     structure=glass_structure,
     potential=potential,
-    temperature=300.0,       # K
-    n_steps=50_000,          # Total MD steps
-    timestep=1.0,            # fs
-    ensemble="nvt",          # "nvt" or "npt"
-    pressure=0.0,            # bar (only for "npt")
-    dump_interval=100,       # Write trajectory every N steps
-    thermo_interval=10,      # Write thermodynamics every N steps
+    temperature_sim=300.0,    # K (start temperature)
+    production_steps=10_000_000,
+    timestep=1.0,             # fs
+    n_print=1000,             # Write output every N steps
 )
 
 final_structure = result["structure"]
-trajectory = result["trajectory"]
-thermo = result["thermo"]
+thermo = result["result"]
 ```
 
 **Parameters:**
@@ -34,65 +30,81 @@ thermo = result["thermo"]
 |---|---|---|---|
 | `structure` | `Atoms` | — | Input atomic structure |
 | `potential` | `DataFrame` | — | Potential configuration |
-| `temperature` | `float` | — | Simulation temperature (K) |
-| `n_steps` | `int` | — | Number of MD steps |
+| `temperature_sim` | `float` | `5000.0` | Start temperature in K (constant if `temperature_end` is None) |
+| `production_steps` | `int` | `10_000_000` | Number of MD steps |
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
-| `ensemble` | `str` | `"nvt"` | `"nvt"` (constant volume) or `"npt"` (constant pressure) |
-| `pressure` | `float` | `0.0` | Target pressure in bar (NPT only) |
-| `dump_interval` | `int` | `100` | Trajectory dump frequency (steps) |
-| `thermo_interval` | `int` | `10` | Thermodynamic output frequency (steps) |
+| `n_print` | `int` | `1000` | Output frequency in steps |
+| `temperature_end` | `float \| None` | `None` | End temperature for a linear ramp; None = constant temperature |
+| `pressure` | `float \| None` | `None` | Start pressure in GPa; None = NVT, float value = NPT |
+| `pressure_end` | `float \| None` | `None` | End pressure in GPa for a linear ramp; requires `pressure` to be set |
+| `langevin` | `bool` | `False` | Use Langevin dynamics instead of Nosé-Hoover |
+| `seed` | `int` | `12345` | Random seed for velocity initialization |
+| `server_kwargs` | `dict \| None` | `None` | Additional arguments passed to the LAMMPS server |
+| `tmp_working_directory` | `str \| Path \| None` | `None` | Directory for temporary simulation files |
 
-**Returns:**
+**Returns:** `dict` with keys:
 
 | Key | Type | Description |
 |---|---|---|
 | `"structure"` | `Atoms` | Final structure after MD |
-| `"trajectory"` | `list[Atoms]` | Trajectory frames at dump intervals |
-| `"thermo"` | `dict` | Thermodynamic data: step, temp, pressure, energy, volume |
+| `"result"` | `dict` | Thermodynamic data (step, temp, pressure, energy, volume) |
 
 ---
 
 ## Ensembles
 
-### NVT (Canonical)
+Ensemble selection is controlled by the `pressure` parameter:
 
-Fixed temperature, constant volume. Uses the Nosé-Hoover thermostat with a damping parameter of 100 timesteps.
+- **NVT** (constant volume): leave `pressure=None` (the default)
+- **NPT** (constant pressure): set `pressure` to a float value in GPa, e.g. `pressure=0.0`
 
-```python
-result = md_simulation(
-    structure=glass_structure,
-    potential=potential,
-    temperature=300.0,
-    n_steps=50_000,
-    ensemble="nvt",
-)
-```
-
-Use NVT for:
-- Equilibration at a fixed density
-- Production runs for structural analysis
-- Property calculations that require constant volume
-
-### NPT (Isothermal-Isobaric)
-
-Fixed temperature and pressure. Uses Nosé-Hoover thermostat + barostat with damping parameters of 100 and 1000 timesteps respectively.
+### NVT example
 
 ```python
 result = md_simulation(
     structure=glass_structure,
     potential=potential,
-    temperature=300.0,
-    n_steps=100_000,
-    ensemble="npt",
-    pressure=0.0,        # 0 bar ≈ ambient pressure
+    temperature_sim=300.0,
+    production_steps=50_000,
 )
 ```
 
-Use NPT for:
-- Density relaxation
-- Pressure equilibration after quenching
-- CTE calculations (volume fluctuations)
-- Simulating at experimental conditions
+Use NVT for equilibration at a fixed density, structural analysis, or property calculations that require constant volume.
+
+### NPT example
+
+```python
+result = md_simulation(
+    structure=glass_structure,
+    potential=potential,
+    temperature_sim=300.0,
+    production_steps=100_000,
+    pressure=0.0,    # GPa — ambient pressure
+)
+```
+
+Use NPT for density relaxation, pressure equilibration after quenching, or CTE calculations.
+
+---
+
+## Temperature and pressure ramps
+
+Linear ramps are supported for both temperature and pressure:
+
+```python
+# Cool from 3000 K → 300 K while ramping pressure from 5 GPa → 0 GPa
+result = md_simulation(
+    structure=glass_structure,
+    potential=potential,
+    temperature_sim=3000.0,
+    temperature_end=300.0,
+    production_steps=500_000,
+    pressure=5.0,
+    pressure_end=0.0,
+)
+```
+
+`pressure_end` requires `pressure` to be set; omitting it holds pressure constant.
 
 ---
 
@@ -116,7 +128,7 @@ Use NPT for:
 ```python
 import plotly.graph_objects as go
 
-thermo = result["thermo"]
+thermo = result["result"]
 
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=thermo["step"], y=thermo["temp"], name="Temperature"))
@@ -124,11 +136,10 @@ fig.update_layout(xaxis_title="Step", yaxis_title="T (K)")
 fig.show()
 ```
 
-### Trajectory
+### Saving the final structure
 
 ```python
 from ase.io import write
 
-# Write trajectory to XYZ for visualization
-write("trajectory.xyz", result["trajectory"])
+write("final_structure.xyz", result["structure"])
 ```
