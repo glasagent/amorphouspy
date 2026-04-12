@@ -6,7 +6,12 @@ from amorphouspy.analysis.cte import (
     cte_from_npt_fluctuations,
     cte_from_volume_temperature_data,
 )
-from amorphouspy.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
+from amorphouspy.analysis.qn_network_connectivity import (
+    classify_oxygens,
+    compute_network_connectivity,
+    compute_qn,
+    compute_qn_and_classify,
+)
 from amorphouspy.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.analysis.structure_factor import compute_structure_factor
@@ -42,12 +47,14 @@ from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_en
 __all__ = [
     "analyze_structure",
     "check_neutral_oxide",
+    "classify_oxygens",
     "compute_angles",
     "compute_cavities",
     "compute_coordination",
     "compute_guttmann_rings",
     "compute_network_connectivity",
     "compute_qn",
+    "compute_qn_and_classify",
     "compute_rdf",
     "compute_structure_factor",
     "count_distribution",

@@ -13,7 +13,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 
 from amorphouspy.analysis.bond_angle_distribution import compute_angles
-from amorphouspy.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn
+from amorphouspy.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn_and_classify
 from amorphouspy.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 
@@ -66,6 +66,14 @@ class ElementInfo(BaseModel):
     modifiers: list[str] = Field(default_factory=list, description="List of modifier elements")
     cutoffs: dict[str, float] = Field(
         default_factory=dict, description="Coordination cutoff distances for each element"
+    )
+    oxygen_classes: dict[str, int] = Field(
+        default_factory=dict,
+        description="Per-class oxygen counts: BO, NBO, free, tri",
+    )
+    oxygen_ids: dict[str, list[int]] = Field(
+        default_factory=dict,
+        description="Per-class lists of oxygen atom IDs (1-based)",
     )
 
 
@@ -278,8 +286,17 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
     Qn_dist = {}
     Qn_dist_partial = {}
     network_connectivity = 0.0
+    oxygen_class_counts: dict[str, int] = {}
+    oxygen_class_ids: dict[str, list[int]] = {}
     if network_formers and O_type:
-        Qn_dist_raw, Qn_dist_partial_raw = compute_qn(atoms, cutoff_map["O"], former_types, O_type[0])
+        Qn_dist_raw, Qn_dist_partial_raw, o_classes = compute_qn_and_classify(
+            atoms, cutoff_map["O"], former_types, O_type[0]
+        )
+
+        # Aggregate oxygen classification
+        for aid, cls in o_classes.items():
+            oxygen_class_counts[cls] = oxygen_class_counts.get(cls, 0) + 1
+            oxygen_class_ids.setdefault(cls, []).append(aid)
 
         # Convert integer keys to strings for Pydantic compatibility
         Qn_dist = {str(k): v for k, v in Qn_dist_raw.items()} if Qn_dist_raw else {}
@@ -343,7 +360,13 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
             bond_angles=bond_angle_distributions_serializable, rings=ring_statistics_data
         ),
         rdfs=RadialDistributionData(r=to_list(r), rdfs=rdfs_serializable, cumulative_coordination=cumcn_serializable),
-        elements=ElementInfo(formers=list(network_formers), modifiers=list(modifiers), cutoffs=cutoff_map),
+        elements=ElementInfo(
+            formers=list(network_formers),
+            modifiers=list(modifiers),
+            cutoffs=cutoff_map,
+            oxygen_classes=oxygen_class_counts,
+            oxygen_ids=oxygen_class_ids,
+        ),
     )
 
 
