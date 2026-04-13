@@ -1,7 +1,5 @@
 name: Version Bump
 
-# Requires: Settings → Branches → main → "Allow specified actors to bypass required pull requests" → add github-actions[bot]
-
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
 
     steps:
     - uses: actions/checkout@v4
@@ -133,17 +132,37 @@ jobs:
     - name: Update pixi.lock
       run: pixi install
 
-    - name: Create commit, tag, and push
+    - name: Read new version
+      id: version
+      run: echo "version=$(cat new_version.txt)" >> $GITHUB_OUTPUT
+
+    - name: Create pull request
+      uses: peter-evans/create-pull-request@v7
+      with:
+        commit-message: "chore: bump version to ${{ steps.version.outputs.version }}"
+        title: "chore: bump version to ${{ steps.version.outputs.version }}"
+        branch: chore/version-bump-${{ steps.version.outputs.version }}
+        delete-branch: true
+        labels: skip-changelog
+
+  tag-release:
+    if: |
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.title, 'chore: bump version to ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+
+    - name: Extract version and create tag
       run: |
         set -e
-        NEW_VERSION=$(cat new_version.txt)
-
+        VERSION=$(grep -oP 'version = "\K[^"]+' pyproject.toml | head -1)
+        echo "Tagging v$VERSION"
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        git add pyproject.toml pixi.lock
-        git commit -m "chore: bump version to $NEW_VERSION [skip ci]"
-
-        git tag "v$NEW_VERSION"
-        git push origin main
-        git push origin "v$NEW_VERSION"
+        git tag "v$VERSION"
+        git push origin "v$VERSION"
