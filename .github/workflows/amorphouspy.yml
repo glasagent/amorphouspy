@@ -16,15 +16,11 @@ jobs:
     - name: Run pytest test suite
       run: pixi run test-lib
 
-    - name: Pytest coverage comment
-      uses: MishaKav/pytest-coverage-comment@main
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
       with:
-        pytest-xml-coverage-path: amorphouspy/coverage.xml
-
-
-    # - name: Upload coverage to Codecov
-    #   uses: codecov/codecov-action@v3
-    #   with:
-    #     file: ./coverage.xml
-    #     fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: amorphouspy/coverage.xml
+        flags: unit
+        fail_ci_if_error: false
 
