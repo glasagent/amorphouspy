@@ -1,4 +1,4 @@
-name: Pipeline for repository-level jobs
+name: "repo: lint, license & typecheck"
 
 on:
   push:
