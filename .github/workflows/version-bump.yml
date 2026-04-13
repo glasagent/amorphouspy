@@ -124,17 +124,15 @@ jobs:
 
         print("Updated pyproject.toml")
 
-        with open('new_version.txt', 'w') as f:
-            f.write(new_version)
+        import os
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"version={new_version}\n")
 
       shell: python
+      id: version
 
     - name: Update pixi.lock
       run: pixi install
-
-    - name: Read new version
-      id: version
-      run: echo "version=$(cat new_version.txt)" >> $GITHUB_OUTPUT
 
     - name: Create pull request
       uses: peter-evans/create-pull-request@v7
