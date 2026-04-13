@@ -13,6 +13,7 @@ authors = [
   { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
 ]
 license = { file = "LICENSE" }
+readme = "README.md"
 dependencies = [
   "ase",
   "numba",
