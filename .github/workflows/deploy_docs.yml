@@ -1,9 +1,8 @@
 name: Deploy Documentation
 
 on:
-  # TODO: re-enable push trigger once the repo is public
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
   pull_request:
     types: [labeled]
 
