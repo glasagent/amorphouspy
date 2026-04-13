@@ -28,12 +28,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import mcubes
 import numpy as np
 from ase.data import atomic_numbers as ase_atomic_numbers
 from ase.data import covalent_radii as ase_covalent_radii
 from ase.data import vdw_radii as ase_vdw_radii
 from scipy import ndimage
-from skimage.measure import marching_cubes
 
 from amorphouspy.neighbors import cell_perpendicular_heights
 
@@ -191,7 +191,7 @@ def _merge_pbc_labels(raw_labels: np.ndarray, raw_label_count: int) -> tuple[np.
 
     Args:
         raw_labels: Integer label array from scipy.ndimage.label or
-            skimage.segmentation.watershed.
+            scipy.ndimage.label.
         raw_label_count: Number of distinct labels (excluding background 0).
 
     Returns:
@@ -513,7 +513,7 @@ def compute_cavities(
 
         void_float_mask = void_mask.astype(np.float32)
         try:
-            vertices, faces, _normals, _values = marching_cubes(void_float_mask, level=0.5, spacing=(1.0, 1.0, 1.0))
+            vertices, faces = mcubes.marching_cubes(void_float_mask, 0.5)
             vertices_cart = vertices @ mc_to_cart
             surface_areas[void_index - 1] = _compute_triangle_mesh_area(vertices_cart, faces)
         except (ValueError, RuntimeError):
@@ -619,7 +619,7 @@ def visualize_cavities(
             continue
 
         try:
-            vertices, faces, _normals, _values = marching_cubes(void_mask, level=0.5, spacing=(1.0, 1.0, 1.0))
+            vertices, faces = mcubes.marching_cubes(void_mask, 0.5)
             vertices = vertices @ mc_to_cart
         except (ValueError, RuntimeError):
             continue
