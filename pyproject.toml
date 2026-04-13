@@ -20,6 +20,7 @@ dependencies = [
   "ase",
   "numba",
   "pandas",
+  "pydantic",
   "lammpsparser",
   "networkx",
   "pymatgen",

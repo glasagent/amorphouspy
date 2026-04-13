@@ -2619,11 +2619,12 @@ packages:
 - pypi: ./
   name: amorphouspy
   version: 0.5.3
-  sha256: e9f94ac6624b0abc822de8e89bc6fe9fcc2f59f9de3f95124dd1d064b29c98c9
+  sha256: 856238b67ee323a2813f80faafec01fead762ee27fac464b019551ed3a6de9dd
   requires_dist:
   - ase
   - numba
   - pandas
+  - pydantic
   - lammpsparser
   - networkx
   - pymatgen
