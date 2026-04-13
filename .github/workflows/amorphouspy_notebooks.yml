@@ -20,15 +20,10 @@ jobs:
     - name: Test notebooks
       run: pixi run test-notebooks
 
-    - name: Pytest coverage comment
-      uses: MishaKav/pytest-coverage-comment@main
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v5
       with:
-        pytest-xml-coverage-path: amorphouspy/coverage.xml
-
-
-    # - name: Upload coverage to Codecov
-    #   uses: codecov/codecov-action@v3
-    #   with:
-    #     file: ./coverage.xml
-    #     fail_ci_if_error: false
+        files: amorphouspy/coverage.xml
+        flags: notebooks
+        fail_ci_if_error: false
 
