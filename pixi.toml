@@ -23,13 +23,13 @@ pandas = "*"
 pymatgen = "*"
 scipy = "*"
 networkx = "*"
-scikit-image = "*"
 sqlalchemy = "*"
 uvicorn = "*"
 
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
 fastapi = "*"
+PyMCubes = "*"
 mcp = ">=1.6.0"
 
 [feature.dev.dependencies]
