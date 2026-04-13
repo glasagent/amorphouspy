@@ -27,6 +27,7 @@ Reference: https://doi.org/10.1039/D4TB02414A
 
 import numpy as np
 import pytest
+from amorphouspy.analysis.qn_network_connectivity import classify_oxygens, compute_qn_and_classify
 from ase.io import read
 
 from amorphouspy import (
@@ -165,3 +166,99 @@ def test_compute_network_connectivity_multi() -> None:
     assert round(net_conn, 3) == pytest.approx(
         3.577,
     ), f"Network connectivity should be {3.577}, got {net_conn}"
+
+
+# ---------------------------------------------------------------------------
+# Shared setup helper for 20Na2O-80SiO2
+# ---------------------------------------------------------------------------
+
+
+def _load_na_si_o_structure():
+    filename = DATA_DIR / "20Na2O-80SiO2.dump"
+    atoms = read(filename, format="lammps-dump-text")
+    type_id = atoms.get_atomic_numbers().copy()
+    to_Z = np.array([0, 11, 8, 14], dtype=int)  # 1->Na, 2->O, 3->Si
+    Z = to_Z[type_id]
+    atoms.set_atomic_numbers(Z)
+    atoms.new_array("lammps_type", type_id)
+    atoms.arrays["type"] = Z
+    return atoms
+
+
+FORMER_TYPES = [14]  # Si
+O_TYPE = 8
+CUTOFF = 1.9
+
+
+# ---------------------------------------------------------------------------
+# classify_oxygens
+# ---------------------------------------------------------------------------
+
+
+def test_classify_oxygens_returns_dict():
+    """classify_oxygens returns a dict."""
+    atoms = _load_na_si_o_structure()
+    result = classify_oxygens(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    assert isinstance(result, dict)
+
+
+def test_classify_oxygens_valid_class_labels():
+    """All oxygen classification values are one of BO, NBO, free, or tri."""
+    atoms = _load_na_si_o_structure()
+    result = classify_oxygens(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    valid = {"BO", "NBO", "free", "tri"}
+    assert all(v in valid for v in result.values())
+
+
+def test_classify_oxygens_keys_are_ints():
+    """classify_oxygens keys (atom IDs) are integers."""
+    atoms = _load_na_si_o_structure()
+    result = classify_oxygens(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    assert all(isinstance(k, int) for k in result)
+
+
+def test_classify_oxygens_nbo_bo_counts_match_stoichiometry():
+    """NBO and BO counts from classify_oxygens match stoichiometric expectations."""
+    atoms = _load_na_si_o_structure()
+    result = classify_oxygens(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    n_nbo = sum(1 for v in result.values() if v == "NBO")
+    n_bo = sum(1 for v in result.values() if v == "BO")
+    assert n_nbo == N_NBO, f"Expected {N_NBO} NBOs, got {n_nbo}"
+    assert n_bo == N_BO, f"Expected {N_BO} BOs, got {n_bo}"
+
+
+# ---------------------------------------------------------------------------
+# compute_qn_and_classify
+# ---------------------------------------------------------------------------
+
+
+def test_compute_qn_and_classify_returns_three_tuple():
+    """compute_qn_and_classify returns a 3-tuple."""
+    atoms = _load_na_si_o_structure()
+    result = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    assert len(result) == 3
+
+
+def test_compute_qn_and_classify_total_qn_matches_compute_qn():
+    """Total and partial Qn from compute_qn_and_classify agree with compute_qn."""
+    atoms = _load_na_si_o_structure()
+    total_qn, partial_qn, _ = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    total_qn_ref, partial_qn_ref = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    assert total_qn == total_qn_ref
+    assert partial_qn == partial_qn_ref
+
+
+def test_compute_qn_and_classify_oxygen_classes_match_classify_oxygens():
+    """Oxygen classes from compute_qn_and_classify match classify_oxygens wrapper."""
+    atoms = _load_na_si_o_structure()
+    _, _, o_classes_full = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    o_classes_wrapper = classify_oxygens(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    assert o_classes_full == o_classes_wrapper
+
+
+def test_compute_qn_and_classify_oxygen_classes_valid_labels():
+    """All oxygen class labels from compute_qn_and_classify are valid strings."""
+    atoms = _load_na_si_o_structure()
+    _, _, o_classes = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    valid = {"BO", "NBO", "free", "tri"}
+    assert all(v in valid for v in o_classes.values())

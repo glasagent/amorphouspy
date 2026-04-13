@@ -13,6 +13,7 @@ from amorphouspy.workflows.structural_analysis import (
     RadialDistributionData,
     StructuralDistributions,
     StructureData,
+    StructureFactorData,
     _add_coordination_plots,
     _add_network_plots,
     _add_rdf_plots,
@@ -25,6 +26,7 @@ from amorphouspy.workflows.structural_analysis import (
 from ase.data import chemical_symbols as _ase_chemical_symbols
 from ase.io import read
 from plotly.subplots import make_subplots
+from pydantic import ValidationError
 from scipy.ndimage import gaussian_filter1d as _gaussian_filter1d
 
 from . import DATA_DIR
@@ -550,3 +552,54 @@ def test_plot_analysis_results_axis_labels_set() -> None:
     # Just verify the figure was fully built without crash and has update_xaxes applied
     # (layout.xaxis objects exist)
     assert fig.layout is not None
+
+
+# ---------------------------------------------------------------------------
+# StructureFactorData
+# ---------------------------------------------------------------------------
+
+
+def test_structure_factor_data_valid_construction() -> None:
+    """StructureFactorData accepts valid lists and partials dict."""
+    data = StructureFactorData(
+        q=[1.0, 2.0, 3.0],
+        sq_neutron=[0.5, 1.0, 0.8],
+        sq_xray=[0.4, 0.9, 0.7],
+        sq_partials={"Si-O": [0.3, 0.8, 0.6]},
+    )
+    assert data.q == [1.0, 2.0, 3.0]
+    assert data.sq_neutron == [0.5, 1.0, 0.8]
+    assert data.sq_xray == [0.4, 0.9, 0.7]
+    assert "Si-O" in data.sq_partials
+
+
+def test_structure_factor_data_empty_partials_accepted() -> None:
+    """sq_partials defaults to empty dict when not provided."""
+    data = StructureFactorData(
+        q=[1.0],
+        sq_neutron=[1.0],
+        sq_xray=[1.0],
+    )
+    assert data.sq_partials == {}
+
+
+def test_structure_factor_data_multiple_partials() -> None:
+    """Multiple partial pairs are stored correctly."""
+    data = StructureFactorData(
+        q=[1.0, 2.0],
+        sq_neutron=[1.0, 1.0],
+        sq_xray=[1.0, 1.0],
+        sq_partials={"Si-O": [0.3, 0.4], "O-O": [0.1, 0.2]},
+    )
+    assert len(data.sq_partials) == 2
+    assert "O-O" in data.sq_partials
+
+
+def test_structure_factor_data_invalid_q_type_raises() -> None:
+    """Passing a non-list value for q raises a ValidationError."""
+    with pytest.raises(ValidationError):
+        StructureFactorData(
+            q="not_a_list",
+            sq_neutron=[1.0],
+            sq_xray=[1.0],
+        )
