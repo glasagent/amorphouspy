@@ -16,6 +16,10 @@ from amorphouspy.analysis.bond_angle_distribution import compute_angles
 from amorphouspy.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn_and_classify
 from amorphouspy.analysis.radial_distribution_functions import compute_coordination, compute_rdf
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.analysis.structure_factor import compute_structure_factor
+
+GLASS_FORMERS = {"Si", "B", "P", "Ge", "Al", "Ti", "Zr"}
+GLASS_MODIFIERS = {"Li", "Na", "K", "Rb", "Cs", "Mg", "Ca", "Sr", "Ba", "Zn", "Pb", "La", "Y"}
 
 
 class CoordinationData(BaseModel):
@@ -48,6 +52,17 @@ class StructuralDistributions(BaseModel):
     )
     rings: dict[str, dict[str, int] | float] = Field(
         default_factory=dict, description="Ring statistics with 'distribution' (dict[str, int]) and 'mean_size' (float)"
+    )
+
+
+class StructureFactorData(BaseModel):
+    """Structure factor S(q) data for neutron and X-ray weighting."""
+
+    q: list[float] = Field(..., description="Momentum transfer array (Å⁻¹)")
+    sq_neutron: list[float] = Field(..., description="Neutron-weighted total structure factor S(q)")
+    sq_xray: list[float] = Field(..., description="X-ray-weighted total structure factor S(q)")
+    sq_partials: dict[str, list[float]] = Field(
+        default_factory=dict, description="Neutron partial structure factors S_ab(q) keyed by 'El1-El2'"
     )
 
 
@@ -90,6 +105,7 @@ class StructureData(BaseModel):
         description="Structural distributions",
     )
     rdfs: RadialDistributionData = Field(..., description="Radial distribution function data")
+    structure_factor: StructureFactorData | None = Field(default=None, description="Structure factor S(q) data")
     elements: ElementInfo = Field(..., description="Element classification and properties")
 
 
@@ -171,9 +187,6 @@ def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], 
         except KeyError:
             type_map[z] = f"E{z}"
 
-    glass_formers = {"Si", "B", "P", "Ge", "Al", "Ti", "Zr"}
-    glass_modifiers = {"Li", "Na", "K", "Rb", "Cs", "Mg", "Ca", "Sr", "Ba", "Zn", "Pb"}
-
     network_formers: set[str] = set()
     modifiers: set[str] = set()
     oxygen_present = False
@@ -182,9 +195,9 @@ def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], 
         symbol = type_map[z]
         if symbol == "O":
             oxygen_present = True
-        elif symbol in glass_formers:
+        elif symbol in GLASS_FORMERS:
             network_formers.add(symbol)
-        elif symbol in glass_modifiers:
+        elif symbol in GLASS_MODIFIERS:
             modifiers.add(symbol)
         else:
             network_formers.add(symbol)
@@ -346,6 +359,20 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
         if pair in cumcn:
             cumcn_serializable[key] = to_list(cumcn[pair])
 
+    # Structure factor S(q) — neutron and X-ray
+    q_sf, sq_neutron, sq_partials_neutron = compute_structure_factor(atoms, radiation="neutron")
+    _, sq_xray, _ = compute_structure_factor(atoms, radiation="xray")
+    sq_partials_serializable = {}
+    for pair, sq_data in sq_partials_neutron.items():
+        elem1, elem2 = type_map[pair[0]], type_map[pair[1]]
+        sq_partials_serializable[f"{elem1}-{elem2}"] = to_list(sq_data)
+    structure_factor_data = StructureFactorData(
+        q=to_list(q_sf),
+        sq_neutron=to_list(sq_neutron),
+        sq_xray=to_list(sq_xray),
+        sq_partials=sq_partials_serializable,
+    )
+
     return StructureData(
         density=density,
         coordination=CoordinationData(oxygen=O_coord, formers=former_coords, modifiers=modifier_coords),
@@ -360,6 +387,7 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
             bond_angles=bond_angle_distributions_serializable, rings=ring_statistics_data
         ),
         rdfs=RadialDistributionData(r=to_list(r), rdfs=rdfs_serializable, cumulative_coordination=cumcn_serializable),
+        structure_factor=structure_factor_data,
         elements=ElementInfo(
             formers=list(network_formers),
             modifiers=list(modifiers),
@@ -580,6 +608,57 @@ def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[s
                     )
 
 
+def _add_structure_factor_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
+    """Add structure factor S(q) plots to the figure."""
+    if structure_data.structure_factor is None:
+        return
+
+    sf = structure_data.structure_factor
+
+    # Neutron S(q)
+    fig.add_trace(
+        go.Scatter(
+            x=sf.q,
+            y=sf.sq_neutron,
+            mode="lines",
+            name="S(q) neutron",
+            line={"color": "black", "width": 2},
+            showlegend=True,
+        ),
+        row=4,
+        col=1,
+    )
+
+    # X-ray S(q)
+    fig.add_trace(
+        go.Scatter(
+            x=sf.q,
+            y=sf.sq_xray,
+            mode="lines",
+            name="S(q) X-ray",
+            line={"color": "darkred", "width": 2},
+            showlegend=True,
+        ),
+        row=4,
+        col=2,
+    )
+
+    # Partial S_ab(q)
+    for i, (pair, sq_data) in enumerate(sf.sq_partials.items()):
+        fig.add_trace(
+            go.Scatter(
+                x=sf.q,
+                y=sq_data,
+                mode="lines",
+                name=f"S(q) {pair}",
+                line={"color": colors[i % len(colors)], "width": 2},
+                showlegend=True,
+            ),
+            row=4,
+            col=3,
+        )
+
+
 def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     """Generate interactive Plotly plots for structural analysis results.
 
@@ -594,9 +673,9 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
         >>> fig.show()
 
     """
-    # Create subplot layout (3x3 grid)
+    # Create subplot layout (4x3 grid)
     fig = make_subplots(
-        rows=3,
+        rows=4,
         cols=3,
         subplot_titles=[
             "Oxygen Coordination",
@@ -608,13 +687,17 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
             "O-O RDF",
             "Former-O RDFs",
             "Modifier-O RDFs",
+            "Total S(q) — Neutron",
+            "Total S(q) — X-ray",
+            "Partial S(q)",
         ],
         specs=[
             [{"type": "bar"}, {"type": "bar"}, {"type": "bar"}],
             [{"type": "bar"}, {"type": "scatter"}, {"type": "bar"}],
             [{"type": "scatter"}, {"type": "scatter"}, {"type": "scatter"}],
+            [{"type": "scatter"}, {"type": "scatter"}, {"type": "scatter"}],
         ],
-        vertical_spacing=0.10,
+        vertical_spacing=0.08,
         horizontal_spacing=0.08,
     )
 
@@ -624,12 +707,13 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     _add_network_plots(fig, structure_data, colors)
     _add_ring_plots(fig, structure_data, colors)
     _add_rdf_plots(fig, structure_data, colors)
+    _add_structure_factor_plots(fig, structure_data, colors)
 
     # Position legends inside each subplot (top-right corner)
     axis_to_legend: dict[str, str] = {}
     legend_layout: dict[str, dict] = {}
 
-    for idx in range(1, 10):
+    for idx in range(1, 13):
         ax_suffix = str(idx) if idx > 1 else ""
         x_ref = f"x{ax_suffix}"
         legend_name = f"legend{idx}" if idx > 1 else "legend"
@@ -654,7 +738,7 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
 
     # Update layout and axes
     fig.update_layout(
-        height=1000,
+        height=1300,
         showlegend=True,
         **legend_layout,
     )
@@ -679,5 +763,13 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     for col in [1, 2, 3]:
         fig.update_xaxes(title_text="r (Å)", range=[0, 10], row=3, col=col)
         fig.update_yaxes(title_text="g(r), CN(r)", range=[0, 25], row=3, col=col)
+
+    # Row 4: Structure factor
+    fig.update_xaxes(title_text="q (Å⁻¹)", row=4, col=1)
+    fig.update_yaxes(title_text="S(q)", row=4, col=1)
+    fig.update_xaxes(title_text="q (Å⁻¹)", row=4, col=2)
+    fig.update_yaxes(title_text="S(q)", row=4, col=2)
+    fig.update_xaxes(title_text="q (Å⁻¹)", row=4, col=3)
+    fig.update_yaxes(title_text="S(q)", row=4, col=3)
 
     return fig
