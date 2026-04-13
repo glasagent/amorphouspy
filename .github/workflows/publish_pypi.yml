@@ -19,6 +19,11 @@ jobs:
       - name: Install build tools
         run: pip install build
 
+      - name: Rewrite relative image paths for PyPI
+        run: |
+          sed -i 's|srcset="docs/assets/|srcset="https://github.com/glasagent/amorphouspy/raw/main/docs/assets/|g' README.md
+          sed -i 's|src="docs/assets/|src="https://github.com/glasagent/amorphouspy/raw/main/docs/assets/|g' README.md
+
       - name: Build package
         run: python -m build
 

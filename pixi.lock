@@ -2618,8 +2618,8 @@ packages:
   timestamp: 1758743294412
 - pypi: ./
   name: amorphouspy
-  version: 0.5.1
-  sha256: d49f7c972a6e89860d9396750d9097cffe97e9ea3c092b774d4adf622e906376
+  version: 0.5.2
+  sha256: 9642c2632148961887304984da933035cff20becf6838cfbccf4af58a5cd3d7c
   requires_dist:
   - ase
   - numba
@@ -2637,6 +2637,7 @@ packages:
   - sqlalchemy ; extra == 'api'
   - jinja2 ; extra == 'api'
   - executorlib ; extra == 'executorlib'
+  requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl
   name: annotated-doc
   version: 0.0.4

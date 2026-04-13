@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "amorphouspy"
-version = "0.5.1"
+version = "0.5.2"
 description = "Workflows for atomistic modeling of oxide glasses"
 authors = [
   { name = "Achraf Atila", email = "achraf.atila@bam.de" },
@@ -14,6 +14,7 @@ authors = [
 ]
 license = { file = "LICENSE" }
 readme = "README.md"
+requires-python = ">=3.12"
 dependencies = [
   "ase",
   "numba",
