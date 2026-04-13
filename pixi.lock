@@ -2504,8 +2504,8 @@ packages:
   timestamp: 1758743294412
 - pypi: ./
   name: amorphouspy
-  version: 0.5.5
-  sha256: 26c1d2fad13bdcfb0029c062e9744738199662e67649ad04d4b6148e60e04c25
+  version: 0.5.6
+  sha256: 4fb64becf77485d8c1db88d7a720e1bb527367588c5cc6e0ce7a907f0d57aae9
   requires_dist:
   - ase
   - numba
