@@ -1,5 +1,9 @@
 # amorphouspy
 
+[![PyPI](https://img.shields.io/pypi/v/amorphouspy)](https://pypi.org/project/amorphouspy/)
+[![Documentation](https://img.shields.io/badge/docs-glasagent.github.io-blue)](https://glasagent.github.io/amorphouspy/)
+[![codecov](https://codecov.io/gh/glasagent/amorphouspy/graph/badge.svg)](https://codecov.io/gh/glasagent/amorphouspy)
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo_inverted.png">
