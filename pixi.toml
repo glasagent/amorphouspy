@@ -27,10 +27,6 @@ scikit-image = "*"
 sqlalchemy = "*"
 uvicorn = "*"
 
-# Platform-specific: flux-core not available on osx-*
-[target.linux-64.dependencies]
-flux-core = ">=0.81.0"
-
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
 fastapi = "*"
