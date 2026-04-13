@@ -1,4 +1,4 @@
-name: jobs for amorphouspy_api module
+name: "amorphouspy_api: unit & integration tests"
 
 on:
   push:
