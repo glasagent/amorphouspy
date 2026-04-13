@@ -70,7 +70,7 @@ Developed at the [Bundesanstant für Materialforschung und -prüfung (BAM)](http
 
 - **Achraf Atila** — BAM — Core framework, analysis tools, potentials
 - **Marcel Sadowski** — Schott AG — CTE simulation module
-- **Jan Janssen** — MPIE — pyiron integration, lammpsparser
+- **Jan Janssen** — MPI-SusMat — pyiron integration, lammpsparser
 - **Leopold Talirz** — Schott AG — API layer, project coordination
 
 ## Acknowledgement

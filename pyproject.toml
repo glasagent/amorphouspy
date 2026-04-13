@@ -9,7 +9,7 @@ description = "Workflows for atomistic modeling of oxide glasses"
 authors = [
   { name = "Achraf Atila", email = "achraf.atila@bam.de" },
   { name = "Marcel Sadowski", email = "marcel.sadowski@schott.com" },
-  { name = "Jan Janssen", email = "janssen@mpie.de" },
+  { name = "Jan Janssen", email = "janssen@mpi-susmat.de" },
   { name = "Leopold Talirz", email = "leopold.talirz@schott.com" },
 ]
 license = "Apache-2.0"
