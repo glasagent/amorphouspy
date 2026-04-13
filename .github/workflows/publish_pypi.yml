@@ -33,9 +33,74 @@ jobs:
           name: dist
           path: dist/
 
+  test-amorphouspy:
+    name: Test amorphouspy install & import
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install package (core only)
+        run: pip install dist/*.whl
+        shell: bash
+
+      - name: Test imports
+        run: |
+          python -c "
+          import amorphouspy
+          from amorphouspy import analysis
+          from amorphouspy import structure
+          from amorphouspy import workflows
+          from amorphouspy import potentials
+          from amorphouspy import io_utils
+          from amorphouspy import neighbors
+          print('amorphouspy imports OK')
+          "
+
+  test-amorphouspy-api:
+    name: Test amorphouspy_api install & import
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install package (with api extra)
+        run: pip install "$(ls dist/*.whl)[api]"
+
+      - name: Test imports
+        run: |
+          python -c "
+          import amorphouspy
+          import amorphouspy_api
+          from amorphouspy_api import app
+          from amorphouspy_api import config
+          from amorphouspy_api import models
+          from amorphouspy_api import routers
+          from amorphouspy_api import database
+          print('amorphouspy_api imports OK')
+          "
+
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: [build, test-amorphouspy, test-amorphouspy-api]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
