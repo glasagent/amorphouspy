@@ -79,6 +79,7 @@ nav:
         - CTE Analysis: theory/analysis/cte_analysis.md
   - Developers:
     - developers/contributing.md
+    - developers/good_first_issue.md
     - developers/architecture.md
     - developers/api_design.md
   - API Reference:

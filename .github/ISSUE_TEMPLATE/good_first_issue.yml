@@ -1,0 +1,118 @@
+name: Good First Issue
+description: A well-scoped task suitable for first-time contributors
+title: "[Good First Issue] "
+labels: ["good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for opening a good-first-issue! Please fill in the sections below
+        so a new contributor can pick this up with minimal back-and-forth.
+        See the [contributing guide](https://glasagent.github.io/amorphouspy/developers/contributing/)
+        for setup instructions.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the task.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why does this matter? What problem does it solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Relevant files / functions
+      description: >
+        Point to the exact file(s) and function(s) a contributor should read first.
+        Example: `amorphouspy/src/amorphouspy/analysis/rdf.py` → `compute_rdf()`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Suggested steps
+      description: >
+        Break the work into 3–6 concrete steps. Each step should be doable
+        in under an hour by someone unfamiliar with the codebase.
+      placeholder: |
+        1. Read `...`
+        2. Add / modify `...`
+        3. Write a test in `amorphouspy/src/tests/test_....py`
+        4. Run `pixi run test-lib` to verify
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      description: >
+        How will we know the issue is resolved? List the exact test command(s)
+        and any manual checks.
+      placeholder: |
+        - `pixi run test-lib` passes
+        - `pixi run lint` passes
+    validations:
+      required: true
+
+  - type: dropdown
+    id: skills
+    attributes:
+      label: Skills needed
+      description: Select all that apply.
+      multiple: true
+      options:
+        - Python (basic)
+        - Python (intermediate)
+        - NumPy / SciPy
+        - ASE / pymatgen
+        - LAMMPS
+        - FastAPI
+        - Documentation (Markdown / MkDocs)
+        - GitHub Actions / CI
+    validations:
+      required: true
+
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Backward compatibility
+      description: Will this change break existing user code or APIs?
+      options:
+        - "No — fully backward compatible"
+        - "Yes — changes public API or behaviour (requires `breaking` label on PR)"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Contributor checklist
+      options:
+        - label: I will add or update tests in `amorphouspy/src/tests/` covering the change
+          required: true
+        - label: I have run `pixi run test-lib` (and `pixi run test-api` if relevant) locally
+          required: false
+        - label: I have run `pixi run lint` and `pixi run format-check`
+          required: false
+
+  - type: dropdown
+    id: effort
+    attributes:
+      label: Estimated effort
+      options:
+        - "Small (< 2 hours)"
+        - "Medium (half a day)"
+        - "Large (full day)"
+    validations:
+      required: true
