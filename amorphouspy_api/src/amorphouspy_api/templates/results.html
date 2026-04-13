@@ -116,282 +116,331 @@
             </div>
         </div>
 
-        {% if structure_xyz or temperature_time_plot %}
-        <div class="structure-panel">
-            {% if structure_xyz %}
-            <div class="structure-3d-viewer">
-                <div class="section-title">Atomic Structure</div>
-                <div class="controls">
-                    <div class="control-group">
-                        <span class="control-label">Style:</span>
-                        <select id="style-select" onchange="updateStyle()">
-                            <option value="glass" selected>Oxide Glass</option>
-                            <option value="network">Glass Network</option>
-                            <option value="sphere">Ball & Stick</option>
-                            <option value="stick">Stick</option>
-                            <option value="vdw">Van der Waals</option>
-                        </select>
-                    </div>
-                    <div class="control-group">
-                        <button onclick="resetView()">Reset View</button>
-                        <button id="show-all-btn" onclick="showAllAtoms()" style="display: none;">Show All</button>
-                    </div>
-                    <div id="structure-legend"></div>
-                </div>
-                <div id="structure-div"></div>
-                <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                    Glass structure after melt-quench procedure.
-                    Rotate and zoom with mouse.
-                    Hover over atoms for element info. Click on an atom to cut out its 5 Å neighbourhood.
-                </p>
+        {# ---- Tabbed analysis sections ---- #}
+        {% set has_structure = structure_xyz or temperature_time_plot %}
+        {% set has_analysis = plotly_json %}
+        {% set has_viscosity = viscosity_plots %}
+        {% set has_cte = cte_plots %}
+        {% set has_elastic = elastic_plots %}
+        {% if has_structure or has_analysis or has_viscosity or has_cte or has_elastic %}
+        <div class="tab-section">
+            <div class="tab-bar">
+                {% if has_structure %}
+                <button class="tab-btn active" data-tab="tab-structure">Structure</button>
+                {% endif %}
+                {% if has_analysis %}
+                <button class="tab-btn{% if not has_structure %} active{% endif %}" data-tab="tab-analysis">Structural
+                    Analysis</button>
+                {% endif %}
+                {% if has_viscosity %}
+                <button class="tab-btn{% if not has_structure and not has_analysis %} active{% endif %}"
+                    data-tab="tab-viscosity">Viscosity</button>
+                {% endif %}
+                {% if has_cte %}
+                <button
+                    class="tab-btn{% if not has_structure and not has_analysis and not has_viscosity %} active{% endif %}"
+                    data-tab="tab-cte">CTE</button>
+                {% endif %}
+                {% if has_elastic %}
+                <button
+                    class="tab-btn{% if not has_structure and not has_analysis and not has_viscosity and not has_cte %} active{% endif %}"
+                    data-tab="tab-elastic">Elastic Properties</button>
+                {% endif %}
             </div>
+
+            <div class="tab-panels">
+                {% if has_structure %}
+                <div class="tab-content active" id="tab-structure">
+                    {% if structure_xyz %}
+                    <div class="structure-3d-viewer">
+                        <div class="section-title">Atomic Structure</div>
+                        <div class="controls">
+                            <div class="control-group">
+                                <span class="control-label">Style:</span>
+                                <select id="style-select" onchange="updateStyle()">
+                                    <option value="glass" selected>Oxide Glass</option>
+                                    <option value="network">Glass Network</option>
+                                    <option value="sphere">Ball & Stick</option>
+                                    <option value="stick">Stick</option>
+                                    <option value="vdw">Van der Waals</option>
+                                </select>
+                            </div>
+                            <div class="control-group">
+                                <button onclick="resetView()">Reset View</button>
+                                <button id="show-all-btn" onclick="showAllAtoms()" style="display: none;">Show
+                                    All</button>
+                            </div>
+                            <div id="structure-legend"></div>
+                        </div>
+                        <div id="structure-div"></div>
+                        <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                            Glass structure after melt-quench procedure.
+                            Rotate and zoom with mouse.
+                            Hover over atoms for element info. Click on an atom to cut out its 5 Å neighbourhood.
+                        </p>
+                    </div>
+                    {% endif %}
+
+                    {% if temperature_time_plot %}
+                    <div class="section-title" style="margin-top: 25px;">Melt-Quench Protocol ({{ potential }})</div>
+                    <div id="temperature-time-div" style="height: 400px;"></div>
+                    {% if protocol_description %}
+                    <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                        {{ protocol_description }}
+                    </p>
+                    {% endif %}
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if has_analysis %}
+                <div class="tab-content{% if not has_structure %} active{% endif %}" id="tab-analysis">
+                    <div class="section-title">Structural Analysis</div>
+                    <div id="plotly-div"></div>
+                    <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                        Pair distribution functions (RDF) computed up to r<sub>max</sub> = 10 &Aring; with 2000 bins.
+                        Bond cutoffs are automatically determined from the first RDF minimum (Savitzky-Golay smoothed).
+                        These cutoffs feed into coordination number distributions, Q<sub>n</sub> speciation &amp;
+                        network
+                        connectivity,
+                        bond-angle distributions, and Guttman ring statistics (up to 40-membered rings).
+                        Click legend items to show/hide individual traces.
+                    </p>
+                </div>
+                {% endif %}
+
+                {% if has_viscosity %}
+                <div class="tab-content{% if not has_structure and not has_analysis %} active{% endif %}"
+                    id="tab-viscosity">
+                    <div class="section-title">Viscosity Analysis</div>
+                    <div class="viscosity-grid">
+                        {% if viscosity_plots.visc_vs_t %}
+                        <div id="viscosity-vt-div" style="height: 500px;"></div>
+                        {% endif %}
+
+                        {% if viscosity_plots.arrhenius %}
+                        <div id="viscosity-arrhenius-div" style="height: 500px;"></div>
+                        {% endif %}
+
+                        {% if viscosity_plots.convergence %}
+                        <div id="viscosity-convergence-div" style="height: 500px;"></div>
+                        {% endif %}
+                    </div>
+
+                    <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                        Viscosity computed via the Green-Kubo method by integrating off-diagonal stress
+                        autocorrelation functions (P<sub>xy</sub>, P<sub>xz</sub>, P<sub>yz</sub>).
+                        {% if viscosity_params %}
+                        Production runs of {{ "%.1f" | format(viscosity_params.production_ns) }} ns at
+                        {{ viscosity_params.temperatures | join(', ') }} K
+                        (max correlation lag {{ "%.1f" | format(viscosity_params.max_lag_ns) }} ns).
+                        {% endif %}
+                        The autocorrelation integration cutoff is determined automatically via a noise-threshold
+                        criterion.
+                        {% if vft %}
+                        <br>
+                        Dashed line: VFT extrapolation log<sub>10</sub>(&eta;) = A + B / (T &minus; T<sub>0</sub>)
+                        with A = {{ "%.2f" | format(vft.A) }}, B = {{ "%.0f" | format(vft.B) }} K,
+                        T<sub>0</sub> = {{ "%.0f" | format(vft.T0) }} K ({{ "%.0f" | format(vft.T0 - 273.15) }} &deg;C).
+                        {% if vft.ref_temps %}
+                        Reference points:
+                        {% for label, temp_c in vft.ref_temps.items() %}
+                        {{ label }} = {{ "%.0f" | format(temp_c) }} &deg;C{{ "," if not loop.last else "." }}
+                        {% endfor %}
+                        {% endif %}
+                        {% endif %}
+                    </p>
+                </div>
+                {% endif %}
+
+                {% if has_cte %}
+                <div class="tab-content{% if not has_structure and not has_analysis and not has_viscosity %} active{% endif %}"
+                    id="tab-cte">
+                    <div class="section-title">CTE Analysis</div>
+
+                    {% if cte_plots.convergence %}
+                    <div id="cte-convergence-div" style="height: 450px;"></div>
+                    {% endif %}
+
+                    {% if cte_plots.volume_temperature %}
+                    <div id="cte-vt-div" style="height: 450px; margin-top: 20px;"></div>
+                    {% endif %}
+
+                    <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                        {% if cte_plots.convergence %}
+                        Linear CTE (&alpha;<sub>L</sub> = &alpha;<sub>V</sub> / 3) from
+                        enthalpy&ndash;volume fluctuations via iterative NPT production runs
+                        {% if cte_params and cte_params.temperature %}at {{ cte_params.temperature | int }} K{% endif %}
+                        ({{ "%.2f" | format(cte_params.production_ns) }} ns each, up to
+                        {{ cte_params.max_production_runs }} runs).
+                        {% endif %}
+                        {% if cte_plots.volume_temperature %}
+                        {% if cte_plots.convergence %}Additionally, volume{% else %}Volume{% endif %}
+                        vs. temperature data collected from NPT simulations
+                        {% if cte_params and cte_params.temperatures %}at {{ cte_params.temperatures | join(', ') }} K{% endif %}
+                        ({{ "%.2f" | format(cte_params.production_ns) }} ns each),
+                        enabling a linear fit of volumetric thermal expansion.
+                        {% endif %}
+                    </p>
+                </div>
+                {% endif %}
+
+                {% if has_elastic %}
+                <div class="tab-content{% if not has_structure and not has_analysis and not has_viscosity and not has_cte %} active{% endif %}"
+                    id="tab-elastic">
+                    <div class="section-title">Elastic Properties</div>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
+                        {% if elastic_moduli %}
+                        <div style="flex: 0 0 auto; min-width: 220px;">
+                            <div class="section-title" style="font-size: 1em;">Isotropic Moduli</div>
+                            <div class="property">
+                                <span class="property-label">Bulk Modulus (B):</span>
+                                <span class="property-value">{{ "%.0f"|format(elastic_moduli.B) }} GPa</span>
+                            </div>
+                            <div class="property">
+                                <span class="property-label">Shear Modulus (G):</span>
+                                <span class="property-value">{{ "%.0f"|format(elastic_moduli.G) }} GPa</span>
+                            </div>
+                            <div class="property">
+                                <span class="property-label">Young's Modulus (E):</span>
+                                <span class="property-value">{{ "%.0f"|format(elastic_moduli.E) }} GPa</span>
+                            </div>
+                            <div class="property">
+                                <span class="property-label">Poisson's Ratio (&nu;):</span>
+                                <span class="property-value">{{ "%.2f"|format(elastic_moduli.nu) }}</span>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if elastic_plots.cij_heatmap %}
+                        <div style="flex: 1 1 400px; min-width: 0;">
+                            <div class="section-title" style="font-size: 1em;">Stiffness Tensor C<sub>ij</sub></div>
+                            <div id="elastic-cij-div"></div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
+                        Full 6&times;6 elastic stiffness tensor (C<sub>ij</sub>) computed via the central-difference
+                        stress-strain method.
+                        {% if elastic_params %}
+                        The simulation box is deformed by &plusmn;{{ "%.1f" | format(elastic_params.strain_pct) }}%
+                        strain
+                        along each of the three normal (xx, yy, zz) and three shear (yz, xz, xy) directions
+                        (12 deformations total, {{ elastic_params.temperature | int }} K,
+                        {{ "%.3f" | format(elastic_params.production_ns) }} ns production per direction).
+                        {% else %}
+                        The simulation box is deformed by &plusmn;0.1% strain along each of the
+                        three normal (xx, yy, zz) and three shear (yz, xz, xy) directions (12 deformations total).
+                        {% endif %}
+                        Stress tensors are averaged over the second half of each production run.
+                        Isotropic moduli (B, G, E, &nu;) obtained via Voigt-Reuss-Hill averaging.
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>{# /.tab-section #}
+    </div>{# /.results-container #}
+
+    <div class="footer">
+                <p>Generated by amorphouspy API</p>
+            </div>
+
+            <script>
+                // Pass data from template to JavaScript
+                const plotlyData = {{ plotly_json | safe if plotly_json else 'null' }};
+                const structureData = `{{ structure_xyz | safe }}`;
+                const taskId = '{{ job_id }}';
+            </script>
+            {% if plotly_json or structure_xyz %}
+            <script src="/static/js/results.js"></script>
             {% endif %}
 
             {% if temperature_time_plot %}
-            <div class="section-title" style="margin-top: 25px;">Melt-Quench Protocol ({{ potential }})</div>
-            <div id="temperature-time-div" style="height: 400px;"></div>
-            {% if protocol_description %}
-            <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
-                {{ protocol_description }}
-            </p>
+            <script>
+                const ttPlot = {{ temperature_time_plot | safe }};
+                Plotly.newPlot('temperature-time-div', ttPlot.data, ttPlot.layout,
+                    { responsive: true, displayModeBar: true, displaylogo: false });
+            </script>
             {% endif %}
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
 
-    {% if plotly_json %}
-    <div class="analysis-container">
-        <div class="plot-panel">
-            <div class="section-title">Structural Analysis</div>
-            <div id="plotly-div"></div>
-            <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-                Pair distribution functions (RDF) computed up to r<sub>max</sub> = 10 &Aring; with 2000 bins.
-                Bond cutoffs are automatically determined from the first RDF minimum (Savitzky-Golay smoothed).
-                These cutoffs feed into coordination number distributions, Q<sub>n</sub> speciation &amp; network
-                connectivity,
-                bond-angle distributions, and Guttman ring statistics (up to 40-membered rings).
-                Click legend items to show/hide individual traces.
-            </p>
-        </div>
-    </div>
-    {% endif %}
+            {% if viscosity_plots %}
+            <script>
+                const plotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
 
-    {% if viscosity_plots %}
-    <div class="analysis-container">
-        <div class="plot-panel">
-            <div class="section-title">Viscosity Analysis</div>
-            <div class="viscosity-grid">
                 {% if viscosity_plots.visc_vs_t %}
-                <div id="viscosity-vt-div" style="height: 500px;"></div>
+                const viscVsT = {{ viscosity_plots.visc_vs_t | safe }};
+                Plotly.newPlot('viscosity-vt-div', viscVsT.data, viscVsT.layout, plotOpts);
                 {% endif %}
 
                 {% if viscosity_plots.arrhenius %}
-                <div id="viscosity-arrhenius-div" style="height: 500px;"></div>
+                const arrhenius = {{ viscosity_plots.arrhenius | safe }};
+                Plotly.newPlot('viscosity-arrhenius-div', arrhenius.data, arrhenius.layout, plotOpts);
                 {% endif %}
 
                 {% if viscosity_plots.convergence %}
-                <div id="viscosity-convergence-div" style="height: 500px;"></div>
+                const convergence = {{ viscosity_plots.convergence | safe }};
+                Plotly.newPlot('viscosity-convergence-div', convergence.data, convergence.layout, plotOpts);
                 {% endif %}
-            </div>
-
-            <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-                Viscosity computed via the Green-Kubo method by integrating off-diagonal stress
-                autocorrelation functions (P<sub>xy</sub>, P<sub>xz</sub>, P<sub>yz</sub>).
-                {% if viscosity_params %}
-                Production runs of {{ "%.1f" | format(viscosity_params.production_ns) }} ns at
-                {{ viscosity_params.temperatures | join(', ') }} K
-                (max correlation lag {{ "%.1f" | format(viscosity_params.max_lag_ns) }} ns).
-                {% endif %}
-                The autocorrelation integration cutoff is determined automatically via a noise-threshold criterion.
-                {% if vft %}
-                <br>
-                Dashed line: VFT extrapolation log<sub>10</sub>(&eta;) = A + B / (T &minus; T<sub>0</sub>)
-                with A = {{ "%.2f" | format(vft.A) }}, B = {{ "%.0f" | format(vft.B) }} K,
-                T<sub>0</sub> = {{ "%.0f" | format(vft.T0) }} K ({{ "%.0f" | format(vft.T0 - 273.15) }} &deg;C).
-                {% if vft.ref_temps %}
-                Reference points:
-                {% for label, temp_c in vft.ref_temps.items() %}
-                {{ label }} = {{ "%.0f" | format(temp_c) }} &deg;C{{ "," if not loop.last else "." }}
-                {% endfor %}
-                {% endif %}
-                {% endif %}
-            </p>
-        </div>
-    </div>
-    {% endif %}
-
-    {% if cte_plots %}
-    <div class="analysis-container">
-        <div class="plot-panel">
-            <div class="section-title">CTE Analysis</div>
-
-            {% if cte_plots.convergence %}
-            <div id="cte-convergence-div" style="height: 450px;"></div>
+            </script>
             {% endif %}
 
-            {% if cte_plots.volume_temperature %}
-            <div id="cte-vt-div" style="height: 450px; margin-top: 20px;"></div>
-            {% endif %}
+            {% if cte_plots %}
+            <script>
+                const ctePlotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
 
-            <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
                 {% if cte_plots.convergence %}
-                Linear CTE (&alpha;<sub>L</sub> = &alpha;<sub>V</sub> / 3) from
-                enthalpy&ndash;volume fluctuations via iterative NPT production runs
-                {% if cte_params and cte_params.temperature %}at {{ cte_params.temperature | int }} K{% endif %}
-                ({{ "%.2f" | format(cte_params.production_ns) }} ns each, up to
-                {{ cte_params.max_production_runs }} runs).
+                const cteConvergence = {{ cte_plots.convergence | safe }};
+                Plotly.newPlot('cte-convergence-div', cteConvergence.data, cteConvergence.layout, ctePlotOpts);
                 {% endif %}
-                {% if cte_plots.volume_temperature %}
-                {% if cte_plots.convergence %}Additionally, volume{% else %}Volume{% endif %}
-                vs. temperature data collected from NPT simulations
-                {% if cte_params and cte_params.temperatures %}at {{ cte_params.temperatures | join(', ') }} K{% endif
-                %}
-                ({{ "%.2f" | format(cte_params.production_ns) }} ns each),
-                enabling a linear fit of volumetric thermal expansion.
-                {% endif %}
-            </p>
-        </div>
-    </div>
-    {% endif %}
 
-    {% if elastic_plots %}
-    <div class="analysis-container" style="margin-top: 30px;">
-        <div class="plot-panel">
-            <div class="section-title">Elastic Properties</div>
-            <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start;">
-                {% if elastic_moduli %}
-                <div style="flex: 0 0 auto; min-width: 220px;">
-                    <div class="section-title" style="font-size: 1em;">Isotropic Moduli</div>
-                    <div class="property">
-                        <span class="property-label">Bulk Modulus (B):</span>
-                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.B) }} GPa</span>
-                    </div>
-                    <div class="property">
-                        <span class="property-label">Shear Modulus (G):</span>
-                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.G) }} GPa</span>
-                    </div>
-                    <div class="property">
-                        <span class="property-label">Young's Modulus (E):</span>
-                        <span class="property-value">{{ "%.0f"|format(elastic_moduli.E) }} GPa</span>
-                    </div>
-                    <div class="property">
-                        <span class="property-label">Poisson's Ratio (&nu;):</span>
-                        <span class="property-value">{{ "%.2f"|format(elastic_moduli.nu) }}</span>
-                    </div>
-                </div>
+                {% if cte_plots.volume_temperature %}
+                const cteVT = {{ cte_plots.volume_temperature | safe }};
+                Plotly.newPlot('cte-vt-div', cteVT.data, cteVT.layout, ctePlotOpts);
                 {% endif %}
+            </script>
+            {% endif %}
+
+            {% if elastic_plots %}
+            <script>
+                const elasticPlotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
 
                 {% if elastic_plots.cij_heatmap %}
-                <div style="flex: 1 1 400px; min-width: 0;">
-                    <div class="section-title" style="font-size: 1em;">Stiffness Tensor C<sub>ij</sub></div>
-                    <div id="elastic-cij-div"></div>
-                </div>
+                const elasticCij = {{ elastic_plots.cij_heatmap | safe }};
+                Plotly.newPlot('elastic-cij-div', elasticCij.data, elasticCij.layout, elasticPlotOpts);
                 {% endif %}
-            </div>
+            </script>
+            {% endif %}
 
-            <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
-                Full 6&times;6 elastic stiffness tensor (C<sub>ij</sub>) computed via the central-difference
-                stress-strain method.
-                {% if elastic_params %}
-                The simulation box is deformed by &plusmn;{{ "%.1f" | format(elastic_params.strain_pct) }}% strain
-                along each of the three normal (xx, yy, zz) and three shear (yz, xz, xy) directions
-                (12 deformations total, {{ elastic_params.temperature | int }} K,
-                {{ "%.3f" | format(elastic_params.production_ns) }} ns production per direction).
-                {% else %}
-                The simulation box is deformed by &plusmn;0.1% strain along each of the
-                three normal (xx, yy, zz) and three shear (yz, xz, xy) directions (12 deformations total).
-                {% endif %}
-                Stress tensors are averaged over the second half of each production run.
-                Isotropic moduli (B, G, E, &nu;) obtained via Voigt-Reuss-Hill averaging.
-            </p>
-        </div>
-    </div>
-    {% endif %}
+            <script>
+                // ---- Tab switching logic ----
+                document.querySelectorAll('.tab-btn').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        // Deactivate all tabs and panels
+                        document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+                        document.querySelectorAll('.tab-content').forEach(function (p) { p.classList.remove('active'); });
+                        // Activate clicked tab and its panel
+                        btn.classList.add('active');
+                        var panel = document.getElementById(btn.getAttribute('data-tab'));
+                        if (panel) {
+                            panel.classList.add('active');
+                        }
+                    });
+                });
 
-    <div class="footer">
-        <p>Generated by amorphouspy API</p>
-    </div>
-
-    <script>
-        // Pass data from template to JavaScript
-        const plotlyData = {{ plotly_json | safe if plotly_json else 'null' }};
-        const structureData = `{{ structure_xyz | safe }}`;
-        const taskId = '{{ job_id }}';
-    </script>
-    {% if plotly_json or structure_xyz %}
-    <script src="/static/js/results.js"></script>
-    {% endif %}
-
-    {% if temperature_time_plot %}
-    <script>
-        const ttPlot = {{ temperature_time_plot | safe }};
-        Plotly.newPlot('temperature-time-div', ttPlot.data, ttPlot.layout,
-            { responsive: true, displayModeBar: true, displaylogo: false });
-    </script>
-    {% endif %}
-
-    {% if viscosity_plots %}
-    <script>
-        const plotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
-
-        {% if viscosity_plots.visc_vs_t %}
-        const viscVsT = {{ viscosity_plots.visc_vs_t | safe }};
-        Plotly.newPlot('viscosity-vt-div', viscVsT.data, viscVsT.layout, plotOpts);
-        {% endif %}
-
-        {% if viscosity_plots.arrhenius %}
-        const arrhenius = {{ viscosity_plots.arrhenius | safe }};
-        Plotly.newPlot('viscosity-arrhenius-div', arrhenius.data, arrhenius.layout, plotOpts);
-        {% endif %}
-
-        {% if viscosity_plots.convergence %}
-        const convergence = {{ viscosity_plots.convergence | safe }};
-        Plotly.newPlot('viscosity-convergence-div', convergence.data, convergence.layout, plotOpts);
-        {% endif %}
-    </script>
-    {% endif %}
-
-    {% if cte_plots %}
-    <script>
-        const ctePlotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
-
-        {% if cte_plots.convergence %}
-        const cteConvergence = {{ cte_plots.convergence | safe }};
-        Plotly.newPlot('cte-convergence-div', cteConvergence.data, cteConvergence.layout, ctePlotOpts);
-        {% endif %}
-
-        {% if cte_plots.volume_temperature %}
-        const cteVT = {{ cte_plots.volume_temperature | safe }};
-        Plotly.newPlot('cte-vt-div', cteVT.data, cteVT.layout, ctePlotOpts);
-        {% endif %}
-    </script>
-    {% endif %}
-
-    {% if elastic_plots %}
-    <script>
-        const elasticPlotOpts = { responsive: true, displayModeBar: true, displaylogo: false };
-
-        {% if elastic_plots.cij_heatmap %}
-        const elasticCij = {{ elastic_plots.cij_heatmap | safe }};
-        Plotly.newPlot('elastic-cij-div', elasticCij.data, elasticCij.layout, elasticPlotOpts);
-        {% endif %}
-    </script>
-    {% endif %}
-
-    <script>
-        // Resize all Plotly charts before printing so they fit the page
-        window.addEventListener('beforeprint', function () {
-            document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
-                Plotly.relayout(el, { width: el.parentElement.offsetWidth });
-            });
-        });
-        window.addEventListener('afterprint', function () {
-            document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
-                Plotly.relayout(el, { width: null, autosize: true });
-            });
-        });
-    </script>
+                // Resize all Plotly charts before printing so they fit the page
+                window.addEventListener('beforeprint', function () {
+                    document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+                        Plotly.relayout(el, { width: el.parentElement.offsetWidth });
+                    });
+                });
+                window.addEventListener('afterprint', function () {
+                    document.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+                        Plotly.relayout(el, { width: null, autosize: true });
+                    });
+                });
+            </script>
 </body>
 
 </html>

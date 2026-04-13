@@ -18,9 +18,10 @@ body {
 
 .results-container {
     display: grid;
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: 320px 1fr;
     gap: 20px;
     margin-bottom: 30px;
+    align-items: start;
 }
 
 .structure-container {
@@ -43,6 +44,8 @@ body {
     padding: 25px;
     border-radius: 10px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 20px;
 }
 
 .plot-panel {
@@ -68,7 +71,7 @@ body {
 
 .viscosity-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 20px;
 }
 
@@ -164,6 +167,66 @@ body {
     font-size: 0.9em;
 }
 
+/* ---- Tab navigation ---- */
+.tab-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 0;
+    padding: 0 4px;
+}
+
+.tab-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px 8px 0 0;
+    background: #e2e3e5;
+    color: #555;
+    font-size: 0.95em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.tab-btn:hover {
+    background: #d0d1d4;
+    color: #333;
+}
+
+.tab-btn.active {
+    background: white;
+    color: #667eea;
+    box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.tab-content {
+    visibility: hidden;
+    position: absolute;
+    width: 100%;
+    left: 0;
+    top: 0;
+    pointer-events: none;
+}
+
+.tab-content.active {
+    visibility: visible;
+    position: relative;
+    pointer-events: auto;
+}
+
+.tab-section {
+    min-width: 0;
+}
+
+.tab-panels {
+    background: white;
+    border-radius: 0 10px 10px 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 25px;
+    position: relative;
+    overflow: hidden;
+}
+
 .footer {
     text-align: center;
     margin-top: 30px;
@@ -229,6 +292,13 @@ button {
 
 button:hover {
     background: #556cd6;
+}
+
+/* ---- Responsive: stack on narrow screens ---- */
+@media (max-width: 900px) {
+    .results-container {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ---- Print styles ---- */
@@ -311,6 +381,28 @@ button:hover {
     .plot-panel>p,
     .analysis-container p[style] {
         display: none;
+    }
+
+    /* Show all tabs when printing */
+    .tab-bar {
+        display: none !important;
+    }
+
+    .tab-content {
+        visibility: visible !important;
+        position: relative !important;
+        pointer-events: auto !important;
+    }
+
+    .tab-panels {
+        box-shadow: none;
+        padding: 0;
+    }
+
+    .tab-content+.tab-content {
+        border-top: 1px solid #ddd;
+        padding-top: 15px;
+        margin-top: 15px;
     }
 
     .footer {
