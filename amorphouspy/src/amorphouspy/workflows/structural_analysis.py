@@ -412,7 +412,10 @@ def _add_coordination_plots(fig: go.Figure, structure_data: StructureData, color
                 x=keys,
                 y=percentages,
                 name="O coordination",
-                marker_color="steelblue",
+                marker_color=colors[0],
+                opacity=0.85,
+                marker_line_color="white",
+                marker_line_width=0.8,
                 showlegend=True,
             ),
             row=1,
@@ -434,6 +437,9 @@ def _add_coordination_plots(fig: go.Figure, structure_data: StructureData, color
                         y=percentages,
                         name=f"CN_{former}",
                         marker_color=colors[i % len(colors)],
+                        opacity=0.85,
+                        marker_line_color="white",
+                        marker_line_width=0.8,
                         offsetgroup=i,
                         showlegend=True,
                     ),
@@ -459,6 +465,9 @@ def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: li
                         y=percentages,
                         name=f"CN_{modifier}",
                         marker_color=colors[i % len(colors)],
+                        opacity=0.85,
+                        marker_line_color="white",
+                        marker_line_width=0.8,
                         offsetgroup=i,
                         showlegend=True,
                     ),
@@ -478,7 +487,10 @@ def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: li
                 x=keys,
                 y=percentages,
                 name="Q^n",
-                marker_color="purple",
+                marker_color=colors[4 % len(colors)],
+                opacity=0.85,
+                marker_line_color="white",
+                marker_line_width=0.8,
                 showlegend=True,
             ),
             row=2,
@@ -528,7 +540,10 @@ def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[
                 x=ring_sizes,
                 y=percentages,
                 name="Ring sizes",
-                marker_color="green",
+                marker_color=colors[2 % len(colors)],
+                opacity=0.85,
+                marker_line_color="white",
+                marker_line_width=0.8,
                 showlegend=True,
             ),
             row=2,
@@ -574,6 +589,7 @@ def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[s
     ]
 
     for (row, col), pairs in category_map:
+        fig.add_hline(y=1.0, line_dash="dot", line_color="grey", line_width=1, opacity=0.6, row=row, col=col)
         for i, (pair, rdf_data) in enumerate(pairs):
             if rdf_data and structure_data.rdfs.r:
                 # RDF trace
@@ -701,7 +717,9 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
         horizontal_spacing=0.08,
     )
 
-    colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+    fig.update_annotations(font_size=12, font_family="Arial, sans-serif")
+
+    colors = ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#CC79A7", "#56B4E9", "#F0E442"]
 
     _add_coordination_plots(fig, structure_data, colors)
     _add_network_plots(fig, structure_data, colors)
@@ -739,7 +757,12 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     # Update layout and axes
     fig.update_layout(
         height=1300,
+        width=1300,
         showlegend=True,
+        template="plotly_white",
+        font={"family": "Arial, sans-serif", "size": 12},
+        title_text="Structural Analysis",
+        title_font_size=16,
         **legend_layout,
     )
 
@@ -771,5 +794,9 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     fig.update_yaxes(title_text="S(q)", row=4, col=2)
     fig.update_xaxes(title_text="q (Å⁻¹)", row=4, col=3)
     fig.update_yaxes(title_text="S(q)", row=4, col=3)
+
+    # Global grid and axis line styling (applied last so it doesn't conflict with per-axis overrides)
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(180,180,180,0.3)", zeroline=False, showline=True, mirror=False)
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(180,180,180,0.3)", zeroline=False, showline=True, mirror=False)
 
     return fig
