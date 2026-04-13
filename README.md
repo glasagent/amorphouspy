@@ -3,6 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/amorphouspy)](https://pypi.org/project/amorphouspy/)
 [![Documentation](https://img.shields.io/badge/docs-glasagent.github.io-blue)](https://glasagent.github.io/amorphouspy/)
 [![codecov](https://codecov.io/gh/glasagent/amorphouspy/graph/badge.svg)](https://codecov.io/gh/glasagent/amorphouspy)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19553302.svg)](https://doi.org/10.5281/zenodo.19553302)
 
 <p align="center">
   <picture>
@@ -84,6 +85,10 @@ Supported by the [Federal Ministry of Research, Technology and Space](https://ww
   &emsp;&emsp;&emsp;
   <a href="https://www.materialdigital.de/project/28"><img src="docs/assets/glasagent-logo.png" alt="GlasAgent logo" width="80"/></a>
 </p>
+
+## How to Cite
+
+If you use `amorphouspy` in your research, please cite it using the citation information provided on our [Zenodo record](https://doi.org/10.5281/zenodo.19553302) (see the "Citation" box on the right-hand side).
 
 ## License
 
