@@ -24,7 +24,7 @@ dependencies = [
   "lammpsparser",
   "networkx",
   "pymatgen",
-  "scikit-image",
+  "PyMCubes",
   "scipy",
 ]
 
