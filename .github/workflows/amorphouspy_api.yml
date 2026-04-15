@@ -20,35 +20,22 @@ jobs:
         run: |
           cat > test.sh << 'EOF'
           #!/bin/bash
-          # Configure coverage for subprocess instrumentation (Flux workers)
           cat > .coveragerc << COVERAGERC
           [run]
           source = src/amorphouspy_api
           parallel = true
           data_file = $PWD/.coverage
           COVERAGERC
-          export COVERAGE_PROCESS_START=$PWD/.coveragerc
-
-          # Install .pth file so coverage auto-starts in Flux worker subprocesses
-          SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
-          echo 'import coverage; coverage.process_startup()' > "$SITE_PACKAGES/zzz_coverage.pth"
 
           coverage run --rcfile=.coveragerc \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
           SERVER_PID=$!
-          # Wait for the server to be ready
           for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:8002/ > /dev/null 2>&1; then
-              echo "Server ready after ${i}s"
-              break
-            fi
+            curl -sf http://127.0.0.1:8002/ > /dev/null 2>&1 && echo "Server ready after ${i}s" && break
             sleep 1
           done
-          pytest -m integration -s \
-            --durations=0 \
-            --cov=src/amorphouspy_api \
-            --cov-report= \
-            --cov-append
+          pytest -m integration -s --durations=0 \
+            --cov=src/amorphouspy_api --cov-report= --cov-append
           TEST_EXIT=$?
           kill -INT $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
