@@ -20,13 +20,29 @@ jobs:
         run: |
           cat > test.sh << 'EOF'
           #!/bin/bash
-          uvicorn amorphouspy_api.app:app --port 8002 &
-          pytest -m integration -s \
-            --durations=0 \
-            --cov=src/amorphouspy_api \
-            --cov-report=xml \
-            --cov-report=term \
-            --cov-append
+          cat > .coveragerc << COVERAGERC
+          [run]
+          source = src/amorphouspy_api
+          parallel = true
+          data_file = $PWD/.coverage
+          COVERAGERC
+
+          coverage run --rcfile=.coveragerc \
+            -m uvicorn amorphouspy_api.app:app --port 8002 &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8002/ > /dev/null 2>&1 && echo "Server ready after ${i}s" && break
+            sleep 1
+          done
+          pytest -m integration -s --durations=0 \
+            --cov=src/amorphouspy_api --cov-report= --cov-append
+          TEST_EXIT=$?
+          kill -INT $SERVER_PID 2>/dev/null || true
+          wait $SERVER_PID 2>/dev/null || true
+          coverage combine --rcfile=.coveragerc
+          coverage xml --rcfile=.coveragerc
+          coverage report --rcfile=.coveragerc --show-missing
+          exit $TEST_EXIT
           EOF
           chmod +x test.sh
           pixi run -- flux start ./test.sh
