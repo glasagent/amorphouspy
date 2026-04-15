@@ -163,9 +163,10 @@ def elastic_simulation(
         production_steps: Number of MD steps for the production run (default 10,000).
         n_print: Thermodynamic output frequency (default 1).
         strain: Magnitude of the strain applied for finite differences (default 1e-3).
-        n_repeats: Number of independent repeats per strain component for uncertainty
-            quantification (default 1). With n_repeats=1 the output is identical to the
-            previous single-shot result; Cij_std and moduli_std will be zero.
+        n_repeats: Number of independent production runs per strain component used to
+            estimate statistical uncertainty. Each repeat uses seed + r. With n_repeats=1
+            (default), no uncertainty is computed and behavior is identical to the previous
+            version.
         server_kwargs: Additional server configuration arguments.
         langevin: Whether to use Langevin dynamics (default False).
         seed: Random seed for velocity initialization (default 12345).
@@ -173,10 +174,11 @@ def elastic_simulation(
 
     Returns:
         Dictionary containing:
-        - "Cij": mean 6x6 stiffness tensor (GPa).
-        - "Cij_std": std of Cij across repeats (zero when n_repeats=1).
-        - "moduli": mean isotropic moduli dict {B, G, E, nu}.
-        - "moduli_std": std of each modulus across repeats (zero when n_repeats=1).
+        - "Cij": mean 6x6 stiffness tensor across repeats (GPa).
+        - "Cij_std": per-element std of Cij across repeats (zero when n_repeats=1).
+        - "Cij_samples": (n_repeats, 6, 6) array of per-repeat tensors (only present when n_repeats > 1).
+        - "moduli": dict with mean keys {B, G, E, nu} and std keys {B_std, G_std, E_std, nu_std}.
+        - "n_repeats": the number of repeats used.
 
     Notes:
         - The structure is first equilibrated (NPT/NVT).
@@ -252,44 +254,59 @@ def elastic_simulation(
         "server_kwargs": server_kwargs,
     }
 
-    denom = 2 * strain
-    shear_indices = [(1, 2), (0, 2), (0, 1)]  # yz, xz, xy
-
+    repeat_seeds = [seed + r for r in range(n_repeats)]
     cij_samples = np.zeros((n_repeats, 6, 6))
+    denom = 2 * strain
 
     for r in range(n_repeats):
+        md_kwargs["seed"] = repeat_seeds[r]
+        cij_r = np.zeros((6, 6))
+
         # Normal strains (C11, C22, C33 and off-diagonals)
         for i in range(3):
             strain_mat = np.zeros((3, 3))
             strain_mat[i, i] = strain
             stress_diff = _run_strained_md(structure_npt, strain_mat, md_kwargs)
-            cij_samples[r, i, 0] = stress_diff[0, 0] / denom
-            cij_samples[r, i, 1] = stress_diff[1, 1] / denom
-            cij_samples[r, i, 2] = stress_diff[2, 2] / denom
+            cij_r[i, 0] = stress_diff[0, 0] / denom
+            cij_r[i, 1] = stress_diff[1, 1] / denom
+            cij_r[i, 2] = stress_diff[2, 2] / denom
 
         # Shear strains (C44, C55, C66)
+        shear_indices = [(1, 2), (0, 2), (0, 1)]
         for i, (idx1, idx2) in enumerate(shear_indices):
             strain_mat = np.zeros((3, 3))
             strain_mat[idx1, idx2] = strain / 2
             strain_mat[idx2, idx1] = strain / 2
             stress_diff = _run_strained_md(structure_npt, strain_mat, md_kwargs)
             voigt = 3 + i
-            cij_samples[r, voigt, voigt] = stress_diff[idx1, idx2] / denom
+            cij_r[voigt, voigt] = stress_diff[idx1, idx2] / denom
 
-    _ddof = 0 if n_repeats == 1 else 1
-    cij = np.mean(cij_samples, axis=0)
-    cij_std = np.std(cij_samples, axis=0, ddof=_ddof)
+        cij_samples[r] = cij_r
+
+    cij_mean = cij_samples.mean(axis=0)
+    cij_std = cij_samples.std(axis=0, ddof=1) if n_repeats > 1 else np.zeros((6, 6))
 
     moduli_samples = [isotropic_moduli_from_Cij(cij_samples[r]) for r in range(n_repeats)]
-    moduli = {k: float(np.mean([m[k] for m in moduli_samples])) for k in ("B", "G", "E", "nu")}
-    moduli_std = {k: float(np.std([m[k] for m in moduli_samples], ddof=_ddof)) for k in ("B", "G", "E", "nu")}
 
-    result = {"Cij": cij, "Cij_std": cij_std, "moduli": moduli, "moduli_std": moduli_std}
+    def _moduli_stat(key: str) -> tuple[float, float]:
+        vals = np.array([m[key] for m in moduli_samples])
+        return float(vals.mean()), float(vals.std(ddof=1)) if n_repeats > 1 else 0.0
 
-    # After calculating all Cij
-    if not np.allclose(cij[0, 0], cij[1, 1]) or not np.allclose(cij[1, 1], cij[2, 2]):
+    moduli_mean = {k: _moduli_stat(k)[0] for k in ("B", "G", "E", "nu")}
+    moduli_std = {k + "_std": _moduli_stat(k)[1] for k in ("B", "G", "E", "nu")}
+
+    result = {
+        "Cij": cij_mean,
+        "Cij_std": cij_std,
+        "moduli": {**moduli_mean, **moduli_std},
+        "n_repeats": n_repeats,
+    }
+    if n_repeats > 1:
+        result["Cij_samples"] = cij_samples
+
+    if not np.allclose(cij_mean[0, 0], cij_mean[1, 1]) or not np.allclose(cij_mean[1, 1], cij_mean[2, 2]):
         warnings.warn("System may not be cubic: C11 != C22 != C33", stacklevel=2)
-    if not np.allclose(cij[3, 3], cij[4, 4]) or not np.allclose(cij[4, 4], cij[5, 5]):
+    if not np.allclose(cij_mean[3, 3], cij_mean[4, 4]) or not np.allclose(cij_mean[4, 4], cij_mean[5, 5]):
         warnings.warn("System may not be cubic: C44 != C55 != C66", stacklevel=2)
 
     return result

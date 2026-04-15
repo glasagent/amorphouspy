@@ -51,19 +51,20 @@ from amorphouspy import elastic_simulation
 result = elastic_simulation(
     structure=glass_structure,
     potential=potential,
-    temperature_sim=300.0,      # K
-    strain=1e-3,                # Applied strain magnitude
-    production_steps=10_000,    # MD steps per strain state
+    temperature_sim=300.0,         # K
+    strain=1e-3,                   # Applied strain magnitude
+    production_steps=10_000,       # MD steps per strain state
     equilibration_steps=1_000_000, # Initial equilibration
-    timestep=1.0,               # fs
+    timestep=1.0,                  # fs
+    n_repeats=3,                   # Independent repeats for uncertainty quantification
 )
 
-# Results are in result['moduli']
-moduli = result['moduli']
-print(f"Young's modulus E = {moduli['E']:.1f} GPa")
-print(f"Bulk modulus B = {moduli['B']:.1f} GPa")
-print(f"Shear modulus G = {moduli['G']:.1f} GPa")
-print(f"Poisson's ratio ν = {moduli['nu']:.3f}")
+# Mean moduli and uncertainties
+moduli = result["moduli"]
+print(f"Young's modulus E = {moduli['E']:.1f} ± {moduli['E_std']:.1f} GPa")
+print(f"Bulk modulus B    = {moduli['B']:.1f} ± {moduli['B_std']:.1f} GPa")
+print(f"Shear modulus G   = {moduli['G']:.1f} ± {moduli['G_std']:.1f} GPa")
+print(f"Poisson's ratio ν = {moduli['nu']:.3f} ± {moduli['nu_std']:.3f}")
 ```
 
 **Parameters:**
@@ -77,10 +78,20 @@ print(f"Poisson's ratio ν = {moduli['nu']:.3f}")
 | `production_steps` | `int` | `10_000` | Steps per deformed state for stress averaging |
 | `equilibration_steps` | `int` | `1_000_000` | Initial equilibration phase steps |
 | `timestep` | `float` | `1.0` | MD timestep (fs) |
+| `n_repeats` | `int` | `1` | Independent production runs per strain component; each repeat uses `seed + r`. With `n_repeats=1` no uncertainty is computed. |
+| `seed` | `int` | `12345` | Base random seed for velocity initialisation |
 
 **Returns:**
 
-Returns a dictionary with `"Cij"` (6x6 matrix) and `"moduli"` (dictionary of engineering constants).
+Returns a dictionary with:
+
+| Key | Description |
+|---|---|
+| `"Cij"` | Mean 6×6 stiffness tensor (GPa) |
+| `"Cij_std"` | Per-element standard deviation across repeats (zero when `n_repeats=1`) |
+| `"Cij_samples"` | `(n_repeats, 6, 6)` array of per-repeat tensors (only present when `n_repeats > 1`) |
+| `"moduli"` | Dict with mean keys `B`, `G`, `E`, `nu` and std keys `B_std`, `G_std`, `E_std`, `nu_std` |
+| `"n_repeats"` | Number of repeats used |
 
 ---
 
@@ -89,13 +100,14 @@ Returns a dictionary with `"Cij"` (6x6 matrix) and `"moduli"` (dictionary of eng
 The simulation runs the following steps automatically:
 
 1. **Equilibrate** the undeformed structure at temperature $T$ (NVT)
-2. For each strain direction ($xx$, $yy$, $zz$, $xy$, $xz$, $yz$):
-   - Apply $+\varepsilon$ strain → equilibrate → measure average stress tensor
-   - Apply $-\varepsilon$ strain → equilibrate → measure average stress tensor
-   - Compute $C_{ij}$ from finite differences
-3. Average symmetric components and compute VRH moduli
+2. For each repeat $r = 0, \ldots, n\_repeats - 1$ (seed $= $ base seed $+ r$):
+   - For each strain direction ($xx$, $yy$, $zz$, $xy$, $xz$, $yz$):
+     - Apply $+\varepsilon$ strain → run MD → measure average stress tensor
+     - Apply $-\varepsilon$ strain → run MD → measure average stress tensor
+     - Compute $C_{ij}^{(r)}$ from finite differences
+3. Average $C_{ij}^{(r)}$ across repeats; compute per-element std and VRH moduli with uncertainties
 
-This results in **12 LAMMPS runs** per elastic calculation (6 directions × 2 signs), plus the initial equilibration.
+This results in **$12 \times n\_repeats$ LAMMPS runs** (6 directions × 2 signs × repeats), plus the initial equilibration.
 
 ---
 
@@ -118,3 +130,4 @@ This results in **12 LAMMPS runs** per elastic calculation (6 directions × 2 si
 - **Production steps**: More steps = better stress averaging. 10,000 steps is a minimum; 50,000 gives smoother results.
 - **System size**: 3000+ atoms recommended. Smaller systems have large fluctuations in the stress tensor.
 - **Temperature**: Elastic constants are temperature-dependent. Compute at the same temperature as the experimental comparison.
+- **Uncertainty quantification**: Use `n_repeats=3` or higher to obtain statistical uncertainties. Each repeat reruns all strain directions with a different seed (`seed + r`), so the cost scales linearly with `n_repeats`.
