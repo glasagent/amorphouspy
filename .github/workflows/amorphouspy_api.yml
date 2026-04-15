@@ -24,6 +24,7 @@ jobs:
           [run]
           source = src/amorphouspy_api
           parallel = true
+          patch = subprocess
           data_file = $PWD/.coverage
           COVERAGERC
 
