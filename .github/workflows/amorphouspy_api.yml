@@ -20,11 +20,13 @@ jobs:
         run: |
           cat > .coveragerc << COVERAGERC
           [run]
-          source = src/amorphouspy_api
+          source = $PWD/src/amorphouspy_api
           parallel = true
           data_file = $PWD/.coverage
-          patch = subprocess
+          sigterm = true
           COVERAGERC
+
+          export COVERAGE_PROCESS_START=$PWD/.coveragerc
 
           pixi run -- coverage run --rcfile=.coveragerc \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
