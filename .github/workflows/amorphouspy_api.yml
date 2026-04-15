@@ -23,6 +23,14 @@ jobs:
           coverage run --source=src/amorphouspy_api --parallel-mode \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
           SERVER_PID=$!
+          # Wait for the server to be ready
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8002/ > /dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
           pytest -m integration -s \
             --durations=0 \
             --cov=src/amorphouspy_api \
