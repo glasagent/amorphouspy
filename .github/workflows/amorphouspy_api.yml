@@ -18,41 +18,34 @@ jobs:
 
       - name: Run integration test
         run: |
-          cat > test.sh << 'EOF'
-          #!/bin/bash
           cat > .coveragerc << COVERAGERC
           [run]
           source = src/amorphouspy_api
           parallel = true
           data_file = $PWD/.coverage
+          patch = subprocess
           COVERAGERC
-          export COVERAGE_PROCESS_START=$PWD/.coveragerc
-          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
-          echo 'import coverage; coverage.process_startup()' > "$SITE/zzz_coverage.pth"
 
-          coverage run --rcfile=.coveragerc \
+          pixi run -- coverage run --rcfile=.coveragerc \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
           SERVER_PID=$!
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:8002/ > /dev/null 2>&1 && echo "Server ready after ${i}s" && break
             sleep 1
           done
-          pytest -m integration -s --durations=0 \
+          pixi run -- pytest -m integration -s --durations=0 \
             --cov=src/amorphouspy_api --cov-report= --cov-append
           TEST_EXIT=$?
           kill -INT $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
-          coverage combine --rcfile=.coveragerc
-          coverage xml --rcfile=.coveragerc
-          coverage report --rcfile=.coveragerc --show-missing
+          pixi run -- coverage combine --rcfile=.coveragerc
+          pixi run -- coverage xml --rcfile=.coveragerc
+          pixi run -- coverage report --rcfile=.coveragerc --show-missing
           exit $TEST_EXIT
-          EOF
-          chmod +x test.sh
-          pixi run -- flux start ./test.sh
         working-directory: amorphouspy_api
         env:
           AMORPHOUSPY_INTEGRATION: "1"
-          EXECUTOR_TYPE: "flux"
+          EXECUTOR_TYPE: "single"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
