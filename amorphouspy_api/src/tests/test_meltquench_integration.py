@@ -128,6 +128,21 @@ def test_jobs_api_integration() -> None:
     assert len(r.text) > 0, "Structure export returned empty content"
     logger.info("Structure export: %d bytes", len(r.text))
 
+    # Fetch per-analysis results
+    r = requests.get(f"{api_url}/jobs/{job_id}/results/structure_characterization", timeout=30)
+    r.raise_for_status()
+    per_analysis = r.json()
+    assert per_analysis["job_id"] == job_id
+    assert "structure_characterization" in per_analysis
+    logger.info("Per-analysis result keys: %s", list(per_analysis["structure_characterization"].keys()))
+
+    # Fetch visualization page
+    r = requests.get(f"{api_url}/jobs/{job_id}/visualize", timeout=30)
+    r.raise_for_status()
+    assert "text/html" in r.headers.get("content-type", "")
+    assert len(r.text) > 0, "Visualization page returned empty content"
+    logger.info("Visualization page: %d bytes", len(r.text))
+
     # Verify glasses endpoint shows this composition
     r = requests.get(f"{api_url}/glasses", timeout=30)
     r.raise_for_status()
