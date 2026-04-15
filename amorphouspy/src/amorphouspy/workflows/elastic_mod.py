@@ -140,6 +140,7 @@ def elastic_simulation(
     production_steps: int = 10_000,
     n_print: int = 1,
     strain: float = 1e-3,
+    n_repeats: int = 1,
     server_kwargs: dict[str, Any] | None = None,
     *,
     langevin: bool = False,
@@ -162,13 +163,20 @@ def elastic_simulation(
         production_steps: Number of MD steps for the production run (default 10,000).
         n_print: Thermodynamic output frequency (default 1).
         strain: Magnitude of the strain applied for finite differences (default 1e-3).
+        n_repeats: Number of independent repeats per strain component for uncertainty
+            quantification (default 1). With n_repeats=1 the output is identical to the
+            previous single-shot result; Cij_std and moduli_std will be zero.
         server_kwargs: Additional server configuration arguments.
         langevin: Whether to use Langevin dynamics (default False).
         seed: Random seed for velocity initialization (default 12345).
         tmp_working_directory: Temporary directory for job execution.
 
     Returns:
-        Dictionary containing the results. Key "result" contains the "Cij" 6x6 matrix.
+        Dictionary containing:
+        - "Cij": mean 6x6 stiffness tensor (GPa).
+        - "Cij_std": std of Cij across repeats (zero when n_repeats=1).
+        - "moduli": mean isotropic moduli dict {B, G, E, nu}.
+        - "moduli_std": std of each modulus across repeats (zero when n_repeats=1).
 
     Notes:
         - The structure is first equilibrated (NPT/NVT).
@@ -244,31 +252,39 @@ def elastic_simulation(
         "server_kwargs": server_kwargs,
     }
 
-    cij = np.zeros((6, 6))
     denom = 2 * strain
-
-    # Normal strains (C11, C22, C33 and off-diagonals)
-    for i in range(3):
-        strain_mat = np.zeros((3, 3))
-        strain_mat[i, i] = strain
-        stress_diff = _run_strained_md(structure_npt, strain_mat, md_kwargs)
-        cij[i, 0] = stress_diff[0, 0] / denom
-        cij[i, 1] = stress_diff[1, 1] / denom
-        cij[i, 2] = stress_diff[2, 2] / denom
-
-    # Shear strains (C44, C55, C66)
     shear_indices = [(1, 2), (0, 2), (0, 1)]  # yz, xz, xy
-    for i, (idx1, idx2) in enumerate(shear_indices):
-        strain_mat = np.zeros((3, 3))
-        strain_mat[idx1, idx2] = strain / 2
-        strain_mat[idx2, idx1] = strain / 2
-        stress_diff = _run_strained_md(structure_npt, strain_mat, md_kwargs)
-        voigt = 3 + i
-        cij[voigt, voigt] = stress_diff[idx1, idx2] / denom
 
-    moduli = isotropic_moduli_from_Cij(cij)
+    cij_samples = np.zeros((n_repeats, 6, 6))
 
-    result = {"Cij": cij, "moduli": moduli}
+    for r in range(n_repeats):
+        # Normal strains (C11, C22, C33 and off-diagonals)
+        for i in range(3):
+            strain_mat = np.zeros((3, 3))
+            strain_mat[i, i] = strain
+            stress_diff = _run_strained_md(structure_npt, strain_mat, md_kwargs)
+            cij_samples[r, i, 0] = stress_diff[0, 0] / denom
+            cij_samples[r, i, 1] = stress_diff[1, 1] / denom
+            cij_samples[r, i, 2] = stress_diff[2, 2] / denom
+
+        # Shear strains (C44, C55, C66)
+        for i, (idx1, idx2) in enumerate(shear_indices):
+            strain_mat = np.zeros((3, 3))
+            strain_mat[idx1, idx2] = strain / 2
+            strain_mat[idx2, idx1] = strain / 2
+            stress_diff = _run_strained_md(structure_npt, strain_mat, md_kwargs)
+            voigt = 3 + i
+            cij_samples[r, voigt, voigt] = stress_diff[idx1, idx2] / denom
+
+    _ddof = 0 if n_repeats == 1 else 1
+    cij = np.mean(cij_samples, axis=0)
+    cij_std = np.std(cij_samples, axis=0, ddof=_ddof)
+
+    moduli_samples = [isotropic_moduli_from_Cij(cij_samples[r]) for r in range(n_repeats)]
+    moduli = {k: float(np.mean([m[k] for m in moduli_samples])) for k in ("B", "G", "E", "nu")}
+    moduli_std = {k: float(np.std([m[k] for m in moduli_samples], ddof=_ddof)) for k in ("B", "G", "E", "nu")}
+
+    result = {"Cij": cij, "Cij_std": cij_std, "moduli": moduli, "moduli_std": moduli_std}
 
     # After calculating all Cij
     if not np.allclose(cij[0, 0], cij[1, 1]) or not np.allclose(cij[1, 1], cij[2, 2]):
