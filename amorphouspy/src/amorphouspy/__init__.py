@@ -42,6 +42,7 @@ from amorphouspy.workflows.cte import cte_from_fluctuations_simulation, temperat
 from amorphouspy.workflows.elastic_mod import elastic_simulation
 from amorphouspy.workflows.md import md_simulation
 from amorphouspy.workflows.meltquench import melt_quench_simulation
+from amorphouspy.workflows.parametric import parametric_melt_quench
 from amorphouspy.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results_plotly
 from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
 
@@ -80,6 +81,7 @@ __all__ = [
     "load_lammps_dump",
     "md_simulation",
     "melt_quench_simulation",
+    "parametric_melt_quench",
     "parse_formula",
     "plan_system",
     "plot_analysis_results_plotly",
