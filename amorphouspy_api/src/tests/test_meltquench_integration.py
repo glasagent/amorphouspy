@@ -61,7 +61,7 @@ def test_jobs_api_integration() -> None:
         "analyses": [{"type": "structure_characterization"}],
     }
     logger.info("Submitting job with fast rates: quench_rate=%s", payload["simulation"]["quench_rate"])
-    r = requests.post(f"{api_url}/jobs", json=payload, timeout=200)
+    r = requests.post(f"{api_url}/jobs?force=true", json=payload, timeout=200)
     r.raise_for_status()
     data = r.json()
     assert "id" in data
