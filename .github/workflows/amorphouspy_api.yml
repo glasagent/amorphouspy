@@ -26,6 +26,9 @@ jobs:
           parallel = true
           data_file = $PWD/.coverage
           COVERAGERC
+          export COVERAGE_PROCESS_START=$PWD/.coveragerc
+          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
+          echo 'import coverage; coverage.process_startup()' > "$SITE/zzz_coverage.pth"
 
           coverage run --rcfile=.coveragerc \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
