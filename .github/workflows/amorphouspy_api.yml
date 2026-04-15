@@ -21,12 +21,17 @@ jobs:
           cat > test.sh << 'EOF'
           #!/bin/bash
           # Configure coverage for subprocess instrumentation (Flux workers)
-          cat > .coveragerc << 'COVERAGERC'
+          cat > .coveragerc << COVERAGERC
           [run]
           source = src/amorphouspy_api
           parallel = true
+          data_file = $PWD/.coverage
           COVERAGERC
           export COVERAGE_PROCESS_START=$PWD/.coveragerc
+
+          # Install .pth file so coverage auto-starts in Flux worker subprocesses
+          SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+          echo 'import coverage; coverage.process_startup()' > "$SITE_PACKAGES/zzz_coverage.pth"
 
           coverage run --rcfile=.coveragerc \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
