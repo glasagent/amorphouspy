@@ -20,7 +20,15 @@ jobs:
         run: |
           cat > test.sh << 'EOF'
           #!/bin/bash
-          coverage run --source=src/amorphouspy_api --parallel-mode \
+          # Configure coverage for subprocess instrumentation (Flux workers)
+          cat > .coveragerc << 'COVERAGERC'
+          [run]
+          source = src/amorphouspy_api
+          parallel = true
+          COVERAGERC
+          export COVERAGE_PROCESS_START=$PWD/.coveragerc
+
+          coverage run --rcfile=.coveragerc \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
           SERVER_PID=$!
           # Wait for the server to be ready
@@ -37,11 +45,11 @@ jobs:
             --cov-report= \
             --cov-append
           TEST_EXIT=$?
-          kill $SERVER_PID 2>/dev/null || true
+          kill -INT $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
-          coverage combine
-          coverage xml
-          coverage report --show-missing
+          coverage combine --rcfile=.coveragerc
+          coverage xml --rcfile=.coveragerc
+          coverage report --rcfile=.coveragerc --show-missing
           exit $TEST_EXIT
           EOF
           chmod +x test.sh
