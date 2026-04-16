@@ -133,7 +133,7 @@ with SlurmJobExecutor(max_workers=12) as exe:
 | Key | Description |
 |---|---|
 | `viscosity` | Mean shear viscosity (Pa·s) |
-| `viscosity_std` | Sample std across replicas (Pa·s, ddof=1) |
+| `viscosity_fit_residual` | Sample std across replicas (Pa·s, ddof=1) |
 | `viscosity_sem` | Standard error of the mean (Pa·s) |
 | `shear_modulus_inf` | Mean infinite-frequency shear modulus (Pa) |
 | `bulk_viscosity` | Mean bulk viscosity (Pa·s) |
