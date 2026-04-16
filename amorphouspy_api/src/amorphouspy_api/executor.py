@@ -38,7 +38,8 @@ def get_executor_class() -> type:
     Note: the executor classes behave differently with respect to cache and `wait`ing:
     - Only the SlurmClusterExecutor and the FluxClusterExecutor support cache and `wait`ing as expected
     - SingleNodeExecutor: uses socket-based communication, so cache is created only once results are computed
-      and calling `get_future_from_cache` earlier results in `FileNotFoundError`
+      and calling `get_future_from_cache` earlier results in `FileNotFoundError`.
+      Executor will wait for futures to be done when exiting the executor context.
     - TestClusterExecutor: uses Python's `subprocess` module which does not provide task dependency management.
       When chaining futures, the next future is thus submitted only once the previous one is completed
 
