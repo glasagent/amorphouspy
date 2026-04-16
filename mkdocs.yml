@@ -43,16 +43,13 @@ nav:
     - how_to_guides/index.md
     - how_to_guides/installation.md
     - how_to_guides/running_api.md
-    - MD Tutorial: notebooks/MDTutorial.ipynb
     - Meltquench Tutorial: notebooks/MeltquenchTutorial.ipynb
-    # - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
-    # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
-    # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
     - Structure Tutorial: notebooks/StructureTutorial.ipynb
-    - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/ViscosityTutorial.ipynb
     - CTE: notebooks/CTE.ipynb
-    # - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
+    - Elastic Properties: notebooks/ElasticProperties.ipynb
+    - MD Tutorial: notebooks/MDTutorial.ipynb
+    #- Parametric Study: notebooks/ParametricStudyTutorial.ipynb
   - Theory:
     - theory/index.md
     - Structure generation: theory/structure.md
@@ -68,6 +65,7 @@ nav:
         - Elastic Moduli: theory/workflows/elastic.md
         - Viscosity: theory/workflows/viscosity.md
         - CTE: theory/workflows/cte.md
+        - Parametric Study: theory/workflows/parametric.md
     - Structural Analysis:
         - theory/analysis/index.md
         - RDF & Coordination: theory/analysis/rdf.md
