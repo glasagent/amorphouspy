@@ -64,7 +64,7 @@ jobs:
         working-directory: amorphouspy_api
         env:
           AMORPHOUSPY_INTEGRATION: "1"
-          EXECUTOR_TYPE: "single"
+          EXECUTOR_TYPE: "test"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
