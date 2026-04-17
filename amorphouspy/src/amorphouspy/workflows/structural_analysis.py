@@ -3,6 +3,8 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+import warnings
+
 import numpy as np
 import plotly.graph_objects as go
 from ase.atoms import Atoms
@@ -18,8 +20,16 @@ from amorphouspy.analysis.radial_distribution_functions import compute_coordinat
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.analysis.structure_factor import compute_structure_factor
 
-GLASS_FORMERS = {"Si", "B", "P", "Ge", "Al", "Ti", "Zr"}
-GLASS_MODIFIERS = {"Li", "Na", "K", "Rb", "Cs", "Mg", "Ca", "Sr", "Ba", "Zn", "Pb", "La", "Y"}
+# Network Formers: Elements that can form a glass network on their own.
+GLASS_FORMERS = {"Si", "B", "P", "Ge", "As", "Sb", "Te", "V"}
+
+# Network Intermediates: Elements that strengthen or modify the network
+# but cannot form glass alone.
+GLASS_INTERMEDIATES = {"Al", "Ti", "Zr", "Be", "Zn", "Pb", "Bi", "Nb", "Ta", "W", "Mo", "Ga", "In", "Sn", "Fe", "Cr"}
+
+# Network Modifiers: Elements that break the network to lower melting
+# points and viscosity.
+GLASS_MODIFIERS = {"Li", "Na", "K", "Rb", "Cs", "Mg", "Ca", "Sr", "Ba", "La", "Y", "Cd", "Tl"}
 
 
 class CoordinationData(BaseModel):
@@ -195,12 +205,13 @@ def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], 
         symbol = type_map[z]
         if symbol == "O":
             oxygen_present = True
-        elif symbol in GLASS_FORMERS:
+        elif symbol in GLASS_FORMERS or symbol in GLASS_INTERMEDIATES:
             network_formers.add(symbol)
         elif symbol in GLASS_MODIFIERS:
             modifiers.add(symbol)
         else:
-            network_formers.add(symbol)
+            warnings.warn(f"Unknown element {symbol!r}, treating as modifier", stacklevel=2)
+            modifiers.add(symbol)
 
     return type_map, network_formers, modifiers, oxygen_present
 
