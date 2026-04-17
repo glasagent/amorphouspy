@@ -21,6 +21,7 @@ DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
     "pmmcs": 5000.0,
     "bjp": 5000.0,
     "shik": 4000.0,
+    "du/teter": 5000.0,
 }
 
 
@@ -328,9 +329,111 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     return structure_final, history
 
 
+def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
+    """Execute the simulation Du/Teter protocol.
+
+    Uses the same NVT heating / NVT equilibration / NVT cooling / NPT pressure
+    release / NVT final equilibration sequence as the PMMCS protocol.
+
+    Args:
+        runner: The function to run LAMMPS MD simulations.
+        params: MeltQuenchParams dataclass containing all simulation parameters.
+
+    Returns:
+        Final structure and list of per-stage thermo dicts (one per stage, in order).
+
+    """
+    # Stage 1 uses the original potential config (with Langevin + NVE melt block).
+    run1 = partial(
+        runner,
+        potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    # Stages 2+ use a stripped config without the melt preamble.
+    exclude_patterns = [
+        "fix langevinnve all langevin 5000 5000 0.01 48279",
+        "fix ensemblenve all nve/limit 0.5",
+        "run 10000",
+        "unfix langevinnve",
+        "unfix ensemblenve",
+    ]
+    potential_stripped = params.potential.copy()
+    potential_stripped["Config"] = potential_stripped["Config"].apply(
+        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
+    )
+    run2 = partial(
+        runner,
+        potential=potential_stripped,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    history: list[dict | None] = []
+
+    # Stage 1: Heating from low to high T
+    structure, parsed = run1(
+        structure=params.structure,
+        temperature=params.temperature_low,
+        temperature_end=params.temperature_high,
+        n_ionic_steps=params.heating_steps,
+        initial_temperature=params.temperature_low,
+        seed=params.seed,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 2: Equilibration at high T
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_high,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
+        initial_temperature=0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 3: Cooling from high to low T
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_high,
+        temperature_end=params.temperature_low,
+        n_ionic_steps=params.cooling_steps,
+        initial_temperature=0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 4: Pressure release at low T
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
+        initial_temperature=0,
+        pressure=0.0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 5: Long equilibration at low T
+    structure_final, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
+        initial_temperature=0,
+    )
+    history.append(parsed.get("generic", None))
+
+    return structure_final, history
+
+
 # Map potential names to protocol functions
 PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, list[dict | None]]]] = {
     "pmmcs": pmmcs_protocol,
     "bjp": bjp_protocol,
     "shik": shik_protocol,
+    "du/teter": du_teter_protocol,
 }

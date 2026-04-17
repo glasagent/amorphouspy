@@ -6,16 +6,18 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import pandas as pd
 
 from . import bjp_potential as bjp
+from . import du_teter_potential as du_teter
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
-POTENTIAL_PREFERENCE = ("pmmcs", "shik", "bjp")
+POTENTIAL_PREFERENCE = ("pmmcs", "shik", "du_teter", "bjp")
 
 _POTENTIAL_MODULES = {
     "pmmcs": pmmcs,
     "bjp": bjp,
     "shik": shik,
+    "du_teter": du_teter,
 }
 
 
@@ -23,7 +25,7 @@ def get_supported_elements(potential_type: str) -> set[str]:
     """Return the set of non-oxygen elements supported by *potential_type*.
 
     Args:
-        potential_type: One of ``"pmmcs"``, ``"bjp"``, or ``"shik"``.
+        potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``, or ``"du_teter"``.
 
     Returns:
         Set of element symbols.
@@ -76,10 +78,10 @@ def generate_potential(atoms_dict: dict, potential_type: str = "pmmcs", *, melt:
 
     Args:
         atoms_dict: Dictionary containing atomic structure information.
-        potential_type: Type of potential to generate. Options are "pmmcs", "bjp", or "shik".
-            (default is "pmmcs").
+        potential_type: Type of potential to generate. Options are "pmmcs", "bjp", "shik",
+            or "du_teter" (default is "pmmcs").
         melt: Append a Langevin + NVE/limit melt run block (10000 steps). Only used when
-            ``potential_type="shik"``.
+            ``potential_type`` is ``"shik"`` or ``"du_teter"``.
 
     Returns:
         DataFrame containing potential configuration.
@@ -95,5 +97,7 @@ def generate_potential(atoms_dict: dict, potential_type: str = "pmmcs", *, melt:
         return bjp.generate_bjp_potential(atoms_dict)
     if potential_type.lower() == "shik":
         return shik.generate_shik_potential(atoms_dict, melt=melt)
+    if potential_type.lower() == "du_teter":
+        return du_teter.generate_du_teter_potential(atoms_dict, melt=melt)
     msg = f"Unsupported potential type: {potential_type}"
     raise ValueError(msg)
