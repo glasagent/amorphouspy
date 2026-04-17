@@ -29,13 +29,38 @@ The `StructureData` object groups results into logical categories:
 
 | Attribute | Contents |
 |---|---|
-| `data.rdf` | Partial and total RDFs, distances, pair labels |
-| `data.coordination` | Coordination numbers for formers and modifiers |
-| `data.network` | $Q^n$ distribution, network connectivity, bridging oxygen fraction |
-| `data.angles` | O-X-O and X-O-X bond angle distributions |
-| `data.rings` | Ring size statistics (Guttman algorithm) |
-| `data.cavities` | Void volumes and size distributions |
 | `data.density` | Calculated density in g/cm³ |
+| `data.rdfs` | Partial RDFs, distances, cumulative coordination numbers |
+| `data.coordination` | Coordination distributions for oxygen, formers, and modifiers |
+| `data.network` | $Q^n$ distribution, partial $Q^n$ by former species, network connectivity |
+| `data.distributions` | Bond angle histograms (`bond_angles`), ring statistics (`rings`) |
+| `data.structure_factor` | Neutron and X-ray $S(q)$, partial $S_{\alpha\beta}(q)$ |
+| `data.elements` | Classified formers, modifiers, cutoffs, oxygen class counts/IDs |
+
+---
+
+## Element Classification
+
+`analyze_structure` automatically classifies every element in the structure into one of three roles using the sets defined in `structural_analysis.py`:
+
+| Role | Elements | Analysis treatment |
+|---|---|---|
+| **Formers** | Si, B, P, Ge, As, Sb, Te, V | Network-forming cations: coordination, $Q^n$, bond angles, rings, Former-O RDF panel |
+| **Intermediates** | Al, Ti, Zr, Be, Zn, Pb, Bi, Nb, Ta, W, Mo, Ga, In, Sn, Fe, Cr | Treated as formers in all analysis |
+| **Modifiers** | Li, Na, K, Rb, Cs, Mg, Ca, Sr, Ba, La, Y, Cd, Tl | Coordination only, Modifier-O RDF panel |
+
+Oxygen is handled separately. Any element not in the above sets triggers a `warnings.warn` and falls back to the modifier role.
+
+The resolved classification is available on the result:
+
+```python
+data = analyze_structure(glass_structure)
+print(data.elements.formers)    # e.g. ["Si", "Al"]
+print(data.elements.modifiers)  # e.g. ["Na", "Ca"]
+print(data.elements.cutoffs)    # e.g. {"Si": 2.0, "Al": 2.1, "Na": 3.4, "O": 1.9}
+```
+
+---
 
 ### `plot_analysis_results_plotly(data)`
 
