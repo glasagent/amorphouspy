@@ -24,6 +24,7 @@ from amorphouspy.io_utils import (
 )
 from amorphouspy.mass import get_atomic_mass
 from amorphouspy.neighbors import get_neighbors
+from amorphouspy.potentials._config import ElectrostaticsConfig
 from amorphouspy.potentials.potential import generate_potential
 from amorphouspy.shared import count_distribution, running_mean, type_to_dict
 from amorphouspy.structure import (
@@ -46,6 +47,7 @@ from amorphouspy.workflows.structural_analysis import analyze_structure, find_rd
 from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
 
 __all__ = [
+    "ElectrostaticsConfig",
     "analyze_structure",
     "check_neutral_oxide",
     "classify_oxygens",

@@ -3,12 +3,30 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from __future__ import annotations
+
+from typing import TypedDict
+
 import pandas as pd
 
+from amorphouspy.potentials._config import ElectrostaticsConfig
 from amorphouspy.shared import get_element_types_dict
 
+
+class _PmmcsEntry(TypedDict):
+    q: float
+    morse: tuple[float, float, float]
+    repulsion: float
+
+
+_DEFAULT_SHORT_RANGE_CUTOFF = 5.5
+_DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF = 8.0
+_DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
+_DEFAULT_ALPHA = 0.25
+_MELT_TEMPERATURE = 4000
+
 # Complete dictionary of Pmmcs parameters
-pmmcs_potential_params = {
+pmmcs_potential_params: dict[str, _PmmcsEntry] = {
     "Li": {"q": 0.6, "morse": (0.001114, 3.429506, 2.681360), "repulsion": 1.0},
     "Na": {"q": 0.6, "morse": (0.023363, 1.763867, 3.006315), "repulsion": 5.0},
     "K": {"q": 0.6, "morse": (0.011612, 2.062605, 3.305308), "repulsion": 5.0},
@@ -46,14 +64,78 @@ def supported_elements() -> set[str]:
     return set(pmmcs_potential_params)
 
 
-def generate_pmmcs_potential(atoms_dict: dict) -> pd.DataFrame:
-    """Generate LAMMPS potential configuration for glass simulations.
+def _resolve_coulomb_style(
+    electrostatics_cfg: ElectrostaticsConfig,
+) -> tuple[str, str, str | None]:
+    """Return (coulomb_style, coulomb_pair_coeff, kspace_line) for the given config."""
+    if electrostatics_cfg.method in ("dsf", "wolf"):
+        long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF
+        alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
+        return (
+            f"coul/{electrostatics_cfg.method} {alpha} {long_range_cutoff}",
+            f"coul/{electrostatics_cfg.method}",
+            None,
+        )
+    long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF
+    return (
+        f"coul/long {long_range_cutoff}",
+        "coul/long",
+        f"kspace_style {electrostatics_cfg.method} {electrostatics_cfg.kspace_accuracy}\n",
+    )
+
+
+def _build_pmmcs_pair_coeff_lines(species: list[str], types: dict) -> list[str]:
+    o_type = types.get("O")
+    lines = []
+    for elem in species:
+        i_type = types[elem]
+        dij, a, r0 = pmmcs_potential_params[elem]["morse"]
+        cij = pmmcs_potential_params[elem]["repulsion"]
+        lines.append(f"pair_coeff {i_type} {o_type} pedone {dij} {a} {r0} {cij}\n")
+    return lines
+
+
+def generate_pmmcs_potential(
+    atoms_dict: dict,
+    *,
+    melt: bool = True,
+    electrostatics: ElectrostaticsConfig | None = None,
+) -> pd.DataFrame:
+    """Generate the PMMCS (Pedone) potential for the given composition.
 
     Args:
-        atoms_dict: Dictionary containing atomic structure information.
+        atoms_dict: Structure dict from ``get_structure_dict()``.
+        melt: If ``True``, appends a high-temperature pre-equilibration block
+            at 4000 K using a Langevin thermostat (``fix langevin``) combined
+            with ``fix nve/limit`` to prevent runaway atom velocities during the
+            first 10 000 steps. This helps relax unfavourable contacts in the
+            random initial structure before the main melt-quench protocol. Set
+            to ``False`` when the starting structure is already equilibrated or
+            when you want full control over the thermostat schedule.
+        electrostatics: Controls the Coulomb solver and associated cutoffs.
+            When ``None`` (default), DSF is used with ``alpha=0.25``,
+            short-range Morse cutoff 5.5 Å, and Coulomb cutoff 8.0 Å.
+
+            **DSF / Wolf** - damped shifted force / Wolf summation. These are
+            real-space methods and do not require a k-space solve. ``alpha``
+            (Å⁻¹) damps the interaction; larger values decay faster and allow a
+            shorter ``long_range_cutoff``. Emitted as
+            ``coul/dsf <alpha> <long_range_cutoff>`` (or ``coul/wolf``).
+
+            **PPPM / Ewald** — reciprocal-space methods. ``alpha`` is ignored.
+            ``long_range_cutoff`` defaults to 12.0 Å (wider than DSF because the
+            real-space part decays more slowly without an explicit damping term).
+            A ``kspace_style <method> <kspace_accuracy>`` line is appended after
+            the pair coefficients. ``kspace_accuracy`` (default ``1e-5``) trades
+            cost against accuracy of the long-range sum.
+
+            ``short_range_cutoff`` sets the Morse (pedone) pair cutoff
+            independently of the Coulomb cutoff (default 5.5 Å). Increasing it
+            captures slightly longer-ranged Morse interactions but raises the
+            pair-list cost quadratically.
 
     Returns:
-        DataFrame containing potential configuration.
+        Single-row DataFrame with LAMMPS config lines in the ``Config`` column.
 
     """
     types = get_element_types_dict(atoms_dict["atoms"])
@@ -75,6 +157,10 @@ def generate_pmmcs_potential(atoms_dict: dict) -> pd.DataFrame:
         error_msg = f"Pmmcs potential does not include interaction parameters for: {missing_pairs}-O. "
         raise ValueError(error_msg)
 
+    electrostatics_cfg = electrostatics or ElectrostaticsConfig()
+    short_range_cutoff = electrostatics_cfg.short_range_cutoff or _DEFAULT_SHORT_RANGE_CUTOFF
+    coulomb_style, coulomb_pair_coeff, kspace_line = _resolve_coulomb_style(electrostatics_cfg)
+
     config_lines = [
         "# A. Pedone et.al., JPCB (2006), https://doi.org/10.1021/jp0611018\n",
         "units metal\n",
@@ -94,34 +180,28 @@ def generate_pmmcs_potential(atoms_dict: dict) -> pd.DataFrame:
     config_lines.extend(
         [
             "\n### Pmmcs Potential Parameters ###\n",
-            "pair_style hybrid/overlay coul/dsf 0.25 8.0 pedone 5.5\n",
-            "pair_coeff * * coul/dsf\n",
+            f"pair_style hybrid/overlay {coulomb_style} pedone {short_range_cutoff}\n",
+            f"pair_coeff * * {coulomb_pair_coeff}\n",
         ],
     )
 
-    o_type = types.get("O")
-    for elem in species:
-        if elem == "O":
-            i_type = types[elem]
-            morse = pmmcs_potential_params[elem]["morse"]
-            assert isinstance(morse, tuple)
-            dij, a, r0 = morse
-            cij = pmmcs_potential_params[elem]["repulsion"]
-            config_lines.append(
-                f"pair_coeff {i_type} {o_type} pedone {dij} {a} {r0} {cij}\n",
-            )
+    if kspace_line:
+        config_lines.append(kspace_line)
 
-        if elem != "O":
-            i_type = types[elem]
-            morse = pmmcs_potential_params[elem]["morse"]
-            assert isinstance(morse, tuple)
-            dij, a, r0 = morse
-            cij = pmmcs_potential_params[elem]["repulsion"]
-            config_lines.append(
-                f"pair_coeff {i_type} {o_type} pedone {dij} {a} {r0} {cij}\n",
-            )
+    config_lines.extend(_build_pmmcs_pair_coeff_lines(species, types))
 
     config_lines.append("\npair_modify shift yes\n")
+
+    if melt:
+        config_lines.extend(
+            [
+                f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n",
+                "\nfix ensemblenve all nve/limit 0.5\n",
+                "\nrun 10000\n",
+                "\nunfix langevinnve\n",
+                "\nunfix ensemblenve\n",
+            ]
+        )
 
     return pd.DataFrame(
         {
