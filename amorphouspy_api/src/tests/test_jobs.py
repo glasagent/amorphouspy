@@ -1043,3 +1043,39 @@ def test_search_jobs_filter_by_tags() -> None:
     ids = [m["job_id"] for m in resp.json()["matches"]]
     assert "j-tag-filter-yes" in ids
     assert "j-tag-filter-no" not in ids
+
+
+# ---------------------------------------------------------------------------
+# ElectrostaticsParams
+# ---------------------------------------------------------------------------
+
+
+def test_electrostatics_params_to_config_roundtrip():
+    """ElectrostaticsParams.to_electrostatics_config() returns matching ElectrostaticsConfig."""
+    from amorphouspy_api.models import ElectrostaticsParams, LongRangeMethod
+
+    from amorphouspy import ElectrostaticsConfig
+
+    params = ElectrostaticsParams(method=LongRangeMethod.pppm, long_range_cutoff=9.0, kspace_accuracy=1e-4)
+    config = params.to_electrostatics_config()
+
+    assert isinstance(config, ElectrostaticsConfig)
+    assert config.method == "pppm"
+    assert config.long_range_cutoff == 9.0
+    assert config.kspace_accuracy == 1e-4
+
+
+def test_job_submission_accepts_electrostatics():
+    """JobSubmission with a non-default electrostatics field serialises and deserialises correctly."""
+    from amorphouspy_api.models import ElectrostaticsParams, JobSubmission, LongRangeMethod
+
+    submission = JobSubmission(
+        composition={"SiO2": 70, "Na2O": 30},
+        electrostatics=ElectrostaticsParams(method=LongRangeMethod.wolf, alpha=0.3, long_range_cutoff=10.0),
+    )
+    data = submission.model_dump()
+    roundtrip = JobSubmission.model_validate(data)
+
+    assert roundtrip.electrostatics.method == LongRangeMethod.wolf
+    assert roundtrip.electrostatics.alpha == 0.3
+    assert roundtrip.electrostatics.long_range_cutoff == 10.0

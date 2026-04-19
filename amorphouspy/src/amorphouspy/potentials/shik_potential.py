@@ -3,13 +3,20 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from __future__ import annotations
+
 from collections import Counter
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from amorphouspy.potentials._config import ElectrostaticsConfig
 from amorphouspy.shared import get_element_types_dict
+
+_DEFAULT_LONG_RANGE_CUTOFF = 10.0
+_DEFAULT_ALPHA = 0.2
+_MELT_TEMPERATURE = 4000
 
 # ================================================================
 # SHIK Parameters (Pedone-like Buckingham + r^-24)
@@ -179,22 +186,45 @@ def _build_pair_coeff_lines(species: list, types: dict, output_dir: Path, rvdw: 
     return lines
 
 
-def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bool = True) -> pd.DataFrame:
+def generate_shik_potential(
+    atoms_dict: dict,
+    output_dir: str = ".",
+    *,
+    melt: bool = True,
+    electrostatics: ElectrostaticsConfig | None = None,
+) -> pd.DataFrame:
     """Generate SHIK LAMMPS input configuration with absolute table paths.
 
     Args:
-        atoms_dict: Dictionary containing atomic structure information.
-        output_dir: Directory to save the table file definition.
-        melt: If True, append a Langevin + NVE melt run block (10000 steps).
+        atoms_dict: Structure dict from ``get_structure_dict()``.
+        output_dir: Directory to save the table files.
+        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K.
+        electrostatics: Coulomb solver settings. SHIK only supports ``"dsf"`` —
+            any other method raises ``ValueError``. The potential was parameterized
+            with a Wolf-class DSF truncation (Sundararaman et al., JCP 2018).
 
     Returns:
-        DataFrame containing potential configuration.
+        Single-row DataFrame with LAMMPS config lines in the ``Config`` column.
+
+    Raises:
+        ValueError: If ``electrostatics.method`` is not ``"dsf"``.
 
     Example:
         >>> shik_pot = generate_shik_potential(struct_dict, output_dir="./potentials")
         >>> shik_pot_no_melt = generate_shik_potential(struct_dict, melt=False)
 
     """
+    electrostatics_cfg = electrostatics or ElectrostaticsConfig()
+    if electrostatics_cfg.method != "dsf":
+        msg = (
+            f"SHIK potential only supports 'dsf' electrostatics (got '{electrostatics_cfg.method}'). "
+            "The potential was parameterized with Wolf-class DSF truncation."
+        )
+        raise ValueError(msg)
+
+    vdw_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_LONG_RANGE_CUTOFF
+    alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
+
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -235,12 +265,11 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
     lines.extend([f"set type {types[elem]} charge {shik_charges[elem]}\n" for elem in species])
 
     lines.append("\n### SHIK Potential ###\n")
-    lines.append("pair_style hybrid/overlay coul/dsf 0.2 10.0 table spline 10000\n")
+    lines.append(f"pair_style hybrid/overlay coul/dsf {alpha} {vdw_cutoff} table spline 10000\n")
     lines.append("pair_coeff * * coul/dsf\n")
-    rvdw = 10.0  # cutoff for the SHIK potential
 
     # --- Generate tables with absolute paths ---
-    lines.extend(_build_pair_coeff_lines(species, types, out_dir, rvdw))
+    lines.extend(_build_pair_coeff_lines(species, types, out_dir, vdw_cutoff))
 
     lines.append("\npair_modify shift yes\n\n")
 
@@ -248,7 +277,7 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
     lines.append("\nthermo_modify flush yes\n")
     lines.append("\nthermo 100\n")
     if melt:
-        lines.append("\nfix langevinnve all langevin 5000 5000 0.01 48279\n")
+        lines.append(f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n")
         lines.append("\nfix ensemblenve all nve/limit 0.5\n")
         lines.append("\nrun 10000\n")
         lines.append("\nunfix langevinnve\n")

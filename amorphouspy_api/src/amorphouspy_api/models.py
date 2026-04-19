@@ -127,6 +127,15 @@ class Potential(StrEnum):
     shik = "shik"
 
 
+class LongRangeMethod(StrEnum):
+    """Coulomb solver method for LAMMPS potential generation."""
+
+    dsf = "dsf"
+    wolf = "wolf"
+    pppm = "pppm"
+    ewald = "ewald"
+
+
 class StepStatus(StrEnum):
     """Status of an individual pipeline step."""
 
@@ -327,6 +336,37 @@ class MeltQuenchParams(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Electrostatics settings
+# ---------------------------------------------------------------------------
+
+
+class ElectrostaticsParams(BaseModel):
+    """Coulomb solver settings for LAMMPS potential generation.
+
+    Controls the long-range electrostatics method and associated cutoffs.
+    All fields are optional; unset values fall back to each potential's defaults.
+    """
+
+    method: LongRangeMethod = Field(default=LongRangeMethod.dsf, description="Coulomb solver")
+    short_range_cutoff: float | None = Field(default=None, description="Pair-potential cutoff in Å (PMMCS only)")
+    long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å")
+    alpha: float | None = Field(default=None, description="Damping parameter (Å⁻¹) for DSF/Wolf")
+    kspace_accuracy: float = Field(default=1e-5, description="Relative accuracy for PPPM/Ewald")
+
+    def to_electrostatics_config(self):
+        """Convert to ``ElectrostaticsConfig`` for the core library."""
+        from amorphouspy import ElectrostaticsConfig
+
+        return ElectrostaticsConfig(
+            method=self.method.value,
+            short_range_cutoff=self.short_range_cutoff,
+            long_range_cutoff=self.long_range_cutoff,
+            alpha=self.alpha,
+            kspace_accuracy=self.kspace_accuracy,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Job submission / response
 # ---------------------------------------------------------------------------
 
@@ -347,6 +387,10 @@ class JobSubmission(BaseModel):
     analyses: list[Analysis] = Field(  # type: ignore[ty:invalid-assignment]
         default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
         description="Analyses to run. Each can carry its own parameters. Defaults to all available analyses.",
+    )
+    electrostatics: ElectrostaticsParams = Field(
+        default_factory=ElectrostaticsParams,
+        description="Coulomb solver and cutoff settings. Defaults to DSF with potential-specific parameters.",
     )
     tags: list[str] = Field(
         default_factory=list,

@@ -19,6 +19,7 @@ from amorphouspy.potentials.pmmcs_potential import (
     supported_elements as pmmcs_supported_elements,
 )
 from amorphouspy.potentials.potential import (
+    ElectrostaticsConfig,
     compatible_potentials,
     get_supported_elements,
     select_potential,
@@ -381,3 +382,134 @@ def test_generate_shik_potential_melt_true_includes_run(tmp_path):
     result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
     config = result["Config"].iloc[0]
     assert any("run 10000" in line for line in config)
+
+
+# ---------------------------------------------------------------------------
+# ElectrostaticsConfig — PMMCS
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", ["dsf", "wolf"])
+def test_pmmcs_dsf_wolf_pair_style_contains_alpha(method):
+    """pair_style includes alpha for DSF/Wolf and no kspace_style is emitted."""
+    cfg = ElectrostaticsConfig(method=method, alpha=0.3, long_range_cutoff=9.0)
+    result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
+    config = result["Config"].iloc[0]
+    pair_style_lines = [line for line in config if "pair_style" in line]
+    assert any("0.3" in line for line in pair_style_lines)
+    assert not any("kspace_style" in line for line in config)
+
+
+@pytest.mark.parametrize("method", ["pppm", "ewald"])
+def test_pmmcs_pppm_ewald_uses_coul_long_and_kspace(method):
+    """pair_style contains coul/long, kspace_style is emitted, alpha is absent."""
+    cfg = ElectrostaticsConfig(method=method)
+    result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
+    config = result["Config"].iloc[0]
+    assert any("coul/long" in line for line in config)
+    assert any(f"kspace_style {method}" in line for line in config)
+    pair_style_lines = [line for line in config if "pair_style" in line]
+    assert not any("alpha" in line or "0.25" in line for line in pair_style_lines)
+
+
+def test_pmmcs_custom_cutoffs_appear_in_config():
+    """Custom short_range_cutoff and long_range_cutoff appear in generated lines."""
+    cfg = ElectrostaticsConfig(method="dsf", short_range_cutoff=6.0, long_range_cutoff=9.5)
+    result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "6.0" in config_text
+    assert "9.5" in config_text
+
+
+# ---------------------------------------------------------------------------
+# ElectrostaticsConfig — BJP
+# ---------------------------------------------------------------------------
+
+
+def test_bjp_pppm_uses_born_coul_long():
+    """born/coul/long is used when method is 'pppm'."""
+    cfg = ElectrostaticsConfig(method="pppm")
+    result = generate_bjp_potential(_cas_atoms_dict(), electrostatics=cfg)
+    config = result["Config"].iloc[0]
+    assert any("born/coul/long" in line for line in config)
+    assert any("kspace_style pppm" in line for line in config)
+
+
+# ---------------------------------------------------------------------------
+# ElectrostaticsConfig — SHIK
+# ---------------------------------------------------------------------------
+
+
+def test_shik_custom_lr_cutoff_used_in_table_pair_coeff(tmp_path):
+    """Custom long_range_cutoff propagates to the table pair_coeff line."""
+    cfg = ElectrostaticsConfig(method="dsf", long_range_cutoff=8.5)
+    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, electrostatics=cfg)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "8.5" in config_text
+
+
+@pytest.mark.parametrize("method", ["wolf", "pppm", "ewald"])
+def test_shik_rejects_non_dsf_methods(tmp_path, method):
+    """ValueError is raised with a descriptive message for non-DSF methods."""
+    cfg = ElectrostaticsConfig(method=method)
+    with pytest.raises(ValueError, match="only supports 'dsf'"):
+        generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, electrostatics=cfg)
+
+
+# ---------------------------------------------------------------------------
+# Defaults regression — all three potentials with electrostatics=None
+# ---------------------------------------------------------------------------
+
+
+def test_defaults_unchanged_pmmcs():
+    """PMMCS with electrostatics=None produces DSF pair_style with default cutoffs."""
+    result = generate_pmmcs_potential(_sio2_atoms_dict())
+    config_text = "".join(result["Config"].iloc[0])
+    assert "coul/dsf 0.25 8.0" in config_text
+    assert "pedone 5.5" in config_text
+
+
+def test_defaults_unchanged_bjp():
+    """BJP with electrostatics=None produces born/coul/dsf pair_style with default cutoffs."""
+    result = generate_bjp_potential(_cas_atoms_dict())
+    config_text = "".join(result["Config"].iloc[0])
+    assert "born/coul/dsf 0.25 8.0" in config_text
+
+
+def test_defaults_unchanged_shik(tmp_path):
+    """SHIK with electrostatics=None produces coul/dsf 0.2 10.0 pair_style."""
+    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "coul/dsf 0.2 10.0" in config_text
+
+
+# ---------------------------------------------------------------------------
+# Melt block — all three potentials
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("generator", "atoms_dict_fn", "kwargs"),
+    [
+        (generate_pmmcs_potential, _sio2_atoms_dict, {}),
+        (generate_bjp_potential, _cas_atoms_dict, {}),
+    ],
+)
+def test_melt_block_present_and_absent(generator, atoms_dict_fn, kwargs):
+    """melt=True produces run 10000 and 4000 in langevin; melt=False omits block."""
+    result_with = generator(atoms_dict_fn(), melt=True, **kwargs)
+    config_with = "".join(result_with["Config"].iloc[0])
+    assert "run 10000" in config_with
+    assert "4000" in config_with
+
+    result_without = generator(atoms_dict_fn(), melt=False, **kwargs)
+    config_without = "".join(result_without["Config"].iloc[0])
+    assert "run 10000" not in config_without
+
+
+def test_shik_melt_block_uses_4000(tmp_path):
+    """SHIK melt block uses 4000 K (not the old 5000 K)."""
+    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "langevin 4000 4000" in config_text
+    assert "5000" not in config_text

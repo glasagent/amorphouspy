@@ -3,9 +3,16 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from __future__ import annotations
+
 import pandas as pd
 
+from amorphouspy.potentials._config import ElectrostaticsConfig
 from amorphouspy.shared import get_element_types_dict
+
+_DEFAULT_SHORT_RANGE_CUTOFF = 8.0
+_DEFAULT_ALPHA = 0.25
+_MELT_TEMPERATURE = 4000
 
 # Born-Mayer-Huggins parameters from Table I in Bouhadja et al., J. Chem. Phys. 138, 224510 (2013)
 # Charges
@@ -35,14 +42,41 @@ def supported_elements() -> set[str]:
     return set(bjp_charges)
 
 
-def generate_bjp_potential(atoms_dict: dict) -> pd.DataFrame:
+def _build_bjp_pair_coeff_lines(species: list[str], types: dict) -> list[str]:
+    done_pairs: set[tuple[str, str]] = set()
+    lines = []
+    for elem_i in species:
+        for elem_j in species:
+            if (elem_i, elem_j) in done_pairs or (elem_j, elem_i) in done_pairs:
+                continue
+            if (elem_i, elem_j) in bjp_params:
+                A, rho, sigma, C, D = bjp_params[(elem_i, elem_j)]
+            elif (elem_j, elem_i) in bjp_params:
+                A, rho, sigma, C, D = bjp_params[(elem_j, elem_i)]
+            else:
+                continue
+            lines.append(f"pair_coeff {types[elem_i]} {types[elem_j]} {A:.6f} {rho:.6f} {sigma:.6f} {C:.6f} {D:.6f}\n")
+            done_pairs.add((elem_i, elem_j))
+    return lines
+
+
+def generate_bjp_potential(
+    atoms_dict: dict,
+    *,
+    melt: bool = True,
+    electrostatics: ElectrostaticsConfig | None = None,
+) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for CAS glass simulations (Bouhadja et al. 2013).
 
     Args:
-        atoms_dict: Dictionary containing atomic structure information.
+        atoms_dict: Structure dict from ``get_structure_dict()``.
+        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K.
+        electrostatics: Coulomb solver settings. BJP uses a single Born-Mayer cutoff
+            controlled by ``short_range_cutoff`` (default 8 Å). ``long_range_cutoff``
+            is ignored; kspace handles long range for PPPM/Ewald.
 
     Returns:
-        DataFrame containing potential configuration.
+        Single-row DataFrame with LAMMPS config lines in the ``Config`` column.
 
     """
     types = get_element_types_dict(atoms_dict["atoms"])
@@ -59,6 +93,17 @@ def generate_bjp_potential(atoms_dict: dict) -> pd.DataFrame:
     if missing_pairs:
         error_msg = f"BJP potential does not include interaction parameters for: {missing_pairs}."
         raise ValueError(error_msg)
+
+    electrostatics_cfg = electrostatics or ElectrostaticsConfig()
+    short_range_cutoff = electrostatics_cfg.short_range_cutoff or _DEFAULT_SHORT_RANGE_CUTOFF
+
+    if electrostatics_cfg.method in ("dsf", "wolf"):
+        alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
+        pair_style_line = f"pair_style born/coul/{electrostatics_cfg.method} {alpha} {short_range_cutoff}\n"
+        kspace_line = None
+    else:  # pppm or ewald
+        pair_style_line = f"pair_style born/coul/long {short_range_cutoff}\n"
+        kspace_line = f"kspace_style {electrostatics_cfg.method} {electrostatics_cfg.kspace_accuracy}\n"
 
     config_lines = [
         "# Bouhadja et al., J. Chem. Phys. 138, 224510 (2013) \n",
@@ -80,28 +125,28 @@ def generate_bjp_potential(atoms_dict: dict) -> pd.DataFrame:
     config_lines.extend(
         [
             "\n### Bouhadja Born-Mayer-Huggins + Coulomb Potential Parameters ###\n",
-            "pair_style born/coul/dsf 0.25 8.0\n",
+            pair_style_line,
         ]
     )
 
+    if kspace_line:
+        config_lines.append(kspace_line)
+
     # Pair coefficients
-    done_pairs = set()
-    for _i, elem_i in enumerate(species):
-        for _j, elem_j in enumerate(species):
-            if (elem_i, elem_j) in done_pairs or (elem_j, elem_i) in done_pairs:
-                continue
-            if (elem_i, elem_j) in bjp_params:
-                A, rho, sigma, C, D = bjp_params[(elem_i, elem_j)]
-            elif (elem_j, elem_i) in bjp_params:
-                A, rho, sigma, C, D = bjp_params[(elem_j, elem_i)]
-            else:
-                continue  # skip pairs not in table
-            type_i = types[elem_i]
-            type_j = types[elem_j]
-            config_lines.append(f"pair_coeff {type_i} {type_j} {A:.6f} {rho:.6f} {sigma:.6f} {C:.6f} {D:.6f}\n")
-            done_pairs.add((elem_i, elem_j))
+    config_lines.extend(_build_bjp_pair_coeff_lines(species, types))
 
     config_lines.append("\npair_modify shift yes\n")
+
+    if melt:
+        config_lines.extend(
+            [
+                f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n",
+                "\nfix ensemblenve all nve/limit 0.5\n",
+                "\nrun 10000\n",
+                "\nunfix langevinnve\n",
+                "\nunfix ensemblenve\n",
+            ]
+        )
 
     return pd.DataFrame(
         {
