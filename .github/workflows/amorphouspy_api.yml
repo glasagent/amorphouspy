@@ -16,40 +16,55 @@ jobs:
       - name: Run pytest test suite
         run: pixi run test-api
 
+      # Multi-process coverage for the integration test
+      # ──────────────────────────────────────────────────
+      # The API spawns worker subprocesses via executorlib.  To capture
+      # coverage inside those workers we need three things:
+      #
+      # 1. `parallel = true` — each process writes its own .coverage.<pid> file.
+      # 2. `COVERAGE_PROCESS_START` env var pointing at the .coveragerc —
+      #    a .pth file installed by coverage auto-starts measurement in
+      #    every new Python process that inherits this variable.
+      # 3. `sigterm = true` — workers are terminated with SIGTERM; this
+      #    option registers a handler that flushes coverage data on signal.
+      #
+      # We must NOT pass --cov to pytest, because pytest-cov creates a
+      # second Coverage instance that disables auto_save on the one
+      # started by the .pth file (via _prevent_sub_process_measurement).
       - name: Run integration test
         run: |
-          cat > test.sh << 'EOF'
-          #!/bin/bash
           cat > .coveragerc << COVERAGERC
           [run]
-          source = src/amorphouspy_api
+          source = $PWD/src/amorphouspy_api
           parallel = true
           data_file = $PWD/.coverage
+          sigterm = true
           COVERAGERC
 
-          coverage run --rcfile=.coveragerc \
+          export COVERAGE_PROCESS_START=$PWD/.coveragerc
+
+          pixi run -- coverage run --rcfile=.coveragerc \
             -m uvicorn amorphouspy_api.app:app --port 8002 &
           SERVER_PID=$!
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8002/ > /dev/null 2>&1 && echo "Server ready after ${i}s" && break
+            curl -sf http://127.0.0.1:8002/ > /dev/null 2>&1 && break
             sleep 1
           done
-          pytest -m integration -s --durations=0 \
-            --cov=src/amorphouspy_api --cov-report= --cov-append
+
+          pixi run -- pytest -m integration -s --durations=0
           TEST_EXIT=$?
+
           kill -INT $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
-          coverage combine --rcfile=.coveragerc
-          coverage xml --rcfile=.coveragerc
-          coverage report --rcfile=.coveragerc --show-missing
+
+          pixi run -- coverage combine --rcfile=.coveragerc
+          pixi run -- coverage xml --rcfile=.coveragerc
+          pixi run -- coverage report --rcfile=.coveragerc --show-missing
           exit $TEST_EXIT
-          EOF
-          chmod +x test.sh
-          pixi run -- flux start ./test.sh
         working-directory: amorphouspy_api
         env:
           AMORPHOUSPY_INTEGRATION: "1"
-          EXECUTOR_TYPE: "flux"
+          EXECUTOR_TYPE: "test"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
