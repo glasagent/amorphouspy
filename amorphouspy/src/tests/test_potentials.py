@@ -6,20 +6,15 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import numpy as np
 import pandas as pd
 import pytest
-from amorphouspy.potentials.bjp_potential import (
-    generate_bjp_potential,
-)
-from amorphouspy.potentials.bjp_potential import (
-    supported_elements as bjp_supported_elements,
-)
-from amorphouspy.potentials.pmmcs_potential import (
-    generate_pmmcs_potential,
-)
-from amorphouspy.potentials.pmmcs_potential import (
-    supported_elements as pmmcs_supported_elements,
-)
+from amorphouspy.potentials.bjp_potential import generate_bjp_potential
+from amorphouspy.potentials.bjp_potential import supported_elements as bjp_supported_elements
+from amorphouspy.potentials.pmmcs_potential import generate_pmmcs_potential
+from amorphouspy.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
 from amorphouspy.potentials.potential import (
-    ElectrostaticsConfig,
+    DsfConfig,
+    EwaldConfig,
+    PppmConfig,
+    WolfConfig,
     compatible_potentials,
     get_supported_elements,
     select_potential,
@@ -385,14 +380,22 @@ def test_generate_shik_potential_melt_true_includes_run(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# ElectrostaticsConfig — PMMCS
+# InteractionConfig — PMMCS
 # ---------------------------------------------------------------------------
+
+
+_METHOD_TO_CONFIG = {
+    "dsf": DsfConfig,
+    "wolf": WolfConfig,
+    "pppm": PppmConfig,
+    "ewald": EwaldConfig,
+}
 
 
 @pytest.mark.parametrize("method", ["dsf", "wolf"])
 def test_pmmcs_dsf_wolf_pair_style_contains_alpha(method):
     """pair_style includes alpha for DSF/Wolf and no kspace_style is emitted."""
-    cfg = ElectrostaticsConfig(method=method, alpha=0.3, long_range_cutoff=9.0)
+    cfg = _METHOD_TO_CONFIG[method](alpha=0.3, long_range_cutoff=9.0)
     result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
     config = result["Config"].iloc[0]
     pair_style_lines = [line for line in config if "pair_style" in line]
@@ -403,7 +406,7 @@ def test_pmmcs_dsf_wolf_pair_style_contains_alpha(method):
 @pytest.mark.parametrize("method", ["pppm", "ewald"])
 def test_pmmcs_pppm_ewald_uses_coul_long_and_kspace(method):
     """pair_style contains coul/long, kspace_style is emitted, alpha is absent."""
-    cfg = ElectrostaticsConfig(method=method)
+    cfg = _METHOD_TO_CONFIG[method]()
     result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
     config = result["Config"].iloc[0]
     assert any("coul/long" in line for line in config)
@@ -412,23 +415,22 @@ def test_pmmcs_pppm_ewald_uses_coul_long_and_kspace(method):
     assert not any("alpha" in line or "0.25" in line for line in pair_style_lines)
 
 
-def test_pmmcs_custom_cutoffs_appear_in_config():
-    """Custom short_range_cutoff and long_range_cutoff appear in generated lines."""
-    cfg = ElectrostaticsConfig(method="dsf", short_range_cutoff=6.0, long_range_cutoff=9.5)
+def test_pmmcs_custom_long_range_cutoff_appears_in_config():
+    """Custom long_range_cutoff appears in generated lines."""
+    cfg = DsfConfig(long_range_cutoff=9.5)
     result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
     config_text = "".join(result["Config"].iloc[0])
-    assert "6.0" in config_text
     assert "9.5" in config_text
 
 
 # ---------------------------------------------------------------------------
-# ElectrostaticsConfig — BJP
+# InteractionConfig — BJP
 # ---------------------------------------------------------------------------
 
 
 def test_bjp_pppm_uses_born_coul_long():
     """born/coul/long is used when method is 'pppm'."""
-    cfg = ElectrostaticsConfig(method="pppm")
+    cfg = PppmConfig()
     result = generate_bjp_potential(_cas_atoms_dict(), electrostatics=cfg)
     config = result["Config"].iloc[0]
     assert any("born/coul/long" in line for line in config)
@@ -436,22 +438,21 @@ def test_bjp_pppm_uses_born_coul_long():
 
 
 # ---------------------------------------------------------------------------
-# ElectrostaticsConfig — SHIK
+# InteractionConfig — SHIK
 # ---------------------------------------------------------------------------
 
 
 def test_shik_custom_lr_cutoff_used_in_table_pair_coeff(tmp_path):
     """Custom long_range_cutoff propagates to the table pair_coeff line."""
-    cfg = ElectrostaticsConfig(method="dsf", long_range_cutoff=8.5)
+    cfg = DsfConfig(long_range_cutoff=8.5)
     result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, electrostatics=cfg)
     config_text = "".join(result["Config"].iloc[0])
     assert "8.5" in config_text
 
 
-@pytest.mark.parametrize("method", ["wolf", "pppm", "ewald"])
-def test_shik_rejects_non_dsf_methods(tmp_path, method):
+@pytest.mark.parametrize("cfg", [WolfConfig(), PppmConfig(), EwaldConfig()])
+def test_shik_rejects_non_dsf_methods(tmp_path, cfg):
     """ValueError is raised with a descriptive message for non-DSF methods."""
-    cfg = ElectrostaticsConfig(method=method)
     with pytest.raises(ValueError, match="only supports 'dsf'"):
         generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, electrostatics=cfg)
 

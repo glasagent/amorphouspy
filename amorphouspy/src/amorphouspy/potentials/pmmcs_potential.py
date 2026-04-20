@@ -9,7 +9,7 @@ from typing import TypedDict
 
 import pandas as pd
 
-from amorphouspy.potentials._config import ElectrostaticsConfig
+from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 from amorphouspy.shared import get_element_types_dict
 
 
@@ -65,10 +65,10 @@ def supported_elements() -> set[str]:
 
 
 def _resolve_coulomb_style(
-    electrostatics_cfg: ElectrostaticsConfig,
+    electrostatics_cfg: InteractionConfig,
 ) -> tuple[str, str, str | None]:
     """Return (coulomb_style, coulomb_pair_coeff, kspace_line) for the given config."""
-    if electrostatics_cfg.method in ("dsf", "wolf"):
+    if isinstance(electrostatics_cfg, (DsfConfig, WolfConfig)):
         long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF
         alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
         return (
@@ -76,6 +76,7 @@ def _resolve_coulomb_style(
             f"coul/{electrostatics_cfg.method}",
             None,
         )
+    assert isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig))
     long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF
     return (
         f"coul/long {long_range_cutoff}",
@@ -99,7 +100,7 @@ def generate_pmmcs_potential(
     atoms_dict: dict,
     *,
     melt: bool = True,
-    electrostatics: ElectrostaticsConfig | None = None,
+    electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate the PMMCS (Pedone) potential for the given composition.
 
@@ -157,8 +158,8 @@ def generate_pmmcs_potential(
         error_msg = f"Pmmcs potential does not include interaction parameters for: {missing_pairs}-O. "
         raise ValueError(error_msg)
 
-    electrostatics_cfg = electrostatics or ElectrostaticsConfig()
-    short_range_cutoff = electrostatics_cfg.short_range_cutoff or _DEFAULT_SHORT_RANGE_CUTOFF
+    electrostatics_cfg = electrostatics if electrostatics is not None else DsfConfig()
+    short_range_cutoff = _DEFAULT_SHORT_RANGE_CUTOFF
     coulomb_style, coulomb_pair_coeff, kspace_line = _resolve_coulomb_style(electrostatics_cfg)
 
     config_lines = [

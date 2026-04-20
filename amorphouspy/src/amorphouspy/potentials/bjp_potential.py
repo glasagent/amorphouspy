@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from amorphouspy.potentials._config import ElectrostaticsConfig
+from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 from amorphouspy.shared import get_element_types_dict
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 8.0
+_DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
 _DEFAULT_ALPHA = 0.25
 _MELT_TEMPERATURE = 4000
 
@@ -64,7 +65,7 @@ def generate_bjp_potential(
     atoms_dict: dict,
     *,
     melt: bool = True,
-    electrostatics: ElectrostaticsConfig | None = None,
+    electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for CAS glass simulations (Bouhadja et al. 2013).
 
@@ -94,15 +95,17 @@ def generate_bjp_potential(
         error_msg = f"BJP potential does not include interaction parameters for: {missing_pairs}."
         raise ValueError(error_msg)
 
-    electrostatics_cfg = electrostatics or ElectrostaticsConfig()
-    short_range_cutoff = electrostatics_cfg.short_range_cutoff or _DEFAULT_SHORT_RANGE_CUTOFF
+    electrostatics_cfg = electrostatics if electrostatics is not None else DsfConfig()
+    short_range_cutoff = _DEFAULT_SHORT_RANGE_CUTOFF
 
-    if electrostatics_cfg.method in ("dsf", "wolf"):
+    if isinstance(electrostatics_cfg, (DsfConfig, WolfConfig)):
         alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
         pair_style_line = f"pair_style born/coul/{electrostatics_cfg.method} {alpha} {short_range_cutoff}\n"
         kspace_line = None
     else:  # pppm or ewald
-        pair_style_line = f"pair_style born/coul/long {short_range_cutoff}\n"
+        assert isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig))
+        long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF
+        pair_style_line = f"pair_style born/coul/long {long_range_cutoff}\n"
         kspace_line = f"kspace_style {electrostatics_cfg.method} {electrostatics_cfg.kspace_accuracy}\n"
 
     config_lines = [

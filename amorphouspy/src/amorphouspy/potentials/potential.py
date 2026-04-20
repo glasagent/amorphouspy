@@ -8,9 +8,9 @@ import pandas as pd
 from . import bjp_potential as bjp
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
-from ._config import ElectrostaticsConfig
+from ._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 
-__all__ = ["ElectrostaticsConfig"]
+__all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfConfig"]
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
 POTENTIAL_PREFERENCE = ("pmmcs", "shik", "bjp")
@@ -79,7 +79,7 @@ def generate_potential(
     potential_type: str = "pmmcs",
     *,
     melt: bool = True,
-    electrostatics: ElectrostaticsConfig | None = None,
+    electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 

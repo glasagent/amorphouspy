@@ -1,29 +1,58 @@
-"""Electrostatics configuration dataclass for LAMMPS potential generation."""
+"""Electrostatics configuration classes for LAMMPS potential generation.
 
-from dataclasses import dataclass
+Author: Achraf Atila (achraf.atila@bam.de)
+"""
+
 from typing import Literal
 
+from pydantic import BaseModel, ConfigDict, Field
 
-@dataclass
-class ElectrostaticsConfig:
-    """Electrostatics treatment for LAMMPS potential generation.
 
-    Controls the Coulomb solver (DSF, Wolf, PPPM, or Ewald) and the associated
-    cutoffs. Fields left as ``None`` fall back to each potential's built-in defaults.
+class InteractionConfig(BaseModel):
+    """Base class for LAMMPS Coulomb solver settings."""
 
-    Args:
-        method: Coulomb solver. ``"dsf"`` and ``"wolf"`` are short-range damped
-            methods that require ``alpha``. ``"pppm"`` and ``"ewald"`` are
-            reciprocal-space methods that append a ``kspace_style`` line and
-            ignore ``alpha``.
-        short_range_cutoff: Pair-potential cutoff in Å (ignored by BJP).
-        long_range_cutoff: Coulomb cutoff in Å.
-        alpha: Damping parameter (Å⁻¹) for DSF/Wolf. Ignored for PPPM/Ewald.
-        kspace_accuracy: Relative accuracy for PPPM/Ewald (e.g. 1e-5).
+    model_config = ConfigDict(frozen=True)
+
+
+class DsfConfig(InteractionConfig):
+    """Damped Shifted Force electrostatics.
+
+    Emitted as ``coul/dsf <alpha> <long_range_cutoff>``.
     """
 
-    method: Literal["dsf", "wolf", "pppm", "ewald"] = "dsf"
-    short_range_cutoff: float | None = None
-    long_range_cutoff: float | None = None
-    alpha: float | None = None
-    kspace_accuracy: float = 1e-5
+    method: Literal["dsf"] = "dsf"
+    long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
+    alpha: float | None = Field(default=None, description="Damping parameter (Å⁻¹)", gt=0)
+
+
+class WolfConfig(InteractionConfig):
+    """Wolf summation electrostatics.
+
+    Emitted as ``coul/wolf <alpha> <long_range_cutoff>``.
+    """
+
+    method: Literal["wolf"] = "wolf"
+    long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
+    alpha: float | None = Field(default=None, description="Damping parameter (Å⁻¹)", gt=0)
+
+
+class PppmConfig(InteractionConfig):
+    """PPPM (Particle-Particle Particle-Mesh) electrostatics.
+
+    Emits ``coul/long <long_range_cutoff>`` plus a ``kspace_style pppm`` line.
+    """
+
+    method: Literal["pppm"] = "pppm"
+    long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
+    kspace_accuracy: float = Field(default=1e-5, description="Relative accuracy for the k-space sum", gt=0, le=1)
+
+
+class EwaldConfig(InteractionConfig):
+    """Ewald summation electrostatics.
+
+    Emits ``coul/long <long_range_cutoff>`` plus a ``kspace_style ewald`` line.
+    """
+
+    method: Literal["ewald"] = "ewald"
+    long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
+    kspace_accuracy: float = Field(default=1e-5, description="Relative accuracy for the k-space sum", gt=0, le=1)

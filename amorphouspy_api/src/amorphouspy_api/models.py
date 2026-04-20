@@ -19,6 +19,9 @@ from pydantic import (
     Tag,
 )
 
+from amorphouspy import DsfConfig, EwaldConfig, PppmConfig, WolfConfig
+from amorphouspy_api.config import API_BASE_URL
+
 # ---------------------------------------------------------------------------
 # Composition
 # ---------------------------------------------------------------------------
@@ -348,22 +351,22 @@ class ElectrostaticsParams(BaseModel):
     """
 
     method: LongRangeMethod = Field(default=LongRangeMethod.dsf, description="Coulomb solver")
-    short_range_cutoff: float | None = Field(default=None, description="Pair-potential cutoff in Å (PMMCS only)")
     long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å")
     alpha: float | None = Field(default=None, description="Damping parameter (Å⁻¹) for DSF/Wolf")
     kspace_accuracy: float = Field(default=1e-5, description="Relative accuracy for PPPM/Ewald")
 
     def to_electrostatics_config(self):
-        """Convert to ``ElectrostaticsConfig`` for the core library."""
-        from amorphouspy import ElectrostaticsConfig
-
-        return ElectrostaticsConfig(
-            method=self.method.value,
-            short_range_cutoff=self.short_range_cutoff,
-            long_range_cutoff=self.long_range_cutoff,
-            alpha=self.alpha,
-            kspace_accuracy=self.kspace_accuracy,
-        )
+        """Convert to the appropriate ``InteractionConfig`` subclass for the core library."""
+        return {
+            LongRangeMethod.dsf: lambda: DsfConfig(long_range_cutoff=self.long_range_cutoff, alpha=self.alpha),
+            LongRangeMethod.wolf: lambda: WolfConfig(long_range_cutoff=self.long_range_cutoff, alpha=self.alpha),
+            LongRangeMethod.pppm: lambda: PppmConfig(
+                long_range_cutoff=self.long_range_cutoff, kspace_accuracy=self.kspace_accuracy
+            ),
+            LongRangeMethod.ewald: lambda: EwaldConfig(
+                long_range_cutoff=self.long_range_cutoff, kspace_accuracy=self.kspace_accuracy
+            ),
+        }[self.method]()
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +407,6 @@ def _job_urls(job_id: str) -> dict[str, str]:
     Uses the ``API_BASE_URL`` environment variable.  When unset the URLs
     will contain relative paths only (empty base).
     """
-    from amorphouspy_api.config import API_BASE_URL
-
     base = API_BASE_URL.rstrip("/")
     return {
         "status": f"{base}/jobs/{job_id}",

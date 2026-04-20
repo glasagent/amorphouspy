@@ -1,5 +1,8 @@
 # PMMCS Potential (Pedone)
 
+!!! tip "Interactive example"
+    See the [Potential Settings notebook](../../notebooks/PotentialSettings.ipynb) for a worked example of configuring electrostatics across all three potentials.
+
 The PMMCS potential, developed by Pedone et al., is the most broadly applicable force field in `amorphouspy`. It uses a Morse-type short-range interaction combined with a repulsive $r^{-12}$ wall and damped-shifted-force (DSF) Coulomb interactions.
 
 ---
@@ -72,7 +75,7 @@ The PMMCS potential supports 28 elements (plus oxygen), making it the broadest o
 ## Usage
 
 ```python
-from amorphouspy import get_structure_dict, generate_potential, ElectrostaticsConfig
+from amorphouspy import get_structure_dict, generate_potential, PppmConfig
 
 # Works with any composition using supported elements
 structure_dict = get_structure_dict(
@@ -83,14 +86,12 @@ structure_dict = get_structure_dict(
 # Default: DSF electrostatics, melt pre-equilibration enabled
 potential = generate_potential(structure_dict, potential_type="pmmcs")
 
-# PPPM with custom cutoffs, no melt block
+# PPPM with custom cutoff, no melt block
 potential = generate_potential(
     structure_dict,
     potential_type="pmmcs",
     melt=False,
-    electrostatics=ElectrostaticsConfig(
-        method="pppm",
-        short_range_cutoff=6.0,
+    electrostatics=PppmConfig(
         long_range_cutoff=12.0,
         kspace_accuracy=1e-5,
     ),
@@ -113,7 +114,7 @@ This relaxes unfavourable atomic contacts that are common in randomly packed sta
 
 ### Electrostatics options
 
-`amorphouspy` supports four Coulomb solvers via `ElectrostaticsConfig`. The choice affects which LAMMPS directives are emitted:
+`amorphouspy` supports four Coulomb solvers via the `InteractionConfig` subclasses (`DsfConfig`, `WolfConfig`, `PppmConfig`, `EwaldConfig`). The choice affects which LAMMPS directives are emitted:
 
 | Method | `pair_style` fragment | `kspace_style` | Recommended cutoff |
 |---|---|---|---|
@@ -126,7 +127,7 @@ This relaxes unfavourable atomic contacts that are common in randomly packed sta
 
 **PPPM and Ewald** are reciprocal-space methods. The `alpha` parameter is ignored. The default `long_range_cutoff` widens to 12.0 Å because without DSF-style damping the real-space part decays more slowly. A `kspace_style` line is appended after the pair coefficients; `kspace_accuracy` (default `1e-5`) tunes the accuracy of the long-range Fourier sum at the cost of k-space solver time.
 
-`short_range_cutoff` controls the Morse + repulsive wall cutoff independently of the Coulomb cutoff (default 5.5 Å). Increasing it captures slightly longer-ranged Morse interactions but raises the pair-list cost roughly quadratically.
+The short-range cutoff (Morse + repulsive wall) is fixed at **5.5 Å** and is not user-configurable. Only the Coulomb cutoff (`long_range_cutoff`) can be overridden via the config classes.
 
 ### What the generator produces
 
@@ -143,7 +144,7 @@ The PMMCS generator creates LAMMPS configuration lines that:
 
 ### Short-range cutoff
 
-The Morse + repulsive term uses a default cutoff of **5.5 Å**, configurable via `ElectrostaticsConfig(short_range_cutoff=...)`. This is shorter than BJP (8.0 Å) and SHIK (10.0 Å), making PMMCS simulations somewhat faster per timestep.
+The Morse + repulsive term uses a fixed cutoff of **5.5 Å**. This is shorter than BJP (8.0 Å) and SHIK (10.0 Å), making PMMCS simulations somewhat faster per timestep.
 
 ### When to use PMMCS
 

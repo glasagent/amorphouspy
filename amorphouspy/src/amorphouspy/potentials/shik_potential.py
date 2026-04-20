@@ -11,10 +11,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from amorphouspy.potentials._config import ElectrostaticsConfig
+from amorphouspy.potentials._config import DsfConfig, InteractionConfig
 from amorphouspy.shared import get_element_types_dict
 
 _DEFAULT_LONG_RANGE_CUTOFF = 10.0
+_DEFAULT_SHORT_RANGE_CUTOFF = 8.0
 _DEFAULT_ALPHA = 0.2
 _MELT_TEMPERATURE = 4000
 
@@ -103,7 +104,7 @@ def write_table_file(
     pair: str,
     params: tuple[float, float, float, float],
     rmin: float = 0.1,
-    rmax: float = 10.5,
+    rmax: float = _DEFAULT_SHORT_RANGE_CUTOFF,
     npoints: int = 50000,
     output_dir: str | Path = ".",
 ) -> Path:
@@ -125,7 +126,7 @@ def write_table_file(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     A, B, C, D = params
-    r_squared = np.linspace(rmin**2, rmax**2, npoints, dtype=np.float64)
+    r_squared = np.linspace(rmin**2, rmax**2, npoints, endpoint=True, dtype=np.float64)
     rs = np.sqrt(r_squared)
     data = np.array([potential_and_force(r, A, B, C, D) for r in rs])
 
@@ -180,7 +181,7 @@ def _build_pair_coeff_lines(species: list, types: dict, output_dir: Path, rvdw: 
             else:
                 continue
             pair_name = f"{elem_i}-{elem_j}"
-            filename = write_table_file(pair_name, params, output_dir=output_dir)
+            filename = write_table_file(pair_name, params, rmax=rvdw, output_dir=output_dir)
             abs_path = Path(filename).resolve()
             lines.append(f'pair_coeff {types[elem_i]} {types[elem_j]} table "{abs_path}" SHIK_Buck_r24 {rvdw}\n')
     return lines
@@ -191,7 +192,7 @@ def generate_shik_potential(
     output_dir: str = ".",
     *,
     melt: bool = True,
-    electrostatics: ElectrostaticsConfig | None = None,
+    electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate SHIK LAMMPS input configuration with absolute table paths.
 
@@ -214,15 +215,17 @@ def generate_shik_potential(
         >>> shik_pot_no_melt = generate_shik_potential(struct_dict, melt=False)
 
     """
-    electrostatics_cfg = electrostatics or ElectrostaticsConfig()
-    if electrostatics_cfg.method != "dsf":
+    electrostatics_cfg = electrostatics if electrostatics is not None else DsfConfig()
+    if not isinstance(electrostatics_cfg, DsfConfig):
+        method_name = getattr(electrostatics_cfg, "method", type(electrostatics_cfg).__name__)
         msg = (
-            f"SHIK potential only supports 'dsf' electrostatics (got '{electrostatics_cfg.method}'). "
+            f"SHIK potential only supports 'dsf' electrostatics (got '{method_name}'). "
             "The potential was parameterized with Wolf-class DSF truncation."
         )
-        raise ValueError(msg)
+        raise TypeError(msg)
 
-    vdw_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_LONG_RANGE_CUTOFF
+    long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_LONG_RANGE_CUTOFF
+    short_range_cutoff = _DEFAULT_SHORT_RANGE_CUTOFF
     alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
 
     out_dir = Path(output_dir).resolve()
@@ -265,11 +268,11 @@ def generate_shik_potential(
     lines.extend([f"set type {types[elem]} charge {shik_charges[elem]}\n" for elem in species])
 
     lines.append("\n### SHIK Potential ###\n")
-    lines.append(f"pair_style hybrid/overlay coul/dsf {alpha} {vdw_cutoff} table spline 10000\n")
+    lines.append(f"pair_style hybrid/overlay coul/dsf {alpha} {long_range_cutoff} table spline 10000\n")
     lines.append("pair_coeff * * coul/dsf\n")
 
     # --- Generate tables with absolute paths ---
-    lines.extend(_build_pair_coeff_lines(species, types, out_dir, vdw_cutoff))
+    lines.extend(_build_pair_coeff_lines(species, types, out_dir, short_range_cutoff))
 
     lines.append("\npair_modify shift yes\n\n")
 

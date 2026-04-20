@@ -1,5 +1,8 @@
 # BJP Potential (Bouhadja)
 
+!!! tip "Interactive example"
+    See the [Potential Settings notebook](../../notebooks/PotentialSettings.ipynb) for a worked example of configuring electrostatics across all three potentials.
+
 The BJP potential, developed by Bouhadja et al., is a Born-Mayer-Huggins (BMH) force field specifically parameterized for calcium aluminosilicate (CAS) glass systems. It provides accurate structural and thermodynamic properties for Ca-Al-Si-O compositions.
 
 ---
@@ -71,7 +74,7 @@ This makes BJP **specifically designed for CAS glasses** such as:
 ## Usage
 
 ```python
-from amorphouspy import get_structure_dict, generate_potential
+from amorphouspy import get_structure_dict, generate_potential, WolfConfig
 
 # BJP works only with Ca-Al-Si-O compositions
 structure_dict = get_structure_dict(
@@ -79,8 +82,29 @@ structure_dict = get_structure_dict(
     target_atoms=3000,
 )
 
+# Default: DSF electrostatics
 potential = generate_potential(structure_dict, potential_type="bjp")
+
+# Override to Wolf summation
+potential = generate_potential(
+    structure_dict,
+    potential_type="bjp",
+    electrostatics=WolfConfig(alpha=0.2, long_range_cutoff=10.0),
+)
 ```
+
+### Electrostatics options
+
+By default BJP uses **DSF** (`born/coul/dsf 0.25 8.0`). You can pass any `InteractionConfig` subclass via the `electrostatics` argument:
+
+| Config class | Emitted pair style |
+|---|---|
+| `DsfConfig` (default) | `born/coul/dsf <alpha> <cutoff>` |
+| `WolfConfig` | `born/coul/wolf <alpha> <cutoff>` |
+| `PppmConfig` | `born/coul/long <cutoff>` + `kspace_style pppm` |
+| `EwaldConfig` | `born/coul/long <cutoff>` + `kspace_style ewald` |
+
+The short-range cutoff (Born-Mayer + dispersion terms) is fixed at **8.0 Å**.
 
 ### What the generator produces
 
