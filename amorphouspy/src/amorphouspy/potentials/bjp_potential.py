@@ -100,13 +100,13 @@ def generate_bjp_potential(
 
     if isinstance(electrostatics_cfg, (DsfConfig, WolfConfig)):
         alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
-        pair_style_line = f"pair_style born/coul/{electrostatics_cfg.method} {alpha} {short_range_cutoff}\n"
+        pair_style_line = f"pair_style born/coul/{electrostatics_cfg.lammps_keyword} {alpha} {short_range_cutoff}\n"
         kspace_line = None
     else:  # pppm or ewald
         assert isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig))
         long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF
         pair_style_line = f"pair_style born/coul/long {long_range_cutoff}\n"
-        kspace_line = f"kspace_style {electrostatics_cfg.method} {electrostatics_cfg.kspace_accuracy}\n"
+        kspace_line = electrostatics_cfg.kspace_line()
 
     config_lines = [
         "# Bouhadja et al., J. Chem. Phys. 138, 224510 (2013) \n",

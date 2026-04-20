@@ -65,16 +65,16 @@ def _resolve_coulomb_style(
         long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF
         alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
         return (
-            f"coul/{electrostatics_cfg.method} {alpha} {long_range_cutoff}",
-            f"coul/{electrostatics_cfg.method}",
+            electrostatics_cfg.coul_pair_style(long_range_cutoff, alpha),
+            f"coul/{electrostatics_cfg.lammps_keyword}",
             None,
         )
     assert isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig))
     long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF
     return (
-        f"coul/long {long_range_cutoff}",
+        electrostatics_cfg.coul_pair_style(long_range_cutoff),
         "coul/long",
-        f"kspace_style {electrostatics_cfg.method} {electrostatics_cfg.kspace_accuracy}\n",
+        electrostatics_cfg.kspace_line(),
     )
 
 
