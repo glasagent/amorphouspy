@@ -43,8 +43,9 @@ nav:
     - how_to_guides/index.md
     - how_to_guides/installation.md
     - how_to_guides/running_api.md
-    - MD Tutorial: notebooks/MDTutorial.ipynb
     - Meltquench Tutorial: notebooks/MeltquenchTutorial.ipynb
+    - MD Tutorial: notebooks/MDTutorial.ipynb
+    - Potential Settings: notebooks/PotentialSettings.ipynb
     # - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
     # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
     # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
