@@ -208,7 +208,7 @@ def generate_shik_potential(
         Single-row DataFrame with LAMMPS config lines in the ``Config`` column.
 
     Raises:
-        ValueError: If ``electrostatics.method`` is not ``"dsf"``.
+        ValueError: If ``electrostatics.lammps_keyword`` is not ``"dsf"``.
 
     Example:
         >>> shik_pot = generate_shik_potential(struct_dict, output_dir="./potentials")
@@ -217,7 +217,7 @@ def generate_shik_potential(
     """
     electrostatics_cfg = electrostatics if electrostatics is not None else DsfConfig()
     if not isinstance(electrostatics_cfg, DsfConfig):
-        method_name = getattr(electrostatics_cfg, "method", type(electrostatics_cfg).__name__)
+        method_name = getattr(electrostatics_cfg, "lammps_keyword", type(electrostatics_cfg).__name__)
         msg = (
             f"SHIK potential only supports 'dsf' electrostatics (got '{method_name}'). "
             "The potential was parameterized with Wolf-class DSF truncation."

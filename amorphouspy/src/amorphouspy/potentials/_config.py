@@ -5,13 +5,14 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class InteractionConfig(BaseModel):
     """Base class for LAMMPS Coulomb solver settings."""
 
-    model_config = ConfigDict(frozen=True)
+    def kspace_line(self) -> str | None:
+        return None
 
 
 class DsfConfig(InteractionConfig):
@@ -20,9 +21,15 @@ class DsfConfig(InteractionConfig):
     Emitted as ``coul/dsf <alpha> <long_range_cutoff>``.
     """
 
-    method: Literal["dsf"] = "dsf"
+    lammps_keyword: Literal["dsf"] = "dsf"
     long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
     alpha: float | None = Field(default=None, description="Damping parameter (Å⁻¹)", gt=0)
+
+    def coul_pair_style(self, cutoff: float, alpha: float | None = None) -> str:
+        if alpha is None:
+            msg = "alpha is required for DSF electrostatics"
+            raise ValueError(msg)
+        return f"coul/{self.lammps_keyword} {alpha} {cutoff}"
 
 
 class WolfConfig(InteractionConfig):
@@ -31,9 +38,15 @@ class WolfConfig(InteractionConfig):
     Emitted as ``coul/wolf <alpha> <long_range_cutoff>``.
     """
 
-    method: Literal["wolf"] = "wolf"
+    lammps_keyword: Literal["wolf"] = "wolf"
     long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
     alpha: float | None = Field(default=None, description="Damping parameter (Å⁻¹)", gt=0)
+
+    def coul_pair_style(self, cutoff: float, alpha: float | None = None) -> str:
+        if alpha is None:
+            msg = "alpha is required for Wolf electrostatics"
+            raise ValueError(msg)
+        return f"coul/{self.lammps_keyword} {alpha} {cutoff}"
 
 
 class PppmConfig(InteractionConfig):
@@ -42,9 +55,15 @@ class PppmConfig(InteractionConfig):
     Emits ``coul/long <long_range_cutoff>`` plus a ``kspace_style pppm`` line.
     """
 
-    method: Literal["pppm"] = "pppm"
+    lammps_keyword: Literal["pppm"] = "pppm"
     long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
     kspace_accuracy: float = Field(default=1e-5, description="Relative accuracy for the k-space sum", gt=0, le=1)
+
+    def coul_pair_style(self, cutoff: float) -> str:
+        return f"coul/long {cutoff}"
+
+    def kspace_line(self) -> str:
+        return f"kspace_style {self.lammps_keyword} {self.kspace_accuracy}"
 
 
 class EwaldConfig(InteractionConfig):
@@ -53,6 +72,12 @@ class EwaldConfig(InteractionConfig):
     Emits ``coul/long <long_range_cutoff>`` plus a ``kspace_style ewald`` line.
     """
 
-    method: Literal["ewald"] = "ewald"
+    lammps_keyword: Literal["ewald"] = "ewald"
     long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å", gt=0)
     kspace_accuracy: float = Field(default=1e-5, description="Relative accuracy for the k-space sum", gt=0, le=1)
+
+    def coul_pair_style(self, cutoff: float) -> str:
+        return f"coul/long {cutoff}"
+
+    def kspace_line(self) -> str:
+        return f"kspace_style {self.lammps_keyword} {self.kspace_accuracy}"

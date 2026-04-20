@@ -1060,7 +1060,7 @@ def test_electrostatics_params_to_config_roundtrip():
     config = params.to_electrostatics_config()
 
     assert isinstance(config, InteractionConfig)
-    assert config.method == "pppm"
+    assert config.lammps_keyword == "pppm"
     assert config.long_range_cutoff == 9.0
     assert config.kspace_accuracy == 1e-4
 
