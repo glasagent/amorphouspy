@@ -452,8 +452,8 @@ def test_shik_custom_lr_cutoff_used_in_table_pair_coeff(tmp_path):
 
 @pytest.mark.parametrize("cfg", [WolfConfig(), PppmConfig(), EwaldConfig()])
 def test_shik_rejects_non_dsf_methods(tmp_path, cfg):
-    """ValueError is raised with a descriptive message for non-DSF methods."""
-    with pytest.raises(ValueError, match="only supports 'dsf'"):
+    """TypeError is raised with a descriptive message for non-DSF methods."""
+    with pytest.raises(TypeError, match="only supports 'dsf'"):
         generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, electrostatics=cfg)
 
 
