@@ -5,19 +5,12 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any
 
 import pandas as pd
 
 from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 from amorphouspy.shared import get_element_types_dict
-
-
-class _PmmcsEntry(TypedDict):
-    q: float
-    morse: tuple[float, float, float]
-    repulsion: float
-
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 5.5
 _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF = 8.0
@@ -26,7 +19,7 @@ _DEFAULT_ALPHA = 0.25
 _MELT_TEMPERATURE = 4000
 
 # Complete dictionary of Pmmcs parameters
-pmmcs_potential_params: dict[str, _PmmcsEntry] = {
+pmmcs_potential_params: dict[str, Any] = {
     "Li": {"q": 0.6, "morse": (0.001114, 3.429506, 2.681360), "repulsion": 1.0},
     "Na": {"q": 0.6, "morse": (0.023363, 1.763867, 3.006315), "repulsion": 5.0},
     "K": {"q": 0.6, "morse": (0.011612, 2.062605, 3.305308), "repulsion": 5.0},
