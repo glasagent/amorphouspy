@@ -20,7 +20,7 @@ _DEFAULT_ALPHA = 0.2
 _MELT_TEMPERATURE = 4000
 
 # ================================================================
-# SHIK Parameters (Pedone-like Buckingham + r^-24)
+# SHIK Parameters (Buckingham + r^-24)
 # ================================================================
 shik_charges = {
     "Li": 0.5727,

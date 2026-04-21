@@ -183,8 +183,11 @@ def melt_quench_simulation(
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
+    if potential_name in {"bmp-shrm", "bmp-harm"}:
+        potential_name = "bmp"  # both variants share the same MD protocol
+
     # Check if protocol exists
-    if potential_name not in PROTOCOL_MAP:
+    elif potential_name not in PROTOCOL_MAP:
         available = ", ".join(PROTOCOL_MAP.keys())
         msg = f"Unknown potential: {potential_name}. Available protocols: {available}"
         raise ValueError(msg)
