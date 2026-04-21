@@ -64,7 +64,7 @@ def _build_bjp_pair_coeff_lines(species: list[str], types: dict) -> list[str]:
 def generate_bjp_potential(
     atoms_dict: dict,
     *,
-    melt: bool = True,
+    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for CAS glass simulations (Bouhadja et al. 2013).
@@ -103,7 +103,9 @@ def generate_bjp_potential(
         pair_style_line = f"pair_style born/coul/{electrostatics_cfg.lammps_keyword} {alpha} {short_range_cutoff}\n"
         kspace_line = None
     else:  # pppm or ewald
-        assert isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig))
+        if not isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig)):
+            msg = f"Unsupported electrostatics config: {type(electrostatics_cfg).__name__}"
+            raise TypeError(msg)
         long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF
         pair_style_line = f"pair_style born/coul/long {long_range_cutoff}\n"
         kspace_line = electrostatics_cfg.kspace_line()
@@ -151,11 +153,12 @@ def generate_bjp_potential(
             ]
         )
 
+    coulomb_label = electrostatics_cfg.lammps_keyword.upper()
     return pd.DataFrame(
         {
             "Name": ["BJP"],
             "Filename": [[]],
-            "Model": ["Born-Mayer-Huggins_coulomb_DSF"],
+            "Model": [f"Born-Mayer-Huggins_coulomb_{coulomb_label}"],
             "Species": [species],
             "Config": [config_lines],
         }

@@ -69,7 +69,9 @@ def _resolve_coulomb_style(
             f"coul/{electrostatics_cfg.lammps_keyword}",
             None,
         )
-    assert isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig))
+    if not isinstance(electrostatics_cfg, (PppmConfig, EwaldConfig)):
+        msg = f"Unsupported electrostatics config: {type(electrostatics_cfg).__name__}"
+        raise TypeError(msg)
     long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF
     return (
         electrostatics_cfg.coul_pair_style(long_range_cutoff),
@@ -92,7 +94,7 @@ def _build_pmmcs_pair_coeff_lines(species: list[str], types: dict) -> list[str]:
 def generate_pmmcs_potential(
     atoms_dict: dict,
     *,
-    melt: bool = True,
+    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate the PMMCS (Pedone) potential for the given composition.

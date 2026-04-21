@@ -114,7 +114,7 @@ def write_table_file(
         pair: Name of the atomic pair (e.g., "Si-O").
         params: Tuple of parameters (A, B, C, D).
         rmin: Minimum distance for table (default 0.1).
-        rmax: Maximum distance for table (default 10.5).
+        rmax: Maximum distance for table (default 8.0).
         npoints: Number of points in table (default 50000).
         output_dir: Directory to save the table file definition.
 
@@ -189,9 +189,9 @@ def _build_pair_coeff_lines(species: list, types: dict, output_dir: Path, rvdw: 
 
 def generate_shik_potential(
     atoms_dict: dict,
-    output_dir: str = ".",
+    output_dir: str = "shik_tables",
     *,
-    melt: bool = True,
+    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate SHIK LAMMPS input configuration with absolute table paths.
@@ -208,7 +208,7 @@ def generate_shik_potential(
         Single-row DataFrame with LAMMPS config lines in the ``Config`` column.
 
     Raises:
-        ValueError: If ``electrostatics.lammps_keyword`` is not ``"dsf"``.
+        TypeError: If ``electrostatics.lammps_keyword`` is not ``"dsf"``.
 
     Example:
         >>> shik_pot = generate_shik_potential(struct_dict, output_dir="./potentials")
@@ -235,7 +235,7 @@ def generate_shik_potential(
     species = list(types.keys())
 
     q_O = compute_oxygen_charge(atoms_dict, shik_charges)
-    shik_charges["O"] = q_O
+    local_charges = {**shik_charges, "O": q_O}
 
     # --- Validate only X-O pairs ---
     missing_pairs = []
@@ -265,7 +265,7 @@ def generate_shik_potential(
     lines.extend([f"group {elem} type {types[elem]}\n" for elem in species])
 
     lines.append("\n### Charges ###\n")
-    lines.extend([f"set type {types[elem]} charge {shik_charges[elem]}\n" for elem in species])
+    lines.extend([f"set type {types[elem]} charge {local_charges[elem]}\n" for elem in species])
 
     lines.append("\n### SHIK Potential ###\n")
     lines.append(f"pair_style hybrid/overlay coul/dsf {alpha} {long_range_cutoff} table spline 10000\n")

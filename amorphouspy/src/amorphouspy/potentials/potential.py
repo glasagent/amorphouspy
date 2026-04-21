@@ -78,7 +78,7 @@ def generate_potential(
     atoms_dict: dict,
     potential_type: str = "pmmcs",
     *,
-    melt: bool = True,
+    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
@@ -95,7 +95,7 @@ def generate_potential(
 
     Example:
         >>> potential = generate_potential(struct_dict, potential_type="shik")
-        >>> potential = generate_potential(struct_dict, potential_type="shik", melt=False)
+        >>> potential = generate_potential(struct_dict, potential_type="shik", melt=True)
 
     """
     if potential_type.lower() == "pmmcs":

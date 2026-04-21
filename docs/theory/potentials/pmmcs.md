@@ -100,7 +100,7 @@ potential = generate_potential(
 
 ### `melt` — high-temperature pre-equilibration
 
-When `melt=True` (default), the generator appends a 10 000-step Langevin NVE/limit block at 4000 K:
+When `melt=True`, the generator appends a 10 000-step Langevin NVE/limit block at 4000 K:
 
 ```lammps
 fix langevinnve all langevin 4000 4000 0.01 48279

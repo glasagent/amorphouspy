@@ -47,6 +47,7 @@ def generate_structure(submission: "JobSubmission", config: "BaseModel", result:
     potential = generate_potential(
         atoms_dict=atoms_dict,
         potential_type=potential_type,
+        melt=True,
         electrostatics=submission.electrostatics.to_electrostatics_config(),
     )
 
