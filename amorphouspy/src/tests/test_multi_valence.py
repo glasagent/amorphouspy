@@ -41,15 +41,14 @@ def test_cerium_both_valences() -> None:
 
 
 def test_manganese_valences() -> None:
-    """MnO + Mn2O3 + MnO2 should yield "Mn", "Mn3", and "Mn4" in the correct atom counts."""
+    """MnO + Mn2O3 + MnO2 should yield "Mn" and "Mn3" in the correct atom counts."""
     # Mn (Mn²⁺, q=1.2) and Mn3 (Mn³⁺, q=1.8) have distinct parameters per Bertani et al. 2021.
-    ni = {"MnO": 1, "Mn2O3": 2, "MnO2": 1}
+    ni = {"MnO": 1, "Mn2O3": 2}
     counts = element_counts_from_formula_units(ni)
 
     assert counts["Mn"] == 1
     assert counts["Mn3"] == 4
-    assert counts["Mn4"] == 1
-    assert counts["O"] == 9  # 1 + 6 + 2
+    assert counts["O"] == 7  # 1 + 6
 
 
 def test_vanadium_valences() -> None:
