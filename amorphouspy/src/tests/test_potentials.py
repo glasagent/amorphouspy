@@ -115,7 +115,7 @@ def test_compatible_potentials_preserves_preference_order():
 def test_compatible_potentials_all_subset_of_known():
     """Results contain only recognised potential names."""
     result = compatible_potentials({"Si", "O"})
-    assert all(p in ("pmmcs", "bmp-harm", "bmp-shrm", "shik", "bjp") for p in result)
+    assert all(p in ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp") for p in result)
 
 
 # ---------------------------------------------------------------------------
@@ -546,33 +546,33 @@ def _al_si_o_atoms_dict() -> dict:
     return {"atoms": [{"element": "Al"}, {"element": "Si"}, {"element": "O"}, {"element": "O"}]}
 
 
-def test_generate_bmp_harm_raises_for_al_with_boron(tmp_path):
+def test_generate_bmp_harmonic_raises_for_al_with_boron(tmp_path):
     """Al is rejected when B is present (Dell-Bray model not valid for aluminoborosilicates)."""
     with pytest.raises(ValueError, match="Unsupported elements"):
-        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harm")
+        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harmonic")
 
 
-def test_generate_bmp_shrm_raises_for_al_with_boron(tmp_path):
-    """Same guard applies for the shrm variant."""
+def test_generate_bmp_screened_harmonic_raises_for_al_with_boron(tmp_path):
+    """Same guard applies for the screened-harmonic variant."""
     with pytest.raises(ValueError, match="Unsupported elements"):
-        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="shrm")
+        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
 
 
-def test_generate_bmp_harm_al_without_boron_is_allowed(tmp_path):
+def test_generate_bmp_harmonic_al_without_boron_is_allowed(tmp_path):
     """Al-Si-O without boron does not trigger the composition guard."""
-    result = generate_bmp_potential(_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harm")
+    result = generate_bmp_potential(_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harmonic")
     assert isinstance(result, pd.DataFrame)
 
 
-def test_generate_bmp_harm_valid_nabs(tmp_path):
-    """Na-B-Si-O returns a DataFrame for the harm variant."""
-    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="harm")
+def test_generate_bmp_harmonic_valid_nabs(tmp_path):
+    """Na-B-Si-O returns a DataFrame for the harmonic variant."""
+    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="harmonic")
     assert isinstance(result, pd.DataFrame)
     assert len(result) > 0
 
 
-def test_generate_bmp_shrm_valid_nabs(tmp_path):
-    """Na-B-Si-O returns a DataFrame for the shrm variant."""
-    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="shrm")
+def test_generate_bmp_screened_harmonic_valid_nabs(tmp_path):
+    """Na-B-Si-O returns a DataFrame for the screened-harmonic variant."""
+    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
     assert isinstance(result, pd.DataFrame)
     assert len(result) > 0

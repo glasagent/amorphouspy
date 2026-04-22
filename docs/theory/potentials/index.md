@@ -22,7 +22,7 @@ potential = generate_potential(structure_dict, potential_type="pmmcs")
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `atoms_dict` | `dict` | — | Structure dictionary from `get_structure_dict()` |
-| `potential_type` | `str` | `"pmmcs"` | One of `"pmmcs"`, `"bjp"`, `"shik"`, `"bmp-harm"`, or `"bmp-shrm"` |
+| `potential_type` | `str` | `"pmmcs"` | One of `"pmmcs"`, `"bjp"`, `"shik"`, `"bmp-harmonic"`, or `"bmp-screened-harmonic"` |
 
 **Returns:** A `pd.DataFrame` with columns:
 

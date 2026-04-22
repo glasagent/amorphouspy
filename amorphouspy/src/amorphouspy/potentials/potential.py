@@ -14,14 +14,14 @@ from ._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, Wolf
 __all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfConfig"]
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
-POTENTIAL_PREFERENCE = ("pmmcs", "bmp-harm", "bmp-shrm", "shik", "bjp")
+POTENTIAL_PREFERENCE = ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp")
 
 _POTENTIAL_MODULES = {
     "pmmcs": pmmcs,
     "bjp": bjp,
     "shik": shik,
-    "bmp-harm": bmp,
-    "bmp-shrm": bmp,
+    "bmp-harmonic": bmp,
+    "bmp-screened-harmonic": bmp,
 }
 
 
@@ -49,7 +49,7 @@ def select_potential(elements: set[str]) -> str | None:
     """Choose the best potential that supports all *elements*.
 
     Potentials are tried in preference order: pmmcs → bmp → shik → bjp.
-    When boron (B) is present, ``bmp-shrm`` is preferred over ``bmp-harm``
+    When boron (B) is present, ``bmp-screened-harmonic`` is preferred over ``bmp-harmonic``
     because its three-body term explicitly covers B-O-B and B-O-Si interactions.
 
     Args:
@@ -60,7 +60,9 @@ def select_potential(elements: set[str]) -> str | None:
         handle the full element set.
 
     """
-    preference = ("pmmcs", "bmp-shrm", "bmp-harm", "shik", "bjp") if "B" in elements else POTENTIAL_PREFERENCE
+    preference = (
+        ("pmmcs", "bmp-screened-harmonic", "bmp-harmonic", "shik", "bjp") if "B" in elements else POTENTIAL_PREFERENCE
+    )
     for name in preference:
         if elements <= _POTENTIAL_MODULES[name].supported_elements():
             return name
@@ -92,7 +94,7 @@ def generate_potential(
     Args:
         atoms_dict: Structure dict from ``get_structure_dict()``.
         potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``,
-            ``"bmp-harm"``, or ``"bmp-shrm"``.
+            ``"bmp-harmonic"``, or ``"bmp-screened-harmonic"``.
         melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K (all potentials).
         electrostatics: Coulomb solver settings. Defaults to DSF with each
             potential's built-in cutoffs and damping parameter.
@@ -103,8 +105,8 @@ def generate_potential(
     Example:
         >>> potential = generate_potential(struct_dict, potential_type="shik")
         >>> potential = generate_potential(struct_dict, potential_type="shik", melt=False)
-        >>> potential = generate_potential(struct_dict, potential_type="bmp-harm")
-        >>> potential = generate_potential(struct_dict, potential_type="bmp-shrm", melt=False)
+        >>> potential = generate_potential(struct_dict, potential_type="bmp-harmonic")
+        >>> potential = generate_potential(struct_dict, potential_type="bmp-screened-harmonic", melt=False)
 
     """
     if potential_type.lower() == "pmmcs":
@@ -113,8 +115,8 @@ def generate_potential(
         return bjp.generate_bjp_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
     if potential_type.lower() == "shik":
         return shik.generate_shik_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
-    if potential_type.lower() in ("bmp-harm", "bmp-shrm"):
-        variant = "harm" if potential_type.lower() == "bmp-harm" else "shrm"
+    if potential_type.lower() in ("bmp-harmonic", "bmp-screened-harmonic"):
+        variant = "harmonic" if potential_type.lower() == "bmp-harmonic" else "screened-harmonic"
         return bmp.generate_bmp_potential(atoms_dict, variant=variant, melt=melt, electrostatics=electrostatics)
     msg = f"Unsupported potential type: {potential_type}"
     raise ValueError(msg)

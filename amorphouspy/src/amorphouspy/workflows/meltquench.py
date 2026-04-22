@@ -183,7 +183,7 @@ def melt_quench_simulation(
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
-    if potential_name in {"bmp-shrm", "bmp-harm"}:
+    if potential_name in {"bmp-screened-harmonic", "bmp-harmonic"}:
         potential_name = "bmp"  # both variants share the same MD protocol
 
     # Check if protocol exists

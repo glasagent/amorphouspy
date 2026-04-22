@@ -83,7 +83,7 @@ from amorphouspy import melt_quench_protocol
 result = melt_quench_protocol(
     structure=atoms,
     potential=potential,
-    potential_type="pmmcs",  # or "bjp", "shik", "bmp-harm", "bmp-shrm"
+    potential_type="pmmcs",  # or "bjp", "shik", "bmp-harmonic", "bmp-screened-harmonic"
 )
 ```
 
@@ -113,7 +113,7 @@ NPT protocol optimised for CAS glasses with pressure control throughout:
 
 ### BMP Protocol
 
-Five-stage NVT protocol for multi-component glasses with explicit three-body interactions. Applies to both `bmp-harm` and `bmp-shrm` — the variants differ only in their potential parameters, not in the MD protocol.
+Five-stage NVT protocol for multi-component glasses with explicit three-body interactions. Applies to both `bmp-harmonic` and `bmp-screened-harmonic` — the variants differ only in their potential parameters, not in the MD protocol.
 
 | Stage | Temperature range | Ensemble | Duration |
 |---|---|---|---|

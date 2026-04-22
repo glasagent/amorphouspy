@@ -40,8 +40,8 @@ _DEFAULT_ALPHA = 0.25
 _MELT_TEMPERATURE = 4000
 
 # Elements active in each three-body style; all others get NULL in pair_coeff
-_HARM_3BODY_ELEMENTS = {"Si", "O", "P"}
-_SHRM_3BODY_ELEMENTS = {"Si", "O", "P", "B", "V"}
+_HARMONIC_3BODY_ELEMENTS = {"Si", "O", "P"}
+_SCREENED_HARMONIC_3BODY_ELEMENTS = {"Si", "O", "P", "B", "V"}
 
 # Alkali and alkaline-earth sets for Boron D computation (Dell-Bray model)
 _ALKALI = {"Li", "Na", "K"}
@@ -117,17 +117,17 @@ bmp_buckingham_potential_params: dict[tuple[str, str], tuple[float, float, float
 }
 
 
-# Three-body parameters for BMP-harm (nb3b/harmonic)
+# Three-body parameters for BMP-harmonic (nb3b/harmonic)
 # Format: (center, side1, side2) -> (K/2 eV/rad2, theta0 deg, cutoff A)
-bmp_harm_three_body_potential_params: dict[tuple[str, str, str], tuple[float, float, float]] = {
+bmp_harmonic_three_body_potential_params: dict[tuple[str, str, str], tuple[float, float, float]] = {
     ("Si", "O", "Si"): (0.73, 109.47, 2.0),
     ("Si", "O", "P"): (2.00, 109.47, 2.0),
     ("P", "O", "P"): (2.00, 109.47, 2.0),
 }
 
-# Three-body parameters for BMP-shrm (nb3b/screened)
+# Three-body parameters for BMP-screened-harmonic (nb3b/screened)
 # Format: (center, side1, side2) -> (K eV/rad2, theta0 deg, cutoff A)
-bmp_shrm_params: dict[tuple[str, str, str], tuple[float, float, float]] = {
+bmp_screened_harmonic_params: dict[tuple[str, str, str], tuple[float, float, float]] = {
     ("Si", "O", "Si"): (25.0, 109.47, 3.30),
     ("Si", "O", "P"): (120.0, 109.47, 2.00),
     ("P", "O", "P"): (65.0, 109.47, 2.00),
@@ -213,7 +213,7 @@ def _compute_boron_d(atoms_dict: dict) -> float:
 # ------------------------------------------------------------------ #
 
 
-def write_bmp_harm_three_body_potentials(
+def write_bmp_harmonic_three_body_potentials(
     elements: list[str],
     params_dict: dict[tuple[str, str, str], tuple[float, float, float]],
     output_dir: str | Path = "three_body_files",
@@ -247,7 +247,7 @@ def write_bmp_harm_three_body_potentials(
     return file_path
 
 
-def write_bmp_shrm_three_body_potentials(
+def write_bmp_screened_harmonic_three_body_potentials(
     elements: list[str],
     params_dict: dict[tuple[str, str, str], tuple[float, float, float]],
     output_dir: str | Path = "three_body_files",
@@ -366,8 +366,8 @@ def _build_bmp_threebody_pair_coeff_line(
     variant: str,
     file_path: Path,
 ) -> str:
-    active = _HARM_3BODY_ELEMENTS if variant == "harm" else _SHRM_3BODY_ELEMENTS
-    style = "nb3b/harmonic" if variant == "harm" else "nb3b/screened"
+    active = _HARMONIC_3BODY_ELEMENTS if variant == "harmonic" else _SCREENED_HARMONIC_3BODY_ELEMENTS
+    style = "nb3b/harmonic" if variant == "harmonic" else "nb3b/screened"
     sorted_elems = sorted(types, key=lambda e: types[e])
     elem_list = " ".join(e if e in active else "NULL" for e in sorted_elems)
     return f"pair_coeff * * {style} {file_path} {elem_list}\n"
@@ -382,7 +382,7 @@ def generate_bmp_potential(
     atoms_dict: dict,
     output_dir: str | Path = ".",
     *,
-    variant: str = "harm",
+    variant: str = "harmonic",
     melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
@@ -391,8 +391,8 @@ def generate_bmp_potential(
     Args:
         atoms_dict: Structure dict from ``get_structure_dict()``.
         output_dir: Directory to write the three-body parameter file.
-        variant: Three-body style — ``"harm"`` uses ``nb3b/harmonic``,
-            ``"shrm"`` uses ``nb3b/screened``.
+        variant: Three-body style — ``"harmonic"`` uses ``nb3b/harmonic``,
+            ``"screened-harmonic"`` uses ``nb3b/screened``.
         melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K.
         electrostatics: Coulomb solver settings. Defaults to DSF with
             ``alpha=0.25`` and Coulomb cutoff 8.0 Å.
@@ -404,16 +404,16 @@ def generate_bmp_potential(
         Single-row DataFrame with LAMMPS config lines in the ``Config`` column.
 
     Raises:
-        ValueError: If ``variant`` is not ``"harm"`` or ``"shrm"``, or if
+        ValueError: If ``variant`` is not ``"harmonic"`` or ``"screened-harmonic"``, or if
             required parameters are missing for any element in the composition.
 
     Example:
-        >>> df = generate_bmp_potential(struct_dict, potential_type="bmp-harm")
-        >>> df = generate_bmp_potential(struct_dict, potential_type="bmp-shrm", melt=False)
+        >>> df = generate_bmp_potential(struct_dict, potential_type="bmp-harmonic")
+        >>> df = generate_bmp_potential(struct_dict, potential_type="bmp-screened-harmonic", melt=False)
 
     """
-    if variant not in ("harm", "shrm"):
-        msg = f"variant must be 'harm' or 'shrm', got '{variant}'"
+    if variant not in ("harmonic", "screened-harmonic"):
+        msg = f"variant must be 'harmonic' or 'screened-harmonic', got '{variant}'"
         raise ValueError(msg)
 
     types = get_element_types_dict(atoms_dict["atoms"])
@@ -440,12 +440,12 @@ def generate_bmp_potential(
     coulomb_style, coulomb_pair_coeff, kspace_line = _resolve_coulomb_style(electrostatics_cfg)
 
     out_dir = Path(output_dir).resolve()
-    if variant == "harm":
-        tb_file = write_bmp_harm_three_body_potentials(species, bmp_harm_three_body_potential_params, out_dir)
+    if variant == "harmonic":
+        tb_file = write_bmp_harmonic_three_body_potentials(species, bmp_harmonic_three_body_potential_params, out_dir)
     else:
-        tb_file = write_bmp_shrm_three_body_potentials(species, bmp_shrm_params, out_dir)
+        tb_file = write_bmp_screened_harmonic_three_body_potentials(species, bmp_screened_harmonic_params, out_dir)
 
-    tb_style = "nb3b/harmonic" if variant == "harm" else "nb3b/screened"
+    tb_style = "nb3b/harmonic" if variant == "harmonic" else "nb3b/screened"
     model_name = f"BMP-{variant}"
 
     config_lines = [

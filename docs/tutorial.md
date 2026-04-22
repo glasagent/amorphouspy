@@ -63,8 +63,8 @@ potential = generate_potential(structure_dict, potential_type="pmmcs")
 # Other options:
 # potential = generate_potential(structure_dict, potential_type="bjp")       # CAS glasses
 # potential = generate_potential(structure_dict, potential_type="shik")      # Si/Al/B glasses
-# potential = generate_potential(structure_dict, potential_type="bmp-harm")  # Multi-modifier silicates/phosphates
-# potential = generate_potential(structure_dict, potential_type="bmp-shrm")  # Borate/borosilicate glasses
+# potential = generate_potential(structure_dict, potential_type="bmp-harmonic")  # Multi-modifier silicates/phosphates
+# potential = generate_potential(structure_dict, potential_type="bmp-screened-harmonic")  # Borate/borosilicate glasses
 ```
 
 ### 3. Run a melt-quench simulation
