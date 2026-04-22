@@ -18,6 +18,7 @@ Environment=LAMMPS_CORES=8
 Environment=AMORPHOUSPY_PROJECTS=/net/fileserver1/data_raid/data/amorphouspy_data
 Environment=AMORPHOUSPY_VERSION_PROJECTS=0
 Environment=API_BASE_URL=https://amorphouspy.example.com
+Environment=MCP_HOST=0.0.0.0
 #Environment=API_TOKEN=<your-secret-token>
 
 [Install]
