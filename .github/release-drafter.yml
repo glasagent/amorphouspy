@@ -2,6 +2,31 @@ name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 change-title-escapes: '\<*_&'
 
+autolabeler:
+  - label: 'feature'
+    branch:
+      - '/^feat\/.+/'
+  - label: 'bug'
+    branch:
+      - '/^fix\/.+/'
+  - label: 'documentation'
+    branch:
+      - '/^docs\/.+/'
+  - label: 'refactor'
+    branch:
+      - '/^refactor\/.+/'
+      - '/^style\/.+/'
+  - label: 'ci'
+    branch:
+      - '/^ci\/.+/'
+      - '/^chore\/.+/'
+  - label: 'enhancement'
+    branch:
+      - '/^perf\/.+/'
+  - label: 'dependencies'
+    branch:
+      - '/^test\/.+/'
+
 categories:
   - title: '💥 Breaking Changes'
     labels: ['breaking']
