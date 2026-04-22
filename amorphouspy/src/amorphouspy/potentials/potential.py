@@ -6,6 +6,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import pandas as pd
 
 from . import bjp_potential as bjp
+from . import bmp_potential as bmp
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
 from ._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
@@ -13,12 +14,14 @@ from ._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, Wolf
 __all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfConfig"]
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
-POTENTIAL_PREFERENCE = ("pmmcs", "shik", "bjp")
+POTENTIAL_PREFERENCE = ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp")
 
 _POTENTIAL_MODULES = {
     "pmmcs": pmmcs,
     "bjp": bjp,
     "shik": shik,
+    "bmp-harmonic": bmp,
+    "bmp-screened-harmonic": bmp,
 }
 
 
@@ -45,7 +48,9 @@ def get_supported_elements(potential_type: str) -> set[str]:
 def select_potential(elements: set[str]) -> str | None:
     """Choose the best potential that supports all *elements*.
 
-    Potentials are tried in preference order: pmmcs → shik → bjp.
+    Potentials are tried in preference order: pmmcs → bmp → shik → bjp.
+    When boron (B) is present, ``bmp-screened-harmonic`` is preferred over ``bmp-harmonic``
+    because its three-body term explicitly covers B-O-B and B-O-Si interactions.
 
     Args:
         elements: Element symbols required by the composition.
@@ -55,7 +60,10 @@ def select_potential(elements: set[str]) -> str | None:
         handle the full element set.
 
     """
-    for name in POTENTIAL_PREFERENCE:
+    preference = (
+        ("pmmcs", "bmp-screened-harmonic", "bmp-harmonic", "shik", "bjp") if "B" in elements else POTENTIAL_PREFERENCE
+    )
+    for name in preference:
         if elements <= _POTENTIAL_MODULES[name].supported_elements():
             return name
     return None
@@ -85,7 +93,8 @@ def generate_potential(
 
     Args:
         atoms_dict: Structure dict from ``get_structure_dict()``.
-        potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``.
+        potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``,
+            ``"bmp-harmonic"``, or ``"bmp-screened-harmonic"``.
         melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K (all potentials).
         electrostatics: Coulomb solver settings. Defaults to DSF with each
             potential's built-in cutoffs and damping parameter.
@@ -95,7 +104,9 @@ def generate_potential(
 
     Example:
         >>> potential = generate_potential(struct_dict, potential_type="shik")
-        >>> potential = generate_potential(struct_dict, potential_type="shik", melt=True)
+        >>> potential = generate_potential(struct_dict, potential_type="shik", melt=False)
+        >>> potential = generate_potential(struct_dict, potential_type="bmp-harmonic")
+        >>> potential = generate_potential(struct_dict, potential_type="bmp-screened-harmonic", melt=False)
 
     """
     if potential_type.lower() == "pmmcs":
@@ -104,5 +115,8 @@ def generate_potential(
         return bjp.generate_bjp_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
     if potential_type.lower() == "shik":
         return shik.generate_shik_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
+    if potential_type.lower() in ("bmp-harmonic", "bmp-screened-harmonic"):
+        variant = "harmonic" if potential_type.lower() == "bmp-harmonic" else "screened-harmonic"
+        return bmp.generate_bmp_potential(atoms_dict, variant=variant, melt=melt, electrostatics=electrostatics)
     msg = f"Unsupported potential type: {potential_type}"
     raise ValueError(msg)
