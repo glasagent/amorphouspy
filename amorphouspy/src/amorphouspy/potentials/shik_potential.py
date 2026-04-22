@@ -3,16 +3,24 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from __future__ import annotations
+
 from collections import Counter
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from amorphouspy.potentials._config import DsfConfig, InteractionConfig
 from amorphouspy.shared import get_element_types_dict
 
+_DEFAULT_LONG_RANGE_CUTOFF = 10.0
+_DEFAULT_SHORT_RANGE_CUTOFF = 8.0
+_DEFAULT_ALPHA = 0.2
+_MELT_TEMPERATURE = 4000
+
 # ================================================================
-# SHIK Parameters (Pedone-like Buckingham + r^-24)
+# SHIK Parameters (Buckingham + r^-24)
 # ================================================================
 shik_charges = {
     "Li": 0.5727,
@@ -96,7 +104,7 @@ def write_table_file(
     pair: str,
     params: tuple[float, float, float, float],
     rmin: float = 0.1,
-    rmax: float = 10.5,
+    rmax: float = _DEFAULT_SHORT_RANGE_CUTOFF,
     npoints: int = 50000,
     output_dir: str | Path = ".",
 ) -> Path:
@@ -106,7 +114,7 @@ def write_table_file(
         pair: Name of the atomic pair (e.g., "Si-O").
         params: Tuple of parameters (A, B, C, D).
         rmin: Minimum distance for table (default 0.1).
-        rmax: Maximum distance for table (default 10.5).
+        rmax: Maximum distance for table (default 8.0).
         npoints: Number of points in table (default 50000).
         output_dir: Directory to save the table file definition.
 
@@ -118,7 +126,7 @@ def write_table_file(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     A, B, C, D = params
-    r_squared = np.linspace(rmin**2, rmax**2, npoints, dtype=np.float64)
+    r_squared = np.linspace(rmin**2, rmax**2, npoints, endpoint=True, dtype=np.float64)
     rs = np.sqrt(r_squared)
     data = np.array([potential_and_force(r, A, B, C, D) for r in rs])
 
@@ -173,28 +181,53 @@ def _build_pair_coeff_lines(species: list, types: dict, output_dir: Path, rvdw: 
             else:
                 continue
             pair_name = f"{elem_i}-{elem_j}"
-            filename = write_table_file(pair_name, params, output_dir=output_dir)
+            filename = write_table_file(pair_name, params, rmax=rvdw, output_dir=output_dir)
             abs_path = Path(filename).resolve()
             lines.append(f'pair_coeff {types[elem_i]} {types[elem_j]} table "{abs_path}" SHIK_Buck_r24 {rvdw}\n')
     return lines
 
 
-def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bool = True) -> pd.DataFrame:
+def generate_shik_potential(
+    atoms_dict: dict,
+    output_dir: str = "shik_tables",
+    *,
+    melt: bool = False,
+    electrostatics: InteractionConfig | None = None,
+) -> pd.DataFrame:
     """Generate SHIK LAMMPS input configuration with absolute table paths.
 
     Args:
-        atoms_dict: Dictionary containing atomic structure information.
-        output_dir: Directory to save the table file definition.
-        melt: If True, append a Langevin + NVE melt run block (10000 steps).
+        atoms_dict: Structure dict from ``get_structure_dict()``.
+        output_dir: Directory to save the table files.
+        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K.
+        electrostatics: Coulomb solver settings. SHIK only supports ``"dsf"`` —
+            any other method raises ``ValueError``. The potential was parameterized
+            with a Wolf-class DSF truncation (Sundararaman et al., JCP 2018).
 
     Returns:
-        DataFrame containing potential configuration.
+        Single-row DataFrame with LAMMPS config lines in the ``Config`` column.
+
+    Raises:
+        TypeError: If ``electrostatics.lammps_keyword`` is not ``"dsf"``.
 
     Example:
         >>> shik_pot = generate_shik_potential(struct_dict, output_dir="./potentials")
         >>> shik_pot_no_melt = generate_shik_potential(struct_dict, melt=False)
 
     """
+    electrostatics_cfg = electrostatics if electrostatics is not None else DsfConfig()
+    if not isinstance(electrostatics_cfg, DsfConfig):
+        method_name = getattr(electrostatics_cfg, "lammps_keyword", type(electrostatics_cfg).__name__)
+        msg = (
+            f"SHIK potential only supports 'dsf' electrostatics (got '{method_name}'). "
+            "The potential was parameterized with Wolf-class DSF truncation."
+        )
+        raise TypeError(msg)
+
+    long_range_cutoff = electrostatics_cfg.long_range_cutoff or _DEFAULT_LONG_RANGE_CUTOFF
+    short_range_cutoff = _DEFAULT_SHORT_RANGE_CUTOFF
+    alpha = electrostatics_cfg.alpha or _DEFAULT_ALPHA
+
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -202,7 +235,7 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
     species = list(types.keys())
 
     q_O = compute_oxygen_charge(atoms_dict, shik_charges)
-    shik_charges["O"] = q_O
+    local_charges = {**shik_charges, "O": q_O}
 
     # --- Validate only X-O pairs ---
     missing_pairs = []
@@ -232,15 +265,14 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
     lines.extend([f"group {elem} type {types[elem]}\n" for elem in species])
 
     lines.append("\n### Charges ###\n")
-    lines.extend([f"set type {types[elem]} charge {shik_charges[elem]}\n" for elem in species])
+    lines.extend([f"set type {types[elem]} charge {local_charges[elem]}\n" for elem in species])
 
     lines.append("\n### SHIK Potential ###\n")
-    lines.append("pair_style hybrid/overlay coul/dsf 0.2 10.0 table spline 10000\n")
+    lines.append(f"pair_style hybrid/overlay coul/dsf {alpha} {long_range_cutoff} table spline 10000\n")
     lines.append("pair_coeff * * coul/dsf\n")
-    rvdw = 10.0  # cutoff for the SHIK potential
 
     # --- Generate tables with absolute paths ---
-    lines.extend(_build_pair_coeff_lines(species, types, out_dir, rvdw))
+    lines.extend(_build_pair_coeff_lines(species, types, out_dir, short_range_cutoff))
 
     lines.append("\npair_modify shift yes\n\n")
 
@@ -248,7 +280,7 @@ def generate_shik_potential(atoms_dict: dict, output_dir: str = ".", *, melt: bo
     lines.append("\nthermo_modify flush yes\n")
     lines.append("\nthermo 100\n")
     if melt:
-        lines.append("\nfix langevinnve all langevin 5000 5000 0.01 48279\n")
+        lines.append(f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n")
         lines.append("\nfix ensemblenve all nve/limit 0.5\n")
         lines.append("\nrun 10000\n")
         lines.append("\nunfix langevinnve\n")

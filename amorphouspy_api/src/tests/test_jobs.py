@@ -1043,3 +1043,82 @@ def test_search_jobs_filter_by_tags() -> None:
     ids = [m["job_id"] for m in resp.json()["matches"]]
     assert "j-tag-filter-yes" in ids
     assert "j-tag-filter-no" not in ids
+
+
+# ---------------------------------------------------------------------------
+# ElectrostaticsParams
+# ---------------------------------------------------------------------------
+
+
+def test_electrostatics_params_to_config_roundtrip():
+    """ElectrostaticsParams.to_electrostatics_config() returns matching ElectrostaticsConfig."""
+    from amorphouspy_api.models import ElectrostaticsParams, LongRangeMethod
+
+    from amorphouspy import InteractionConfig
+
+    params = ElectrostaticsParams(method=LongRangeMethod.pppm, long_range_cutoff=9.0, kspace_accuracy=1e-4)
+    config = params.to_electrostatics_config()
+
+    assert isinstance(config, InteractionConfig)
+    assert config.lammps_keyword == "pppm"
+    assert config.long_range_cutoff == 9.0
+    assert config.kspace_accuracy == 1e-4
+
+
+def test_job_submission_accepts_electrostatics():
+    """JobSubmission with a non-default electrostatics field serialises and deserialises correctly."""
+    from amorphouspy_api.models import ElectrostaticsParams, JobSubmission, LongRangeMethod
+
+    submission = JobSubmission(
+        composition={"SiO2": 70, "Na2O": 30},
+        electrostatics=ElectrostaticsParams(method=LongRangeMethod.wolf, alpha=0.3, long_range_cutoff=10.0),
+    )
+    data = submission.model_dump()
+    roundtrip = JobSubmission.model_validate(data)
+
+    assert roundtrip.electrostatics.method == LongRangeMethod.wolf
+    assert roundtrip.electrostatics.alpha == 0.3
+    assert roundtrip.electrostatics.long_range_cutoff == 10.0
+
+
+def test_job_hash_differs_with_electrostatics():
+    """Job hash changes when the electrostatics method differs."""
+    from amorphouspy_api.models import ElectrostaticsParams, JobSubmission, LongRangeMethod
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
+
+    sub_dsf = JobSubmission(composition={"SiO2": 70, "Na2O": 30})
+    sub_pppm = JobSubmission(
+        composition={"SiO2": 70, "Na2O": 30},
+        electrostatics=ElectrostaticsParams(method=LongRangeMethod.pppm),
+    )
+
+    assert _job_hash(sub_dsf, sub_dsf.composition.canonical) != _job_hash(sub_pppm, sub_pppm.composition.canonical)
+
+
+def test_submit_job_with_electrostatics_accepted():
+    """POST /jobs with non-default electrostatics returns 200 without error."""
+    from amorphouspy_api.models import ElectrostaticsParams, LongRangeMethod
+
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch("amorphouspy_api.routers.jobs_helpers.submit_pipeline", return_value=mock_future),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 70, "Na2O": 30},
+                "electrostatics": ElectrostaticsParams(
+                    method=LongRangeMethod.wolf, alpha=0.2, long_range_cutoff=10.0
+                ).model_dump(),
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("pending", "completed")

@@ -19,6 +19,7 @@ from ase.atoms import Atoms
 # Default melt temperatures per protocol (K)
 DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
     "pmmcs": 5000.0,
+    "bmp": 4000.0,
     "bjp": 5000.0,
     "shik": 4000.0,
     "du/teter": 5000.0,
@@ -74,9 +75,34 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
 
     """
     # Bind common parameters to runner
-    run = partial(
+    run1 = partial(
         runner,
         potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    exclude_patterns = [
+        "fix langevinnve all langevin 4000 4000 0.01 48279",
+        "fix ensemblenve all nve/limit 0.5",
+        "run 10000",
+        "unfix langevinnve",
+        "unfix ensemblenve",
+    ]
+
+    # Copy the potential before stripping the init block, so run1 keeps the
+    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
+    potential2 = params.potential.copy()
+    potential2["Config"] = potential2["Config"].apply(
+        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
+    )
+
+    run2 = partial(
+        runner,
+        potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_print=params.n_print,
@@ -87,7 +113,7 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
     history: list[dict | None] = []
 
     # Stage 1: Heating from low to high T
-    structure, parsed = run(
+    structure, parsed = run1(
         structure=params.structure,
         temperature=params.temperature_low,
         temperature_end=params.temperature_high,
@@ -98,7 +124,7 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
     history.append(parsed.get("generic", None))
 
     # Stage 2: Equilibration at high T
-    structure, parsed = run(
+    structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_high,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
@@ -107,7 +133,7 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
     history.append(parsed.get("generic", None))
 
     # Stage 3: Cooling from high to low T
-    structure, parsed = run(
+    structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_high,
         temperature_end=params.temperature_low,
@@ -117,7 +143,7 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
     history.append(parsed.get("generic", None))
 
     # Stage 4: Pressure release at low T
-    structure, parsed = run(
+    structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
@@ -127,7 +153,108 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
     history.append(parsed.get("generic", None))
 
     # Stage 5: Long equilibration at low T
-    structure_final, parsed = run(
+    structure_final, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
+        initial_temperature=0,
+    )
+    history.append(parsed.get("generic", None))
+
+    return structure_final, history
+
+
+def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
+    """Execute the simulation BMP protocol.
+
+    Args:
+        runner: The function to run LAMMPS MD simulations.
+        params: MeltQuenchParams dataclass containing all simulation parameters.
+
+    Returns:
+        Final structure and list of per-stage thermo dicts (one per stage, in order).
+
+    """
+    # Bind common parameters to runner
+    run1 = partial(
+        runner,
+        potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    exclude_patterns = [
+        "fix langevinnve all langevin 4000 4000 0.01 48279",
+        "fix ensemblenve all nve/limit 0.5",
+        "run 10000",
+        "unfix langevinnve",
+        "unfix ensemblenve",
+    ]
+
+    # Copy the potential before stripping the init block, so run1 keeps the
+    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
+    potential2 = params.potential.copy()
+    potential2["Config"] = potential2["Config"].apply(
+        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
+    )
+
+    run2 = partial(
+        runner,
+        potential=potential2,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    history: list[dict | None] = []
+
+    # Stage 1: Heating from low to high T
+    structure, parsed = run1(
+        structure=params.structure,
+        temperature=params.temperature_low,
+        temperature_end=params.temperature_high,
+        n_ionic_steps=params.heating_steps,
+        initial_temperature=params.temperature_low,
+        seed=params.seed,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 2: Equilibration at high T
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_high,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
+        initial_temperature=0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 3: Cooling from high to low T
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_high,
+        temperature_end=params.temperature_low,
+        n_ionic_steps=params.cooling_steps,
+        initial_temperature=0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 4: Pressure release at low T
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
+        initial_temperature=0,
+        pressure=0.0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 5: Long equilibration at low T
+    structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
@@ -150,9 +277,34 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
 
     """
     # Bind common parameters to runner
-    run = partial(
+    run1 = partial(
         runner,
         potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    exclude_patterns = [
+        "fix langevinnve all langevin 4000 4000 0.01 48279",
+        "fix ensemblenve all nve/limit 0.5",
+        "run 10000",
+        "unfix langevinnve",
+        "unfix ensemblenve",
+    ]
+
+    # Copy the potential before stripping the init block, so run1 keeps the
+    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
+    potential2 = params.potential.copy()
+    potential2["Config"] = potential2["Config"].apply(
+        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
+    )
+
+    run2 = partial(
+        runner,
+        potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_print=params.n_print,
@@ -163,7 +315,7 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     history: list[dict | None] = []
 
     # Stage 1: Heating from low to high T
-    structure, parsed = run(
+    structure, parsed = run1(
         structure=params.structure,
         temperature=params.temperature_low,
         temperature_end=params.temperature_high,
@@ -175,7 +327,7 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     history.append(parsed.get("generic", None))
 
     # Stage 2: Equilibration at high T
-    structure, parsed = run(
+    structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_high,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
@@ -185,7 +337,7 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     history.append(parsed.get("generic", None))
 
     # Stage 3: Cooling from high to low T
-    structure, parsed = run(
+    structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_high,
         temperature_end=params.temperature_low,
@@ -196,7 +348,7 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     history.append(parsed.get("generic", None))
 
     # Stage 4: Pressure release at low T
-    structure, parsed = run(
+    structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
@@ -206,7 +358,7 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     history.append(parsed.get("generic", None))
 
     # Stage 5: Long equilibration at low T
-    structure_final, parsed = run(
+    structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
@@ -240,7 +392,7 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
 
     exclude_patterns = [
-        "fix langevinnve all langevin 5000 5000 0.01 48279",
+        "fix langevinnve all langevin 4000 4000 0.01 48279",
         "fix ensemblenve all nve/limit 0.5",
         "run 10000",
         "unfix langevinnve",
@@ -436,4 +588,5 @@ PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, list[dict | None]]]] = {
     "bjp": bjp_protocol,
     "shik": shik_protocol,
     "du/teter": du_teter_protocol,
+    "bmp": bmp_protocol,  # Use the same protocol for both BMP variants, which only differ in the harmonic vs. SHRM
 }

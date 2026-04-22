@@ -24,7 +24,7 @@ class PrettyJSONResponse(JSONResponse):
 
 from .config import API_TOKEN, DB_PATH, PROJECTS_FOLDER
 from .database import close_job_store, init_job_store
-from .mcp_server import MCPRouteMiddleware, register_tools
+from .mcp_server import MCPRouteMiddleware, mcp, register_tools
 from .routers.glasses import router as glasses_router
 from .routers.jobs import router as jobs_router
 
@@ -49,7 +49,8 @@ async def lifespan(app: FastAPI):
         logger.warning("API_TOKEN is not set — the API is open with no authentication!")
     logger.info("Job store database path: %s", DB_PATH)
     init_job_store(DB_PATH)
-    yield
+    async with mcp.session_manager.run():
+        yield
     logger.info("Closing job store database connection")
     close_job_store()
 

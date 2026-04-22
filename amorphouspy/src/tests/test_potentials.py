@@ -6,19 +6,16 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import numpy as np
 import pandas as pd
 import pytest
-from amorphouspy.potentials.bjp_potential import (
-    generate_bjp_potential,
-)
-from amorphouspy.potentials.bjp_potential import (
-    supported_elements as bjp_supported_elements,
-)
-from amorphouspy.potentials.pmmcs_potential import (
-    generate_pmmcs_potential,
-)
-from amorphouspy.potentials.pmmcs_potential import (
-    supported_elements as pmmcs_supported_elements,
-)
+from amorphouspy.potentials.bjp_potential import generate_bjp_potential
+from amorphouspy.potentials.bjp_potential import supported_elements as bjp_supported_elements
+from amorphouspy.potentials.bmp_potential import generate_bmp_potential
+from amorphouspy.potentials.pmmcs_potential import generate_pmmcs_potential
+from amorphouspy.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
 from amorphouspy.potentials.potential import (
+    DsfConfig,
+    EwaldConfig,
+    PppmConfig,
+    WolfConfig,
     compatible_potentials,
     get_supported_elements,
     select_potential,
@@ -118,7 +115,7 @@ def test_compatible_potentials_preserves_preference_order():
 def test_compatible_potentials_all_subset_of_known():
     """Results contain only recognised potential names."""
     result = compatible_potentials({"Si", "O"})
-    assert all(p in ("pmmcs", "shik", "bjp", "du_teter") for p in result)
+    assert all(p in ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter") for p in result)
 
 
 # ---------------------------------------------------------------------------
@@ -381,3 +378,201 @@ def test_generate_shik_potential_melt_true_includes_run(tmp_path):
     result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
     config = result["Config"].iloc[0]
     assert any("run 10000" in line for line in config)
+
+
+# ---------------------------------------------------------------------------
+# InteractionConfig — PMMCS
+# ---------------------------------------------------------------------------
+
+
+_METHOD_TO_CONFIG = {
+    "dsf": DsfConfig,
+    "wolf": WolfConfig,
+    "pppm": PppmConfig,
+    "ewald": EwaldConfig,
+}
+
+
+@pytest.mark.parametrize("method", ["dsf", "wolf"])
+def test_pmmcs_dsf_wolf_pair_style_contains_alpha(method):
+    """pair_style includes alpha for DSF/Wolf and no kspace_style is emitted."""
+    cfg = _METHOD_TO_CONFIG[method](alpha=0.3, long_range_cutoff=9.0)
+    result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
+    config = result["Config"].iloc[0]
+    pair_style_lines = [line for line in config if "pair_style" in line]
+    assert any("0.3" in line for line in pair_style_lines)
+    assert not any("kspace_style" in line for line in config)
+
+
+@pytest.mark.parametrize("method", ["pppm", "ewald"])
+def test_pmmcs_pppm_ewald_uses_coul_long_and_kspace(method):
+    """pair_style contains coul/long, kspace_style is emitted, alpha is absent."""
+    cfg = _METHOD_TO_CONFIG[method]()
+    result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
+    config = result["Config"].iloc[0]
+    assert any("coul/long" in line for line in config)
+    assert any(f"kspace_style {method}" in line for line in config)
+    pair_style_lines = [line for line in config if "pair_style" in line]
+    assert not any("alpha" in line or "0.25" in line for line in pair_style_lines)
+
+
+def test_pmmcs_custom_long_range_cutoff_appears_in_config():
+    """Custom long_range_cutoff appears in generated lines."""
+    cfg = DsfConfig(long_range_cutoff=9.5)
+    result = generate_pmmcs_potential(_sio2_atoms_dict(), electrostatics=cfg)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "9.5" in config_text
+
+
+# ---------------------------------------------------------------------------
+# InteractionConfig — BJP
+# ---------------------------------------------------------------------------
+
+
+def test_bjp_pppm_uses_born_coul_long():
+    """born/coul/long is used when method is 'pppm'."""
+    cfg = PppmConfig()
+    result = generate_bjp_potential(_cas_atoms_dict(), electrostatics=cfg)
+    config = result["Config"].iloc[0]
+    assert any("born/coul/long" in line for line in config)
+    assert any("kspace_style pppm" in line for line in config)
+
+
+# ---------------------------------------------------------------------------
+# InteractionConfig — SHIK
+# ---------------------------------------------------------------------------
+
+
+def test_shik_custom_lr_cutoff_used_in_table_pair_coeff(tmp_path):
+    """Custom long_range_cutoff propagates to the table pair_coeff line."""
+    cfg = DsfConfig(long_range_cutoff=8.5)
+    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, electrostatics=cfg)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "8.5" in config_text
+
+
+@pytest.mark.parametrize("cfg", [WolfConfig(), PppmConfig(), EwaldConfig()])
+def test_shik_rejects_non_dsf_methods(tmp_path, cfg):
+    """TypeError is raised with a descriptive message for non-DSF methods."""
+    with pytest.raises(TypeError, match="only supports 'dsf'"):
+        generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, electrostatics=cfg)
+
+
+# ---------------------------------------------------------------------------
+# Defaults regression — all three potentials with electrostatics=None
+# ---------------------------------------------------------------------------
+
+
+def test_defaults_unchanged_pmmcs():
+    """PMMCS with electrostatics=None produces DSF pair_style with default cutoffs."""
+    result = generate_pmmcs_potential(_sio2_atoms_dict())
+    config_text = "".join(result["Config"].iloc[0])
+    assert "coul/dsf 0.25 8.0" in config_text
+    assert "pedone 5.5" in config_text
+
+
+def test_defaults_unchanged_bjp():
+    """BJP with electrostatics=None produces born/coul/dsf pair_style with default cutoffs."""
+    result = generate_bjp_potential(_cas_atoms_dict())
+    config_text = "".join(result["Config"].iloc[0])
+    assert "born/coul/dsf 0.25 8.0" in config_text
+
+
+def test_defaults_unchanged_shik(tmp_path):
+    """SHIK with electrostatics=None produces coul/dsf 0.2 10.0 pair_style."""
+    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "coul/dsf 0.2 10.0" in config_text
+
+
+# ---------------------------------------------------------------------------
+# Melt block — all three potentials
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("generator", "atoms_dict_fn", "kwargs"),
+    [
+        (generate_pmmcs_potential, _sio2_atoms_dict, {}),
+        (generate_bjp_potential, _cas_atoms_dict, {}),
+    ],
+)
+def test_melt_block_present_and_absent(generator, atoms_dict_fn, kwargs):
+    """melt=True produces run 10000 and 4000 in langevin; melt=False omits block."""
+    result_with = generator(atoms_dict_fn(), melt=True, **kwargs)
+    config_with = "".join(result_with["Config"].iloc[0])
+    assert "run 10000" in config_with
+    assert "4000" in config_with
+
+    result_without = generator(atoms_dict_fn(), melt=False, **kwargs)
+    config_without = "".join(result_without["Config"].iloc[0])
+    assert "run 10000" not in config_without
+
+
+def test_shik_melt_block_uses_4000(tmp_path):
+    """SHIK melt block uses 4000 K (not the old 5000 K)."""
+    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "langevin 4000 4000" in config_text
+    assert "5000" not in config_text
+
+
+# ---------------------------------------------------------------------------
+# generate_bmp_potential — boron composition guard
+# ---------------------------------------------------------------------------
+
+
+def _nabs_atoms_dict() -> dict:
+    """Na-B-Si-O: valid alkali borosilicate."""
+    return {
+        "atoms": [
+            {"element": "Na"},
+            {"element": "B"},
+            {"element": "Si"},
+            {"element": "O"},
+            {"element": "O"},
+            {"element": "O"},
+        ]
+    }
+
+
+def _b_al_si_o_atoms_dict() -> dict:
+    """B-Al-Si-O: invalid (Al not allowed when B is present)."""
+    return {"atoms": [{"element": "B"}, {"element": "Al"}, {"element": "Si"}, {"element": "O"}]}
+
+
+def _al_si_o_atoms_dict() -> dict:
+    """Al-Si-O without boron: BMP has parameters and no D-model restriction applies."""
+    return {"atoms": [{"element": "Al"}, {"element": "Si"}, {"element": "O"}, {"element": "O"}]}
+
+
+def test_generate_bmp_harmonic_raises_for_al_with_boron(tmp_path):
+    """Al is rejected when B is present (Dell-Bray model not valid for aluminoborosilicates)."""
+    with pytest.raises(ValueError, match="Unsupported elements"):
+        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harmonic")
+
+
+def test_generate_bmp_screened_harmonic_raises_for_al_with_boron(tmp_path):
+    """Same guard applies for the screened-harmonic variant."""
+    with pytest.raises(ValueError, match="Unsupported elements"):
+        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
+
+
+def test_generate_bmp_harmonic_al_without_boron_is_allowed(tmp_path):
+    """Al-Si-O without boron does not trigger the composition guard."""
+    result = generate_bmp_potential(_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harmonic")
+    assert isinstance(result, pd.DataFrame)
+
+
+def test_generate_bmp_harmonic_valid_nabs(tmp_path):
+    """Na-B-Si-O returns a DataFrame for the harmonic variant."""
+    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="harmonic")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_bmp_screened_harmonic_valid_nabs(tmp_path):
+    """Na-B-Si-O returns a DataFrame for the screened-harmonic variant."""
+    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
