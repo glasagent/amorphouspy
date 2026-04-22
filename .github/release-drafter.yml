@@ -3,49 +3,51 @@ tag-template: 'v$RESOLVED_VERSION'
 change-title-escapes: '\<*_&'
 
 autolabeler:
-  - label: 'feature'
+  - label: 'type: feature'
     branch:
       - '/^feat\/.+/'
-  - label: 'bug'
+      - '/^perf\/.+/'
+  - label: 'type: bug'
     branch:
       - '/^fix\/.+/'
-  - label: 'documentation'
+  - label: 'type: documentation'
     branch:
       - '/^docs\/.+/'
-  - label: 'refactor'
+  - label: 'type: refactor'
     branch:
       - '/^refactor\/.+/'
       - '/^style\/.+/'
-  - label: 'ci'
+  - label: 'type: ci'
     branch:
       - '/^ci\/.+/'
       - '/^chore\/.+/'
-  - label: 'enhancement'
-    branch:
-      - '/^perf\/.+/'
-  - label: 'dependencies'
+  - label: 'type: tests'
     branch:
       - '/^test\/.+/'
+  - label: 'type: dependencies'
+    branch:
+      - '/^dep\/.+/'
+      - '/^deps\/.+/'
 
 categories:
   - title: '💥 Breaking Changes'
-    labels: ['breaking']
+    labels: ['type: breaking']
   - title: '🚀 Features'
-    labels: ['feature', 'enhancement']
+    labels: ['type: feature']
   - title: '🐛 Bug Fixes'
-    labels: ['bug']
+    labels: ['type: bug']
   - title: '📚 Documentation'
-    labels: ['documentation', 'docs']
+    labels: ['type: documentation']
   - title: '🔧 Maintenance'
-    labels: ['dependencies', 'ci', 'refactor']
+    labels: ['type: dependencies', 'type: ci', 'type: refactor', 'type: tests']
 
 version-resolver:
   major:
-    labels: ['breaking', 'major']
+    labels: ['type: breaking', 'semver: major']
   minor:
-    labels: ['feature', 'enhancement', 'minor']
+    labels: ['type: feature', 'semver: minor']
   patch:
-    labels: ['bug', 'patch']
+    labels: ['type: bug', 'semver: patch']
   default: patch
 
 exclude-labels:
