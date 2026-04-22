@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
+from .config import MCP_HOST
+
 # ---------------------------------------------------------------------------
 # MCP server instance
 # ---------------------------------------------------------------------------
@@ -34,6 +36,7 @@ mcp = FastMCP(
     "amorphouspy",
     instructions=MCP_INSTRUCTIONS,
     stateless_http=True,
+    host=MCP_HOST,
 )
 
 
