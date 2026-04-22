@@ -62,6 +62,7 @@ nav:
         - PMMCS (Pedone): theory/potentials/pmmcs.md
         - BJP (Bouhadja): theory/potentials/bjp.md
         - SHIK (Sundararaman): theory/potentials/shik.md
+        - BMP (Bertani–Menziani–Pedone): theory/potentials/bmp.md
     - Simulation Workflows:
         - theory/workflows/index.md
         - Melt-Quench: theory/workflows/melt_quench.md

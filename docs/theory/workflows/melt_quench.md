@@ -83,7 +83,7 @@ from amorphouspy import melt_quench_protocol
 result = melt_quench_protocol(
     structure=atoms,
     potential=potential,
-    potential_type="pmmcs",  # or "bjp" or "shik"
+    potential_type="pmmcs",  # or "bjp", "shik", "bmp-harmonic", "bmp-screened-harmonic"
 )
 ```
 
@@ -110,6 +110,20 @@ NPT protocol optimised for CAS glasses with pressure control throughout:
 | 3. Cool | T_high → T_low | NPT (P=0) | Variable (cooling rate) |
 | 4. Pressure release | T_low | NPT (P=0) | 100,000 steps |
 | 5. Final equilibration | T_low | NVT | 100,000 steps |
+
+### BMP Protocol
+
+Five-stage NVT protocol for multi-component glasses with explicit three-body interactions. Applies to both `bmp-harmonic` and `bmp-screened-harmonic` — the variants differ only in their potential parameters, not in the MD protocol.
+
+| Stage | Temperature range | Ensemble | Duration |
+|---|---|---|---|
+| 1. Heat | T_low → T_high | NVT | Variable (heating rate) |
+| 2. Equilibrate | T_high | NVT | 1,000,000 steps |
+| 3. Cool | T_high → T_low | NVT | Variable (cooling rate) |
+| 4. Pressure release | T_low | NPT (P=0) | 1,000,000 steps |
+| 5. Final equilibration | T_low | NVT | 100,000 steps |
+
+The default melt temperature for BMP is **4000 K**. All stages run in NVT or NPT — no pressure ramp is required because the Morse + Buckingham form is less steep than the SHIK $r^{-24}$ term.
 
 ### SHIK Protocol
 

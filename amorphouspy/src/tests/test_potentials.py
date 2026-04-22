@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from amorphouspy.potentials.bjp_potential import generate_bjp_potential
 from amorphouspy.potentials.bjp_potential import supported_elements as bjp_supported_elements
+from amorphouspy.potentials.bmp_potential import generate_bmp_potential
 from amorphouspy.potentials.pmmcs_potential import generate_pmmcs_potential
 from amorphouspy.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
 from amorphouspy.potentials.potential import (
@@ -114,7 +115,7 @@ def test_compatible_potentials_preserves_preference_order():
 def test_compatible_potentials_all_subset_of_known():
     """Results contain only recognised potential names."""
     result = compatible_potentials({"Si", "O"})
-    assert all(p in ("pmmcs", "shik", "bjp") for p in result)
+    assert all(p in ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp") for p in result)
 
 
 # ---------------------------------------------------------------------------
@@ -514,3 +515,64 @@ def test_shik_melt_block_uses_4000(tmp_path):
     config_text = "".join(result["Config"].iloc[0])
     assert "langevin 4000 4000" in config_text
     assert "5000" not in config_text
+
+
+# ---------------------------------------------------------------------------
+# generate_bmp_potential — boron composition guard
+# ---------------------------------------------------------------------------
+
+
+def _nabs_atoms_dict() -> dict:
+    """Na-B-Si-O: valid alkali borosilicate."""
+    return {
+        "atoms": [
+            {"element": "Na"},
+            {"element": "B"},
+            {"element": "Si"},
+            {"element": "O"},
+            {"element": "O"},
+            {"element": "O"},
+        ]
+    }
+
+
+def _b_al_si_o_atoms_dict() -> dict:
+    """B-Al-Si-O: invalid (Al not allowed when B is present)."""
+    return {"atoms": [{"element": "B"}, {"element": "Al"}, {"element": "Si"}, {"element": "O"}]}
+
+
+def _al_si_o_atoms_dict() -> dict:
+    """Al-Si-O without boron: BMP has parameters and no D-model restriction applies."""
+    return {"atoms": [{"element": "Al"}, {"element": "Si"}, {"element": "O"}, {"element": "O"}]}
+
+
+def test_generate_bmp_harmonic_raises_for_al_with_boron(tmp_path):
+    """Al is rejected when B is present (Dell-Bray model not valid for aluminoborosilicates)."""
+    with pytest.raises(ValueError, match="Unsupported elements"):
+        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harmonic")
+
+
+def test_generate_bmp_screened_harmonic_raises_for_al_with_boron(tmp_path):
+    """Same guard applies for the screened-harmonic variant."""
+    with pytest.raises(ValueError, match="Unsupported elements"):
+        generate_bmp_potential(_b_al_si_o_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
+
+
+def test_generate_bmp_harmonic_al_without_boron_is_allowed(tmp_path):
+    """Al-Si-O without boron does not trigger the composition guard."""
+    result = generate_bmp_potential(_al_si_o_atoms_dict(), output_dir=tmp_path, variant="harmonic")
+    assert isinstance(result, pd.DataFrame)
+
+
+def test_generate_bmp_harmonic_valid_nabs(tmp_path):
+    """Na-B-Si-O returns a DataFrame for the harmonic variant."""
+    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="harmonic")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_bmp_screened_harmonic_valid_nabs(tmp_path):
+    """Na-B-Si-O returns a DataFrame for the screened-harmonic variant."""
+    result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
