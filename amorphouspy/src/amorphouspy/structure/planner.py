@@ -10,7 +10,7 @@ from scipy.constants import Avogadro
 
 from amorphouspy.mass import get_atomic_mass
 from amorphouspy.structure.composition import (
-    OXIDE_ELEMENT_LABEL,
+    OXIDE_TO_SPECIES_MAP,
     extract_composition,
     extract_stoichiometry,
     get_composition,
@@ -111,13 +111,13 @@ def element_counts_from_formula_units(ni: Mapping[str, int | float]) -> dict[str
 
     Returns:
         A dictionary mapping element labels to their total counts in the system.
-        Oxides in OXIDE_ELEMENT_LABEL contribute their BMP label (e.g. "Fe3") for
+        Oxides in OXIDE_TO_SPECIES_MAP contribute their BMP label (e.g. "Fe3") for
         non-oxygen atoms; all other oxides use bare element symbols.
 
     """
     counts: dict[str, int | float] = {}
     for ox, nfu in ni.items():
-        label = OXIDE_ELEMENT_LABEL.get(ox)
+        label = OXIDE_TO_SPECIES_MAP.get(ox)
         sto = parse_formula(ox)
         for el, c in sto.items():
             key = "O" if el == "O" else (label if label is not None else el)

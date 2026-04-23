@@ -17,7 +17,7 @@ COMPOSITION_TOLERANCE = 0.001
 
 # Maps oxide formula → BMP element label for multi-valence elements.
 # Oxides absent from this registry fall through to bare element symbols.
-OXIDE_ELEMENT_LABEL: dict[str, str] = {
+OXIDE_TO_SPECIES_MAP: dict[str, str] = {
     "FeO": "Fe",
     "Fe2O3": "Fe3",
     "CeO2": "Ce4",
