@@ -6,8 +6,8 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import pandas as pd
 
 from . import bjp_potential as bjp
-from . import du_teter_potential as du_teter
 from . import bmp_potential as bmp
+from . import du_teter_potential as du_teter
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
 from ._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
