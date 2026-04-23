@@ -22,7 +22,8 @@ We are using the following, more recent references in the definition:
     J Am Ceram Soc. 2019, 102, 2482-2505.
     doi.org/10.1111/jace.16082
     Also note the erratum, https://doi.org/10.1111/jace.16897, with a corrected formula for t3 parameter
-Note: Reference [1] also has parameters for Fe2+ and F3+ (with effective charges of 1.2 and 1.8, respectively)
+Note: Reference [1] also has parameters for Fe2+ and Fe3+ (with effective charges of 1.2 and 1.8, respectively),
+    included here as "Fe" and "Fe3" to match the multi-valence label convention (FeO → "Fe", Fe2O3 → "Fe3").
 """
 
 from pathlib import Path
@@ -195,6 +196,26 @@ du_teter_potential_params = {
         "D": -103.137529,
         "n": 2.564633,
         "r0": 0.897969,
+    },
+    "Fe": {  # Fe²⁺, q=1.2 — from [1], Table 1
+        "q": 1.2,
+        "A": 11777.0703,
+        "rho": 0.207132,
+        "C": 21.642,
+        "B": 104.203,
+        "D": -32.110,
+        "n": 2.670,
+        "r0": 0.917,
+    },
+    "Fe3": {  # Fe³⁺, q=1.8 — from [1], Table 1
+        "q": 1.8,
+        "A": 19952.29,
+        "rho": 0.182538,
+        "C": 4.6583,
+        "B": 260.983,
+        "D": -340.739,
+        "n": 2.115,
+        "r0": 0.626,
     },
 }
 
