@@ -9,6 +9,11 @@ import pytest
 from amorphouspy.potentials.bjp_potential import generate_bjp_potential
 from amorphouspy.potentials.bjp_potential import supported_elements as bjp_supported_elements
 from amorphouspy.potentials.bmp_potential import generate_bmp_potential
+from amorphouspy.potentials.du_teter_potential import (
+    generate_du_teter_potential,
+    stillinger_weber_params,
+    write_sw_file,
+)
 from amorphouspy.potentials.pmmcs_potential import generate_pmmcs_potential
 from amorphouspy.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
 from amorphouspy.potentials.potential import (
@@ -116,6 +121,71 @@ def test_compatible_potentials_all_subset_of_known():
     """Results contain only recognised potential names."""
     result = compatible_potentials({"Si", "O"})
     assert all(p in ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter") for p in result)
+
+
+# ---------------------------------------------------------------------------
+# Du/Teter SW three-body
+# ---------------------------------------------------------------------------
+
+
+def _po_atoms_dict() -> dict:
+    """P-O2 atoms_dict for testing SW file generation with a three-body term."""
+    return {"atoms": [{"element": "P"}, {"element": "O"}, {"element": "O"}]}
+
+
+def test_sw_file_is_created(tmp_path):
+    """write_sw_file creates a file at the expected location."""
+    sw_path = write_sw_file(["O", "P"], output_dir=tmp_path)
+    assert sw_path.exists()
+
+
+def test_sw_file_active_triplets_have_nonzero_lambda(tmp_path):
+    """Active triplets in the SW file have the correct nonzero lambda values."""
+    sw_path = write_sw_file(["O", "P"], output_dir=tmp_path)
+    active = {(i, j, k): lam for (i, j, k), (lam, *_) in stillinger_weber_params.items()}
+    for line in sw_path.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        cols = line.split()
+        key = (cols[0], cols[1], cols[2])
+        lam = float(cols[6])
+        if key in active:
+            assert lam == active[key]
+        else:
+            assert lam == 0.0
+
+
+def test_sw_file_twobody_always_zero(tmp_path):
+    """Two-body entries in the SW file have zero lambda values."""
+    sw_path = write_sw_file(["O", "P"], output_dir=tmp_path)
+    for line in sw_path.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        cols = line.split()
+        assert float(cols[9]) == 0.0  # A column
+        assert float(cols[10]) == 0.0  # B column
+
+
+def test_generate_du_teter_no_three_body(tmp_path):
+    """generate_du_teter_potential with use_three_body=False omits SW entries and pair_coeff sw."""
+    df = generate_du_teter_potential(_po_atoms_dict(), output_dir=tmp_path, melt=False, use_three_body=False)
+    config = "".join(df["Config"].iloc[0])
+    assert " sw" not in config
+
+
+def test_generate_du_teter_three_body_adds_sw(tmp_path):
+    """generate_du_teter_potential with use_three_body=True includes SW entries and pair_coeff sw."""
+    df = generate_du_teter_potential(_po_atoms_dict(), output_dir=tmp_path, melt=False, use_three_body=True)
+    config = "".join(df["Config"].iloc[0])
+    assert "table spline 11000 sw" in config
+    assert "pair_coeff * * sw" in config
+
+
+def test_generate_du_teter_three_body_requires_P(tmp_path):
+    """generate_du_teter_potential with use_three_body=True raises ValueError if P is missing."""
+    atoms = {"atoms": [{"element": "O"}, {"element": "K"}]}
+    with pytest.raises(ValueError, match="phosphorus"):
+        generate_du_teter_potential(atoms, output_dir=tmp_path, use_three_body=True)
 
 
 # ---------------------------------------------------------------------------

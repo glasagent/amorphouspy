@@ -14,8 +14,8 @@ We are using the following, more recent references in the definition:
     Phosphate Glasses from Molecular Dynamics Simulations"
     Chem. Mater. 2025, 37, 8595-8613
     doi.org/10.1021/acs.chemmater.5c01505
-    Note that this publications also defines three-body terms for P-O-P and O-P-O
-    interactions, which we are not including in our current implementation.
+    Three-body Stillinger-Weber terms for P-O-P and O-P-O interactions from this reference
+    are supported via ``write_sw_file`` / ``use_three_body=True`` in ``generate_du_teter_potential``.
 [2] Lu Deng and Jincheng Du
     "Development of boron oxide potentials for computer simulations  of multicomponent
     oxide glasses"
@@ -26,6 +26,7 @@ Note: Reference [1] also has parameters for Fe2+ and Fe3+ (with effective charge
     included here as "Fe" and "Fe3" to match the multi-valence label convention (FeO → "Fe", Fe2O3 → "Fe3").
 """
 
+import itertools
 from pathlib import Path
 
 import numpy as np
@@ -197,7 +198,7 @@ du_teter_potential_params = {
         "n": 2.564633,
         "r0": 0.897969,
     },
-    "Fe": {  # Fe²⁺, q=1.2 — from [1], Table 1
+    "Fe": {  # Fe²⁺, q=1.2 - from [1], Table 1
         "q": 1.2,
         "A": 11777.0703,
         "rho": 0.207132,
@@ -207,7 +208,7 @@ du_teter_potential_params = {
         "n": 2.670,
         "r0": 0.917,
     },
-    "Fe3": {  # Fe³⁺, q=1.8 — from [1], Table 1
+    "Fe3": {  # Fe³⁺, q=1.8 - from [1], Table 1
         "q": 1.8,
         "A": 19952.29,
         "rho": 0.182538,
@@ -223,6 +224,57 @@ du_teter_potential_params = {
 def supported_elements() -> set[str]:
     """Return the set of elements supported by the Du/Teter potential."""
     return set(du_teter_potential_params)
+
+
+# Stillinger-Weber three-body parameters for phosphate glasses.
+# Key: (vertex, side, side) - vertex is the center atom (i in j-i-k notation).
+# Values: (lambda eV, gamma Å, rc Å, theta0 deg)
+# Source: Jolley & Smith, Nucl. Instrum. Methods B 2016, 374, 8
+#         Joseph, Jolley & Smith, J. Non-Cryst. Solids 2015, 411, 137
+stillinger_weber_params: dict[tuple[str, str, str], tuple[float, float, float, float]] = {
+    ("P", "O", "O"): (5.3516, 0.5, 2.5, 109.47),  # O-P-O angle, P is vertex
+    ("O", "P", "P"): (8.2997, 0.5, 2.5, 135.50),  # P-O-P angle, O is vertex
+}
+
+
+def write_sw_file(
+    species: list[str],
+    output_dir: str | Path = ".",
+    filename: str = "du_teter.sw",
+) -> Path:
+    """Write a LAMMPS Stillinger-Weber parameter file for phosphate glass simulations.
+
+    Two-body terms are zeroed out (A = B = 0) so only the angular three-body
+    interactions contribute. Active triplets are O-P-O (P vertex) and P-O-P
+    (O vertex); all other i-j-k combinations receive zero-λ entries as required
+    by LAMMPS for exhaustive coverage.
+
+    Args:
+        species: Element labels present in the simulation (e.g. ``["O", "P", "K"]``).
+        output_dir: Directory to write the file.
+        filename: Output filename.
+
+    Returns:
+        Path to the generated ``.sw`` file.
+    """
+    out_dir = Path(output_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    file_path = out_dir / filename
+
+    with file_path.open("w") as f:
+        f.write("# Stillinger-Weber three-body parameters for Du/Teter phosphate potential\n")
+        f.write("# A=B=0: two-body SW terms disabled; only angular three-body active\n")
+        f.write("# elem_i  elem_j  elem_k  eps    sigma  a      lambda   gamma  costheta0   A    B    p  q  tol\n")
+        for i, j, k in itertools.product(species, repeat=3):
+            lam, gam, rc, theta0 = stillinger_weber_params.get((i, j, k), (0.0, 0.0, 0.0, 0.0))
+            cos_theta0 = np.cos(np.radians(theta0)) if theta0 != 0.0 else 0.0
+            f.write(
+                f"{i:<8} {j:<8} {k:<8} "
+                f"1.0    1.0    {rc:<6.2f} {lam:<8.4f} {gam:<6.2f} {cos_theta0:<11.6f} "
+                f"0.0  0.0  4  0  0.0\n"
+            )
+
+    return file_path
 
 
 def Buckingham(r: float, A: float, rho: float, C: float) -> float:
@@ -637,7 +689,26 @@ def _build_all_pair_params(species: list[str], structure_dict: dict) -> dict[str
     return pair_params
 
 
-def generate_du_teter_potential(structure_dict: dict, output_dir: str = ".", *, melt: bool = True) -> pd.DataFrame:
+def _validate_du_teter_inputs(species: list[str], *, use_three_body: bool) -> None:
+    if "O" not in species:
+        msg = "Oxygen must be present in the structure for the Du/Teter potential."
+        raise ValueError(msg)
+    if use_three_body and "P" not in species:
+        msg = "use_three_body=True requires phosphorus (P) to be present in the structure."
+        raise ValueError(msg)
+    unsupported = [elem for elem in species if elem not in du_teter_potential_params]
+    if unsupported:
+        msg = f"Du/Teter potential does not include parameters for: {unsupported}"
+        raise ValueError(msg)
+
+
+def generate_du_teter_potential(
+    structure_dict: dict,
+    output_dir: str = ".",
+    *,
+    melt: bool = True,
+    use_three_body: bool = False,
+) -> pd.DataFrame:
     """Generate a LAMMPS potential file for the Du/Teter potential.
 
     For compositions containing B2O3 the B-O interaction parameters are
@@ -649,6 +720,9 @@ def generate_du_teter_potential(structure_dict: dict, output_dir: str = ".", *, 
             including ``"atoms"`` and optionally ``"mol_fraction"``.
         output_dir: Directory to save the generated table files.
         melt: If True, append a Langevin + NVE melt run block (10 000 steps).
+        use_three_body: If True, write a Stillinger-Weber ``.sw`` file and add
+            the ``sw`` pair style to the LAMMPS config for O-P-O / P-O-P
+            three-body interactions. Requires P to be present in the structure.
 
     Returns:
         A DataFrame containing the potential configuration.
@@ -659,15 +733,7 @@ def generate_du_teter_potential(structure_dict: dict, output_dir: str = ".", *, 
     types = get_element_types_dict(structure_dict["atoms"])
     species = list(types.keys())
 
-    if "O" not in species:
-        msg = "Oxygen must be present in the structure for the Du/Teter potential."
-        raise ValueError(msg)
-
-    # Validate that all elements are supported
-    unsupported = [elem for elem in species if elem not in du_teter_potential_params]
-    if unsupported:
-        msg = f"Du/Teter potential does not include parameters for: {unsupported}"
-        raise ValueError(msg)
+    _validate_du_teter_inputs(species, use_three_body=use_three_body)
 
     pair_params = _build_all_pair_params(species, structure_dict)
 
@@ -701,7 +767,10 @@ def generate_du_teter_potential(structure_dict: dict, output_dir: str = ".", *, 
         lines.append(f"set type {types[elem]} charge {q}\n")
 
     lines.append("\n### Du/Teter Potential ###\n")
-    lines.append("pair_style hybrid/overlay coul/dsf 0.25 8.0 table spline 11000\n")
+    if use_three_body:
+        lines.append("pair_style hybrid/overlay coul/dsf 0.25 8.0 table spline 11000 sw\n")
+    else:
+        lines.append("pair_style hybrid/overlay coul/dsf 0.25 8.0 table spline 11000\n")
     lines.append("pair_coeff * * coul/dsf\n")
 
     o_type = types["O"]
@@ -712,6 +781,11 @@ def generate_du_teter_potential(structure_dict: dict, output_dir: str = ".", *, 
             lines.append(f'pair_coeff {o_type} {o_type} table "{abs_path}" DU_TETER {rvdw}\n')
         else:
             lines.append(f'pair_coeff {types[elems[0]]} {o_type} table "{abs_path}" DU_TETER {rvdw}\n')
+
+    if use_three_body:
+        sw_path = write_sw_file(species, out_dir)
+        elem_order = " ".join(species)
+        lines.append(f'pair_coeff * * sw "{sw_path}" {elem_order}\n')
 
     lines.append("\npair_modify shift yes\n\n")
     lines.append("thermo_style custom step temp pe etotal pxx pxy pxz pyy pyz pzz vol\n")
