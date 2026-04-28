@@ -115,7 +115,7 @@ def test_compatible_potentials_preserves_preference_order():
 def test_compatible_potentials_all_subset_of_known():
     """Results contain only recognised potential names."""
     result = compatible_potentials({"Si", "O"})
-    assert all(p in ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp") for p in result)
+    assert all(p in ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "yang2026") for p in result)
 
 
 # ---------------------------------------------------------------------------
