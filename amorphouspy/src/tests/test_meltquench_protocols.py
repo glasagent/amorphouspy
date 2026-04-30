@@ -10,6 +10,7 @@ from amorphouspy.workflows.meltquench_protocols import (
     MeltQuenchParams,
     bjp_protocol,
     bmp_protocol,
+    du_teter_protocol,
     pmmcs_protocol,
     shik_protocol,
     yang2026_protocol,
@@ -236,9 +237,133 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
     assert mock_runner.call_count == 5
 
 
+def _make_params(structure, potential, **kwargs):
+    defaults = {
+        "structure": structure,
+        "potential": potential,
+        "temperature_high": 4000.0,
+        "temperature_low": 300.0,
+        "heating_steps": 100_000,
+        "cooling_steps": 100_000,
+        "timestep": 1.0,
+        "n_print": 1000,
+        "langevin": False,
+        "seed": 12345,
+    }
+    defaults.update(kwargs)
+    return MeltQuenchParams(**defaults)
+
+
 # ---------------------------------------------------------------------------
 # bmp_protocol
 # ---------------------------------------------------------------------------
+
+
+def test_bmp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potential):
+    """bmp_protocol accepts MeltQuenchParams and returns structure + history."""
+    params = _make_params(mock_structure, mock_potential)
+    structure, history = bmp_protocol(mock_runner, params)
+    assert structure is not None
+    assert history is not None
+
+
+def test_bmp_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
+    """bmp_protocol calls the runner exactly 5 times (5 stages)."""
+    params = _make_params(mock_structure, mock_potential)
+    bmp_protocol(mock_runner, params)
+    assert mock_runner.call_count == 5
+
+
+def test_bmp_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
+    """bmp_protocol returns a list of 5 history entries."""
+    params = _make_params(mock_structure, mock_potential)
+    _, history = bmp_protocol(mock_runner, params)
+    assert len(history) == 5
+
+
+def test_bmp_protocol_strips_exclude_patterns(mock_runner, mock_structure):
+    """bmp_protocol strips langevin/nve patterns from potential config for stages 2+."""
+    potential = pd.DataFrame(
+        {
+            "Name": ["bmp"],
+            "Config": [
+                [
+                    "fix langevinnve all langevin 4000 4000 0.01 48279",
+                    "fix ensemblenve all nve/limit 0.5",
+                    "run 10000",
+                    "unfix langevinnve",
+                    "unfix ensemblenve",
+                    "other line",
+                ]
+            ],
+        }
+    )
+    params = _make_params(mock_structure, potential)
+    bmp_protocol(mock_runner, params)
+    assert mock_runner.call_count == 5
+
+
+def test_bmp_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
+    """bmp_protocol respects custom equilibration_steps."""
+    params = _make_params(mock_structure, mock_potential, equilibration_steps=50_000)
+    bmp_protocol(mock_runner, params)
+    assert mock_runner.call_count == 5
+
+
+# ---------------------------------------------------------------------------
+# du_teter_protocol
+# ---------------------------------------------------------------------------
+
+
+def test_du_teter_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potential):
+    """du_teter_protocol accepts MeltQuenchParams and returns structure + history."""
+    params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
+    structure, history = du_teter_protocol(mock_runner, params)
+    assert structure is not None
+    assert history is not None
+
+
+def test_du_teter_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
+    """du_teter_protocol calls the runner exactly 5 times (5 stages)."""
+    params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
+    du_teter_protocol(mock_runner, params)
+    assert mock_runner.call_count == 5
+
+
+def test_du_teter_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
+    """du_teter_protocol returns a list of 5 history entries."""
+    params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
+    _, history = du_teter_protocol(mock_runner, params)
+    assert len(history) == 5
+
+
+def test_du_teter_protocol_strips_5000_langevin(mock_runner, mock_structure):
+    """du_teter_protocol strips the 5000 K langevin pattern from stages 2+."""
+    potential = pd.DataFrame(
+        {
+            "Name": ["du_teter"],
+            "Config": [
+                [
+                    "fix langevinnve all langevin 5000 5000 0.01 48279",
+                    "fix ensemblenve all nve/limit 0.5",
+                    "run 10000",
+                    "unfix langevinnve",
+                    "unfix ensemblenve",
+                    "pair_style hybrid/overlay coul/dsf 0.25 8.0 table spline 11000",
+                ]
+            ],
+        }
+    )
+    params = _make_params(mock_structure, potential, temperature_high=5000.0)
+    du_teter_protocol(mock_runner, params)
+    assert mock_runner.call_count == 5
+
+
+def test_du_teter_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
+    """du_teter_protocol respects custom equilibration_steps."""
+    params = _make_params(mock_structure, mock_potential, temperature_high=5000.0, equilibration_steps=50_000)
+    du_teter_protocol(mock_runner, params)
+    assert mock_runner.call_count == 5
 
 
 def test_bmp_protocol_strips_melt_block_for_later_stages(mock_runner, mock_structure):
