@@ -663,7 +663,7 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
 
     # Stage 1: NVT 300 K for 20 ps
     structure, parsed = run2(
-        structure=params.structure,
+        structure=structure,
         temperature=params.temperature_low,
         n_ionic_steps=steps_20ps,
         initial_temperature=params.temperature_low,
@@ -682,7 +682,7 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 3: NPT T_high, P = 3000 atm for 100 ps
+    # Stage 3: NPT T_high, P = 20000 atm for 100 ps
     structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_high,
