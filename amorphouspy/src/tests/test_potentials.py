@@ -31,6 +31,14 @@ from amorphouspy.potentials.shik_potential import (
 from amorphouspy.potentials.shik_potential import (
     supported_elements as shik_supported_elements,
 )
+from amorphouspy.potentials.yang_potential import (
+    generate_yang2026_potential,
+    yang2026_charges,
+    yang2026_params,
+)
+from amorphouspy.potentials.yang_potential import (
+    supported_elements as yang_supported_elements,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -576,3 +584,170 @@ def test_generate_bmp_screened_harmonic_valid_nabs(tmp_path):
     result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
     assert isinstance(result, pd.DataFrame)
     assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# yang_potential.supported_elements
+# ---------------------------------------------------------------------------
+
+
+def test_yang_supported_elements_exact_set():
+    """Yang2026 supports exactly {Ca, Na, B, Si, O} — no more, no less."""
+    assert yang_supported_elements() == {"Ca", "Na", "B", "Si", "O"}
+
+
+# ---------------------------------------------------------------------------
+# yang2026_charges — physics constraints
+# ---------------------------------------------------------------------------
+
+
+def test_yang2026_charges_neutral_for_nabsio():
+    """Na+B+Si+4O unit is charge-neutral with the published Yang2026 charges."""
+    total = yang2026_charges["Na"] + yang2026_charges["B"] + yang2026_charges["Si"] + 4 * yang2026_charges["O"]
+    assert total == pytest.approx(0.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# generate_yang2026_potential — defaults regression
+# ---------------------------------------------------------------------------
+
+
+def _yang_nabo_atoms_dict() -> dict:
+    """Na-B-Si-O atoms_dict for Yang2026 tests."""
+    return {
+        "atoms": [
+            {"element": "Na"},
+            {"element": "B"},
+            {"element": "Si"},
+            {"element": "O"},
+            {"element": "O"},
+            {"element": "O"},
+        ]
+    }
+
+
+def test_yang2026_defaults_dsf_alpha_and_cutoff():
+    """Default electrostatics is DSF with alpha=0.182 and cutoff=11.0 Å."""
+    result = generate_yang2026_potential(_yang_nabo_atoms_dict())
+    config_text = "".join(result["Config"].iloc[0])
+    assert "coul/dsf 0.182 11.0" in config_text
+    assert "hybrid/overlay" in config_text
+    assert "kspace_style" not in config_text
+
+
+# ---------------------------------------------------------------------------
+# generate_yang2026_potential — electrostatics variants
+# ---------------------------------------------------------------------------
+
+
+def test_yang2026_pppm_emits_kspace_and_no_alpha():
+    """PPPM path emits kspace_style and buck/coul/long; alpha must not appear."""
+    result = generate_yang2026_potential(_yang_nabo_atoms_dict(), electrostatics=PppmConfig())
+    config_text = "".join(result["Config"].iloc[0])
+    assert "kspace_style pppm" in config_text
+    assert "buck/coul/long" in config_text
+    assert "0.182" not in config_text
+
+
+def test_yang2026_wolf_emits_no_kspace():
+    """Wolf path uses hybrid/overlay coul/wolf and emits no kspace_style."""
+    result = generate_yang2026_potential(_yang_nabo_atoms_dict(), electrostatics=WolfConfig())
+    config_text = "".join(result["Config"].iloc[0])
+    assert "coul/wolf" in config_text
+    assert "kspace_style" not in config_text
+
+
+def test_yang2026_custom_long_range_cutoff_propagates():
+    """A custom long_range_cutoff value appears in the generated config."""
+    result = generate_yang2026_potential(_yang_nabo_atoms_dict(), electrostatics=DsfConfig(long_range_cutoff=14.0))
+    config_text = "".join(result["Config"].iloc[0])
+    assert "14.0" in config_text
+
+
+@pytest.mark.parametrize(
+    ("cfg", "expected_label"),
+    [
+        (None, "DSF"),
+        (WolfConfig(), "WOLF"),
+        (PppmConfig(), "PPPM"),
+        (EwaldConfig(), "EWALD"),
+    ],
+)
+def test_yang2026_model_column_reflects_electrostatics(cfg, expected_label):
+    """Model column encodes the electrostatics method name in upper case."""
+    result = generate_yang2026_potential(_yang_nabo_atoms_dict(), electrostatics=cfg)
+    assert expected_label in result["Model"].iloc[0]
+
+
+# ---------------------------------------------------------------------------
+# generate_yang2026_potential — pair coefficients
+# ---------------------------------------------------------------------------
+
+
+def test_yang2026_pair_coeff_values_match_params():
+    """O-O Buckingham A, rho, C values in config text match yang2026_params exactly."""
+    result = generate_yang2026_potential({"atoms": [{"element": "Si"}, {"element": "O"}]})
+    config_text = "".join(result["Config"].iloc[0])
+    A, rho, C = yang2026_params[("O", "O")]
+    assert f"{A:.6f}" in config_text
+    assert f"{rho:.6f}" in config_text
+    assert f"{C:.6f}" in config_text
+
+
+def test_yang2026_pair_coeff_no_duplicates():
+    """Each interacting pair appears exactly once in pair_coeff lines."""
+    result = generate_yang2026_potential(_yang_nabo_atoms_dict())
+    coeff_lines = [
+        line for line in result["Config"].iloc[0] if line.strip().startswith("pair_coeff") and "*" not in line
+    ]
+    pairs = [tuple(line.split()[1:3]) for line in coeff_lines]
+    seen: set[tuple[str, str]] = set()
+    for i, j in pairs:
+        key = (min(i, j), max(i, j))
+        assert key not in seen, f"Duplicate pair_coeff for types {i} {j}"
+        seen.add(key)
+
+
+def test_yang2026_pair_coeff_count_for_sio2():
+    """SiO2 emits exactly 2 pair_coeffs (O-O and Si-O); Si-Si has no params."""
+    result = generate_yang2026_potential({"atoms": [{"element": "Si"}, {"element": "O"}]})
+    coeff_lines = [
+        line for line in result["Config"].iloc[0] if line.strip().startswith("pair_coeff") and "*" not in line
+    ]
+    assert len(coeff_lines) == 2
+
+
+# ---------------------------------------------------------------------------
+# generate_yang2026_potential — composition guard
+# ---------------------------------------------------------------------------
+
+
+def test_yang2026_raises_for_unsupported_element():
+    """Al is not in Yang2026; passing it raises ValueError with a clear message."""
+    atoms_dict = {"atoms": [{"element": "Al"}, {"element": "Si"}, {"element": "O"}]}
+    with pytest.raises(ValueError, match="Yang2026 potential does not include parameters for elements"):
+        generate_yang2026_potential(atoms_dict)
+
+
+def test_yang2026_species_column_matches_input():
+    """Species column contains exactly the elements from the input atoms_dict."""
+    atoms_dict = {"atoms": [{"element": "Na"}, {"element": "Si"}, {"element": "O"}]}
+    result = generate_yang2026_potential(atoms_dict)
+    assert set(result["Species"].iloc[0]) == {"Na", "Si", "O"}
+
+
+# ---------------------------------------------------------------------------
+# generate_yang2026_potential — melt block
+# ---------------------------------------------------------------------------
+
+
+def test_yang2026_melt_block_present_and_absent():
+    """melt=True emits langevin 4000 and run 10000; melt=False omits both."""
+    result_with = generate_yang2026_potential(_yang_nabo_atoms_dict(), melt=True)
+    config_with = "".join(result_with["Config"].iloc[0])
+    assert "run 10000" in config_with
+    assert "langevin 4000 4000" in config_with
+
+    result_without = generate_yang2026_potential(_yang_nabo_atoms_dict(), melt=False)
+    config_without = "".join(result_without["Config"].iloc[0])
+    assert "run 10000" not in config_without

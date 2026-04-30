@@ -43,7 +43,7 @@ def supported_elements() -> set[str]:
     return set(yang2026_charges)
 
 
-def _build_bjp_pair_coeff_lines(species: list[str], types: dict, *, hybrid: bool = False) -> list[str]:
+def _build_yang2026_pair_coeff_lines(species: list[str], types: dict, *, hybrid: bool = False) -> list[str]:
     done_pairs: set[tuple[str, str]] = set()
     lines = []
     prefix = "buck " if hybrid else ""
@@ -139,7 +139,7 @@ def generate_yang2026_potential(
         config_lines.append(kspace_line)
 
     # Pair coefficients
-    config_lines.extend(_build_bjp_pair_coeff_lines(species, types, hybrid=coul_coeff_line is not None))
+    config_lines.extend(_build_yang2026_pair_coeff_lines(species, types, hybrid=coul_coeff_line is not None))
 
     config_lines.append("\npair_modify shift yes\n")
 
