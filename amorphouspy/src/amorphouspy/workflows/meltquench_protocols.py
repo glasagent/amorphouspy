@@ -23,6 +23,7 @@ DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
     "bjp": 5000.0,
     "shik": 4000.0,
     "du/teter": 5000.0,
+    "yang2026": 4000.0,
 }
 
 
@@ -582,6 +583,159 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     return structure_final, history
 
 
+_YANG_MELT_PRESSURE_ATM = 20000  # atm
+_YANG_MELT_PRESSURE_GPA = _YANG_MELT_PRESSURE_ATM * 101325e-9  # ~ GPa
+
+
+def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
+    """Execute the simulation protocol for the Yang2026 potential.
+
+    Stages:
+    based on the protocol described in Yang et al., J. Non-Cryst. Solids 684, 124104 (2026):
+        1.  20 ps NVT  300 K
+        2.  20 ps NPT  300 K, P = 0
+        3. 100 ps NPT  T_high, P = 20000 atm
+        4. 100 ps NPT  T_high, P = 0
+        5. cooling T_high → 300 K at 1 K/ps, NPT P = 0  (cooling_steps controls duration)
+        6. 100 ps NPT  300 K, P = 0
+        7. 100 ps NVT  300 K
+
+    Args:
+        runner: The function to run LAMMPS MD simulations.
+        params: MeltQuenchParams dataclass containing all simulation parameters.
+
+    Returns:
+        Final structure and list of per-stage thermo dicts (one per stage, in order).
+
+    """
+    # Bind common parameters to runner
+    run1 = partial(
+        runner,
+        potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    exclude_patterns = [
+        "fix langevinnve all langevin 4000 4000 0.01 48279",
+        "fix ensemblenve all nve/limit 0.5",
+        "run 10000",
+        "unfix langevinnve",
+        "unfix ensemblenve",
+    ]
+
+    # Copy the potential before stripping the init block, so run1 keeps the
+    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
+    potential2 = params.potential.copy()
+    potential2["Config"] = potential2["Config"].apply(
+        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
+    )
+
+    run2 = partial(
+        runner,
+        potential=potential2,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_print=params.n_print,
+        langevin=params.langevin,
+        server_kwargs=params.server_kwargs,
+    )
+
+    history: list[dict | None] = []
+
+    # Stage 0: NVT/limit 4000 K for 10 ps
+    structure, parsed = run1(
+        structure=params.structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=10,
+        initial_temperature=params.temperature_low,
+        pressure=None,
+        seed=params.seed,
+    )
+    history.append(parsed.get("generic", None))
+
+    eq_steps = params.equilibration_steps
+    steps_20ps = eq_steps if eq_steps is not None else int(20_000 / params.timestep)
+    steps_100ps = eq_steps if eq_steps is not None else int(100_000 / params.timestep)
+
+    # Stage 1: NVT 300 K for 20 ps
+    structure, parsed = run2(
+        structure=params.structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=steps_20ps,
+        initial_temperature=params.temperature_low,
+        pressure=None,
+        seed=params.seed,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 2: NPT 300 K, P = 0 for 20 ps
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=steps_20ps,
+        initial_temperature=0,
+        pressure=0.0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 3: NPT T_high, P = 3000 atm for 100 ps
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_high,
+        n_ionic_steps=steps_100ps,
+        initial_temperature=0,
+        pressure=_YANG_MELT_PRESSURE_GPA,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 4: NPT T_high, P = 0 for 100 ps
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_high,
+        n_ionic_steps=steps_100ps,
+        initial_temperature=0,
+        pressure=0.0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 5: cooling T_high → 300 K at 1 K/ps, NPT P = 0
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_high,
+        temperature_end=params.temperature_low,
+        n_ionic_steps=params.cooling_steps,
+        initial_temperature=0,
+        pressure=0.0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 6: NPT 300 K, P = 0 for 100 ps
+    structure, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=steps_100ps,
+        initial_temperature=0,
+        pressure=0.0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 7: NVT 300 K for 100 ps
+    structure_final, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=steps_100ps,
+        initial_temperature=0,
+        pressure=None,
+    )
+    history.append(parsed.get("generic", None))
+
+    return structure_final, history
+
+
 # Map potential names to protocol functions
 PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, list[dict | None]]]] = {
     "pmmcs": pmmcs_protocol,
@@ -589,4 +743,5 @@ PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, list[dict | None]]]] = {
     "shik": shik_protocol,
     "du/teter": du_teter_protocol,
     "bmp": bmp_protocol,  # Use the same protocol for both BMP variants, which only differ in the harmonic vs. SHRM
+    "yang2026": yang2026_protocol,
 }
