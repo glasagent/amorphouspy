@@ -254,7 +254,6 @@ def _make_params(structure, potential, **kwargs):
     return MeltQuenchParams(**defaults)
 
 
-
 # ---------------------------------------------------------------------------
 # bmp_protocol
 # ---------------------------------------------------------------------------
@@ -365,6 +364,7 @@ def test_du_teter_protocol_with_equilibration_steps(mock_runner, mock_structure,
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0, equilibration_steps=50_000)
     du_teter_protocol(mock_runner, params)
     assert mock_runner.call_count == 5
+
 
 def test_bmp_protocol_strips_melt_block_for_later_stages(mock_runner, mock_structure):
     """Stages 2-5 in bmp_protocol use a potential with the melt block removed."""
@@ -544,4 +544,3 @@ def test_melt_quench_simulation_bmp_variant_routing(mock_structure, variant):
         mq_module.PROTOCOL_MAP.update(original)
 
     assert called, f"{variant} was not routed to bmp protocol"
-
