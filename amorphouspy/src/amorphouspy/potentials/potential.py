@@ -5,13 +5,14 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 import pandas as pd
 
+from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
+
 from . import bjp_potential as bjp
 from . import bmp_potential as bmp
 from . import du_teter_potential as du_teter
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
 from . import yang_potential as yang2026
-from ._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 
 __all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfConfig"]
 
