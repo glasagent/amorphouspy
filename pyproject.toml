@@ -72,6 +72,10 @@ ignore   = [
 fixable  = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
+"amorphouspy/src/amorphouspy/neighbors.py" = [
+  "C901",    # numba jit functions can't be split into helpers in nopython mode
+  "PLR0912", # numba jit functions can't be split into helpers in nopython mode
+]
 "amorphouspy/src/tests/**" = [
   "PLR2004",
   "ANN",
@@ -110,41 +114,59 @@ fixable  = ["ALL"]
   "T201",    # print() is expected in notebooks
   "N816",    # mixedCase variable names
   "N812",    # lowercase imported as non-lowercase
+  "N813",    # camelcase imported as lowercase
   "ANN",     # type annotations
   "D103",    # missing docstrings
   "PLR2004", # magic values
   "ERA001",  # commented-out code
   "E501",    # line too long
+  "E701",    # multiple statements on one line (colon)
+  "E702",    # multiple statements on one line (semicolon)
   "B905",    # zip() without strict=
   "UP032",   # f-string vs format()
   "UP015",   # unnecessary mode argument
   "PTH123",  # open() vs Path.open()
-  "RUF003",  # ambiguous unicode characters
+  "PTH108",  # os.unlink() vs Path.unlink()
+  "RUF001",  # ambiguous unicode characters in strings
+  "RUF003",  # ambiguous unicode characters in comments
   "SLF001",  # private member access
   "S108",    # insecure temp file
+  "S603",    # subprocess call with untrusted input
   "PLR2044", # empty comment
+  "PLW1510", # subprocess.run without check=
   "RET505",  # unnecessary else after return
   "I001",    # import sorting
+  "F401",    # imported but unused
+  "BLE001",  # blind exception catch
 ]
 "docs/notebooks/**/*.ipynb" = [
   "T201",
   "N816",
   "N812",
+  "N813",
   "ANN",
   "D103",
   "PLR2004",
   "ERA001",
   "E501",
+  "E701",
+  "E702",
   "B905",
   "UP032",
   "UP015",
   "PTH123",
+  "PTH108",
+  "RUF001",
   "RUF003",
   "SLF001",
   "S108",
+  "S603",
   "PLR2044",
+  "PLW1510",
   "RET505",
   "I001",
+  "F401",
+  "BLE001",
 ]
 
 [tool.ruff.lint.pydocstyle]

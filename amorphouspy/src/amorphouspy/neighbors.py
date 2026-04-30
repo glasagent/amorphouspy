@@ -277,7 +277,7 @@ def _dist_and_vec_tri(
 
 
 @jit(nopython=True, parallel=True, cache=True)
-def _build_nl_ortho_numba(  # noqa: PLR0912, C901
+def _build_nl_ortho_numba(
     coords: np.ndarray,
     types: np.ndarray,
     box_size: np.ndarray,
@@ -384,7 +384,7 @@ def _build_nl_ortho_numba(  # noqa: PLR0912, C901
 
 
 @jit(nopython=True, parallel=True, cache=True)
-def _build_nl_tri_numba(  # noqa: PLR0912, C901
+def _build_nl_tri_numba(
     coords_frac: np.ndarray,
     types: np.ndarray,
     cell: np.ndarray,
@@ -479,6 +479,269 @@ def _build_nl_tri_numba(  # noqa: PLR0912, C901
         neighbor_counts[i] = count
 
     return neighbor_list, neighbor_counts, vector_list
+
+
+# ============================================================================
+# Numba half-pair distance kernels
+# ============================================================================
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _build_distances_numba(
+    coords: np.ndarray,
+    box_size: np.ndarray,
+    types: np.ndarray,
+    atom_cells: np.ndarray,
+    n_cells: np.ndarray,
+    cell_start: np.ndarray,
+    cell_atoms: np.ndarray,
+    r_max_sq: float,
+    max_pairs: int,
+    target_types: np.ndarray,
+    neighbor_types: np.ndarray,
+    use_type_filter: bool,  # noqa: FBT001
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Collect half-pair (j > i) distances within r_max_sq for an orthogonal box.
+
+    When use_type_filter is True, only atoms whose type is in target_types are
+    used as central atoms, and only neighbors whose type is in neighbor_types
+    are accepted — all comparisons are integer equality checks in nopython mode.
+
+    Returns:
+        dist_buf: (N, max_pairs) float64 — distances per central atom.
+        j_buf:    (N, max_pairs) int32   — j indices per central atom.
+        counts:   (N,) int32             — valid entries per row.
+    """
+    n = len(coords)
+    n_cells_y = n_cells[1]
+    n_cells_z = n_cells[2]
+    dist_buf = np.empty((n, max_pairs), dtype=np.float64)
+    j_buf = np.empty((n, max_pairs), dtype=np.int32)
+    counts = np.zeros(n, dtype=np.int32)
+
+    for i in prange(n):  # type: ignore[ty:not-iterable]
+        if use_type_filter:
+            ti = types[i]
+            is_target = False
+            for t in target_types:
+                if ti == t:
+                    is_target = True
+                    break
+            if not is_target:
+                continue
+
+        ci = atom_cells[i]
+        k = 0
+        for dix in range(-1, 2):
+            cjx = (ci[0] + dix) % n_cells[0]
+            for diy in range(-1, 2):
+                cjy = (ci[1] + diy) % n_cells[1]
+                for diz in range(-1, 2):
+                    cjz = (ci[2] + diz) % n_cells[2]
+                    flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
+                    for p in range(cell_start[flat], cell_start[flat + 1]):
+                        j = cell_atoms[p]
+                        if j <= i:
+                            continue
+                        if use_type_filter:
+                            tj = types[j]
+                            is_nb = False
+                            for t in neighbor_types:
+                                if tj == t:
+                                    is_nb = True
+                                    break
+                            if not is_nb:
+                                continue
+                        _, _, _, dsq = _dist_and_vec_ortho(coords[i], coords[j], box_size)
+                        if dsq <= r_max_sq:
+                            if k < max_pairs:
+                                dist_buf[i, k] = dsq**0.5
+                                j_buf[i, k] = j
+                            k += 1
+        counts[i] = k
+
+    return dist_buf, j_buf, counts
+
+
+@jit(nopython=True, parallel=True, cache=True)
+def _build_distances_numba_tri(
+    coords_frac: np.ndarray,
+    cell: np.ndarray,
+    types: np.ndarray,
+    atom_cells: np.ndarray,
+    n_cells: np.ndarray,
+    cell_start: np.ndarray,
+    cell_atoms: np.ndarray,
+    r_max_sq: float,
+    max_pairs: int,
+    target_types: np.ndarray,
+    neighbor_types: np.ndarray,
+    use_type_filter: bool,  # noqa: FBT001
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Collect half-pair (j > i) distances within r_max_sq for a triclinic box.
+
+    Returns:
+        dist_buf: (N, max_pairs) float64 — distances per central atom.
+        j_buf:    (N, max_pairs) int32   — j indices per central atom.
+        counts:   (N,) int32             — valid entries per row.
+    """
+    n = len(coords_frac)
+    n_cells_y = n_cells[1]
+    n_cells_z = n_cells[2]
+    dist_buf = np.empty((n, max_pairs), dtype=np.float64)
+    j_buf = np.empty((n, max_pairs), dtype=np.int32)
+    counts = np.zeros(n, dtype=np.int32)
+
+    for i in prange(n):  # type: ignore[ty:not-iterable]
+        if use_type_filter:
+            ti = types[i]
+            is_target = False
+            for t in target_types:
+                if ti == t:
+                    is_target = True
+                    break
+            if not is_target:
+                continue
+
+        ci = atom_cells[i]
+        k = 0
+        for dix in range(-1, 2):
+            cjx = (ci[0] + dix) % n_cells[0]
+            for diy in range(-1, 2):
+                cjy = (ci[1] + diy) % n_cells[1]
+                for diz in range(-1, 2):
+                    cjz = (ci[2] + diz) % n_cells[2]
+                    flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
+                    for p in range(cell_start[flat], cell_start[flat + 1]):
+                        j = cell_atoms[p]
+                        if j <= i:
+                            continue
+                        if use_type_filter:
+                            tj = types[j]
+                            is_nb = False
+                            for t in neighbor_types:
+                                if tj == t:
+                                    is_nb = True
+                                    break
+                            if not is_nb:
+                                continue
+                        _, _, _, dsq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
+                        if dsq <= r_max_sq:
+                            if k < max_pairs:
+                                dist_buf[i, k] = dsq**0.5
+                                j_buf[i, k] = j
+                            k += 1
+        counts[i] = k
+
+    return dist_buf, j_buf, counts
+
+
+def _flatten_distance_buffers(
+    dist_buf: np.ndarray,
+    j_buf: np.ndarray,
+    counts: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Flatten (N, max_pairs) Numba output buffers into flat (M,) arrays."""
+    n = len(counts)
+    # Boolean mask of valid slots — vectorised, no Python per-atom loop
+    slots = np.arange(dist_buf.shape[1])
+    valid = slots[np.newaxis, :] < counts[:, np.newaxis]  # (N, max_pairs) bool
+    dist_out = dist_buf[valid].astype(np.float64)
+    j_out = j_buf[valid].astype(np.int32)
+    i_out = np.repeat(np.arange(n, dtype=np.int32), counts)
+    return dist_out, i_out, j_out
+
+
+def build_distances(
+    structure_wrapped: Atoms,
+    r_max: float,
+    types: np.ndarray | None = None,
+    unordered_pairs: list[tuple[int, int]] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return (distances, i_indices, j_indices) for half-pairs within r_max.
+
+    When types and unordered_pairs are given, only pairs whose types match a
+    requested canonical pair are collected — skipping irrelevant atoms entirely
+    inside the compiled kernel.
+
+    Args:
+        structure_wrapped: ASE Atoms object with coordinates already wrapped.
+        r_max: Maximum distance cutoff in Angstroms.
+        types: Atomic-number array aligned with structure positions.
+        unordered_pairs: Canonical (min, max) type pairs to restrict to.
+
+    Returns:
+        distances: (M,) float64 array of pairwise distances.
+        i_indices: (M,) int32 array of first atom indices.
+        j_indices: (M,) int32 array of second atom indices (always > i).
+    """
+    coords = structure_wrapped.get_positions()
+    cell = structure_wrapped.get_cell().array
+    is_orthogonal = np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-10)
+    r_max_sq = r_max * r_max
+
+    use_type_filter = types is not None and unordered_pairs is not None
+    if use_type_filter and unordered_pairs is not None and types is not None:
+        # Collect the union of all types appearing in requested pairs.
+        # For half-pairs (j > i): a central atom of type t1 needs neighbors of
+        # type t2, AND a central atom of type t2 needs neighbors of type t1.
+        all_types: set[int] = {t for pair in unordered_pairs for t in pair}
+        target_arr = np.array(sorted(all_types), dtype=np.int32)
+        neighbor_arr = target_arr  # symmetric: same set for both roles
+        types_arr = types.astype(np.int32)
+    else:
+        target_arr = np.empty(0, dtype=np.int32)
+        neighbor_arr = np.empty(0, dtype=np.int32)
+        types_arr = np.empty(0, dtype=np.int32)
+
+    # Initial max_pairs estimate: 4/3 pi r_max^3 x number_density x 1.5
+    n = len(coords)
+    volume = float(abs(np.linalg.det(cell)))
+    max_pairs = max(32, int(4.0 / 3.0 * np.pi * r_max**3 * (n / volume) * 1.5))
+
+    if is_orthogonal:
+        box_size = np.diag(cell)
+        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, r_max)
+        while True:
+            dist_buf, j_buf, counts = _build_distances_numba(
+                coords,
+                box_size,
+                types_arr,
+                atom_cells,
+                n_cells,
+                cell_start,
+                cell_atoms,
+                r_max_sq,
+                max_pairs,
+                target_arr,
+                neighbor_arr,
+                use_type_filter,
+            )
+            if int(counts.max()) <= max_pairs:
+                break
+            max_pairs = int(counts.max() * 1.2) + 1
+    else:
+        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, r_max)
+        while True:
+            dist_buf, j_buf, counts = _build_distances_numba_tri(
+                coords_frac,
+                cell,
+                types_arr,
+                atom_cells,
+                n_cells,
+                cell_start,
+                cell_atoms,
+                r_max_sq,
+                max_pairs,
+                target_arr,
+                neighbor_arr,
+                use_type_filter,
+            )
+            if int(counts.max()) <= max_pairs:
+                break
+            max_pairs = int(counts.max() * 1.2) + 1
+
+    return _flatten_distance_buffers(dist_buf, j_buf, counts)
 
 
 # ============================================================================
