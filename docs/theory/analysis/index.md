@@ -94,7 +94,7 @@ Each analysis method has its own dedicated page with full parameter documentatio
 
 All analysis methods depend on neighbor finding. `amorphouspy` provides a cell-list based neighbor search that handles periodic boundary conditions efficiently.
 
-### `compute_neighbors(structure, cutoff)`
+### `get_neighbors(structure, cutoff)`
 
 Uses a cell-list algorithm (with Numba JIT compilation for performance) to find all pairs of atoms within a given cutoff distance. The algorithm:
 
@@ -104,9 +104,9 @@ Uses a cell-list algorithm (with Numba JIT compilation for performance) to find 
 4. Returns neighbor lists as arrays of pairs and distances
 
 ```python
-from amorphouspy.neighbors import compute_neighbors
+from amorphouspy import get_neighbors
 
-neighbors = compute_neighbors(glass_structure, cutoff=3.0)
+neighbors = get_neighbors(glass_structure, cutoff=3.0)
 # Returns arrays of (i, j, distance) for all pairs within cutoff
 ```
 

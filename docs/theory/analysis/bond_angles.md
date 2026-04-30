@@ -34,18 +34,18 @@ For SiO₂ glass, the Si–O–Si angle distribution is centered around ~144° w
 
 ## Usage
 
-### `compute_bond_angle_distribution(structure, cutoff, center_types, ligand_type, nbins)`
+### `compute_angles(structure, center_type, neighbor_type, cutoff, bins)`
 
 ```python
-from amorphouspy import compute_bond_angle_distribution
+from amorphouspy import compute_angles
 
-# O-Si-O angles (intra-tetrahedral)
-osi_o = compute_bond_angle_distribution(
+# O-Si-O angles (intra-tetrahedral): center=Si (14), neighbor=O (8)
+bin_centers, angle_hist = compute_angles(
     structure=glass_structure,
-    cutoff=2.0,
-    center_types=["Si"],      # Central atom
-    ligand_type="O",           # Ligand atoms
-    nbins=180,                 # Number of histogram bins
+    center_type=14,    # Atomic number of central atom (Si)
+    neighbor_type=8,   # Atomic number of ligand atoms (O)
+    cutoff=2.0,        # Bond cutoff (Å)
+    bins=180,          # Number of histogram bins
 )
 ```
 
@@ -54,47 +54,33 @@ osi_o = compute_bond_angle_distribution(
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `structure` | `Atoms` | — | ASE Atoms object |
-| `cutoff` | `float` | — | Bond cutoff for center-ligand pairs (Å) |
-| `center_types` | `list[str]` | — | Element symbols of central atoms |
-| `ligand_type` | `str` | — | Element symbol of ligand atoms |
-| `nbins` | `int` | `180` | Number of bins for the angle histogram (1°–180°) |
+| `center_type` | `int` | — | Atomic number of the central atom |
+| `neighbor_type` | `int` | — | Atomic number of the ligand atoms |
+| `cutoff` | `float` | — | Bond cutoff for center-neighbor pairs (Å) |
+| `bins` | `int` | `180` | Number of bins for the angle histogram (1°–180°) |
 
-**Returns:** A dictionary with:
+**Returns:** A tuple `(bin_centers, angle_hist)`:
 
-| Key | Type | Description |
+| Variable | Type | Description |
 |---|---|---|
-| `"angles"` | `np.ndarray` | Bin centers in degrees |
-| `"counts"` | `np.ndarray` | Histogram counts (or normalized probability) |
-| `"mean"` | `float` | Mean angle in degrees |
-| `"std"` | `float` | Standard deviation in degrees |
+| `bin_centers` | `np.ndarray` | Bin centers in degrees |
+| `angle_hist` | `np.ndarray` | Normalized angle histogram |
 
 ### Example: Complete bond angle analysis
 
 ```python
-from amorphouspy import compute_bond_angle_distribution
+from amorphouspy import compute_angles
 import plotly.graph_objects as go
 
-# Intra-tetrahedral: O-Si-O
-o_si_o = compute_bond_angle_distribution(
-    glass_structure, cutoff=2.0,
-    center_types=["Si"], ligand_type="O",
-)
+# Intra-tetrahedral: O-Si-O (center=Si=14, neighbor=O=8)
+o_si_o_bins, o_si_o_hist = compute_angles(glass_structure, center_type=14, neighbor_type=8, cutoff=2.0)
 
-# Inter-tetrahedral: Si-O-Si
-si_o_si = compute_bond_angle_distribution(
-    glass_structure, cutoff=2.0,
-    center_types=["O"], ligand_type="Si",
-)
+# Inter-tetrahedral: Si-O-Si (center=O=8, neighbor=Si=14)
+si_o_si_bins, si_o_si_hist = compute_angles(glass_structure, center_type=8, neighbor_type=14, cutoff=2.0)
 
 fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=o_si_o["angles"], y=o_si_o["counts"],
-    name=f"O-Si-O (mean={o_si_o['mean']:.1f}°)",
-))
-fig.add_trace(go.Scatter(
-    x=si_o_si["angles"], y=si_o_si["counts"],
-    name=f"Si-O-Si (mean={si_o_si['mean']:.1f}°)",
-))
+fig.add_trace(go.Scatter(x=o_si_o_bins, y=o_si_o_hist, name="O-Si-O"))
+fig.add_trace(go.Scatter(x=si_o_si_bins, y=si_o_si_hist, name="Si-O-Si"))
 fig.update_layout(xaxis_title="Angle (°)", yaxis_title="P(θ)")
 fig.show()
 ```
