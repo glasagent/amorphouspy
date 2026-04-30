@@ -189,7 +189,8 @@ def get_glass_density_from_model(composition: dict[str, float]) -> float:  # noq
     valid_components = set(COEFFICIENTS.keys()) - {"b0", "Remainder"}
     for comp in main_components:
         if comp not in valid_components:
-            error_msg = f"Component '{comp}' not in density model coefficients"
+            error_msg = f"Component '{comp}' not in density model coefficients and cannot be calculated automatically."
+            error_msg += " Density must be provided by the user."
             raise ValueError(error_msg)
 
     density = COEFFICIENTS.get("b0", 0)

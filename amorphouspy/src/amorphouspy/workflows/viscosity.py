@@ -585,7 +585,7 @@ def helfand_viscosity(
     Returns:
         A dictionary containing:
             - viscosity: Computed viscosity (Pa·s)
-            - viscosity_std: 1-sigma uncertainty from linear fit residuals (Pa·s)
+            - viscosity_fit_residual: 1-sigma uncertainty from linear fit residuals (Pa·s)
             - temperature: Mean simulation temperature (K)
             - method: ``"helfand"``
             - msd: MSD of averaged Helfand moments (m²) vs lag
@@ -655,7 +655,7 @@ def helfand_viscosity(
 
     fit_vals = slope * lag_times_s[start:] + _
     residual_std = float(np.std(msd_avg[start:] - fit_vals))
-    viscosity_std = residual_std * volume / (2.0 * kB * temperature)
+    viscosity_fit_residual = residual_std * volume / (2.0 * kB * temperature)
 
     # --- Infinite-frequency shear modulus G_inf ---
     # G_inf = V / (kB T) * <P_ab^2>  (zero-lag SACF = variance for zero-mean signal)
@@ -673,7 +673,7 @@ def helfand_viscosity(
 
     return {
         "viscosity": float(viscosity),
-        "viscosity_std": float(viscosity_std),
+        "viscosity_fit_residual": float(viscosity_fit_residual),
         "temperature": float(temperature),
         "method": "helfand",
         "msd": msd_avg.tolist(),
@@ -1016,7 +1016,7 @@ def viscosity_ensemble(  # noqa: C901
     Returns:
         A dictionary containing:
             - viscosity: Mean shear viscosity across replicas (Pa·s)
-            - viscosity_std: Sample standard deviation across replicas (Pa·s, ddof=1)
+            - viscosity_fit_residual: Sample standard deviation across replicas (Pa·s, ddof=1)
             - viscosity_sem: Standard error of the mean (Pa·s)
             - shear_modulus_inf: Mean infinite-frequency shear modulus (Pa)
             - bulk_viscosity: Mean bulk viscosity (Pa·s)
@@ -1127,7 +1127,7 @@ def viscosity_ensemble(  # noqa: C901
 
     return {
         "viscosity": mean_viscosity,
-        "viscosity_std": std_viscosity,
+        "viscosity_fit_residual": std_viscosity,
         "viscosity_sem": sem_viscosity,
         "shear_modulus_inf": _mean_across_replicas("shear_modulus_inf"),
         "bulk_viscosity": _mean_across_replicas("bulk_viscosity"),

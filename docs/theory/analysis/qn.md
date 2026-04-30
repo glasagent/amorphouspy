@@ -50,18 +50,17 @@ The NC provides a single number that correlates with many glass properties inclu
 ```python
 from amorphouspy import compute_qn, compute_network_connectivity
 
-# Compute Qn distribution
-qn = compute_qn(
+# Compute Qn distribution (atomic numbers: Si=14, O=8)
+total_qn, partial_qn = compute_qn(
     structure=glass_structure,
-    cutoff=2.0,                  # Si-O bond cutoff (Å)
-    former_types=["Si"],         # Network formers to analyze
-    o_type="O",                  # Oxygen symbol
+    cutoff=2.0,          # Si-O bond cutoff (Å)
+    former_types=[14],   # Atomic numbers of network formers (Si)
+    o_type=8,            # Atomic number of oxygen
 )
 
-# Returns: {'Q0': 0.01, 'Q1': 0.05, 'Q2': 0.15, 'Q3': 0.45, 'Q4': 0.34}
-
+# total_qn: {n: count} e.g. {4: 180, 3: 18, 2: 2}
 # Compute network connectivity from Qn distribution
-nc = compute_network_connectivity(qn)
+nc = compute_network_connectivity(total_qn)
 print(f"Network connectivity: {nc:.2f}")
 ```
 
@@ -71,29 +70,35 @@ print(f"Network connectivity: {nc:.2f}")
 |---|---|---|---|
 | `structure` | `Atoms` | — | ASE Atoms object |
 | `cutoff` | `float` | — | Bond cutoff distance for former-O bonds (Å) |
-| `former_types` | `list[str]` | — | Element symbols of network formers (e.g., `["Si", "Al"]`) |
-| `o_type` | `str` | `"O"` | Element symbol for oxygen |
+| `former_types` | `list[int]` | — | Atomic numbers of network formers (e.g., `[14, 13]` for Si, Al) |
+| `o_type` | `int` | — | Atomic number of oxygen (typically `8`) |
 
-**Returns:** A dictionary mapping `"Q0"` through `"Q4"` to fractions (summing to 1.0).
+**Returns:** A tuple `(total_qn, partial_qn)`:
+
+| Variable | Type | Description |
+|---|---|---|
+| `total_qn` | `dict[int, int]` | Total $Q^n$ distribution: mapping from $n$ to count |
+| `partial_qn` | `dict[int, dict[int, int]]` | Per-former-type $Q^n$: former atomic number → {n: count} |
 
 ### Multi-former analysis
 
 When multiple network formers are present, the $Q^n$ distribution is computed **separately for each former species**:
 
 ```python
-qn = compute_qn(
+total_qn, partial_qn = compute_qn(
     structure=glass_structure,
     cutoff=2.2,
-    former_types=["Si", "Al"],
-    o_type="O",
+    former_types=[14, 13],  # Si=14, Al=13
+    o_type=8,
 )
 
-# Returns separate distributions:
-# {'Si': {'Q0': 0.00, 'Q1': 0.02, 'Q2': 0.10, 'Q3': 0.48, 'Q4': 0.40},
-#  'Al': {'Q0': 0.00, 'Q1': 0.05, 'Q2': 0.15, 'Q3': 0.55, 'Q4': 0.25}}
+# partial_qn keyed by atomic number:
+# {14: {4: 120, 3: 30, ...}, 13: {4: 80, 3: 40, ...}}
 ```
 
 > **Note:** The cutoff should be chosen to match the first minimum in the former-O RDF. For Si-O this is typically ~2.0 Å; for Al-O it is ~2.2 Å. Using a single cutoff for multiple formers is an approximation — choose a value that works reasonably for all.
+
+> **Intermediates as formers:** Elements like Al, Ti, and Zr are classified as network intermediates but are passed in `former_types` and treated identically to true formers for $Q^n$ analysis. This is consistent with their role in the glass network (e.g. AlO₄ tetrahedra in charge-balanced alumino-silicates).
 
 ---
 

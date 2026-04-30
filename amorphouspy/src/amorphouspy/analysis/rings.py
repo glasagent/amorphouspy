@@ -264,17 +264,9 @@ def _process_edge(
         return []
 
     all_shortest_paths = list(nx.all_shortest_paths(g, node_u, node_v))
-
-    # Restore edge before primitiveness check (full graph required)
     g.add_edge(node_u, node_v)
 
-    results: list[tuple[int, tuple[int, ...]]] = []
-    for path in all_shortest_paths:
-        canonical_form = _canonical_ring(path)
-        if _ring_is_primitive(path, g):
-            results.append((ring_size, canonical_form))
-
-    return results
+    return [(ring_size, _canonical_ring(path)) for path in all_shortest_paths]
 
 
 def _collect_rings(
@@ -330,9 +322,7 @@ def _find_rings_sequential(
             # Restore edge even if an exception is raised mid-loop
             former_graph.add_edge(node_u, node_v)
 
-        batch = [
-            (ring_size, _canonical_ring(path)) for path in all_shortest_paths if _ring_is_primitive(path, former_graph)
-        ]
+        batch = [(ring_size, _canonical_ring(path)) for path in all_shortest_paths]
         _collect_rings([batch], found_canonical_rings, ring_counts)
 
 

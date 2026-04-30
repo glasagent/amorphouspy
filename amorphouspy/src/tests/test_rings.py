@@ -4,9 +4,15 @@ Covers generate_bond_length_dict (pure) and compute_guttmann_rings (integration,
 requires the 20Na2O-80SiO2 dump file).  Atom type mapping: O=type1, Si=type2, Na=type3.
 """
 
+import networkx as nx
 import numpy as np
 import pytest
-from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.analysis.rings import (
+    _find_guttman_rings,
+    _process_edge,
+    compute_guttmann_rings,
+    generate_bond_length_dict,
+)
 from ase import Atoms
 from ase.io import read
 
@@ -25,7 +31,7 @@ def glass_structure():
     """
     atoms = read(DATA_DIR / "20Na2O-80SiO2.dump", format="lammps-dump-text")
     type_id = atoms.get_atomic_numbers().copy()
-    to_z = np.array([0, 8, 14, 11], dtype=int)  # O=1, Si=2, Na=3
+    to_z = np.array([0, 11, 8, 14], dtype=int)  # Na=1, O=2, Si=3
     atoms.set_atomic_numbers(to_z[type_id])
     return atoms
 
@@ -75,13 +81,6 @@ def test_generate_bond_length_dict_symmetric_fallback(si_o_atoms):
         default_cutoff=2.5,
     )
     assert result[("O", "Si")] == 1.9
-
-
-def test_generate_bond_length_dict_returns_dict(si_o_atoms):
-    """Return type is a dict with tuple keys."""
-    result = generate_bond_length_dict(si_o_atoms)
-    assert isinstance(result, dict)
-    assert all(isinstance(k, tuple) and len(k) == 2 for k in result)
 
 
 def test_generate_bond_length_dict_n_pairs(si_o_atoms):
@@ -135,6 +134,59 @@ def test_compute_guttmann_rings_mean_nonnegative(glass_structure):
         max_size=6,
     )
     assert mean >= 0.0
+
+
+# ---------------------------------------------------------------------------
+# _find_guttman_rings — ring counting correctness
+# ---------------------------------------------------------------------------
+
+
+def test_find_guttman_rings_two_fused_rings():
+    """Triangle and quadrilateral fused on a shared edge produce exactly one ring of each size.
+
+    Graph: 0-1-2-0 (triangle) + 0-1-3-4-0 (quadrilateral), sharing edge (0,1).
+    The shared edge (0,1) leads to the 3-ring as its shortest detour (0-2-1, length 2),
+    not the 4-ring (0-4-3-1, length 3), so each ring is found through its own unique edges
+    and the deduplication logic is exercised across all six edges.
+    """
+    g = nx.Graph([(0, 1), (1, 2), (2, 0), (1, 3), (3, 4), (4, 0)])
+    counts = _find_guttman_rings(g, max_ring_size=8, n_cpus=1)
+    assert counts == {3: 1, 4: 1}
+
+
+# ---------------------------------------------------------------------------
+# _process_edge — parallel worker correctness
+# ---------------------------------------------------------------------------
+
+
+def test_process_edge_returns_all_shortest_paths():
+    """All shortest paths through an edge are returned without filtering.
+
+    Diamond graph has two length-2 paths from 0 to 2 (via node 1 and via node 3).
+    Both must appear in the result — the old primitiveness filter would have accepted
+    both anyway, but this confirms the new code returns them all.
+    """
+    edges = [(0, 1), (1, 2), (2, 0), (0, 3), (3, 2)]
+    results = _process_edge((0, 2, edges, 8))
+    assert len(results) == 2
+    assert all(ring_size == 3 for ring_size, _ in results)
+
+
+def test_process_edge_ring_exceeds_max_size_returns_empty():
+    """Returns empty when the ring formed by the shortest detour exceeds max_ring_size.
+
+    In an 8-cycle the only detour through edge (0,1) has length 7, giving ring size 8.
+    With max_ring_size=6 that candidate must be discarded.
+    """
+    g = nx.cycle_graph(8)
+    results = _process_edge((0, 1, list(g.edges()), 6))
+    assert results == []
+
+
+def test_process_edge_no_path_returns_empty():
+    """Returns empty when removing the edge leaves the two nodes disconnected."""
+    results = _process_edge((0, 1, [(0, 1)], 8))
+    assert results == []
 
 
 def test_compute_guttmann_rings_silicate_dominant_size(glass_structure):

@@ -39,12 +39,17 @@ def generate_structure(submission: "JobSubmission", config: "BaseModel", result:
     """
     composition = submission.composition.root
     n_atoms = submission.simulation.n_atoms
-    potential_type = submission.potential.value
+    potential_type = submission.potential
     density = submission.simulation.target_density
 
     atoms_dict = get_structure_dict(composition=composition, target_atoms=n_atoms, density=density)
     structure = get_ase_structure(atoms_dict=atoms_dict)
-    potential = generate_potential(atoms_dict=atoms_dict, potential_type=potential_type)
+    potential = generate_potential(
+        atoms_dict=atoms_dict,
+        potential_type=potential_type,
+        melt=True,
+        electrostatics=submission.electrostatics.to_electrostatics_config(),
+    )
 
     return {
         "atoms_dict": atoms_dict,

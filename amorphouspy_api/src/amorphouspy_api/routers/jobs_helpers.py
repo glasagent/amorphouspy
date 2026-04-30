@@ -37,12 +37,14 @@ logger = logging.getLogger(__name__)
 def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
     """Deterministic hash from (normalised composition + potential + sim params + analyses)."""
     analyses_dump = [a.model_dump() for a in submission.analyses]
+    electrostatics_dump = submission.electrostatics.model_dump() if submission.electrostatics else None
     payload = json.dumps(
         {
             "composition": normalized_comp,
-            "potential": submission.potential.value,
+            "potential": submission.potential,
             "simulation": submission.simulation.model_dump(),
             "analyses": analyses_dump,
+            "electrostatics": electrostatics_dump,
         },
         sort_keys=True,
     )

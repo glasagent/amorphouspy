@@ -1,5 +1,8 @@
 # PMMCS Potential (Pedone)
 
+!!! tip "Interactive example"
+    See the [Potential Settings notebook](../../notebooks/PotentialSettings.ipynb) for a worked example of configuring electrostatics across all three potentials.
+
 The PMMCS potential, developed by Pedone et al., is the most broadly applicable force field in `amorphouspy`. It uses a Morse-type short-range interaction combined with a repulsive $r^{-12}$ wall and damped-shifted-force (DSF) Coulomb interactions.
 
 ---
@@ -28,9 +31,9 @@ where:
 | $C_{ij}$ | Repulsive wall coefficient (eV·Å¹²) |
 | $q_i, q_j$ | Partial atomic charges |
 
-The Coulomb term uses the **damped shifted force (DSF)** method with a damping parameter of 0.25 Å⁻¹ and a cutoff of 8.0 Å. DSF provides accurate electrostatic energies without the expense of Ewald summation, making it efficient for amorphous systems.
+The Coulomb term is configurable. By default, `amorphouspy` uses the **damped shifted force (DSF)** method with a damping parameter of 0.25 Å⁻¹ and a Coulomb cutoff of 8.0 Å. DSF provides accurate electrostatic energies without the expense of Ewald summation, making it efficient for amorphous systems.
 
-**LAMMPS pair style:** `hybrid/overlay coul/dsf 0.25 8.0 pedone 5.5`
+**Default LAMMPS pair style:** `hybrid/overlay coul/dsf 0.25 8.0 pedone 5.5`
 
 ---
 
@@ -72,7 +75,7 @@ The PMMCS potential supports 28 elements (plus oxygen), making it the broadest o
 ## Usage
 
 ```python
-from amorphouspy import get_structure_dict, generate_potential
+from amorphouspy import get_structure_dict, generate_potential, PppmConfig
 
 # Works with any composition using supported elements
 structure_dict = get_structure_dict(
@@ -80,19 +83,60 @@ structure_dict = get_structure_dict(
     target_atoms=3000,
 )
 
+# Default: DSF electrostatics, melt pre-equilibration enabled
 potential = generate_potential(structure_dict, potential_type="pmmcs")
 
-# The potential DataFrame contains LAMMPS configuration
-print(potential["Config"].iloc[0][:5])  # First 5 LAMMPS commands
+# PPPM with custom cutoff, no melt block
+potential = generate_potential(
+    structure_dict,
+    potential_type="pmmcs",
+    melt=False,
+    electrostatics=PppmConfig(
+        long_range_cutoff=12.0,
+        kspace_accuracy=1e-5,
+    ),
+)
 ```
+
+### `melt` — high-temperature pre-equilibration
+
+When `melt=True`, the generator appends a 10 000-step Langevin NVE/limit block at 4000 K:
+
+```lammps
+fix langevinnve all langevin 4000 4000 0.01 48279
+fix ensemblenve all nve/limit 0.5
+run 10000
+unfix langevinnve
+unfix ensemblenve
+```
+
+This relaxes unfavourable atomic contacts that are common in randomly packed starting structures before the main melt–quench run. The `nve/limit 0.5` cap prevents runaway atom velocities if two atoms are placed too close together. Set `melt=False` when the starting structure is already equilibrated or when you want full control over the thermostat schedule.
+
+### Electrostatics options
+
+`amorphouspy` supports four Coulomb solvers via the `InteractionConfig` subclasses (`DsfConfig`, `WolfConfig`, `PppmConfig`, `EwaldConfig`). The choice affects which LAMMPS directives are emitted:
+
+| Method | `pair_style` fragment | `kspace_style` | Recommended cutoff |
+|---|---|---|---|
+| `dsf` (default) | `coul/dsf <alpha> <cutoff>` | — | 8.0 Å |
+| `wolf` | `coul/wolf <alpha> <cutoff>` | — | 8.0 Å |
+| `pppm` | `coul/long <cutoff>` | `pppm <accuracy>` | 12.0 Å |
+| `ewald` | `coul/long <cutoff>` | `ewald <accuracy>` | 12.0 Å |
+
+**DSF and Wolf** are real-space methods. They require a damping parameter `alpha` (Å⁻¹, default 0.25) that controls how quickly the interaction is damped. Larger `alpha` allows a shorter `long_range_cutoff` but at the cost of accuracy near the cutoff. DSF shifts both the potential and the force to zero at the cutoff; Wolf shifts only the potential.
+
+**PPPM and Ewald** are reciprocal-space methods. The `alpha` parameter is ignored. The default `long_range_cutoff` widens to 12.0 Å because without DSF-style damping the real-space part decays more slowly. A `kspace_style` line is appended after the pair coefficients; `kspace_accuracy` (default `1e-5`) tunes the accuracy of the long-range Fourier sum at the cost of k-space solver time.
+
+The short-range cutoff (Morse + repulsive wall) is fixed at **5.5 Å** and is not user-configurable. Only the Coulomb cutoff (`long_range_cutoff`) can be overridden via the config classes.
 
 ### What the generator produces
 
 The PMMCS generator creates LAMMPS configuration lines that:
-1. Define the `hybrid/overlay coul/dsf pedone` pair style
+1. Define the `hybrid/overlay coul/* pedone` pair style
 2. Set atomic charges via `set type ... charge ...`
 3. Define Morse parameters for all element pairs via `pair_coeff`
 4. Set the repulsive wall coefficient $C_{ij}$ for close-range interactions
+5. Optionally append the melt pre-equilibration block
 
 ---
 
@@ -100,7 +144,7 @@ The PMMCS generator creates LAMMPS configuration lines that:
 
 ### Short-range cutoff
 
-The Morse + repulsive term uses a cutoff of **5.5 Å**. This is shorter than BJP (8.0 Å) and SHIK (10.0 Å), making PMMCS simulations somewhat faster per timestep.
+The Morse + repulsive term uses a fixed cutoff of **5.5 Å**. This is shorter than BJP (8.0 Å) and SHIK (10.0 Å), making PMMCS simulations somewhat faster per timestep.
 
 ### When to use PMMCS
 

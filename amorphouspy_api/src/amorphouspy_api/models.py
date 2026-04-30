@@ -7,9 +7,11 @@ from enum import StrEnum
 from io import StringIO
 from typing import Annotated, Any, Literal, cast
 
+from amorphouspy.potentials.potential import POTENTIAL_PREFERENCE
 from ase import Atoms
 from ase.io import read, write
 from pydantic import (
+    AfterValidator,
     BaseModel,
     Discriminator,
     Field,
@@ -17,7 +19,11 @@ from pydantic import (
     PlainValidator,
     RootModel,
     Tag,
+    WithJsonSchema,
 )
+
+from amorphouspy import DsfConfig, EwaldConfig, PppmConfig, WolfConfig
+from amorphouspy_api.config import API_BASE_URL
 
 # ---------------------------------------------------------------------------
 # Composition
@@ -119,12 +125,28 @@ AtomsType = Annotated[
 # ---------------------------------------------------------------------------
 
 
-class Potential(StrEnum):
-    """Supported interatomic potentials."""
+def validate_potential(value: str) -> str:
+    """Validate that *value* is one of the registered core potentials."""
+    if value not in POTENTIAL_PREFERENCE:
+        msg = f"Unsupported potential: {value}"
+        raise ValueError(msg)
+    return value
 
-    pmmcs = "pmmcs"
-    bjp = "bjp"
-    shik = "shik"
+
+type Potential = Annotated[
+    str,
+    AfterValidator(validate_potential),
+    WithJsonSchema({"type": "string", "enum": list(POTENTIAL_PREFERENCE), "title": "Potential"}),
+]
+
+
+class LongRangeMethod(StrEnum):
+    """Coulomb solver method for LAMMPS potential generation."""
+
+    dsf = "dsf"
+    wolf = "wolf"
+    pppm = "pppm"
+    ewald = "ewald"
 
 
 class StepStatus(StrEnum):
@@ -327,6 +349,37 @@ class MeltQuenchParams(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Electrostatics settings
+# ---------------------------------------------------------------------------
+
+
+class ElectrostaticsParams(BaseModel):
+    """Coulomb solver settings for LAMMPS potential generation.
+
+    Controls the long-range electrostatics method and associated cutoffs.
+    All fields are optional; unset values fall back to each potential's defaults.
+    """
+
+    method: LongRangeMethod = Field(default=LongRangeMethod.dsf, description="Coulomb solver")
+    long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å")
+    alpha: float | None = Field(default=None, description="Damping parameter (Å⁻¹) for DSF/Wolf")
+    kspace_accuracy: float = Field(default=1e-5, description="Relative accuracy for PPPM/Ewald")
+
+    def to_electrostatics_config(self):
+        """Convert to the appropriate ``InteractionConfig`` subclass for the core library."""
+        return {
+            LongRangeMethod.dsf: lambda: DsfConfig(long_range_cutoff=self.long_range_cutoff, alpha=self.alpha),
+            LongRangeMethod.wolf: lambda: WolfConfig(long_range_cutoff=self.long_range_cutoff, alpha=self.alpha),
+            LongRangeMethod.pppm: lambda: PppmConfig(
+                long_range_cutoff=self.long_range_cutoff, kspace_accuracy=self.kspace_accuracy
+            ),
+            LongRangeMethod.ewald: lambda: EwaldConfig(
+                long_range_cutoff=self.long_range_cutoff, kspace_accuracy=self.kspace_accuracy
+            ),
+        }[self.method]()
+
+
+# ---------------------------------------------------------------------------
 # Job submission / response
 # ---------------------------------------------------------------------------
 
@@ -342,11 +395,15 @@ class JobSubmission(BaseModel):
             "Example: {'SiO2': 70, 'Na2O': 15, 'CaO': 15}"
         ),
     )
-    potential: Potential = Field(default=Potential.pmmcs)
+    potential: Potential = Field(default="pmmcs")
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(  # type: ignore[ty:invalid-assignment]
         default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
         description="Analyses to run. Each can carry its own parameters. Defaults to all available analyses.",
+    )
+    electrostatics: ElectrostaticsParams = Field(
+        default_factory=ElectrostaticsParams,
+        description="Coulomb solver and cutoff settings. Defaults to DSF with potential-specific parameters.",
     )
     tags: list[str] = Field(
         default_factory=list,
@@ -360,8 +417,6 @@ def _job_urls(job_id: str) -> dict[str, str]:
     Uses the ``API_BASE_URL`` environment variable.  When unset the URLs
     will contain relative paths only (empty base).
     """
-    from amorphouspy_api.config import API_BASE_URL
-
     base = API_BASE_URL.rstrip("/")
     return {
         "status": f"{base}/jobs/{job_id}",

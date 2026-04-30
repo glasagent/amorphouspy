@@ -50,3 +50,9 @@ API_BASE_URL = os.environ.get("API_BASE_URL", "")
 # ---------------------------------------------------------------------------
 
 API_TOKEN: str | None = os.environ.get("API_TOKEN")
+
+# ---------------------------------------------------------------------------
+# MCP server bind host (controls DNS-rebinding protection scope)
+# ---------------------------------------------------------------------------
+
+MCP_HOST: str = os.environ.get("MCP_HOST", "127.0.0.1")

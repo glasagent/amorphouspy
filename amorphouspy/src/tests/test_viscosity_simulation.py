@@ -191,7 +191,7 @@ def test_viscosity_ensemble_output_keys(mock_sim: MagicMock) -> None:
 
     expected_keys = {
         "viscosity",
-        "viscosity_std",
+        "viscosity_fit_residual",
         "viscosity_sem",
         "shear_modulus_inf",
         "bulk_viscosity",
@@ -218,7 +218,7 @@ def test_viscosity_ensemble_single_replica_zero_std(mock_sim: MagicMock) -> None
         n_replicas=1,
     )
 
-    assert result["viscosity_std"] == 0.0
+    assert result["viscosity_fit_residual"] == 0.0
     assert result["viscosity_sem"] == 0.0
 
 

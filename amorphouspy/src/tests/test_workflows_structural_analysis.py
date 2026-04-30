@@ -1,5 +1,6 @@
 """Tests for amorphouspy.workflows.structural_analysis — full coverage."""
 
+import warnings
 from unittest.mock import patch
 
 import amorphouspy.workflows.structural_analysis as sa_module
@@ -190,71 +191,50 @@ def test_find_rdf_minimum_returns_float_for_sio2_rdf() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_classify_elements_sio2() -> None:
-    """Si and O classified correctly: Si as former, O as oxygen."""
-    unique_z = np.array([8, 14])
-    type_map, formers, modifiers, oxygen_present = _classify_elements(unique_z)
-    assert oxygen_present is True
-    assert "Si" in formers
-    assert len(modifiers) == 0
-    assert type_map[8] == "O"
-    assert type_map[14] == "Si"
-
-
-def test_classify_elements_na_modifier() -> None:
-    """Na (Z=11) is classified as a glass modifier."""
-    unique_z = np.array([8, 14, 11])
+def test_classify_elements_intermediates_treated_as_formers() -> None:
+    """Al, Ti, Zr (intermediates) are routed to network_formers, not modifiers."""
+    unique_z = np.array([8, 13, 22, 40])  # O, Al, Ti, Zr
     _, formers, modifiers, oxygen_present = _classify_elements(unique_z)
-    assert "Na" in modifiers
-    assert "Si" in formers
+    assert formers == {"Al", "Ti", "Zr"}
+    assert len(modifiers) == 0
     assert oxygen_present is True
 
 
-def test_classify_elements_oxygen_present_flag() -> None:
-    """oxygen_present is True when O (Z=8) is in the system."""
-    unique_z = np.array([8])
-    _, _, _, oxygen_present = _classify_elements(unique_z)
+def test_classify_elements_mixed_composition_routes_correctly() -> None:
+    """Full mixed system: formers, intermediates, modifiers, and O all classified correctly."""
+    # Si(14)=former, Al(13)=intermediate, Na(11)=modifier, Ca(20)=modifier, O(8)=oxygen
+    unique_z = np.array([8, 14, 13, 11, 20])
+    _, formers, modifiers, oxygen_present = _classify_elements(unique_z)
+    assert formers == {"Si", "Al"}
+    assert modifiers == {"Na", "Ca"}
     assert oxygen_present is True
 
 
-def test_classify_elements_no_oxygen() -> None:
-    """oxygen_present is False when no O in the system."""
-    unique_z = np.array([14, 11])
-    _, _, _, oxygen_present = _classify_elements(unique_z)
-    assert oxygen_present is False
+def test_classify_elements_unknown_element_warns_and_falls_to_modifiers() -> None:
+    """Element not in any glass set warns and falls back to modifiers, never formers."""
+    unique_z = np.array([2])  # He — not a former, intermediate, or modifier
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        _type_map, formers, modifiers, _ = _classify_elements(unique_z)
+    assert "He" in modifiers
+    assert "He" not in formers
+    assert any("He" in str(warning.message) for warning in w)
 
 
-def test_classify_elements_unknown_element_fallback(monkeypatch) -> None:
-    """KeyError for element Z>118: fallback symbol 'E<Z>' is used."""
-    # Build a dict version (list -> dict) that is missing key 119
+def test_classify_elements_unknown_z_gets_fallback_symbol(monkeypatch) -> None:
+    """Z beyond ASE table gets symbol 'E<Z>' and is treated as unknown (modifier + warning)."""
     fake_dict = dict(enumerate(_ase_chemical_symbols))
-    # Remove key 119 to ensure KeyError is triggered
     fake_dict.pop(119, None)
     monkeypatch.setattr(sa_module, "chemical_symbols", fake_dict)
 
     unique_z = np.array([119])
-    type_map, _formers, _modifiers, oxygen_present = _classify_elements(unique_z)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        type_map, formers, modifiers, _ = _classify_elements(unique_z)
     assert type_map[119] == "E119"
-    assert oxygen_present is False
-
-
-def test_classify_elements_unknown_element_goes_to_formers() -> None:
-    """Element not in glass_formers or glass_modifiers (e.g., He, Z=2) goes to network_formers."""
-    # He (Z=2) is not in glass_formers or glass_modifiers → else branch adds to formers
-    unique_z = np.array([2])
-    _type_map, formers, modifiers, oxygen_present = _classify_elements(unique_z)
-    assert "He" in formers
-    assert len(modifiers) == 0
-    assert oxygen_present is False
-
-
-def test_classify_elements_multiple_modifiers() -> None:
-    """Multiple modifiers (Na, Ca) are all classified as modifiers."""
-    unique_z = np.array([8, 14, 11, 20])  # O, Si, Na, Ca
-    _, formers, modifiers, _ = _classify_elements(unique_z)
-    assert "Na" in modifiers
-    assert "Ca" in modifiers
-    assert "Si" in formers
+    assert "E119" in modifiers
+    assert "E119" not in formers
+    assert any("E119" in str(warning.message) for warning in w)
 
 
 # ---------------------------------------------------------------------------

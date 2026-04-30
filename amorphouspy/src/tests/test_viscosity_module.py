@@ -348,7 +348,7 @@ def test_helfand_viscosity_returns_valid_dict() -> None:
     out = helfand_viscosity(_make_helfand_result(), timestep=10.0)
     required = {
         "viscosity",
-        "viscosity_std",
+        "viscosity_fit_residual",
         "temperature",
         "method",
         "msd",
@@ -371,7 +371,7 @@ def test_helfand_viscosity_method_tag() -> None:
 def test_helfand_viscosity_types() -> None:
     """All scalar outputs are Python floats."""
     out = helfand_viscosity(_make_helfand_result(), timestep=10.0)
-    for key in ("viscosity", "viscosity_std", "temperature", "slope"):
+    for key in ("viscosity", "viscosity_fit_residual", "temperature", "slope"):
         assert isinstance(out[key], float), f"{key} is not a float"
 
 

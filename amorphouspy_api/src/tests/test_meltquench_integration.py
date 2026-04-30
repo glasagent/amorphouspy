@@ -61,7 +61,7 @@ def test_jobs_api_integration() -> None:
         "analyses": [{"type": "structure_characterization"}],
     }
     logger.info("Submitting job with fast rates: quench_rate=%s", payload["simulation"]["quench_rate"])
-    r = requests.post(f"{api_url}/jobs", json=payload, timeout=30)
+    r = requests.post(f"{api_url}/jobs?force=true", json=payload, timeout=200)
     r.raise_for_status()
     data = r.json()
     assert "id" in data
@@ -127,6 +127,21 @@ def test_jobs_api_integration() -> None:
     r.raise_for_status()
     assert len(r.text) > 0, "Structure export returned empty content"
     logger.info("Structure export: %d bytes", len(r.text))
+
+    # Fetch per-analysis results
+    r = requests.get(f"{api_url}/jobs/{job_id}/results/structure_characterization", timeout=30)
+    r.raise_for_status()
+    per_analysis = r.json()
+    assert per_analysis["job_id"] == job_id
+    assert "structure_characterization" in per_analysis
+    logger.info("Per-analysis result keys: %s", list(per_analysis["structure_characterization"].keys()))
+
+    # Fetch visualization page
+    r = requests.get(f"{api_url}/jobs/{job_id}/visualize", timeout=30)
+    r.raise_for_status()
+    assert "text/html" in r.headers.get("content-type", "")
+    assert len(r.text) > 0, "Visualization page returned empty content"
+    logger.info("Visualization page: %d bytes", len(r.text))
 
     # Verify glasses endpoint shows this composition
     r = requests.get(f"{api_url}/glasses", timeout=30)
