@@ -7,9 +7,11 @@ from enum import StrEnum
 from io import StringIO
 from typing import Annotated, Any, Literal, cast
 
+from amorphouspy.potentials.potential import POTENTIAL_PREFERENCE
 from ase import Atoms
 from ase.io import read, write
 from pydantic import (
+    AfterValidator,
     BaseModel,
     Discriminator,
     Field,
@@ -17,6 +19,7 @@ from pydantic import (
     PlainValidator,
     RootModel,
     Tag,
+    WithJsonSchema,
 )
 
 from amorphouspy import DsfConfig, EwaldConfig, PppmConfig, WolfConfig
@@ -122,12 +125,19 @@ AtomsType = Annotated[
 # ---------------------------------------------------------------------------
 
 
-class Potential(StrEnum):
-    """Supported interatomic potentials."""
+def validate_potential(value: str) -> str:
+    """Validate that *value* is one of the registered core potentials."""
+    if value not in POTENTIAL_PREFERENCE:
+        msg = f"Unsupported potential: {value}"
+        raise ValueError(msg)
+    return value
 
-    pmmcs = "pmmcs"
-    bjp = "bjp"
-    shik = "shik"
+
+type Potential = Annotated[
+    str,
+    AfterValidator(validate_potential),
+    WithJsonSchema({"type": "string", "enum": list(POTENTIAL_PREFERENCE), "title": "Potential"}),
+]
 
 
 class LongRangeMethod(StrEnum):
@@ -385,7 +395,7 @@ class JobSubmission(BaseModel):
             "Example: {'SiO2': 70, 'Na2O': 15, 'CaO': 15}"
         ),
     )
-    potential: Potential = Field(default=Potential.pmmcs)
+    potential: Potential = Field(default="pmmcs")
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(  # type: ignore[ty:invalid-assignment]
         default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],

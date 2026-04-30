@@ -41,7 +41,7 @@ def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
     payload = json.dumps(
         {
             "composition": normalized_comp,
-            "potential": submission.potential.value,
+            "potential": submission.potential,
             "simulation": submission.simulation.model_dump(),
             "analyses": analyses_dump,
             "electrostatics": electrostatics_dump,
