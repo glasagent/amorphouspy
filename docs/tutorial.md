@@ -148,7 +148,7 @@ from amorphouspy import elastic_simulation
 elastic_result = elastic_simulation(
     structure=glass_structure,
     potential=potential,
-    temperature=300.0,
+    temperature_sim=300.0,
     strain=1e-3,
     production_steps=10_000,
 )
