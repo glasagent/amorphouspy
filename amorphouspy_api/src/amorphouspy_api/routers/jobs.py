@@ -36,7 +36,6 @@ from amorphouspy_api.models import (
     JobStatus,
     JobStatusResponse,
     JobSubmission,
-    Potential,
     TagsResponse,
     TagsUpdate,
     _job_urls,
@@ -106,7 +105,7 @@ def _validate_or_select_potential(
     )
 
     elements = _composition_elements(submission.composition.root)
-    potential = submission.potential.value
+    potential = submission.potential
 
     supported = get_supported_elements(potential)
     unsupported = elements - supported
@@ -114,7 +113,7 @@ def _validate_or_select_potential(
         return
 
     # Default was kept → auto-select the best compatible potential
-    if submission.potential == Potential.pmmcs:
+    if submission.potential == "pmmcs":
         best = select_potential(elements)
         if best is not None:
             logger.info(
@@ -122,7 +121,7 @@ def _validate_or_select_potential(
                 best,
                 sorted(unsupported),
             )
-            submission.potential = Potential(best)
+            submission.potential = best
             return
 
     # Explicit choice or nothing works at all → 422
@@ -201,7 +200,7 @@ def submit_job(
                 id=cached.job_id,
                 status=JobStatus(cached.status),
                 composition=Composition.from_canonical(cached.composition),
-                potential=Potential(cached.potential),
+                potential=cached.potential,
                 tags=sorted(set(cached.tags or []) | set(submission.tags)),
                 created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
                 urls=_job_urls(cached.job_id),
@@ -218,7 +217,7 @@ def submit_job(
         job_id=job_id,
         request_hash=req_hash,
         composition=norm_comp,
-        potential=submission.potential.value,
+        potential=submission.potential,
         status="pending",
         request_data=submission.model_dump(),
         progress=_initial_progress(submission),
@@ -271,7 +270,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
         JobSearchMatch(
             job_id=j.job_id,
             composition=Composition.from_canonical(j.composition),
-            potential=Potential(j.potential),
+            potential=j.potential,
             tags=j.tags or [],
             analyses=_analyses_list(j),
             similarity=1.0,
@@ -304,7 +303,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
                 JobSearchMatch(
                     job_id=job_id,
                     composition=Composition.from_canonical(comp),
-                    potential=Potential(potential),
+                    potential=potential,
                     tags=tags_map.get(job_id, []),
                     analyses=analyses,
                     similarity=round(sim, 4),
@@ -342,7 +341,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
         id=job.job_id,
         status=JobStatus(job.status),
         composition=Composition.from_canonical(job.composition),
-        potential=Potential(job.potential),
+        potential=job.potential,
         tags=job.tags or [],
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
@@ -378,7 +377,7 @@ def cancel_job(job_id: str) -> JobStatusResponse:
         id=job.job_id,
         status=JobStatus(job.status),
         composition=Composition.from_canonical(job.composition),
-        potential=Potential(job.potential),
+        potential=job.potential,
         tags=job.tags or [],
         progress=_progress_from_dict(job.progress),
         errors=job.errors or {},
