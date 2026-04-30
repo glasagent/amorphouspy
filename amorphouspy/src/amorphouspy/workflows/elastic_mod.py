@@ -155,7 +155,7 @@ def elastic_simulation(
     Args:
         structure: Input structure (assumed pre-equilibrated).
         potential: LAMMPS potential file.
-        temperature_sim: Simulation temperature in Kelvin (default 5000.0 K).
+        temperature_sim: Simulation temperature in Kelvin (default 300.0 K).
         pressure: Target pressure for equilibration (default None, i.e., NVT).
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
         equilibration_steps: Number of steps for the initial equilibration phase (default 1,000,000).
