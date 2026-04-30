@@ -65,8 +65,7 @@ glass = result["structure"]     # Quenched ASE Atoms
 | Key | Type | Description |
 |---|---|---|
 | `"structure"` | `Atoms` | Final quenched glass structure |
-| `"trajectory"` | `list[Atoms]` | Structures at each stage |
-| `"thermo"` | `dict` | Thermodynamic data (T, P, E, V vs. step) |
+| `"result"` | `list` | Thermodynamic history across all stages |
 
 ---
 
@@ -74,16 +73,14 @@ glass = result["structure"]     # Quenched ASE Atoms
 
 Each interatomic potential has an optimized multi-stage protocol that has been validated to produce high-quality glass structures.
 
-### `melt_quench_protocol(structure, potential, potential_type, ...)`
+The potential-specific protocol is selected automatically by `melt_quench_simulation` based on the potential name. Pass the potential DataFrame and the correct protocol runs:
 
 ```python
-from amorphouspy import melt_quench_protocol
+from amorphouspy import melt_quench_simulation
 
-# Automatically selects the right protocol for the potential
-result = melt_quench_protocol(
+result = melt_quench_simulation(
     structure=atoms,
-    potential=potential,
-    potential_type="pmmcs",  # or "bjp", "shik", "bmp-harmonic", "bmp-screened-harmonic"
+    potential=potential,  # potential name determines the protocol (pmmcs, bjp, shik, bmp-*)
 )
 ```
 
