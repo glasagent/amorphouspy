@@ -10,9 +10,29 @@ from amorphouspy.potentials.bjp_potential import generate_bjp_potential
 from amorphouspy.potentials.bjp_potential import supported_elements as bjp_supported_elements
 from amorphouspy.potentials.bmp_potential import generate_bmp_potential
 from amorphouspy.potentials.du_teter_potential import (
+    Buckingham,
+    Du,
+    N4_dbx,
+    V,
+    _build_all_pair_params,
+    _build_pair_params,
+    _equations,
+    _validate_du_teter_inputs,
+    dBuckingham,
+    dddBuckingham,
+    dDu,
+    ddV,
+    du_teter_potential_params,
+    dV,
+    fit_BO_params,
     generate_du_teter_potential,
+    get_A_for_BO,
+    get_all_BO_params,
     stillinger_weber_params,
     write_sw_file,
+)
+from amorphouspy.potentials.du_teter_potential import (
+    write_table_file as du_teter_write_table_file,
 )
 from amorphouspy.potentials.pmmcs_potential import generate_pmmcs_potential
 from amorphouspy.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
@@ -22,6 +42,7 @@ from amorphouspy.potentials.potential import (
     PppmConfig,
     WolfConfig,
     compatible_potentials,
+    generate_potential,
     get_supported_elements,
     select_potential,
 )
@@ -646,3 +667,363 @@ def test_generate_bmp_screened_harmonic_valid_nabs(tmp_path):
     result = generate_bmp_potential(_nabs_atoms_dict(), output_dir=tmp_path, variant="screened-harmonic")
     assert isinstance(result, pd.DataFrame)
     assert len(result) > 0
+
+
+# ---------------------------------------------------------------------------
+# generate_potential dispatcher
+# ---------------------------------------------------------------------------
+
+
+def test_generate_potential_pmmcs():
+    """generate_potential dispatches to pmmcs generator."""
+    result = generate_potential(_sio2_atoms_dict(), potential_type="pmmcs")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_potential_bjp():
+    """generate_potential dispatches to bjp generator."""
+    result = generate_potential(_cas_atoms_dict(), potential_type="bjp")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_potential_shik(tmp_path, monkeypatch):
+    """generate_potential dispatches to shik generator."""
+    monkeypatch.chdir(tmp_path)
+    result = generate_potential(_sio2_atoms_dict(), potential_type="shik")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_potential_du_teter(tmp_path, monkeypatch):
+    """generate_potential dispatches to du_teter generator."""
+    monkeypatch.chdir(tmp_path)
+    result = generate_potential(_sio2_atoms_dict(), potential_type="du_teter")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_potential_bmp_harmonic(tmp_path, monkeypatch):
+    """generate_potential dispatches to bmp-harmonic generator."""
+    monkeypatch.chdir(tmp_path)
+    result = generate_potential(_nabs_atoms_dict(), potential_type="bmp-harmonic")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_potential_bmp_screened_harmonic(tmp_path, monkeypatch):
+    """generate_potential dispatches to bmp-screened-harmonic generator."""
+    monkeypatch.chdir(tmp_path)
+    result = generate_potential(_nabs_atoms_dict(), potential_type="bmp-screened-harmonic")
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_potential_unsupported_raises():
+    """generate_potential raises ValueError for unknown potential type."""
+    with pytest.raises(ValueError, match="Unsupported potential type"):
+        generate_potential(_sio2_atoms_dict(), potential_type="unknown_potential")
+
+
+# ---------------------------------------------------------------------------
+# dddBuckingham
+# ---------------------------------------------------------------------------
+
+
+def test_dddBuckingham_returns_float():
+    """Function dddBuckingham returns a finite float."""
+    result = dddBuckingham(2.0, A=13702.905, rho=0.193817, C=54.681)
+    assert np.isfinite(result)
+
+
+def test_dddBuckingham_changes_sign():
+    """Function dddBuckingham crosses zero (used to find inflection point for crossover)."""
+    vals = [dddBuckingham(r, A=13702.905, rho=0.193817, C=54.681) for r in [0.5, 2.0]]
+    assert vals[0] * vals[1] < 0 or any(v == 0 for v in vals)
+
+
+# ---------------------------------------------------------------------------
+# V, dV, ddV (short-range repulsion)
+# ---------------------------------------------------------------------------
+
+
+def test_V_basic():
+    """V returns expected value for simple inputs."""
+    assert V(1.0, B=10.0, n=2.0, D=-1.0) == pytest.approx(10.0 - 1.0)
+
+
+def test_dV_basic():
+    """Function dV returns expected derivative value."""
+    assert dV(1.0, B=10.0, n=2.0, D=-1.0) == pytest.approx(-20.0 - 2.0)
+
+
+def test_ddV_basic():
+    """Function ddV returns expected second derivative value."""
+    assert ddV(1.0, B=10.0, n=2.0, D=-1.0) == pytest.approx(60.0 - 2.0)
+
+
+# ---------------------------------------------------------------------------
+# Du and dDu
+# ---------------------------------------------------------------------------
+
+
+def test_Du_short_range_branch():
+    """Function Du returns V(r) when r <= rc."""
+    params = {"A": 100.0, "rho": 0.2, "C": 50.0, "B": 30.0, "n": 3.0, "D": -5.0, "rc": 2.0}
+    r = 1.5
+    assert Du(r, **params) == V(r, B=30.0, n=3.0, D=-5.0)
+
+
+def test_Du_long_range_branch():
+    """Function Du returns Buckingham(r) when r > rc."""
+    params = {"A": 100.0, "rho": 0.2, "C": 50.0, "B": 30.0, "n": 3.0, "D": -5.0, "rc": 1.0}
+    r = 1.5
+    assert Du(r, **params) == Buckingham(r, A=100.0, rho=0.2, C=50.0)
+
+
+def test_dDu_short_range_branch():
+    """Function dDu returns -dV(r) when r <= rc."""
+    params = {"A": 100.0, "rho": 0.2, "C": 50.0, "B": 30.0, "n": 3.0, "D": -5.0, "rc": 2.0}
+    r = 1.5
+    assert dDu(r, **params) == -dV(r, B=30.0, n=3.0, D=-5.0)
+
+
+def test_dDu_long_range_branch():
+    """Function dDu returns -dBuckingham(r) when r > rc."""
+    params = {"A": 100.0, "rho": 0.2, "C": 50.0, "B": 30.0, "n": 3.0, "D": -5.0, "rc": 1.0}
+    r = 1.5
+    assert dDu(r, **params) == -dBuckingham(r, A=100.0, rho=0.2, C=50.0)
+
+
+# ---------------------------------------------------------------------------
+# N4_dbx - Dell-Bray-Xiao model branches
+# ---------------------------------------------------------------------------
+
+
+def test_N4_dbx_low_R():
+    """N4 = R when R < R_CUT (0.5) for K=1."""
+    assert N4_dbx(0.3, K=1) == pytest.approx(0.3)
+
+
+def test_N4_dbx_R_between_RMAX_and_RD1():
+    """N4 = R_MAX when R_MAX <= R < R_D1."""
+    result = N4_dbx(0.6, K=1)
+    assert result == pytest.approx(min(0.5625, 1.0))
+
+
+def test_N4_dbx_R_between_RD1_and_RD3_K_nonzero():
+    """N4 uses the m1/m2 formula when R_D1 <= R < R_D3 and K != 0."""
+    result = N4_dbx(1.5, K=1)
+    assert 0 <= result <= 1
+
+
+def test_N4_dbx_R_between_RD1_and_RD3_K_zero():
+    """N4 = 1 - R (clamped to [0,1]) when K=0 and R_D1 <= R < R_D3."""
+    result = N4_dbx(0.7, K=0)
+    assert result == pytest.approx(min(max(1 - 0.7, 0), 1))
+
+
+def test_N4_dbx_K_zero_large_R():
+    """N4 = 0 when K=0 and R >= R_D3."""
+    result = N4_dbx(2.5, K=0)
+    assert result == 0
+
+
+def test_N4_dbx_raises_for_invalid():
+    """N4_dbx raises ValueError when R >= R_D3 and K != 0."""
+    with pytest.raises(ValueError, match="N4 could not be calculated"):
+        N4_dbx(3.5, K=1)
+
+
+# ---------------------------------------------------------------------------
+# get_A_for_BO
+# ---------------------------------------------------------------------------
+
+
+def test_get_A_for_BO_R_greater_than_RMAX():
+    """get_A_for_BO uses the formula for R > R_MAX."""
+    A = get_A_for_BO(K=1, R=1.0, N4=0.5)
+    assert A > 0
+    assert A <= 25000
+
+
+def test_get_A_for_BO_R_leq_RMAX():
+    """get_A_for_BO uses the formula for R <= R_MAX."""
+    A = get_A_for_BO(K=1, R=0.5, N4=0.4)
+    assert A > 0
+    assert A <= 25000
+
+
+# ---------------------------------------------------------------------------
+# _equations
+# ---------------------------------------------------------------------------
+
+
+def test_equations_returns_tuple_of_three():
+    """_equations returns a 3-tuple of residuals."""
+    p = du_teter_potential_params["Si"]
+    buck_params = {"A": p["A"], "rho": p["rho"], "C": p["C"]}
+    rc = p["r0"]
+    x = (p["B"], p["n"], p["D"])
+    residuals = _equations(x, rc, buck_params)
+    assert len(residuals) == 3
+    assert all(np.isfinite(r) for r in residuals)
+
+
+def test_equations_penalty_for_negative_n():
+    """_equations returns large penalty values when n < 0."""
+    buck_params = {"A": 100.0, "rho": 0.2, "C": 50.0}
+    result = _equations((-1.0, -2.0, 0.0), r=1.0, buck_params=buck_params)
+    assert result == (100.0, 100.0, 100.0)
+
+
+# ---------------------------------------------------------------------------
+# fit_BO_params
+# ---------------------------------------------------------------------------
+
+
+def test_fit_BO_params_returns_all_keys():
+    """fit_BO_params returns a dict with keys A, rho, C, B, n, D, r0."""
+    result = fit_BO_params(K=2.0, R=0.5)
+    expected_keys = {"A", "rho", "C", "B", "n", "D", "r0"}
+    assert set(result.keys()) == expected_keys
+
+
+def test_fit_BO_params_continuity_at_crossover():
+    """Potential is continuous at crossover point."""
+    result = fit_BO_params(K=2.0, R=0.5)
+    rc = result["r0"]
+    buck_val = Buckingham(rc, A=result["A"], rho=result["rho"], C=result["C"])
+    v_val = V(rc, B=result["B"], n=result["n"], D=result["D"])
+    assert buck_val == pytest.approx(v_val, rel=1e-4)
+
+
+def test_fit_BO_params_with_explicit_N4():
+    """fit_BO_params accepts an explicit N4 value."""
+    result = fit_BO_params(K=2.0, R=0.5, N4=0.4)
+    assert "r0" in result
+    assert result["r0"] > 0
+
+
+# ---------------------------------------------------------------------------
+# get_all_BO_params
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_BO_params_returns_dict():
+    """get_all_BO_params returns a dict with expected keys."""
+    structure_dict = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "O"}, {"element": "Na"}, {"element": "Si"}],
+        "mol_fraction": {"B2O3": 0.2, "SiO2": 0.6, "Na2O": 0.2},
+    }
+    result = get_all_BO_params(structure_dict)
+    assert "A" in result
+    assert "rc" in result
+
+
+def test_get_all_BO_params_default_mol_fractions():
+    """get_all_BO_params works with missing mol_fraction (all zeros)."""
+    structure_dict = {
+        "atoms": [{"element": "B"}, {"element": "O"}],
+        "mol_fraction": {"B2O3": 1.0},
+    }
+    result = get_all_BO_params(structure_dict)
+    assert result["rc"] > 0
+
+
+# ---------------------------------------------------------------------------
+# _build_all_pair_params with boron
+# ---------------------------------------------------------------------------
+
+
+def test_build_all_pair_params_with_boron():
+    """_build_all_pair_params includes B-O when 'B' is in species."""
+    structure_dict = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}, {"element": "Si"}],
+        "mol_fraction": {"B2O3": 0.3, "SiO2": 0.5, "Na2O": 0.2},
+    }
+    result = _build_all_pair_params(["O", "B", "Na", "Si"], structure_dict)
+    assert "B-O" in result
+    assert "O-O" in result
+
+
+# ---------------------------------------------------------------------------
+# _validate_du_teter_inputs
+# ---------------------------------------------------------------------------
+
+
+def test_validate_du_teter_inputs_no_oxygen():
+    """Raises ValueError when oxygen is not in species."""
+    with pytest.raises(ValueError, match="Oxygen must be present"):
+        _validate_du_teter_inputs(["Si", "Na"], use_three_body=False)
+
+
+def test_validate_du_teter_inputs_unsupported_element():
+    """Raises ValueError for unsupported elements."""
+    with pytest.raises(ValueError, match="does not include parameters"):
+        _validate_du_teter_inputs(["O", "Xe"], use_three_body=False)
+
+
+# ---------------------------------------------------------------------------
+# generate_du_teter_potential — melt block
+# ---------------------------------------------------------------------------
+
+
+def test_generate_du_teter_melt_true_includes_langevin(tmp_path):
+    """melt=True adds langevin + nve/limit + run 10000 block."""
+    atoms = {"atoms": [{"element": "Si"}, {"element": "O"}, {"element": "O"}]}
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=True)
+    config = "".join(df["Config"].iloc[0])
+    assert "langevin 5000 5000" in config
+    assert "nve/limit" in config
+    assert "run 10000" in config
+
+
+def test_generate_du_teter_melt_false_omits_langevin(tmp_path):
+    """melt=False omits the melt block."""
+    atoms = {"atoms": [{"element": "Si"}, {"element": "O"}, {"element": "O"}]}
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False)
+    config = "".join(df["Config"].iloc[0])
+    assert "langevin" not in config
+    assert "run 10000" not in config
+
+
+# ---------------------------------------------------------------------------
+# write_table_file (Du/Teter specific)
+# ---------------------------------------------------------------------------
+
+
+def test_du_teter_write_table_file_creates_table(tmp_path):
+    """write_table_file creates a valid DU_TETER table."""
+    params = _build_pair_params("Si")
+    path = du_teter_write_table_file("Si-O", params, npoints=100, output_dir=str(tmp_path))
+    assert path.exists()
+    content = path.read_text()
+    assert "DU_TETER" in content
+    assert "N 100" in content
+
+
+# ---------------------------------------------------------------------------
+# generate_du_teter_potential with boron composition
+# ---------------------------------------------------------------------------
+
+
+def test_generate_du_teter_with_boron(tmp_path):
+    """generate_du_teter_potential handles compositions with boron."""
+    atoms = {
+        "atoms": [
+            {"element": "B"},
+            {"element": "O"},
+            {"element": "O"},
+            {"element": "Na"},
+            {"element": "Si"},
+            {"element": "O"},
+        ],
+        "mol_fraction": {"B2O3": 0.3, "SiO2": 0.5, "Na2O": 0.2},
+    }
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False)
+    config = "".join(df["Config"].iloc[0])
+    assert "pair_coeff" in config
+    tbl_files = list(tmp_path.glob("table_B_O*"))
+    assert len(tbl_files) == 1

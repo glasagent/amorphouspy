@@ -35,6 +35,9 @@ from scipy.optimize import fsolve
 
 from amorphouspy.shared import get_element_types_dict
 
+_MELT_TEMPERATURE = 5000
+
+
 du_teter_potential_params = {
     "B": {"q": 1.8, "A": 0.0, "rho": 0.171271, "C": 28.500, "B": 0.0, "D": 0.0, "n": 0.0, "r0": 0.0},  # [2]
     "O": {
@@ -147,7 +150,7 @@ du_teter_potential_params = {
         "n": 2.653,
         "r0": 0.970,
     },  # [1]
-    # original Teter paramters:
+    # original Teter parameters:
     "Mg": {
         "q": 1.2,
         "A": 7060.0000,
@@ -793,7 +796,7 @@ def generate_du_teter_potential(
     lines.append("thermo 100\n")
 
     if melt:
-        lines.append("\nfix langevinnve all langevin 5000 5000 0.01 48279\n")
+        lines.append(f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n")
         lines.append("\nfix ensemblenve all nve/limit 0.5\n")
         lines.append("\nrun 10000\n")
         lines.append("\nunfix langevinnve\n")
