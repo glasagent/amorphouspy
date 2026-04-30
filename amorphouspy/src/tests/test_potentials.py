@@ -149,7 +149,8 @@ def test_compatible_potentials_preserves_preference_order():
 def test_compatible_potentials_all_subset_of_known():
     """Results contain only recognised potential names."""
     result = compatible_potentials({"Si", "O"})
-    assert all(p in ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter", "yang2026") for p in result)
+    available_potentials = ["pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter", "yang2026"]
+    assert all(p in available_potentials for p in result)
 
 
 # ---------------------------------------------------------------------------
@@ -1036,6 +1037,7 @@ def test_generate_du_teter_with_boron(tmp_path):
     tbl_files = list(tmp_path.glob("table_B_O*"))
     assert len(tbl_files) == 1
 
+
 # yang_potential.supported_elements
 # ---------------------------------------------------------------------------
 
@@ -1200,4 +1202,3 @@ def test_yang2026_melt_block_present_and_absent():
     result_without = generate_yang2026_potential(_yang_nabo_atoms_dict(), melt=False)
     config_without = "".join(result_without["Config"].iloc[0])
     assert "run 10000" not in config_without
-
