@@ -13,10 +13,12 @@ from amorphouspy.neighbors import (
     _dist_and_vec_tri,
     _estimate_max_neighbors,
     _extract_atom_ids,
+    _flatten_distance_buffers,
     _get_pair_cutoff_sq_python,
     _lookup_cutoff_sq,
     _numba_to_list,
     _parse_cutoff,
+    build_distances,
     cell_perpendicular_heights,
     compute_cell_list_orthogonal,
     compute_cell_list_triclinic,
@@ -42,6 +44,23 @@ def _triclinic_atoms() -> Atoms:
     cell = np.array([[5.0, 0.0, 0.0], [1.0, 5.0, 0.0], [0.0, 0.0, 5.0]])
     coords = np.array([[0.1, 0.1, 0.1], [1.1, 0.1, 0.1]], dtype=np.float64)
     types = np.array([8, 14], dtype=np.int32)
+    return Atoms(numbers=types, positions=coords, cell=cell, pbc=True)
+
+
+def _triclinic_atoms_4() -> Atoms:
+    """Four atoms in a triclinic box: two O-Si pairs ~1 Å apart, well-separated from each other.
+
+    Cell has a shear component so the orthogonal path is not taken.
+    Atoms: O(8) at 2.0 along x, Si(14) at 3.0 along x (pair 1);
+           O(8) at 5.5 along x, Si(14) at 6.5 along x (pair 2).
+    All y/z are the same Cartesian coordinate so pairs are clearly separated.
+    """
+    cell = np.array([[8.0, 0.0, 0.0], [2.0, 8.0, 0.0], [0.0, 0.0, 8.0]])
+    coords = np.array(
+        [[2.0, 4.0, 4.0], [3.0, 4.0, 4.0], [5.5, 4.0, 4.0], [6.5, 4.0, 4.0]],
+        dtype=np.float64,
+    )
+    types = np.array([8, 14, 8, 14], dtype=np.int32)
     return Atoms(numbers=types, positions=coords, cell=cell, pbc=True)
 
 
@@ -806,3 +825,151 @@ def test_numpy_fallback_no_candidates_after_filter() -> None:
         nn_ids = entry[1]
         # All Si atoms should have no Na neighbors
         assert nn_ids == []
+
+
+# ---------------------------------------------------------------------------
+# _flatten_distance_buffers
+# ---------------------------------------------------------------------------
+
+
+def test_flatten_distance_buffers_basic() -> None:
+    """_flatten_distance_buffers unpacks (N, max_pairs) buffers into flat arrays."""
+    dist_buf = np.array([[1.0, 2.0, 0.0], [3.0, 0.0, 0.0]], dtype=np.float64)
+    j_buf = np.array([[5, 7, 0], [9, 0, 0]], dtype=np.int32)
+    counts = np.array([2, 1], dtype=np.int32)
+
+    dist_out, i_out, j_out = _flatten_distance_buffers(dist_buf, j_buf, counts)
+
+    assert len(dist_out) == 3
+    assert len(i_out) == 3
+    assert len(j_out) == 3
+    np.testing.assert_array_equal(i_out, [0, 0, 1])
+    np.testing.assert_array_equal(j_out, [5, 7, 9])
+    np.testing.assert_allclose(dist_out, [1.0, 2.0, 3.0])
+
+
+def test_flatten_distance_buffers_empty() -> None:
+    """_flatten_distance_buffers returns empty arrays when counts are all zero."""
+    dist_buf = np.zeros((3, 5), dtype=np.float64)
+    j_buf = np.zeros((3, 5), dtype=np.int32)
+    counts = np.zeros(3, dtype=np.int32)
+
+    dist_out, i_out, j_out = _flatten_distance_buffers(dist_buf, j_buf, counts)
+
+    assert len(dist_out) == 0
+    assert len(i_out) == 0
+    assert len(j_out) == 0
+
+
+# ---------------------------------------------------------------------------
+# build_distances — orthogonal box
+# ---------------------------------------------------------------------------
+
+
+def test_build_distances_ortho_all_pairs() -> None:
+    """build_distances returns exactly the expected half-pairs within r_max."""
+    atoms = _ortho_atoms()
+    atoms.wrap()
+    # At r_max=1.5: only the two O-Si pairs at 1 Å are within range.
+    # Pairs at 2 Å and 3 Å must be absent.
+    dists, i_idx, j_idx = build_distances(atoms, r_max=1.5)
+
+    assert dists.dtype == np.float64
+    assert i_idx.dtype == np.int32
+    assert j_idx.dtype == np.int32
+    assert np.all(j_idx > i_idx)
+    assert len(dists) == 2
+    assert set(zip(i_idx.tolist(), j_idx.tolist(), strict=False)) == {(0, 1), (2, 3)}
+    assert np.allclose(sorted(dists), [1.0, 1.0], atol=1e-10)
+
+
+def test_build_distances_ortho_type_filter() -> None:
+    """build_distances type filter suppresses same-species pairs that are in range."""
+    atoms = _ortho_atoms()
+    atoms.wrap()
+    types = atoms.get_atomic_numbers()
+    # r_max=3.5 puts O-O (3 Å) and Si-Si (3 Å) within range; the filter must drop them.
+    # Expected O-Si pairs within 3.5 Å: (0,1)@1Å, (0,3)@2Å, (1,2)@2Å, (2,3)@1Å — 4 pairs.
+    dists, i_idx, j_idx = build_distances(atoms, r_max=3.5, types=types, unordered_pairs=[(8, 14)])
+
+    assert len(dists) == 4
+    for i, j in zip(i_idx, j_idx, strict=False):
+        pair = tuple(sorted([types[i], types[j]]))
+        assert pair == (8, 14)
+
+
+def test_build_distances_ortho_no_duplicate_pairs_small_box() -> None:
+    """No (i, j) pair appears more than once even when the box is smaller than 2*r_max (n_cells=1)."""
+    atoms = _ortho_atoms()
+    atoms.wrap()
+    # r_max=4.0 on a 6 Å box → n_cells=1, so all 27 cell-neighbor offsets wrap to the same cell.
+    _dists, i_idx, j_idx = build_distances(atoms, r_max=4.0)
+
+    pairs = list(zip(i_idx.tolist(), j_idx.tolist(), strict=False))
+    assert len(pairs) == len(set(pairs)), f"duplicate pairs: {pairs}"
+
+
+def test_build_distances_ortho_no_pairs_in_range() -> None:
+    """build_distances with a very small r_max returns empty arrays."""
+    atoms = _ortho_atoms()
+    atoms.wrap()
+    dists, _i_idx, _j_idx = build_distances(atoms, r_max=0.1)
+
+    assert len(dists) == 0
+
+
+def test_build_distances_ortho_matches_brute_force() -> None:
+    """build_distances distances match direct pairwise computation."""
+    atoms = _ortho_atoms()
+    atoms.wrap()
+    r_max = 1.5
+    dists, i_idx, j_idx = build_distances(atoms, r_max=r_max)
+
+    coords = atoms.get_positions()
+    cell = atoms.get_cell().array
+    box = np.diag(cell)
+    for d, i, j in zip(dists, i_idx, j_idx, strict=False):
+        diff = coords[i] - coords[j]
+        diff -= box * np.round(diff / box)
+        expected = float(np.linalg.norm(diff))
+        assert d == pytest.approx(expected, abs=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# build_distances — triclinic box
+# ---------------------------------------------------------------------------
+
+
+def test_build_distances_triclinic_matches_brute_force() -> None:
+    """build_distances distances match direct pairwise computation for a triclinic cell."""
+    atoms = _triclinic_atoms_4()
+    atoms.wrap()
+    r_max = 1.5
+    dists, i_idx, j_idx = build_distances(atoms, r_max=r_max)
+
+    assert len(dists) >= 2
+    assert np.all(j_idx > i_idx)
+
+    coords = atoms.get_positions()
+    cell = atoms.get_cell().array
+    inv_cell = np.linalg.inv(cell)
+    for d, i, j in zip(dists, i_idx, j_idx, strict=False):
+        diff = coords[i] - coords[j]
+        frac = inv_cell @ diff
+        frac -= np.round(frac)
+        expected = float(np.linalg.norm(cell.T @ frac))
+        assert d == pytest.approx(expected, abs=1e-10)
+
+
+def test_build_distances_triclinic_type_filter_excludes_same_species() -> None:
+    """build_distances type filter for triclinic cells excludes O-O and Si-Si pairs."""
+    atoms = _triclinic_atoms_4()
+    atoms.wrap()
+    types = atoms.get_atomic_numbers()
+    # With a wide enough cutoff, O-O pairs at ~4 Å would appear without the filter
+    dists, i_idx, j_idx = build_distances(atoms, r_max=5.0, types=types, unordered_pairs=[(8, 14)])
+
+    assert len(dists) > 0
+    for i, j in zip(i_idx, j_idx, strict=False):
+        pair = tuple(sorted([types[i], types[j]]))
+        assert pair == (8, 14)

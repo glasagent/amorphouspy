@@ -497,15 +497,13 @@ def _build_distances_numba(
     cell_atoms: np.ndarray,
     r_max_sq: float,
     max_pairs: int,
-    target_types: np.ndarray,
-    neighbor_types: np.ndarray,
+    pair_types: np.ndarray,
     use_type_filter: bool,  # noqa: FBT001
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Collect half-pair (j > i) distances within r_max_sq for an orthogonal box.
 
-    When use_type_filter is True, only atoms whose type is in target_types are
-    used as central atoms, and only neighbors whose type is in neighbor_types
-    are accepted — all comparisons are integer equality checks in nopython mode.
+    When use_type_filter is True, only pairs whose unordered types match one of
+    the rows in pair_types (shape (M, 2), each row sorted ascending) are kept.
 
     Returns:
         dist_buf: (N, max_pairs) float64 — distances per central atom.
@@ -513,44 +511,44 @@ def _build_distances_numba(
         counts:   (N,) int32             — valid entries per row.
     """
     n = len(coords)
+    n_cells_x = n_cells[0]
     n_cells_y = n_cells[1]
     n_cells_z = n_cells[2]
+    n_total_cells = n_cells_x * n_cells_y * n_cells_z
     dist_buf = np.empty((n, max_pairs), dtype=np.float64)
     j_buf = np.empty((n, max_pairs), dtype=np.int32)
     counts = np.zeros(n, dtype=np.int32)
 
     for i in prange(n):  # type: ignore[ty:not-iterable]
-        if use_type_filter:
-            ti = types[i]
-            is_target = False
-            for t in target_types:
-                if ti == t:
-                    is_target = True
-                    break
-            if not is_target:
-                continue
+        ti = types[i] if use_type_filter else np.int32(0)
 
         ci = atom_cells[i]
         k = 0
+        visited = np.zeros(n_total_cells, dtype=np.bool_)
         for dix in range(-1, 2):
-            cjx = (ci[0] + dix) % n_cells[0]
+            cjx = (ci[0] + dix) % n_cells_x
             for diy in range(-1, 2):
-                cjy = (ci[1] + diy) % n_cells[1]
+                cjy = (ci[1] + diy) % n_cells_y
                 for diz in range(-1, 2):
-                    cjz = (ci[2] + diz) % n_cells[2]
+                    cjz = (ci[2] + diz) % n_cells_z
                     flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
+                    if visited[flat]:
+                        continue
+                    visited[flat] = True
                     for p in range(cell_start[flat], cell_start[flat + 1]):
                         j = cell_atoms[p]
                         if j <= i:
                             continue
                         if use_type_filter:
                             tj = types[j]
-                            is_nb = False
-                            for t in neighbor_types:
-                                if tj == t:
-                                    is_nb = True
+                            lo = min(ti, tj)
+                            hi = max(tj, ti)
+                            pair_ok = False
+                            for m in range(len(pair_types)):
+                                if pair_types[m, 0] == lo and pair_types[m, 1] == hi:
+                                    pair_ok = True
                                     break
-                            if not is_nb:
+                            if not pair_ok:
                                 continue
                         _, _, _, dsq = _dist_and_vec_ortho(coords[i], coords[j], box_size)
                         if dsq <= r_max_sq:
@@ -574,11 +572,13 @@ def _build_distances_numba_tri(
     cell_atoms: np.ndarray,
     r_max_sq: float,
     max_pairs: int,
-    target_types: np.ndarray,
-    neighbor_types: np.ndarray,
+    pair_types: np.ndarray,
     use_type_filter: bool,  # noqa: FBT001
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Collect half-pair (j > i) distances within r_max_sq for a triclinic box.
+
+    When use_type_filter is True, only pairs whose unordered types match one of
+    the rows in pair_types (shape (M, 2), each row sorted ascending) are kept.
 
     Returns:
         dist_buf: (N, max_pairs) float64 — distances per central atom.
@@ -586,44 +586,44 @@ def _build_distances_numba_tri(
         counts:   (N,) int32             — valid entries per row.
     """
     n = len(coords_frac)
+    n_cells_x = n_cells[0]
     n_cells_y = n_cells[1]
     n_cells_z = n_cells[2]
+    n_total_cells = n_cells_x * n_cells_y * n_cells_z
     dist_buf = np.empty((n, max_pairs), dtype=np.float64)
     j_buf = np.empty((n, max_pairs), dtype=np.int32)
     counts = np.zeros(n, dtype=np.int32)
 
     for i in prange(n):  # type: ignore[ty:not-iterable]
-        if use_type_filter:
-            ti = types[i]
-            is_target = False
-            for t in target_types:
-                if ti == t:
-                    is_target = True
-                    break
-            if not is_target:
-                continue
+        ti = types[i] if use_type_filter else np.int32(0)
 
         ci = atom_cells[i]
         k = 0
+        visited = np.zeros(n_total_cells, dtype=np.bool_)
         for dix in range(-1, 2):
-            cjx = (ci[0] + dix) % n_cells[0]
+            cjx = (ci[0] + dix) % n_cells_x
             for diy in range(-1, 2):
-                cjy = (ci[1] + diy) % n_cells[1]
+                cjy = (ci[1] + diy) % n_cells_y
                 for diz in range(-1, 2):
-                    cjz = (ci[2] + diz) % n_cells[2]
+                    cjz = (ci[2] + diz) % n_cells_z
                     flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
+                    if visited[flat]:
+                        continue
+                    visited[flat] = True
                     for p in range(cell_start[flat], cell_start[flat + 1]):
                         j = cell_atoms[p]
                         if j <= i:
                             continue
                         if use_type_filter:
                             tj = types[j]
-                            is_nb = False
-                            for t in neighbor_types:
-                                if tj == t:
-                                    is_nb = True
+                            lo = min(ti, tj)
+                            hi = max(tj, ti)
+                            pair_ok = False
+                            for m in range(len(pair_types)):
+                                if pair_types[m, 0] == lo and pair_types[m, 1] == hi:
+                                    pair_ok = True
                                     break
-                            if not is_nb:
+                            if not pair_ok:
                                 continue
                         _, _, _, dsq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
                         if dsq <= r_max_sq:
@@ -682,16 +682,12 @@ def build_distances(
 
     use_type_filter = types is not None and unordered_pairs is not None
     if use_type_filter and unordered_pairs is not None and types is not None:
-        # Collect the union of all types appearing in requested pairs.
-        # For half-pairs (j > i): a central atom of type t1 needs neighbors of
-        # type t2, AND a central atom of type t2 needs neighbors of type t1.
-        all_types: set[int] = {t for pair in unordered_pairs for t in pair}
-        target_arr = np.array(sorted(all_types), dtype=np.int32)
-        neighbor_arr = target_arr  # symmetric: same set for both roles
+        # Build a sorted (M, 2) pair_types array for exact pair matching in the kernel.
+        pair_rows = sorted({(min(a, b), max(a, b)) for a, b in unordered_pairs})
+        pair_types_arr = np.array(pair_rows, dtype=np.int32).reshape(-1, 2)
         types_arr = types.astype(np.int32)
     else:
-        target_arr = np.empty(0, dtype=np.int32)
-        neighbor_arr = np.empty(0, dtype=np.int32)
+        pair_types_arr = np.empty((0, 2), dtype=np.int32)
         types_arr = np.empty(0, dtype=np.int32)
 
     # Initial max_pairs estimate: 4/3 pi r_max^3 x number_density x 1.5
@@ -713,8 +709,7 @@ def build_distances(
                 cell_atoms,
                 r_max_sq,
                 max_pairs,
-                target_arr,
-                neighbor_arr,
+                pair_types_arr,
                 use_type_filter,
             )
             if int(counts.max()) <= max_pairs:
@@ -733,8 +728,7 @@ def build_distances(
                 cell_atoms,
                 r_max_sq,
                 max_pairs,
-                target_arr,
-                neighbor_arr,
+                pair_types_arr,
                 use_type_filter,
             )
             if int(counts.max()) <= max_pairs:
