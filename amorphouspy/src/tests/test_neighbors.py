@@ -973,3 +973,95 @@ def test_build_distances_triclinic_type_filter_excludes_same_species() -> None:
     for i, j in zip(i_idx, j_idx, strict=False):
         pair = tuple(sorted([types[i], types[j]]))
         assert pair == (8, 14)
+
+
+def test_build_distances_triclinic_no_duplicate_pairs_small_box() -> None:
+    """No (i, j) pair appears more than once for a triclinic box smaller than 2*r_max (n_cells=1)."""
+    atoms = _triclinic_atoms_4()
+    atoms.wrap()
+    # r_max=5.0 on an 8 Å box → n_cells=1 in every dimension, all 27 offsets map to same cell.
+    _dists, i_idx, j_idx = build_distances(atoms, r_max=5.0)
+
+    pairs = list(zip(i_idx.tolist(), j_idx.tolist(), strict=False))
+    assert len(pairs) == len(set(pairs)), f"duplicate pairs found: {pairs}"
+
+
+# ---------------------------------------------------------------------------
+# Conditional vector_list allocation in _build_nl_ortho_numba / _build_nl_tri_numba
+# ---------------------------------------------------------------------------
+
+
+def test_build_nl_ortho_numba_no_vectors_shape() -> None:
+    """With return_vectors=False the kernel returns a (0,0,3) vector_list, not a full array."""
+    fn = _build_nl_ortho_numba.py_func if NUMBA_AVAILABLE else _build_nl_ortho_numba
+    atoms = _ortho_atoms()
+    kwargs = _make_ortho_nl_inputs(atoms, cutoff=1.5)
+    kwargs["target_types"] = np.empty(0, dtype=np.int32)
+    kwargs["neighbor_types"] = np.empty(0, dtype=np.int32)
+    kwargs["use_target_filter"] = False
+    kwargs["use_neighbor_filter"] = False
+    kwargs["return_vectors"] = False
+
+    _nl, _counts, vecs = fn(**kwargs)
+    assert vecs.shape == (0, 0, 3), f"expected (0,0,3), got {vecs.shape}"
+
+
+def test_build_nl_tri_numba_no_vectors_shape() -> None:
+    """With return_vectors=False the triclinic kernel returns a (0,0,3) vector_list."""
+    fn = _build_nl_tri_numba.py_func if NUMBA_AVAILABLE else _build_nl_tri_numba
+    atoms = _triclinic_atoms()
+    kwargs = _make_tri_nl_inputs(atoms, cutoff=1.5)
+    kwargs["target_types"] = np.empty(0, dtype=np.int32)
+    kwargs["neighbor_types"] = np.empty(0, dtype=np.int32)
+    kwargs["use_target_filter"] = False
+    kwargs["use_neighbor_filter"] = False
+    kwargs["return_vectors"] = False
+
+    _nl, _counts, vecs = fn(**kwargs)
+    assert vecs.shape == (0, 0, 3), f"expected (0,0,3), got {vecs.shape}"
+
+
+# ---------------------------------------------------------------------------
+# _numpy_fallback cutoff_matrix — vectorized per-pair lookup matches Numba path
+# ---------------------------------------------------------------------------
+
+
+def test_numpy_fallback_pair_cutoffs_match_numba() -> None:
+    """NumPy fallback with per-pair cutoffs returns the same neighbor sets as the Numba path."""
+    atoms = _ortho_atoms()
+    cutoff = {(8, 14): 1.5, (8, 8): 0.5, (14, 14): 0.5}
+
+    result_numba = get_neighbors(atoms, cutoff=cutoff, use_numba=True)
+    result_numpy = get_neighbors(atoms, cutoff=cutoff, use_numba=False)
+
+    assert len(result_numba) == len(result_numpy)
+    for (cid_n, nn_n), (cid_p, nn_p) in zip(result_numba, result_numpy, strict=False):
+        assert cid_n == cid_p
+        assert sorted(nn_n) == sorted(nn_p), f"atom {cid_n}: numba={sorted(nn_n)}, numpy={sorted(nn_p)}"
+
+
+def test_numpy_fallback_pair_cutoffs_tighter_cutoff_excludes_pairs() -> None:
+    """A tight per-pair cutoff in the NumPy path correctly excludes pairs beyond that distance.
+
+    O-Si pairs are at 1 Å and 2 Å in _ortho_atoms. Setting cutoff (8,14)=1.2 should keep
+    only the 1 Å pairs and drop the 2 Å ones, while a wider global cutoff would include both.
+    This verifies the cutoff_matrix lookup actually applies per-pair values, not the global max.
+    """
+    atoms = _ortho_atoms()
+    # global max would be 2.0; per-pair (8,14) is tighter at 1.2
+    cutoff = {(8, 14): 1.2, (8, 8): 2.0, (14, 14): 2.0}
+
+    result = get_neighbors(atoms, cutoff=cutoff, use_numba=False)
+    types = atoms.get_atomic_numbers()
+
+    for cid, nn_ids in result:
+        idx = cid - 1
+        for nid in nn_ids:
+            jdx = nid - 1
+            if types[idx] in (8, 14) and types[jdx] in (8, 14) and types[idx] != types[jdx]:
+                # O-Si pair must be within 1.2 Å — the 2 Å pairs should be absent
+                coords = atoms.get_positions()
+                box = np.diag(atoms.get_cell().array)
+                diff = coords[idx] - coords[jdx]
+                diff -= box * np.round(diff / box)
+                assert np.linalg.norm(diff) <= 1.2 + 1e-9
