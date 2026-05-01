@@ -259,6 +259,7 @@ def _dist_and_vec_tri(
     Returns:
         (dx, dy, dz, dist_sq) — Cartesian displacement i->j and its squared length.
     """
+    # Nearest-integer rounding is an approximation; may miss the MIC image for highly skewed boxes.
     delta_frac_x = frac_i[0] - frac_j[0]
     delta_frac_x -= round(delta_frac_x)
     delta_frac_y = frac_i[1] - frac_j[1]
@@ -313,7 +314,10 @@ def _build_nl_ortho_numba(
 
     neighbor_list = np.full((n_atoms, max_neighbors), -1, dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
-    vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
+    if return_vectors:
+        vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
+    else:
+        vector_list = np.empty((0, 0, 3), dtype=np.float32)
 
     for i in prange(n_atoms):  # type: ignore[ty:not-iterable]
         type_i = types[i]
@@ -416,7 +420,10 @@ def _build_nl_tri_numba(
 
     neighbor_list = np.full((n_atoms, max_neighbors), -1, dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
-    vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
+    if return_vectors:
+        vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
+    else:
+        vector_list = np.empty((0, 0, 3), dtype=np.float32)
 
     for i in prange(n_atoms):  # type: ignore[ty:not-iterable]
         type_i = types[i]
@@ -514,7 +521,6 @@ def _build_distances_numba(
     n_cells_x = n_cells[0]
     n_cells_y = n_cells[1]
     n_cells_z = n_cells[2]
-    n_total_cells = n_cells_x * n_cells_y * n_cells_z
     dist_buf = np.empty((n, max_pairs), dtype=np.float64)
     j_buf = np.empty((n, max_pairs), dtype=np.int32)
     counts = np.zeros(n, dtype=np.int32)
@@ -524,7 +530,8 @@ def _build_distances_numba(
 
         ci = atom_cells[i]
         k = 0
-        visited = np.zeros(n_total_cells, dtype=np.bool_)
+        visited_buf = np.empty(27, dtype=np.int32)
+        visited_count = np.int32(0)
         for dix in range(-1, 2):
             cjx = (ci[0] + dix) % n_cells_x
             for diy in range(-1, 2):
@@ -532,9 +539,15 @@ def _build_distances_numba(
                 for diz in range(-1, 2):
                     cjz = (ci[2] + diz) % n_cells_z
                     flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
-                    if visited[flat]:
+                    already_visited = False
+                    for _v in range(visited_count):
+                        if visited_buf[_v] == flat:
+                            already_visited = True
+                            break
+                    if already_visited:
                         continue
-                    visited[flat] = True
+                    visited_buf[visited_count] = flat
+                    visited_count += np.int32(1)
                     for p in range(cell_start[flat], cell_start[flat + 1]):
                         j = cell_atoms[p]
                         if j <= i:
@@ -589,7 +602,6 @@ def _build_distances_numba_tri(
     n_cells_x = n_cells[0]
     n_cells_y = n_cells[1]
     n_cells_z = n_cells[2]
-    n_total_cells = n_cells_x * n_cells_y * n_cells_z
     dist_buf = np.empty((n, max_pairs), dtype=np.float64)
     j_buf = np.empty((n, max_pairs), dtype=np.int32)
     counts = np.zeros(n, dtype=np.int32)
@@ -599,7 +611,8 @@ def _build_distances_numba_tri(
 
         ci = atom_cells[i]
         k = 0
-        visited = np.zeros(n_total_cells, dtype=np.bool_)
+        visited_buf = np.empty(27, dtype=np.int32)
+        visited_count = np.int32(0)
         for dix in range(-1, 2):
             cjx = (ci[0] + dix) % n_cells_x
             for diy in range(-1, 2):
@@ -607,9 +620,15 @@ def _build_distances_numba_tri(
                 for diz in range(-1, 2):
                     cjz = (ci[2] + diz) % n_cells_z
                     flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
-                    if visited[flat]:
+                    already_visited = False
+                    for _v in range(visited_count):
+                        if visited_buf[_v] == flat:
+                            already_visited = True
+                            break
+                    if already_visited:
                         continue
-                    visited[flat] = True
+                    visited_buf[visited_count] = flat
+                    visited_count += np.int32(1)
                     for p in range(cell_start[flat], cell_start[flat + 1]):
                         j = cell_atoms[p]
                         if j <= i:
@@ -833,6 +852,15 @@ def _numpy_fallback(
     target_set = set(target_types) if use_target_filter and target_types else None
     neighbor_set = set(neighbor_types) if use_neighbor_filter and neighbor_types else None
 
+    if use_pair_cutoffs:
+        _max_type = int(types.max()) + 1
+        cutoff_matrix = np.zeros((_max_type, _max_type), dtype=np.float64)
+        for _ti in range(_max_type):
+            for _tj in range(_max_type):
+                cutoff_matrix[_ti, _tj] = _get_pair_cutoff_sq_python(_ti, _tj, pair_types, pair_cutoffs_sq)
+    else:
+        cutoff_matrix = np.empty((0, 0), dtype=np.float64)
+
     idx_neighbors: list[list[int]] = [[] for _ in range(n_atoms)]
     vec_neighbors: list[np.ndarray] = [np.empty((0, 3), dtype=np.float64) for _ in range(n_atoms)]
 
@@ -861,14 +889,7 @@ def _numpy_fallback(
             dist_sq_arr, rij = _dist_vec_tri(coords_frac[i], coords_frac[candidates_arr], cell)
 
         if use_pair_cutoffs:
-            pair_cutoffs_sq_arr = np.array(
-                [
-                    _get_pair_cutoff_sq_python(type_i, int(types[j]), pair_types, pair_cutoffs_sq)
-                    for j in candidates_arr
-                ],
-                dtype=np.float64,
-            )
-            mask = dist_sq_arr <= pair_cutoffs_sq_arr
+            mask = dist_sq_arr <= cutoff_matrix[type_i, types[candidates_arr]]
         else:
             mask = dist_sq_arr <= cutoff_sq
 
