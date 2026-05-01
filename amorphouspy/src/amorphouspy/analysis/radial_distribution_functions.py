@@ -12,6 +12,8 @@ import numpy as np
 from ase import Atoms
 
 from amorphouspy.neighbors import (
+    NUMBA_AVAILABLE,
+    build_distances,
     cell_perpendicular_heights,
     compute_cell_list_orthogonal,
     compute_cell_list_triclinic,
@@ -66,22 +68,32 @@ def compute_coordination(
     return dict(sorted(coord_numbers_distribution.items())), coord_numbers
 
 
-def _compute_distances(structure: Atoms, r_max: float) -> tuple:  # noqa: C901, PLR0912, PLR0915
+def _compute_distances(  # noqa: C901, PLR0912, PLR0915
+    structure: Atoms,
+    r_max: float,
+    types: np.ndarray | None = None,
+    unordered_pairs: list[tuple[int, int]] | None = None,
+) -> tuple:
     """Collect all pairwise distances up to r_max using a cell list.
 
-    Replaces the O(N²) all-pairs Numba kernel with the cell-list
-    infrastructure from amorphouspy.neighbors, reducing complexity to
-    approximately O(N) for uniform density systems.
+    Uses Numba-compiled parallel kernels when available, falling back to a
+    pure-Python cell-list loop.
 
     Args:
         structure: The atomic structure.
         r_max: Maximum distance for pair collection.
+        types: Atomic-number array; forwarded to the Numba kernel for type filtering.
+        unordered_pairs: Canonical type pairs to restrict collection to.
 
     Returns:
         A tuple of (distances, i_indices, j_indices).
     """
     structure_wrapped = structure.copy()
     structure_wrapped.wrap()
+
+    if NUMBA_AVAILABLE:
+        return build_distances(structure_wrapped, r_max, types, unordered_pairs)
+
     coords = structure_wrapped.get_positions()
     cell = structure_wrapped.get_cell().array
     n = len(coords)
@@ -325,7 +337,7 @@ def compute_rdf(
     dr = bin_edges[1] - bin_edges[0]
     shell_volumes = 4.0 * np.pi * r**2 * dr
 
-    distances, i_idx, j_idx = _compute_distances(structure, r_max)
+    distances, i_idx, j_idx = _compute_distances(structure, r_max, types, unordered_pairs)
     type_i = types[i_idx]
     type_j = types[j_idx]
 
