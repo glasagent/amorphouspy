@@ -494,7 +494,7 @@ def _build_nl_tri_numba(
 
 
 @jit(nopython=True, parallel=True, cache=True)
-def _build_distances_numba(
+def _build_distances_numba(  # pragma: no cover
     coords: np.ndarray,
     box_size: np.ndarray,
     types: np.ndarray,
@@ -575,7 +575,7 @@ def _build_distances_numba(
 
 
 @jit(nopython=True, parallel=True, cache=True)
-def _build_distances_numba_tri(
+def _build_distances_numba_tri(  # pragma: no cover
     coords_frac: np.ndarray,
     cell: np.ndarray,
     types: np.ndarray,
