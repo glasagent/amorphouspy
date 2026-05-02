@@ -23,7 +23,7 @@ graph TD
 Each step is handled by a Python function, whose output feeds naturally into the next step.
 
 - **Inputs**: They take an [ASE `Atoms`](https://wiki.fysik.dtu.dk/ase/ase/atoms.html) object representing a structure, alongside a pandas DataFrame representing the [Interatomic Potential](theory/potentials/index.md). 
-- **Outputs**: They return structured dictionaries, pandas DataFrames, or dedicated namedtuples (like `StructuralAnalysisData`).
+- **Outputs**: They return structured dictionaries, pandas DataFrames, or Pydantic models (like `StructureData`).
 
 
 ## Quick Start

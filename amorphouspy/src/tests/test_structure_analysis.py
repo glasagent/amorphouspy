@@ -73,7 +73,7 @@ def test_compute_coordination_o() -> None:
     former_types = [14]
 
     # compute_coordination returns (distribution_dict, per-atom coordination dict)
-    o_coord_dist, _ = compute_coordination(
+    o_coord_dist, _, _sem = compute_coordination(
         atoms,
         [O_type],
         cutoff_map["O"],
@@ -83,7 +83,9 @@ def test_compute_coordination_o() -> None:
     # Check types
     assert isinstance(o_coord_dist, dict), "O coordination should return a dictionary"
     assert all(isinstance(k, int) for k in o_coord_dist), "Keys of O coordination should be integers"
-    assert all(isinstance(v, int) for v in o_coord_dist.values()), "Values of O coordination should be integers"
+    assert all(isinstance(v, (int, float)) for v in o_coord_dist.values()), (
+        "Values of O coordination should be integers or floats"
+    )
 
     # Two categories: NBO (coordination = 1) and BO (coordination = 2)
     assert o_coord_dist.get(1, 0) == N_NBO, f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
@@ -109,7 +111,7 @@ def test_compute_network_connectivity() -> None:
     former_types = [14]
 
     # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
-    qn_dist, _ = compute_qn(
+    qn_dist, _, _total_sem, _partial_sem = compute_qn(
         atoms,
         cutoff_map["O"],
         former_types,
@@ -149,7 +151,7 @@ def test_compute_network_connectivity_multi() -> None:
     former_types = [5, 14]
 
     # compute_qn returns a qn distribution dict: {0: count, 1: count, ..., 6: count}
-    qn_dist, _ = compute_qn(
+    qn_dist, _, _total_sem, _partial_sem = compute_qn(
         atoms,
         cutoff_map["O"],
         former_types,
@@ -233,17 +235,17 @@ def test_classify_oxygens_nbo_bo_counts_match_stoichiometry():
 
 
 def test_compute_qn_and_classify_returns_three_tuple():
-    """compute_qn_and_classify returns a 3-tuple."""
+    """compute_qn_and_classify returns a 5-tuple."""
     atoms = _load_na_si_o_structure()
     result = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
-    assert len(result) == 3
+    assert len(result) == 5
 
 
 def test_compute_qn_and_classify_total_qn_matches_compute_qn():
     """Total and partial Qn from compute_qn_and_classify agree with compute_qn."""
     atoms = _load_na_si_o_structure()
-    total_qn, partial_qn, _ = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
-    total_qn_ref, partial_qn_ref = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    total_qn, partial_qn, _, _total_sem, _partial_sem = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    total_qn_ref, partial_qn_ref, _total_sem_ref, _partial_sem_ref = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
     assert total_qn == total_qn_ref
     assert partial_qn == partial_qn_ref
 
@@ -251,7 +253,7 @@ def test_compute_qn_and_classify_total_qn_matches_compute_qn():
 def test_compute_qn_and_classify_oxygen_classes_match_classify_oxygens():
     """Oxygen classes from compute_qn_and_classify match classify_oxygens wrapper."""
     atoms = _load_na_si_o_structure()
-    _, _, o_classes_full = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    _, _, o_classes_full, _total_sem, _partial_sem = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
     o_classes_wrapper = classify_oxygens(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
     assert o_classes_full == o_classes_wrapper
 
@@ -259,6 +261,75 @@ def test_compute_qn_and_classify_oxygen_classes_match_classify_oxygens():
 def test_compute_qn_and_classify_oxygen_classes_valid_labels():
     """All oxygen class labels from compute_qn_and_classify are valid strings."""
     atoms = _load_na_si_o_structure()
-    _, _, o_classes = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    _, _, o_classes, _total_sem, _partial_sem = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
     valid = {"BO", "NBO", "free", "tri"}
     assert all(v in valid for v in o_classes.values())
+
+
+# ---------------------------------------------------------------------------
+# frame_averaging — compute_qn and compute_qn_and_classify
+# ---------------------------------------------------------------------------
+
+
+def test_compute_qn_frame_averaging_identical_frames():
+    """Three identical frames: mean equals single-frame, SEM ≈ 0."""
+    atoms = _load_na_si_o_structure()
+    total_single, partial_single, _total_sem_s, _partial_sem_s = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    total_mean, partial_mean, total_sem, partial_sem = compute_qn(
+        [atoms, atoms, atoms], CUTOFF, FORMER_TYPES, O_TYPE, frame_averaging=True
+    )
+    for q in range(7):
+        assert total_mean[q] == pytest.approx(total_single[q], abs=1e-10)
+        assert total_sem[q] == pytest.approx(0.0, abs=1e-10)
+    for ft in FORMER_TYPES:
+        for q in range(7):
+            assert partial_mean[ft][q] == pytest.approx(partial_single[ft][q], abs=1e-10)
+            assert partial_sem[ft][q] == pytest.approx(0.0, abs=1e-10)
+
+
+def test_compute_qn_frame_averaging_empty_list_raises():
+    """frame_averaging=True with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="frame_averaging=True requires"):
+        compute_qn([], CUTOFF, FORMER_TYPES, O_TYPE, frame_averaging=True)
+
+
+def test_compute_qn_frame_averaging_single_atoms_fallback():
+    """frame_averaging=True with single Atoms falls back to single-frame result with SEM=0."""
+    atoms = _load_na_si_o_structure()
+    total_s, _partial_s, _total_sem_s, _partial_sem_s2 = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    total_mean, _partial_mean, total_sem, _partial_sem = compute_qn(
+        atoms, CUTOFF, FORMER_TYPES, O_TYPE, frame_averaging=True
+    )
+    for q in range(7):
+        assert total_mean[q] == pytest.approx(total_s[q], abs=1e-10)
+        assert total_sem[q] == pytest.approx(0.0, abs=1e-10)
+
+
+def test_compute_qn_list_uses_first_frame():
+    """Passing a list without frame_averaging=True uses the first frame."""
+    atoms = _load_na_si_o_structure()
+    total_s, _partial_s, _total_sem_s, _partial_sem_s = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    total_a, _partial_a, _total_sem_a, _partial_sem_a = compute_qn([atoms, atoms], CUTOFF, FORMER_TYPES, O_TYPE)
+    for q in range(7):
+        assert total_a[q] == pytest.approx(total_s[q], abs=1e-10)
+
+
+def test_compute_qn_and_classify_frame_averaging_identical_frames():
+    """Three identical frames: mean equals single, SEM ≈ 0, o_classes is last frame."""
+    atoms = _load_na_si_o_structure()
+    total_s, _partial_s, _o_cls_s, _total_sem_s, _partial_sem_s = compute_qn_and_classify(
+        atoms, CUTOFF, FORMER_TYPES, O_TYPE
+    )
+    total_mean, _partial_mean, o_cls_last, total_sem, _partial_sem = compute_qn_and_classify(
+        [atoms, atoms, atoms], CUTOFF, FORMER_TYPES, O_TYPE, frame_averaging=True
+    )
+    for q in range(7):
+        assert total_mean[q] == pytest.approx(total_s[q], abs=1e-10)
+        assert total_sem[q] == pytest.approx(0.0, abs=1e-10)
+    assert set(o_cls_last.values()) <= {"BO", "NBO", "free", "tri"}
+
+
+def test_compute_network_connectivity_zero_formers_raises():
+    """compute_network_connectivity raises ValueError when all counts are zero."""
+    with pytest.raises(ValueError, match="total_formers is zero"):
+        compute_network_connectivity({0: 0, 1: 0, 2: 0})

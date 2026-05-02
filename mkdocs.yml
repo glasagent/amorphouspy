@@ -50,6 +50,7 @@ nav:
     # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
     # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
     - Structure Tutorial: notebooks/StructureTutorial.ipynb
+    - Trajectory Averaging: notebooks/TrajectoryAveragingTutorial.ipynb
     - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/ViscosityTutorial.ipynb
     - CTE: notebooks/CTE.ipynb
@@ -62,7 +63,7 @@ nav:
         - PMMCS (Pedone): theory/potentials/pmmcs.md
         - BJP (Bouhadja): theory/potentials/bjp.md
         - SHIK (Sundararaman): theory/potentials/shik.md
-        - BMP (Bertani–Menziani–Pedone): theory/potentials/bmp.md
+        - BMP (Bertani-Menziani-Pedone): theory/potentials/bmp.md
         - Yang2026 (Yang et al.): theory/potentials/yang2026.md
     - Simulation Workflows:
         - theory/workflows/index.md
@@ -80,6 +81,7 @@ nav:
         - Cavity Analysis: theory/analysis/cavities.md
         - Structure Factor: theory/analysis/structure_factor.md
         - CTE Analysis: theory/analysis/cte_analysis.md
+        - Trajectory Averaging: theory/analysis/trajectory_averaging.md
   - Developers:
     - developers/contributing.md
     - developers/architecture.md

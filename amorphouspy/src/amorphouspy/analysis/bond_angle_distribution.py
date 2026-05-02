@@ -15,39 +15,74 @@ Currently implemented:
 
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
-from ase import Atoms
 
 from amorphouspy.neighbors import get_neighbors
+
+if TYPE_CHECKING:
+    from ase import Atoms
 
 MIN_NEIGHBORS_FOR_ANGLE = 2
 
 
+def _compute_angles_frame_average(
+    structure: list[Atoms],
+    center_type: int,
+    neighbor_type: int,
+    cutoff: float,
+    bins: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    num_frames = len(structure)
+    per_frame_results = [compute_angles(s, center_type, neighbor_type, cutoff, bins) for s in structure]
+    bin_centers = per_frame_results[0][0]
+    angle_histogram_arrays = np.stack([frame_result[1] for frame_result in per_frame_results])
+    angle_histogram_mean = angle_histogram_arrays.mean(axis=0)
+    degrees_of_freedom = 1 if num_frames > 1 else 0
+    angle_histogram_sem = angle_histogram_arrays.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames)
+    return bin_centers, angle_histogram_mean, angle_histogram_sem
+
+
 def compute_angles(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     center_type: int,
     neighbor_type: int,
     cutoff: float,
     bins: int = 180,
-) -> tuple[np.ndarray, np.ndarray]:
+    *,
+    frame_averaging: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute bond angle distribution between triplets of neighbor_type-center-neighbor_type.
 
     Args:
-        structure: Atomic structure.
+        structure: Atomic structure, or a list of frames when frame_averaging=True.
         center_type: Atom type at the angle center.
         neighbor_type: Atom type forming the angle with center.
         cutoff: Neighbor search cutoff.
         bins: Number of histogram bins. Defaults to 180.
+        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
-        A tuple containing:
+        A 3-tuple containing:
             bin_centers: Bin centers (degrees).
-            angle_hist: Normalized angle histogram.
+            angle_hist: Normalized angle histogram (or mean when frame_averaging=True).
+            angle_hist_sem: SEM of angle histogram (zeros when frame_averaging=False).
 
     Example:
-        >>> bins, hist = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)
+        >>> bins, hist, sem = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)
 
     """
+    if frame_averaging:
+        if isinstance(structure, list) and len(structure) == 0:
+            msg = "frame_averaging=True requires a non-empty list[Atoms]"
+            raise ValueError(msg)
+        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
+        return _compute_angles_frame_average(frames, center_type, neighbor_type, cutoff, bins)
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     # Wrap and extract positions/cell once — needed for minimum-image vectors
     structure_wrapped = structure.copy()
     structure_wrapped.wrap()
@@ -116,4 +151,5 @@ def compute_angles(
         density=True,
     )
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    return bin_centers, angle_hist
+    hist_sem = np.zeros_like(angle_hist)
+    return bin_centers, angle_hist, hist_sem

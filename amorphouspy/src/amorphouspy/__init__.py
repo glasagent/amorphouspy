@@ -16,6 +16,7 @@ from amorphouspy.analysis.radial_distribution_functions import compute_coordinat
 from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.analysis.structure_factor import compute_structure_factor
 from amorphouspy.io_utils import (
+    frames_from_melt_quench_result,
     load_lammps_dump,
     structure_from_parsed_output,
     write_angle_distribution,
@@ -74,6 +75,7 @@ __all__ = [
     "find_rdf_minimum",
     "fit_vft",
     "formula_mass_g_per_mol",
+    "frames_from_melt_quench_result",
     "generate_bond_length_dict",
     "generate_potential",
     "get_ase_structure",

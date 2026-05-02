@@ -4,12 +4,18 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
-from ase import Atoms
 from ase.data import chemical_symbols
 from pymatgen.analysis.diffraction.xrd import ATOMIC_SCATTERING_PARAMS
 
 from amorphouspy.analysis.radial_distribution_functions import compute_rdf
+
+if TYPE_CHECKING:
+    from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # Coherent neutron scattering lengths in fm (10^-15 m) for natural elements.
@@ -230,8 +236,48 @@ def _sine_transform_rdf(
     return 1.0 + 4.0 * np.pi * number_density * integral / q_values
 
 
+def _compute_sf_frame_average(
+    structure: list[Atoms],
+    q_min: float,
+    q_max: float,
+    n_q: int,
+    r_max: float,
+    n_bins: int,
+    radiation: str,
+    type_pairs: list[tuple[int, int]] | None,
+    *,
+    lorch_damping: bool,
+) -> tuple[np.ndarray, np.ndarray, dict, np.ndarray, dict]:
+    num_frames = len(structure)
+    per_frame_results = [
+        compute_structure_factor(
+            frame_structure,
+            q_min,
+            q_max,
+            n_q,
+            r_max,
+            n_bins,
+            radiation,
+            lorch_damping=lorch_damping,
+            type_pairs=type_pairs,
+        )
+        for frame_structure in structure
+    ]
+    q = per_frame_results[0][0]
+    sq_arrays = np.stack([frame_result[1] for frame_result in per_frame_results])
+    sq_mean = sq_arrays.mean(axis=0)
+    degrees_of_freedom = 1 if num_frames > 1 else 0
+    sq_sem = sq_arrays.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames)
+    partials_arrays = {
+        k: np.stack([frame_result[2][k] for frame_result in per_frame_results]) for k in per_frame_results[0][2]
+    }
+    partials_mean = {k: v.mean(axis=0) for k, v in partials_arrays.items()}
+    partials_sem = {k: v.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames) for k, v in partials_arrays.items()}
+    return q, sq_mean, partials_mean, sq_sem, partials_sem
+
+
 def compute_structure_factor(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     q_min: float = 0.5,
     q_max: float = 20.0,
     n_q: int = 500,
@@ -241,7 +287,8 @@ def compute_structure_factor(
     *,
     lorch_damping: bool = True,
     type_pairs: list[tuple[int, int]] | None = None,
-) -> tuple[np.ndarray, np.ndarray, dict[tuple[int, int], np.ndarray]]:
+    frame_averaging: bool = False,
+) -> tuple[np.ndarray, np.ndarray, dict[tuple[int, int], np.ndarray], np.ndarray, dict[tuple[int, int], np.ndarray]]:
     """Compute the 1D isotropic structure factor S(q) and Faber-Ziman partials.
 
     Uses the Faber-Ziman formalism to compute partial structure factors S_ab(q)
@@ -260,7 +307,8 @@ def compute_structure_factor(
     form factor f_a(q) (four-Gaussian fit via pymatgen), making the weights q-dependent.
 
     Args:
-        structure: ASE Atoms object with periodic boundary conditions.
+        structure: ASE Atoms object with periodic boundary conditions, or a list of frames
+            when frame_averaging=True.
         q_min: Minimum momentum transfer in Angstroms^-1 (default 0.5).
         q_max: Maximum momentum transfer in Angstroms^-1 (default 20.0).
         n_q: Number of q-grid points (default 500).
@@ -274,6 +322,7 @@ def compute_structure_factor(
             (default True).
         type_pairs: List of (Z_a, Z_b) pairs for which to compute partials.
             ``None`` computes all unique unordered pairs present in the structure.
+        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
         q: Momentum transfer grid in Angstroms^-1, shape (n_q,).
@@ -281,6 +330,9 @@ def compute_structure_factor(
         sq_partials: Faber-Ziman partial structure factors S_ab(q), keyed by
             the canonical pair (min(Z_a, Z_b), max(Z_a, Z_b)), each with
             shape (n_q,).
+
+        When frame_averaging=True, returns a 5-tuple:
+            (q, sq_mean, partials_mean, sq_sem, partials_sem).
 
     Raises:
         ValueError: If ``radiation`` is not ``"neutron"`` or ``"xray"``.
@@ -294,6 +346,16 @@ def compute_structure_factor(
         >>> sq_SiO = sq_partials[(8, 14)]  # partial S_SiO(q)
 
     """
+    if frame_averaging:
+        if isinstance(structure, list) and len(structure) == 0:
+            msg = "frame_averaging=True requires a non-empty list[Atoms]"
+            raise ValueError(msg)
+        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
+        return _compute_sf_frame_average(
+            frames, q_min, q_max, n_q, r_max, n_bins, radiation, type_pairs, lorch_damping=lorch_damping
+        )
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     if radiation not in ("neutron", "xray"):
         msg = f"radiation must be 'neutron' or 'xray', got {radiation!r}."
         raise ValueError(msg)
@@ -308,7 +370,7 @@ def compute_structure_factor(
     concentrations = {t: float(np.sum(types == t)) / total_atoms for t in unique_types}
 
     # --- Radial distribution functions ----------------------------------------
-    r, rdfs, _ = compute_rdf(structure, r_max=r_max, n_bins=n_bins, type_pairs=type_pairs)
+    r, rdfs, _, _rdfs_sem, _cumcn_sem = compute_rdf(structure, r_max=r_max, n_bins=n_bins, type_pairs=type_pairs)
     unordered_pairs = list(rdfs.keys())
 
     # --- Momentum transfer grid -----------------------------------------------
@@ -353,4 +415,6 @@ def compute_structure_factor(
             sq_total += weight * (sq_partials[(t1, t2)] - 1.0)
         sq_total = 1.0 + sq_total / mean_f_sq
 
-    return q_values, sq_total, sq_partials
+    sq_sem = np.zeros_like(sq_total)
+    partials_sem = {pair: np.zeros_like(arr) for pair, arr in sq_partials.items()}
+    return q_values, sq_total, sq_partials, sq_sem, partials_sem

@@ -22,10 +22,12 @@ from __future__ import annotations
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from itertools import combinations_with_replacement
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Iterable as _Iterable
+
+    from ase import Atoms
 
 try:
     from tqdm import tqdm as _tqdm
@@ -411,11 +413,13 @@ def _find_guttman_rings(
 
 
 def compute_guttmann_rings(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     bond_lengths: dict[tuple[str, str], float],
     max_size: int = 24,
     n_cpus: int = 1,
-) -> tuple[dict[int, int], float]:
+    *,
+    frame_averaging: bool = False,
+) -> tuple[dict[int, float], float, dict[int, float], float]:
     """Compute the Guttman ring size distribution and mean ring size.
 
     Rings are detected using a native networkx-based BFS implementation of
@@ -426,7 +430,8 @@ def compute_guttmann_rings(
     the ring, following Guttman's original convention.
 
     Args:
-        structure: ASE Atoms object containing atomic coordinates and types.
+        structure: ASE Atoms object containing atomic coordinates and types,
+            or a list of frames when frame_averaging=True.
         bond_lengths: Maximum bond lengths for each element pair, e.g.
             ``{('Si', 'O'): 1.8, ('Al', 'O'): 1.95}``. All T-O pairs must
             be specified; T-T and O-O pairs are ignored.
@@ -435,10 +440,14 @@ def compute_guttmann_rings(
             ``1``  — sequential execution (default).
             ``N``  — distribute edge loop across N worker processes.
             ``-1`` — use all logical CPUs (``os.cpu_count()``).
+        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
         histogram: Mapping from ring size to ring count.
         mean_ring_size: Mean ring size weighted by count.
+
+        When frame_averaging=True, returns a 4-tuple:
+            (histogram_mean, mean_size_mean, histogram_sem, mean_size_sem).
 
     Raises:
         ValueError: If ``bond_lengths`` contains no T-O pairs (i.e. all
@@ -465,6 +474,32 @@ def compute_guttmann_rings(
         ...     n_cpus=-1,
         ... )
     """
+    if frame_averaging:
+        if isinstance(structure, list) and len(structure) == 0:
+            msg = "frame_averaging=True requires a non-empty list[Atoms]"
+            raise ValueError(msg)
+        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
+        num_frames = len(frames)
+        per_frame_results = [
+            compute_guttmann_rings(frame_structure, bond_lengths, max_size, n_cpus) for frame_structure in frames
+        ]
+        all_ring_sizes = sorted({size for frame_result in per_frame_results for size in frame_result[0]})
+        ring_histogram_arrays = np.array(
+            [[frame_result[0].get(size, 0) for size in all_ring_sizes] for frame_result in per_frame_results],
+            dtype=float,
+        )
+        hist_mean = {size: float(ring_histogram_arrays[:, i].mean()) for i, size in enumerate(all_ring_sizes)}
+        degrees_of_freedom = 1 if num_frames > 1 else 0
+        hist_sem = {
+            size: float(ring_histogram_arrays[:, i].std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
+            for i, size in enumerate(all_ring_sizes)
+        }
+        mean_ring_sizes = np.array([frame_result[1] for frame_result in per_frame_results], dtype=float)
+        mean_size_mean = float(mean_ring_sizes.mean())
+        mean_size_sem = float(mean_ring_sizes.std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
+        return hist_mean, mean_size_mean, hist_sem, mean_size_sem
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     z_cutoffs, former_atomic_numbers = _symbols_to_z_cutoffs(bond_lengths)
 
     if not former_atomic_numbers:
@@ -486,12 +521,13 @@ def compute_guttmann_rings(
     ring_counts = _find_guttman_rings(former_graph, max_size, n_cpus=n_cpus)
 
     if not ring_counts:
-        return {}, 0.0
+        return {}, 0.0, {}, 0.0
 
     total_rings = sum(ring_counts.values())
     mean_ring_size = sum(size * count for size, count in ring_counts.items()) / total_rings
-
-    return ring_counts, float(mean_ring_size)
+    ring_counts_float: dict[int, float] = {k: float(v) for k, v in ring_counts.items()}
+    hist_sem: dict[int, float] = dict.fromkeys(ring_counts, 0.0)
+    return ring_counts_float, float(mean_ring_size), hist_sem, 0.0
 
 
 def generate_bond_length_dict(

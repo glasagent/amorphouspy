@@ -78,7 +78,7 @@ def _run_lammps_md(  # pragma: no cover
         t_end = temperature_end if temperature_end is not None else temperature
 
         input_control: dict[str, Any] = {
-            "dump_modify": f"1 every {n_ionic_steps} first yes",
+            "dump_modify": f"1 every {n_print} first yes",
             "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
             "thermo_modify": "flush yes",
         }

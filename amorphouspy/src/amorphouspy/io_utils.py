@@ -169,6 +169,65 @@ def write_angle_distribution(
         f.write(f"{composition} " + " ".join(f"{v:.6f}" for v in angle_hist) + "\n")
 
 
+def frames_from_melt_quench_result(
+    result: dict,
+    initial_structure: Atoms,
+    *,
+    stage: int = -1,
+    stride: int = 1,
+) -> list[Atoms]:
+    """Extract trajectory frames from a ``melt_quench_simulation`` result dict.
+
+    Args:
+        result: The dict returned by :func:`melt_quench_simulation`
+            (keys ``"structure"`` and ``"result"``).
+        initial_structure: The ``Atoms`` object passed as input to the simulation.
+            It carries the correct atomic numbers, which are used to label each frame.
+        stage: Index into ``result["result"]`` selecting which protocol stage to
+            extract. Defaults to ``-1`` (the final low-temperature equilibration).
+        stride: Take every *stride*-th frame. Defaults to ``1`` (all frames).
+
+    Returns:
+        A list of :class:`ase.Atoms` objects, one per selected frame, with
+        per-frame thermo data stored in ``atoms.info`` and per-atom arrays
+        (forces, velocities, unwrapped positions) in ``atoms.arrays``.
+
+    Example:
+        >>> result = melt_quench_simulation(atoms, potential)
+        >>> frames = frames_from_melt_quench_result(result, atoms)
+        >>> r, rdfs_mean, cumcn_mean, rdfs_sem, cumcn_sem = compute_rdf(
+        ...     frames, r_max=8.0, frame_averaging=True
+        ... )
+
+    """
+    stage_data = result["result"][stage]
+    n_frames = len(stage_data["positions"])
+    indices = range(0, n_frames, stride)
+    frames: list[Atoms] = []
+    for i in indices:
+        atoms = initial_structure.copy()
+        atoms.set_positions(stage_data["positions"][i])
+        atoms.set_cell(stage_data["cells"][i])
+        atoms.set_pbc(True)
+        if "velocities" in stage_data:
+            atoms.set_velocities(stage_data["velocities"][i])
+        if "indices" in stage_data:
+            atoms.set_array("indices", stage_data["indices"][i])
+        atoms.info["temperature"] = stage_data["temperature"][i]
+        atoms.info["energy_pot"] = stage_data["energy_pot"][i]
+        atoms.info["energy_tot"] = stage_data["energy_tot"][i]
+        atoms.info["volume"] = stage_data["volume"][i]
+        atoms.info["pressure"] = stage_data["pressures"][i]
+        if "steps" in stage_data and i < len(stage_data["steps"]):
+            atoms.info["step"] = stage_data["steps"][i]
+        if "forces" in stage_data:
+            atoms.arrays["forces"] = stage_data["forces"][i]
+        if "unwrapped_positions" in stage_data:
+            atoms.arrays["unwrapped_positions"] = stage_data["unwrapped_positions"][i]
+        frames.append(atoms)
+    return frames
+
+
 def structure_from_parsed_output(initial_structure: Atoms, parsed_output: dict, *, wrap: bool = False) -> Atoms:
     """Construct an `Atoms` object from parsed output data.
 
