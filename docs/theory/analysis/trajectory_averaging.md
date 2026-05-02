@@ -8,12 +8,32 @@ Every analysis function in amorphouspy supports this through the `frame_averagin
 
 ## Concept
 
-Given $N$ equilibrated frames, each analysis function computes the property independently per frame, then returns:
+Given $N$ equilibrated frames, each analysis function computes the property independently per frame, then aggregates across frames.
 
-- **mean** — element-wise average across frames
-- **SEM** — standard error of the mean, $\sigma / \sqrt{N}$, where $\sigma$ is the sample standard deviation (ddof = 1 for N > 1, ddof = 0 for N = 1)
+### Mean
 
-The SEM quantifies the precision of the average: how much the mean would vary if you repeated the trajectory. It shrinks as $1/\sqrt{N}$, so doubling the number of frames halves the uncertainty.
+For each output position $i$ (array element, dict key, or scalar), the mean is the simple element-wise average:
+
+$$\bar{x}_i = \frac{1}{N} \sum_{k=1}^{N} x_i^{(k)}$$
+
+### Standard error of the mean (SEM)
+
+The SEM quantifies how precisely the mean estimates the true ensemble average. It is computed from the sample standard deviation $\sigma$ with Bessel's correction:
+
+$$\text{SEM}_i = \frac{\sigma_i}{\sqrt{N}}, \quad \sigma_i = \sqrt{\frac{1}{N-1} \sum_{k=1}^{N} \left(x_i^{(k)} - \bar{x}_i\right)^2}$$
+
+The $N-1$ denominator (Bessel's correction) gives an unbiased estimate of the population variance. When $N = 1$ the correction is dropped ($N-1 \to N$) to avoid division by zero, and the SEM is 0 — a single frame has no variance to estimate.
+
+The SEM shrinks as $1/\sqrt{N}$: doubling the number of frames halves the uncertainty, quadrupling halves it again.
+
+### What gets averaged
+
+Not every output can be averaged across frames:
+
+- **Arrays and histograms** (e.g. $g(r)$, $S(q)$, angle histograms) — averaged element-wise.
+- **Scalar distributions** (e.g. $Q_n$ counts, coordination distributions) — averaged per key across the union of all keys seen in any frame; missing keys fill as 0.
+- **Nested dicts** (e.g. partial $Q_n$ by former type) — the same scalar averaging applied recursively to each inner dict.
+- **Per-atom labels** (e.g. oxygen classification BO/NBO/free) — not averaged; the last frame's result is returned as-is.
 
 ---
 
@@ -54,7 +74,7 @@ The return signature extends to a tuple of `(result_mean, ..., result_sem, ...)`
 | `compute_qn_and_classify` | `(total_qn, partial_qn, o_classes)` | `(total_qn_mean, partial_qn_mean, o_classes_last, total_qn_sem, partial_qn_sem)` |
 | `compute_structure_factor` | `(q, sq, partials)` | `(q, sq_mean, partials_mean, sq_sem, partials_sem)` |
 | `compute_guttmann_rings` | `(histogram, mean_size)` | `(histogram_mean, mean_size_mean, histogram_sem, mean_size_sem)` |
-| `analyze_structure` | `StructureData` | `(StructureData_mean, StructureData_sem)` |
+| `analyze_structure` | `(StructureData, StructureData_sem)` | `(StructureData_mean, StructureData_sem)` |
 
 > `per_atom_last` and `o_classes_last` are the per-atom classifications from the **last** frame — per-atom labels cannot be meaningfully averaged.
 
@@ -139,8 +159,8 @@ There is no universal minimum, but a few practical rules:
 
 - Frames should be **decorrelated** — separated by at least one structural relaxation time. Taking every 10th MD step from an NVT run at 300 K is rarely sufficient; taking every 50–100 ps typically is.
 - **5–20 frames** is usually enough to reduce statistical noise by 50–80 % compared to a single frame.
-- The SEM naturally tells you when you have enough: if it is already smaller than your measurement uncertainty (e.g. 1 % of the peak height), adding more frames gives diminishing returns.
-- With only 1 frame and `frame_averaging=True`, SEM is 0 — a single frame has no variance to estimate.
+- The standard error of the mean naturally tells you when you have enough: if it is already smaller than your measurement uncertainty (e.g. 1 % of the peak height), adding more frames gives diminishing returns.
+- With only 1 frame and `frame_averaging=True`, the standard error of the mean is 0 — a single frame has no variance to estimate.
 
 ---
 
@@ -149,7 +169,7 @@ There is no universal minimum, but a few practical rules:
 | Input | Behaviour |
 |---|---|
 | `list[Atoms]` + `frame_averaging=True` | ✅ averages over all frames |
-| `Atoms` + `frame_averaging=True` | ✅ single-frame result with SEM = 0 |
+| `Atoms` + `frame_averaging=True` | ✅ single-frame result with standard error of the mean = 0 |
 | `Atoms` + `frame_averaging=False` (default) | ✅ single-frame result |
 | `list[Atoms]` + `frame_averaging=False` | ✅ uses first frame silently |
 | empty `list` + `frame_averaging=True` | ❌ raises `ValueError` |

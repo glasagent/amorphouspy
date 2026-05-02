@@ -21,29 +21,13 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
+from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import get_neighbors
 
 if TYPE_CHECKING:
     from ase import Atoms
 
 MIN_NEIGHBORS_FOR_ANGLE = 2
-
-
-def _compute_angles_frame_average(
-    structure: list[Atoms],
-    center_type: int,
-    neighbor_type: int,
-    cutoff: float,
-    bins: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    num_frames = len(structure)
-    per_frame_results = [compute_angles(s, center_type, neighbor_type, cutoff, bins) for s in structure]
-    bin_centers = per_frame_results[0][0]
-    angle_histogram_arrays = np.stack([frame_result[1] for frame_result in per_frame_results])
-    angle_histogram_mean = angle_histogram_arrays.mean(axis=0)
-    degrees_of_freedom = 1 if num_frames > 1 else 0
-    angle_histogram_sem = angle_histogram_arrays.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames)
-    return bin_centers, angle_histogram_mean, angle_histogram_sem
 
 
 def compute_angles(
@@ -80,7 +64,12 @@ def compute_angles(
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
         frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        return _compute_angles_frame_average(frames, center_type, neighbor_type, cutoff, bins)
+        means, sems = frame_average(
+            lambda f: compute_angles(f, center_type, neighbor_type, cutoff, bins),
+            frames,
+            avg_indices=[1],
+        )
+        return means[0], means[1], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     # Wrap and extract positions/cell once — needed for minimum-image vectors

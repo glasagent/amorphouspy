@@ -42,6 +42,7 @@ import networkx as nx
 import numpy as np
 from ase.data import atomic_numbers as ase_atomic_numbers
 
+from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import get_neighbors
 from amorphouspy.shared import type_to_dict
 
@@ -479,25 +480,12 @@ def compute_guttmann_rings(
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
         frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        num_frames = len(frames)
-        per_frame_results = [
-            compute_guttmann_rings(frame_structure, bond_lengths, max_size, n_cpus) for frame_structure in frames
-        ]
-        all_ring_sizes = sorted({size for frame_result in per_frame_results for size in frame_result[0]})
-        ring_histogram_arrays = np.array(
-            [[frame_result[0].get(size, 0) for size in all_ring_sizes] for frame_result in per_frame_results],
-            dtype=float,
+        means, sems = frame_average(
+            lambda f: compute_guttmann_rings(f, bond_lengths, max_size, n_cpus),
+            frames,
+            avg_indices=[0, 1],
         )
-        hist_mean = {size: float(ring_histogram_arrays[:, i].mean()) for i, size in enumerate(all_ring_sizes)}
-        degrees_of_freedom = 1 if num_frames > 1 else 0
-        hist_sem = {
-            size: float(ring_histogram_arrays[:, i].std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
-            for i, size in enumerate(all_ring_sizes)
-        }
-        mean_ring_sizes = np.array([frame_result[1] for frame_result in per_frame_results], dtype=float)
-        mean_size_mean = float(mean_ring_sizes.mean())
-        mean_size_sem = float(mean_ring_sizes.std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
-        return hist_mean, mean_size_mean, hist_sem, mean_size_sem
+        return means[0], means[1], sems[0], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     z_cutoffs, former_atomic_numbers = _symbols_to_z_cutoffs(bond_lengths)

@@ -12,6 +12,7 @@ import numpy as np
 from ase.data import chemical_symbols
 from pymatgen.analysis.diffraction.xrd import ATOMIC_SCATTERING_PARAMS
 
+from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.analysis.radial_distribution_functions import compute_rdf
 
 if TYPE_CHECKING:
@@ -236,46 +237,6 @@ def _sine_transform_rdf(
     return 1.0 + 4.0 * np.pi * number_density * integral / q_values
 
 
-def _compute_sf_frame_average(
-    structure: list[Atoms],
-    q_min: float,
-    q_max: float,
-    n_q: int,
-    r_max: float,
-    n_bins: int,
-    radiation: str,
-    type_pairs: list[tuple[int, int]] | None,
-    *,
-    lorch_damping: bool,
-) -> tuple[np.ndarray, np.ndarray, dict, np.ndarray, dict]:
-    num_frames = len(structure)
-    per_frame_results = [
-        compute_structure_factor(
-            frame_structure,
-            q_min,
-            q_max,
-            n_q,
-            r_max,
-            n_bins,
-            radiation,
-            lorch_damping=lorch_damping,
-            type_pairs=type_pairs,
-        )
-        for frame_structure in structure
-    ]
-    q = per_frame_results[0][0]
-    sq_arrays = np.stack([frame_result[1] for frame_result in per_frame_results])
-    sq_mean = sq_arrays.mean(axis=0)
-    degrees_of_freedom = 1 if num_frames > 1 else 0
-    sq_sem = sq_arrays.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames)
-    partials_arrays = {
-        k: np.stack([frame_result[2][k] for frame_result in per_frame_results]) for k in per_frame_results[0][2]
-    }
-    partials_mean = {k: v.mean(axis=0) for k, v in partials_arrays.items()}
-    partials_sem = {k: v.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames) for k, v in partials_arrays.items()}
-    return q, sq_mean, partials_mean, sq_sem, partials_sem
-
-
 def compute_structure_factor(
     structure: Atoms | list[Atoms],
     q_min: float = 0.5,
@@ -351,9 +312,14 @@ def compute_structure_factor(
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
         frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        return _compute_sf_frame_average(
-            frames, q_min, q_max, n_q, r_max, n_bins, radiation, type_pairs, lorch_damping=lorch_damping
+        means, sems = frame_average(
+            lambda f: compute_structure_factor(
+                f, q_min, q_max, n_q, r_max, n_bins, radiation, lorch_damping=lorch_damping, type_pairs=type_pairs
+            ),
+            frames,
+            avg_indices=[1, 2],
         )
+        return means[0], means[1], means[2], sems[1], sems[2]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     if radiation not in ("neutron", "xray"):

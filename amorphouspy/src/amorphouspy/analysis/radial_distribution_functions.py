@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
+from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import (
     NUMBA_AVAILABLE,
     build_distances,
@@ -60,21 +61,12 @@ def compute_coordination(
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
         frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        num_frames = len(frames)
-        per_frame_results = [compute_coordination(s, target_type, cutoff, neighbor_types) for s in frames]
-        all_coordination_numbers = sorted({cn for frame_result in per_frame_results for cn in frame_result[0]})
-        coordination_dist_arrays = np.array(
-            [[frame_result[0].get(cn, 0) for cn in all_coordination_numbers] for frame_result in per_frame_results],
-            dtype=float,
+        means, sems = frame_average(
+            lambda f: compute_coordination(f, target_type, cutoff, neighbor_types),
+            frames,
+            avg_indices=[0],
         )
-        dist_mean = {cn: float(coordination_dist_arrays[:, i].mean()) for i, cn in enumerate(all_coordination_numbers)}
-        degrees_of_freedom = 1 if num_frames > 1 else 0
-        dist_sem = {
-            cn: float(coordination_dist_arrays[:, i].std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
-            for i, cn in enumerate(all_coordination_numbers)
-        }
-        per_atom_last = per_frame_results[-1][1]
-        return dist_mean, per_atom_last, dist_sem
+        return means[0], means[1], sems[0]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     neighbors = get_neighbors(
@@ -283,7 +275,7 @@ def _compute_cn_cumulative(
     return cn_cumulative
 
 
-def compute_rdf(  # noqa: PLR0915
+def compute_rdf(
     structure: Atoms | list[Atoms],
     r_max: float = 10.0,
     n_bins: int = 500,
@@ -344,23 +336,12 @@ def compute_rdf(  # noqa: PLR0915
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
         frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        num_frames = len(frames)
-        per_frame_results = [compute_rdf(s, r_max, n_bins, type_pairs) for s in frames]
-        r = per_frame_results[0][0]
-        rdf_arrays = {
-            k: np.stack([frame_result[1][k] for frame_result in per_frame_results]) for k in per_frame_results[0][1]
-        }
-        cumulative_cn_arrays = {
-            k: np.stack([frame_result[2][k] for frame_result in per_frame_results]) for k in per_frame_results[0][2]
-        }
-        rdfs_mean = {k: v.mean(axis=0) for k, v in rdf_arrays.items()}
-        degrees_of_freedom = 1 if num_frames > 1 else 0
-        rdfs_sem = {k: v.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames) for k, v in rdf_arrays.items()}
-        cumcn_mean = {k: v.mean(axis=0) for k, v in cumulative_cn_arrays.items()}
-        cumcn_sem = {
-            k: v.std(axis=0, ddof=degrees_of_freedom) / np.sqrt(num_frames) for k, v in cumulative_cn_arrays.items()
-        }
-        return r, rdfs_mean, cumcn_mean, rdfs_sem, cumcn_sem
+        means, sems = frame_average(
+            lambda f: compute_rdf(f, r_max, n_bins, type_pairs),
+            frames,
+            avg_indices=[1, 2],
+        )
+        return means[0], means[1], means[2], sems[1], sems[2]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     types = structure.get_atomic_numbers()

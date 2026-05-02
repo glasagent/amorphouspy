@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
+from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import get_neighbors
 
 if TYPE_CHECKING:
@@ -119,32 +120,13 @@ def compute_qn(
         if isinstance(structure, list) and len(structure) == 0:
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
-        frames = structure if isinstance(structure, list) else [structure]
-        num_frames = len(frames)
-        per_frame_results = [compute_qn(s, cutoff, former_types, o_type) for s in frames]
-        all_qn_values = list(range(7))
-        total_qn_arrays = np.array(
-            [[frame_result[0].get(q, 0) for q in all_qn_values] for frame_result in per_frame_results], dtype=float
+        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
+        means, sems = frame_average(
+            lambda f: compute_qn(f, cutoff, former_types, o_type),
+            frames,
+            avg_indices=[0, 1],
         )
-        total_qn_mean = {q: float(total_qn_arrays[:, i].mean()) for i, q in enumerate(all_qn_values)}
-        degrees_of_freedom = 1 if num_frames > 1 else 0
-        total_qn_sem = {
-            q: float(total_qn_arrays[:, i].std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
-            for i, q in enumerate(all_qn_values)
-        }
-        partial_qn_mean: dict[int, dict[int, float]] = {}
-        partial_qn_sem: dict[int, dict[int, float]] = {}
-        for ft in former_types:
-            former_type_arrays = np.array(
-                [[frame_result[1][ft].get(q, 0) for q in all_qn_values] for frame_result in per_frame_results],
-                dtype=float,
-            )
-            partial_qn_mean[ft] = {q: float(former_type_arrays[:, i].mean()) for i, q in enumerate(all_qn_values)}
-            partial_qn_sem[ft] = {
-                q: float(former_type_arrays[:, i].std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
-                for i, q in enumerate(all_qn_values)
-            }
-        return total_qn_mean, partial_qn_mean, total_qn_sem, partial_qn_sem
+        return means[0], means[1], sems[0], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     total_qn, partial_qn, _o_classes, total_sem, partial_sem = compute_qn_and_classify(
@@ -194,32 +176,13 @@ def compute_qn_and_classify(
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
         frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        num_frames = len(frames)
-        per_frame_results = [compute_qn_and_classify(s, cutoff, former_types, o_type) for s in frames]
-        all_qn_values = list(range(7))
-        total_qn_arrays = np.array(
-            [[frame_result[0].get(q, 0) for q in all_qn_values] for frame_result in per_frame_results], dtype=float
+        # avg_indices=[0, 1] — total_qn and partial_qn; oxygen_classes (index 2) passes through from last frame
+        means, sems = frame_average(
+            lambda f: compute_qn_and_classify(f, cutoff, former_types, o_type),
+            frames,
+            avg_indices=[0, 1],
         )
-        total_qn_mean = {q: float(total_qn_arrays[:, i].mean()) for i, q in enumerate(all_qn_values)}
-        degrees_of_freedom = 1 if num_frames > 1 else 0
-        total_qn_sem = {
-            q: float(total_qn_arrays[:, i].std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
-            for i, q in enumerate(all_qn_values)
-        }
-        partial_qn_mean: dict[int, dict[int, float]] = {}
-        partial_qn_sem: dict[int, dict[int, float]] = {}
-        for ft in former_types:
-            former_type_arrays = np.array(
-                [[frame_result[1][ft].get(q, 0) for q in all_qn_values] for frame_result in per_frame_results],
-                dtype=float,
-            )
-            partial_qn_mean[ft] = {q: float(former_type_arrays[:, i].mean()) for i, q in enumerate(all_qn_values)}
-            partial_qn_sem[ft] = {
-                q: float(former_type_arrays[:, i].std(ddof=degrees_of_freedom) / np.sqrt(num_frames))
-                for i, q in enumerate(all_qn_values)
-            }
-        o_classes_last = per_frame_results[-1][2]
-        return total_qn_mean, partial_qn_mean, o_classes_last, total_qn_sem, partial_qn_sem
+        return means[0], means[1], means[2], sems[0], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     types = structure.get_atomic_numbers()
