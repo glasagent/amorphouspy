@@ -578,21 +578,21 @@ def _compute_coordination_data(
     o_coord: dict[str, float] = {}
     if o_type:
         o_cutoff = cutoff_map.get("O", 2.0)
-        o_coord_raw, _, _sem = compute_coordination(atoms, o_type[0], o_cutoff, former_types + modifier_types)
+        o_coord_raw = compute_coordination(atoms, o_type[0], o_cutoff, former_types + modifier_types)
         o_coord = {str(k): v for k, v in o_coord_raw.items()}
 
     former_coords: dict[str, dict[str, float]] = {}
     for former in network_formers:
         z = next(k for k, v in type_map.items() if v == former)
         if o_type:
-            coord_raw, _, _sem = compute_coordination(atoms, z, cutoff_map[former], o_type)
+            coord_raw = compute_coordination(atoms, z, cutoff_map[former], o_type)
             former_coords[former] = {str(k): v for k, v in coord_raw.items()}
 
     modifier_coords: dict[str, dict[str, float]] = {}
     for mod in modifiers:
         z = next(k for k, v in type_map.items() if v == mod)
         if o_type:
-            coord_raw, _, _sem = compute_coordination(atoms, z, cutoff_map[mod], o_type)
+            coord_raw = compute_coordination(atoms, z, cutoff_map[mod], o_type)
             modifier_coords[mod] = {str(k): v for k, v in coord_raw.items()}
 
     return o_coord, former_coords, modifier_coords
@@ -630,7 +630,7 @@ def _compute_network_data(
     oxygen_class_counts: dict[str, int] = {}
     oxygen_class_ids: dict[str, list[int]] = {}
     if network_formers and o_type:
-        qn_dist_raw, qn_dist_partial_raw, o_classes, _total_sem, _partial_sem = compute_qn_and_classify(
+        qn_dist_raw, qn_dist_partial_raw, o_classes = compute_qn_and_classify(
             atoms, cutoff_map["O"], former_types, o_type[0]
         )
         for aid, cls in o_classes.items():
@@ -671,7 +671,7 @@ def _compute_distributions(
     for former in network_formers:
         z = next(k for k, v in type_map.items() if v == former)
         if o_type:
-            _bins, _hist, _sem = compute_angles(
+            _bins, _hist = compute_angles(
                 atoms, center_type=z, neighbor_type=o_type[0], cutoff=cutoff_map[former], bins=180
             )
             bond_angle_distributions[former] = (_bins, _hist)
@@ -680,9 +680,7 @@ def _compute_distributions(
     if network_formers and o_type:
         specific_cutoffs = {(former, "O"): cutoff_map[former] for former in network_formers}
         bond_lengths = generate_bond_length_dict(atoms, specific_cutoffs=specific_cutoffs)
-        rings_dist, mean_ring_size, _hist_sem, _mean_sem = compute_guttmann_rings(
-            atoms, bond_lengths=bond_lengths, max_size=40, n_cpus=1
-        )
+        rings_dist, mean_ring_size = compute_guttmann_rings(atoms, bond_lengths=bond_lengths, max_size=40, n_cpus=1)
         rings_dist_str = {str(k): v for k, v in rings_dist.items()}
         ring_statistics_data = {"distribution": rings_dist_str, "mean_size": mean_ring_size}
 
@@ -735,8 +733,8 @@ def _compute_structure_factor_data(atoms: Atoms, type_map: dict[int, str]) -> St
     def to_list(data: np.ndarray | list[float]) -> list[float]:
         return data.tolist() if isinstance(data, np.ndarray) else list(data)
 
-    q_sf, sq_neutron, sq_partials_neutron, _sq_sem, _partials_sem = compute_structure_factor(atoms, radiation="neutron")
-    _, sq_xray, _, _sq_sem, _partials_sem = compute_structure_factor(atoms, radiation="xray")
+    q_sf, sq_neutron, sq_partials_neutron = compute_structure_factor(atoms, radiation="neutron")
+    _, sq_xray, _ = compute_structure_factor(atoms, radiation="xray")
     sq_partials_serializable = {
         f"{type_map[pair[0]]}-{type_map[pair[1]]}": to_list(sq_data) for pair, sq_data in sq_partials_neutron.items()
     }
@@ -786,7 +784,7 @@ def analyze_structure(
     modifier_types = [z for z, sym in type_map.items() if sym in modifiers]
     o_type = [z for z, sym in type_map.items() if sym == "O"]
 
-    r, rdfs, cumcn, _rdfs_sem, _cumcn_sem = compute_rdf(atoms)
+    r, rdfs, cumcn = compute_rdf(atoms)
     cutoff_map = _build_cutoff_map(unique_z, type_map, former_types, o_type, r, rdfs)
 
     o_coord, former_coords, modifier_coords = _compute_coordination_data(

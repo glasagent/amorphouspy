@@ -251,7 +251,7 @@ def test_analyze_structure_sio2_glass() -> None:
     atoms = read(SIO2_XYZ)
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
 
@@ -266,7 +266,7 @@ def test_analyze_structure_density_reasonable() -> None:
     atoms = read(SIO2_XYZ)
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
 
@@ -279,7 +279,7 @@ def test_analyze_structure_has_rdfs() -> None:
     atoms = read(SIO2_XYZ)
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
 
@@ -292,7 +292,7 @@ def test_analyze_structure_has_qn_distribution() -> None:
     atoms = read(SIO2_XYZ)
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
 
@@ -312,7 +312,7 @@ def test_analyze_structure_with_modifier() -> None:
 
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 5, 6: 15}, 5.2, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 5, 6: 15}, 5.2),
     ):
         result, _sem = analyze_structure(atoms)
 
@@ -328,7 +328,7 @@ def test_analyze_structure_fallback_cutoff() -> None:
         patch.object(sa_module, "find_rdf_minimum", return_value=None),
         patch(
             "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-            return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+            return_value=({4: 10, 6: 20}, 5.5),
         ),
     ):
         result, _sem = analyze_structure(atoms)
@@ -599,7 +599,7 @@ def test_analyze_structure_frame_averaging_returns_tuple() -> None:
     atoms = cast("Atoms", read(SIO2_XYZ))
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         result = analyze_structure([atoms, atoms, atoms], frame_averaging=True)
     assert isinstance(result, tuple)
@@ -614,7 +614,7 @@ def test_analyze_structure_frame_averaging_mean_density_matches_single() -> None
     atoms = cast("Atoms", read(SIO2_XYZ))
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         single, _sem_single = analyze_structure(atoms)
         mean_data, sem_data = analyze_structure([atoms, atoms, atoms], frame_averaging=True)
@@ -634,7 +634,7 @@ def test_analyze_structure_frame_averaging_single_atoms_fallback() -> None:
     atoms = read(SIO2_XYZ)
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         single, _sem_single = analyze_structure(atoms)
         mean_data, sem_data = analyze_structure(atoms, frame_averaging=True)
@@ -647,7 +647,7 @@ def test_analyze_structure_list_uses_first_frame() -> None:
     atoms = cast("Atoms", read(SIO2_XYZ))
     with patch(
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5, {4: 0.0, 6: 0.0}, 0.0),
+        return_value=({4: 10, 6: 20}, 5.5),
     ):
         single, _sem_single = analyze_structure(atoms)
         result, _sem_result = analyze_structure([atoms, atoms])

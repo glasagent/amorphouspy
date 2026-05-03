@@ -2,13 +2,13 @@
 
 Structural properties computed from a single quenched frame carry finite-size noise — periodic replicas are small, and every snapshot is one instantaneous configuration out of the equilibrium ensemble. Averaging over several decorrelated frames drawn from the same equilibrated trajectory reduces that noise and lets you report a meaningful uncertainty.
 
-Every analysis function in amorphouspy supports this through the `frame_averaging` keyword argument.
+In amorphouspy, averaging is handled by the standalone `average_over_frames` wrapper. Individual analysis functions always operate on a single frame — averaging is an explicit, separate step.
 
 ---
 
 ## Concept
 
-Given $N$ equilibrated frames, each analysis function computes the property independently per frame, then aggregates across frames.
+Given $N$ equilibrated frames, `average_over_frames` calls the analysis function on each frame independently, then aggregates across frames.
 
 ### Mean
 
@@ -39,44 +39,49 @@ Not every output can be averaged across frames:
 
 ## How to use it
 
-Pass a `list[Atoms]` instead of a single `Atoms` object and set `frame_averaging=True`.
+Import `average_over_frames` and pass it the analysis function, a `list[Atoms]`, and any keyword arguments the function accepts.
 
 ```python
 from ase.io import read
+from amorphouspy.analysis.averaging import average_over_frames
+from amorphouspy import compute_rdf
 
 # Load 10 decorrelated frames from an equilibrated trajectory
 frames = read("production.extxyz", index=":")  # returns list[Atoms]
 
-# Single-frame call (unchanged behaviour)
-r, rdfs, cn = compute_rdf(frames[0], r_max=8.0, n_bins=500)
+# Single-frame call (unchanged)
+r, rdfs, cumcn = compute_rdf(frames[0], r_max=8.0, n_bins=500)
 
-# Multi-frame call
-r, rdfs_mean, cn_mean, rdfs_sem, cn_sem = compute_rdf(
+# Multi-frame call via average_over_frames
+(r, rdfs_mean, cumcn_mean), (_, rdfs_sem, cumcn_sem) = average_over_frames(
+    compute_rdf,
     frames,
     r_max=8.0,
     n_bins=500,
-    frame_averaging=True,
 )
 ```
 
-The return signature extends to a tuple of `(result_mean, ..., result_sem, ...)`. Each function documents the exact expanded tuple in its docstring.
+`average_over_frames` always returns two tuples: `(means, sems)`. Each position in the means tuple corresponds to the same position in the sems tuple.
 
 ---
 
 ## Function return signatures
 
-| Function | Single-frame | Multi-frame (`frame_averaging=True`) |
-|---|---|---|
-| `compute_rdf` | `(r, rdfs, cumcn)` | `(r, rdfs_mean, cumcn_mean, rdfs_sem, cumcn_sem)` |
-| `compute_coordination` | `(dist, per_atom)` | `(dist_mean, per_atom_last, dist_sem)` |
-| `compute_angles` | `(bin_centers, hist)` | `(bin_centers, hist_mean, hist_sem)` |
-| `compute_qn` | `(total_qn, partial_qn)` | `(total_qn_mean, partial_qn_mean, total_qn_sem, partial_qn_sem)` |
-| `compute_qn_and_classify` | `(total_qn, partial_qn, o_classes)` | `(total_qn_mean, partial_qn_mean, o_classes_last, total_qn_sem, partial_qn_sem)` |
-| `compute_structure_factor` | `(q, sq, partials)` | `(q, sq_mean, partials_mean, sq_sem, partials_sem)` |
-| `compute_guttmann_rings` | `(histogram, mean_size)` | `(histogram_mean, mean_size_mean, histogram_sem, mean_size_sem)` |
-| `analyze_structure` | `(StructureData, StructureData_sem)` | `(StructureData_mean, StructureData_sem)` |
+Single-frame signatures (unchanged — `average_over_frames` calls these internally):
 
-> `per_atom_last` and `o_classes_last` are the per-atom classifications from the **last** frame — per-atom labels cannot be meaningfully averaged.
+| Function | Return tuple |
+|---|---|
+| `compute_rdf` | `(r, rdfs, cumcn)` |
+| `compute_coordination` | `dist` (plain dict, not a tuple) |
+| `compute_angles` | `(bin_centers, hist)` |
+| `compute_qn` | `(total_qn, partial_qn)` |
+| `compute_qn_and_classify` | `(total_qn, partial_qn, o_classes)` |
+| `compute_structure_factor` | `(q, sq, partials)` |
+| `compute_guttmann_rings` | `(histogram, mean_size)` |
+
+When wrapped with `average_over_frames`, the return is `(means_tuple, sems_tuple)` with the same positional layout.
+
+> `o_classes` from `compute_qn_and_classify` is a per-atom classification dict — it cannot be averaged. The last frame's value is passed through as-is; the corresponding SEM position is `None`.
 
 ---
 
@@ -87,24 +92,23 @@ import numpy as np
 import plotly.graph_objects as go
 from ase.io import read
 from amorphouspy import compute_rdf
+from amorphouspy.analysis.averaging import average_over_frames
 
 frames = read("production.extxyz", index=":")
 
-r, rdfs_mean, cn_mean, rdfs_sem, cn_sem = compute_rdf(
+(r, rdfs_mean, cumcn_mean), (_, rdfs_sem, cumcn_sem) = average_over_frames(
+    compute_rdf,
     frames,
     r_max=8.0,
     n_bins=500,
     type_pairs=[(14, 8), (11, 8)],
-    frame_averaging=True,
 )
 
 fig = go.Figure()
 for pair, g_mean in rdfs_mean.items():
     g_sem = rdfs_sem[pair]
     label = f"{pair[0]}-{pair[1]}"
-    fig.add_trace(go.Scatter(
-        x=r, y=g_mean, name=label, mode="lines",
-    ))
+    fig.add_trace(go.Scatter(x=r, y=g_mean, name=label, mode="lines"))
     fig.add_trace(go.Scatter(
         x=np.concatenate([r, r[::-1]]),
         y=np.concatenate([g_mean + g_sem, (g_mean - g_sem)[::-1]]),
@@ -121,13 +125,14 @@ fig.show()
 
 ```python
 from amorphouspy import compute_structure_factor
+from amorphouspy.analysis.averaging import average_over_frames
 
-q, sq_mean, partials_mean, sq_sem, partials_sem = compute_structure_factor(
+(q, sq_mean, partials_mean), (_, sq_sem, partials_sem) = average_over_frames(
+    compute_structure_factor,
     frames,
     q_min=0.5,
     q_max=15.0,
     n_q=500,
-    frame_averaging=True,
 )
 ```
 
@@ -137,13 +142,14 @@ q, sq_mean, partials_mean, sq_sem, partials_sem = compute_structure_factor(
 
 ```python
 from amorphouspy import compute_qn
+from amorphouspy.analysis.averaging import average_over_frames
 
-total_qn_mean, partial_qn_mean, total_qn_sem, partial_qn_sem = compute_qn(
+(total_qn_mean, partial_qn_mean), (total_qn_sem, partial_qn_sem) = average_over_frames(
+    compute_qn,
     frames,
     cutoff=2.0,
     former_types=[14],  # Si
     o_type=8,
-    frame_averaging=True,
 )
 
 for n, mean in total_qn_mean.items():
@@ -160,7 +166,7 @@ There is no universal minimum, but a few practical rules:
 - Frames should be **decorrelated** — separated by at least one structural relaxation time. Taking every 10th MD step from an NVT run at 300 K is rarely sufficient; taking every 50–100 ps typically is.
 - **5–20 frames** is usually enough to reduce statistical noise by 50–80 % compared to a single frame.
 - The standard error of the mean naturally tells you when you have enough: if it is already smaller than your measurement uncertainty (e.g. 1 % of the peak height), adding more frames gives diminishing returns.
-- With only 1 frame and `frame_averaging=True`, the standard error of the mean is 0 — a single frame has no variance to estimate.
+- With only 1 frame the SEM is 0 — a single frame has no variance to estimate.
 
 ---
 
@@ -168,8 +174,8 @@ There is no universal minimum, but a few practical rules:
 
 | Input | Behaviour |
 |---|---|
-| `list[Atoms]` + `frame_averaging=True` | ✅ averages over all frames |
-| `Atoms` + `frame_averaging=True` | ✅ single-frame result with standard error of the mean = 0 |
-| `Atoms` + `frame_averaging=False` (default) | ✅ single-frame result |
-| `list[Atoms]` + `frame_averaging=False` | ✅ uses first frame silently |
-| empty `list` + `frame_averaging=True` | ❌ raises `ValueError` |
+| `average_over_frames(fn, frames, ...)` with `len(frames) > 0` | ✅ averages over all frames |
+| `average_over_frames(fn, [single_frame], ...)` | ✅ single-frame result with SEM = 0 |
+| `fn(atoms, ...)` single `Atoms` | ✅ single-frame result |
+| `fn([atoms, ...], ...)` list passed directly | ✅ uses first frame silently |
+| `average_over_frames(fn, [], ...)` empty list | ❌ raises `ValueError` |

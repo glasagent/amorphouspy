@@ -1,5 +1,6 @@
 """amorphouspy - workflows for atomistic modeling of oxide glasses."""
 
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.bond_angle_distribution import compute_angles
 from amorphouspy.analysis.cavities import compute_cavities
 from amorphouspy.analysis.cte import (
@@ -54,6 +55,7 @@ __all__ = [
     "PppmConfig",
     "WolfConfig",
     "analyze_structure",
+    "average_over_frames",
     "check_neutral_oxide",
     "classify_oxygens",
     "compute_angles",

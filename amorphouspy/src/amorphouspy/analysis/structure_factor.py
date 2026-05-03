@@ -12,7 +12,6 @@ import numpy as np
 from ase.data import chemical_symbols
 from pymatgen.analysis.diffraction.xrd import ATOMIC_SCATTERING_PARAMS
 
-from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.analysis.radial_distribution_functions import compute_rdf
 
 if TYPE_CHECKING:
@@ -248,8 +247,7 @@ def compute_structure_factor(
     *,
     lorch_damping: bool = True,
     type_pairs: list[tuple[int, int]] | None = None,
-    frame_averaging: bool = False,
-) -> tuple[np.ndarray, np.ndarray, dict[tuple[int, int], np.ndarray], np.ndarray, dict[tuple[int, int], np.ndarray]]:
+) -> tuple[np.ndarray, np.ndarray, dict[tuple[int, int], np.ndarray]]:
     """Compute the 1D isotropic structure factor S(q) and Faber-Ziman partials.
 
     Uses the Faber-Ziman formalism to compute partial structure factors S_ab(q)
@@ -268,8 +266,7 @@ def compute_structure_factor(
     form factor f_a(q) (four-Gaussian fit via pymatgen), making the weights q-dependent.
 
     Args:
-        structure: ASE Atoms object with periodic boundary conditions, or a list of frames
-            when frame_averaging=True.
+        structure: ASE Atoms object with periodic boundary conditions. Pass a list to use the first frame.
         q_min: Minimum momentum transfer in Angstroms^-1 (default 0.5).
         q_max: Maximum momentum transfer in Angstroms^-1 (default 20.0).
         n_q: Number of q-grid points (default 500).
@@ -283,7 +280,6 @@ def compute_structure_factor(
             (default True).
         type_pairs: List of (Z_a, Z_b) pairs for which to compute partials.
             ``None`` computes all unique unordered pairs present in the structure.
-        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
         q: Momentum transfer grid in Angstroms^-1, shape (n_q,).
@@ -291,9 +287,6 @@ def compute_structure_factor(
         sq_partials: Faber-Ziman partial structure factors S_ab(q), keyed by
             the canonical pair (min(Z_a, Z_b), max(Z_a, Z_b)), each with
             shape (n_q,).
-
-        When frame_averaging=True, returns a 5-tuple:
-            (q, sq_mean, partials_mean, sq_sem, partials_sem).
 
     Raises:
         ValueError: If ``radiation`` is not ``"neutron"`` or ``"xray"``.
@@ -307,19 +300,6 @@ def compute_structure_factor(
         >>> sq_SiO = sq_partials[(8, 14)]  # partial S_SiO(q)
 
     """
-    if frame_averaging:
-        if isinstance(structure, list) and len(structure) == 0:
-            msg = "frame_averaging=True requires a non-empty list[Atoms]"
-            raise ValueError(msg)
-        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        means, sems = frame_average(
-            lambda f: compute_structure_factor(
-                f, q_min, q_max, n_q, r_max, n_bins, radiation, lorch_damping=lorch_damping, type_pairs=type_pairs
-            ),
-            frames,
-            avg_indices=[1, 2],
-        )
-        return means[0], means[1], means[2], sems[1], sems[2]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     if radiation not in ("neutron", "xray"):
@@ -336,7 +316,7 @@ def compute_structure_factor(
     concentrations = {t: float(np.sum(types == t)) / total_atoms for t in unique_types}
 
     # --- Radial distribution functions ----------------------------------------
-    r, rdfs, _, _rdfs_sem, _cumcn_sem = compute_rdf(structure, r_max=r_max, n_bins=n_bins, type_pairs=type_pairs)
+    r, rdfs, _ = compute_rdf(structure, r_max=r_max, n_bins=n_bins, type_pairs=type_pairs)
     unordered_pairs = list(rdfs.keys())
 
     # --- Momentum transfer grid -----------------------------------------------
@@ -381,6 +361,4 @@ def compute_structure_factor(
             sq_total += weight * (sq_partials[(t1, t2)] - 1.0)
         sq_total = 1.0 + sq_total / mean_f_sq
 
-    sq_sem = np.zeros_like(sq_total)
-    partials_sem = {pair: np.zeros_like(arr) for pair, arr in sq_partials.items()}
-    return q_values, sq_total, sq_partials, sq_sem, partials_sem
+    return q_values, sq_total, sq_partials

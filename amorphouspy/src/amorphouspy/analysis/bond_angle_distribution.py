@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import get_neighbors
 
 if TYPE_CHECKING:
@@ -36,40 +35,25 @@ def compute_angles(
     neighbor_type: int,
     cutoff: float,
     bins: int = 180,
-    *,
-    frame_averaging: bool = False,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Compute bond angle distribution between triplets of neighbor_type-center-neighbor_type.
 
     Args:
-        structure: Atomic structure, or a list of frames when frame_averaging=True.
+        structure: Atomic structure. Pass a list to use the first frame.
         center_type: Atom type at the angle center.
         neighbor_type: Atom type forming the angle with center.
         cutoff: Neighbor search cutoff.
         bins: Number of histogram bins. Defaults to 180.
-        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
-        A 3-tuple containing:
+        A 2-tuple containing:
             bin_centers: Bin centers (degrees).
-            angle_hist: Normalized angle histogram (or mean when frame_averaging=True).
-            angle_hist_sem: SEM of angle histogram (zeros when frame_averaging=False).
+            angle_hist: Normalized angle histogram.
 
     Example:
-        >>> bins, hist, sem = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)
+        >>> bins, hist = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)
 
     """
-    if frame_averaging:
-        if isinstance(structure, list) and len(structure) == 0:
-            msg = "frame_averaging=True requires a non-empty list[Atoms]"
-            raise ValueError(msg)
-        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        means, sems = frame_average(
-            lambda f: compute_angles(f, center_type, neighbor_type, cutoff, bins),
-            frames,
-            avg_indices=[1],
-        )
-        return means[0], means[1], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     # Wrap and extract positions/cell once — needed for minimum-image vectors
@@ -140,5 +124,4 @@ def compute_angles(
         density=True,
     )
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    hist_sem = np.zeros_like(angle_hist)
-    return bin_centers, angle_hist, hist_sem
+    return bin_centers, angle_hist

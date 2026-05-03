@@ -7,6 +7,7 @@ requires the 20Na2O-80SiO2 dump file).  Atom type mapping: O=type1, Si=type2, Na
 import networkx as nx
 import numpy as np
 import pytest
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.rings import (
     _find_guttman_rings,
     _process_edge,
@@ -97,7 +98,7 @@ def test_generate_bond_length_dict_n_pairs(si_o_atoms):
 
 def test_compute_guttmann_rings_returns_tuple(glass_structure):
     """Function returns a (dict, float) tuple."""
-    hist, mean, _hist_sem, _mean_sem = compute_guttmann_rings(
+    hist, mean = compute_guttmann_rings(
         glass_structure,
         bond_lengths={("Si", "O"): 2.0},
         max_size=6,
@@ -108,7 +109,7 @@ def test_compute_guttmann_rings_returns_tuple(glass_structure):
 
 def test_compute_guttmann_rings_ring_sizes_positive(glass_structure):
     """All ring sizes in the histogram are positive integers."""
-    hist, _, _hist_sem, _mean_sem = compute_guttmann_rings(
+    hist, _ = compute_guttmann_rings(
         glass_structure,
         bond_lengths={("Si", "O"): 2.0},
         max_size=6,
@@ -118,7 +119,7 @@ def test_compute_guttmann_rings_ring_sizes_positive(glass_structure):
 
 def test_compute_guttmann_rings_counts_positive(glass_structure):
     """All ring counts are positive integers."""
-    hist, _, _hist_sem, _mean_sem = compute_guttmann_rings(
+    hist, _ = compute_guttmann_rings(
         glass_structure,
         bond_lengths={("Si", "O"): 2.0},
         max_size=6,
@@ -128,7 +129,7 @@ def test_compute_guttmann_rings_counts_positive(glass_structure):
 
 def test_compute_guttmann_rings_mean_nonnegative(glass_structure):
     """Mean ring size is non-negative."""
-    _, mean, _hist_sem, _mean_sem = compute_guttmann_rings(
+    _, mean = compute_guttmann_rings(
         glass_structure,
         bond_lengths={("Si", "O"): 2.0},
         max_size=6,
@@ -191,7 +192,7 @@ def test_process_edge_no_path_returns_empty():
 
 def test_compute_guttmann_rings_silicate_dominant_size(glass_structure):
     """For a silicate glass the most common ring size is between 3 and 10."""
-    hist, _mean, _hist_sem, _mean_sem = compute_guttmann_rings(
+    hist, _mean = compute_guttmann_rings(
         glass_structure,
         bond_lengths={("Si", "O"): 2.0},
         max_size=10,
@@ -202,20 +203,18 @@ def test_compute_guttmann_rings_silicate_dominant_size(glass_structure):
 
 
 # ---------------------------------------------------------------------------
-# frame_averaging — compute_guttmann_rings
+# average_over_frames — compute_guttmann_rings
 # ---------------------------------------------------------------------------
 
 
-def test_compute_guttmann_rings_frame_averaging_identical_frames(glass_structure):
+def test_average_over_frames_rings_identical_frames(glass_structure):
     """Three identical frames: mean equals single-frame, SEM ≈ 0."""
-    hist_s, mean_s, _hist_sem_s, _mean_sem_s = compute_guttmann_rings(
-        glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6
-    )
-    hist_mean, mean_size_mean, hist_sem, mean_size_sem = compute_guttmann_rings(
+    hist_s, mean_s = compute_guttmann_rings(glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6)
+    (hist_mean, mean_size_mean), (hist_sem, mean_size_sem) = average_over_frames(
+        compute_guttmann_rings,
         [glass_structure, glass_structure, glass_structure],
         bond_lengths={("Si", "O"): 2.0},
         max_size=6,
-        frame_averaging=True,
     )
     assert isinstance(hist_mean, dict)
     assert isinstance(mean_size_mean, float)
@@ -226,33 +225,16 @@ def test_compute_guttmann_rings_frame_averaging_identical_frames(glass_structure
         assert hist_sem[size] == pytest.approx(0.0, abs=1e-10)
 
 
-def test_compute_guttmann_rings_frame_averaging_empty_list_raises():
-    """frame_averaging=True with empty list raises ValueError."""
-    with pytest.raises(ValueError, match="frame_averaging=True requires"):
-        compute_guttmann_rings([], bond_lengths={("Si", "O"): 2.0}, frame_averaging=True)
-
-
-def test_compute_guttmann_rings_frame_averaging_single_atoms_fallback(glass_structure):
-    """frame_averaging=True with single Atoms falls back to single-frame result with SEM=0."""
-    hist_s, mean_s, _hist_sem_s, _mean_sem_s = compute_guttmann_rings(
-        glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6
-    )
-    hist_mean, mean_mean, hist_sem, mean_sem = compute_guttmann_rings(
-        glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6, frame_averaging=True
-    )
-    assert mean_mean == pytest.approx(mean_s, abs=1e-10)
-    assert mean_sem == pytest.approx(0.0, abs=1e-10)
-    for size in hist_s:
-        assert hist_mean[size] == pytest.approx(hist_s[size], abs=1e-10)
-        assert hist_sem[size] == pytest.approx(0.0, abs=1e-10)
+def test_average_over_frames_empty_list_raises():
+    """average_over_frames with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="requires a non-empty list"):
+        average_over_frames(compute_guttmann_rings, [], bond_lengths={("Si", "O"): 2.0})
 
 
 def test_compute_guttmann_rings_list_uses_first_frame(glass_structure):
-    """Passing a list without frame_averaging=True uses the first frame."""
-    hist_s, mean_s, _hist_sem_s, _mean_sem_s = compute_guttmann_rings(
-        glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6
-    )
-    hist_a, mean_a, _hist_sem_a, _mean_sem_a = compute_guttmann_rings(
+    """Passing a list without average_over_frames uses the first frame."""
+    hist_s, mean_s = compute_guttmann_rings(glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6)
+    hist_a, mean_a = compute_guttmann_rings(
         [glass_structure, glass_structure], bond_lengths={("Si", "O"): 2.0}, max_size=6
     )
     assert mean_a == pytest.approx(mean_s, abs=1e-10)

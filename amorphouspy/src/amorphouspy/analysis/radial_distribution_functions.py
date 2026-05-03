@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import (
     NUMBA_AVAILABLE,
     build_distances,
@@ -33,40 +32,23 @@ def compute_coordination(
     target_type: int,
     cutoff: float,
     neighbor_types: list[int] | None = None,
-    *,
-    frame_averaging: bool = False,
-) -> tuple[dict[int, float], dict[int, int], dict[int, float]]:
-    """Compute coordination number for atoms of a target type.
+) -> dict[int, float]:
+    """Compute coordination number distribution for atoms of a target type.
 
     Args:
-        structure: The atomic structure as ASE object, or a list of frames when frame_averaging=True.
+        structure: The atomic structure as ASE object. Pass a list to use the first frame.
         target_type: Atom type (atomic number) for which to compute coordination.
         cutoff: Cutoff radius in Å.
         neighbor_types: Valid neighbor atomic numbers. None means all types.
-        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
-        A 3-tuple containing:
-            coordination_distribution: Mapping from coordination number to count (or mean when frame_averaging=True).
-            per_atom_coordination: Mapping from atom ID to coordination number (last frame when frame_averaging=True).
-            dist_sem: SEM of coordination distribution (zeros when frame_averaging=False).
+        Mapping from coordination number to atom count.
 
     Example:
         >>> structure = read('glass.xyz')
-        >>> dist, cn, sem = compute_coordination(structure, target_type=14, cutoff=2.0)
+        >>> dist = compute_coordination(structure, target_type=14, cutoff=2.0)
 
     """
-    if frame_averaging:
-        if isinstance(structure, list) and len(structure) == 0:
-            msg = "frame_averaging=True requires a non-empty list[Atoms]"
-            raise ValueError(msg)
-        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        means, sems = frame_average(
-            lambda f: compute_coordination(f, target_type, cutoff, neighbor_types),
-            frames,
-            avg_indices=[0],
-        )
-        return means[0], means[1], sems[0]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     neighbors = get_neighbors(
@@ -88,9 +70,7 @@ def compute_coordination(
     }
 
     coord_numbers_distribution = count_distribution(coord_numbers)
-    dist: dict[int, float] = {k: float(v) for k, v in sorted(coord_numbers_distribution.items())}
-    dist_sem: dict[int, float] = dict.fromkeys(dist, 0.0)
-    return dist, coord_numbers, dist_sem
+    return {k: float(v) for k, v in sorted(coord_numbers_distribution.items())}
 
 
 def _compute_distances(  # noqa: C901, PLR0912, PLR0915
@@ -280,12 +260,8 @@ def compute_rdf(
     r_max: float = 10.0,
     n_bins: int = 500,
     type_pairs: list[tuple[int, int]] | None = None,
-    *,
-    frame_averaging: bool = False,
 ) -> tuple[
     np.ndarray,
-    dict[tuple[int, int], np.ndarray],
-    dict[tuple[int, int], np.ndarray],
     dict[tuple[int, int], np.ndarray],
     dict[tuple[int, int], np.ndarray],
 ]:
@@ -296,21 +272,18 @@ def compute_rdf(
     triclinic), along with the cumulative coordination number n(r).
 
     Args:
-        structure:  ASE Atoms object, or a list of frames when frame_averaging=True.
+        structure:  ASE Atoms object. Pass a list to use the first frame.
         r_max:      Maximum distance in Å (default 10.0).
         n_bins:     Number of radial bins (default 500).
         type_pairs: List of (atomic_number_1, atomic_number_2) pairs.
                     None -> all unique unordered combinations of present types
                     plus all same-type pairs.
-        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
-        A 5-tuple containing:
+        A 3-tuple containing:
             r: Radial bin centres in Å, shape (n_bins,).
-            rdfs: Normalised g(r) for each type pair (or mean when frame_averaging=True).
-            cn_cumulative: Cumulative coordination numbers (or mean when frame_averaging=True).
-            rdfs_sem: SEM of g(r) per pair (zeros when frame_averaging=False).
-            cumcn_sem: SEM of cumulative coordination per pair (zeros when frame_averaging=False).
+            rdfs: Normalised g(r) for each type pair.
+            cn_cumulative: Cumulative coordination numbers.
 
     Notes:
         - If r_max exceeds half the smallest perpendicular cell height, it is
@@ -331,17 +304,6 @@ def compute_rdf(
         >>> cn_OSi = cn[(14, 8)]   # Si around O
 
     """
-    if frame_averaging:
-        if isinstance(structure, list) and len(structure) == 0:
-            msg = "frame_averaging=True requires a non-empty list[Atoms]"
-            raise ValueError(msg)
-        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        means, sems = frame_average(
-            lambda f: compute_rdf(f, r_max, n_bins, type_pairs),
-            frames,
-            avg_indices=[1, 2],
-        )
-        return means[0], means[1], means[2], sems[1], sems[2]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     types = structure.get_atomic_numbers()
@@ -403,6 +365,4 @@ def compute_rdf(
     )
     cn_cumulative = _compute_cn_cumulative(requested_ordered, hist_directed, type_counts)
 
-    rdfs_sem = {pair: np.zeros_like(arr) for pair, arr in rdfs.items()}
-    cumcn_sem = {pair: np.zeros_like(arr) for pair, arr in cn_cumulative.items()}
-    return r, rdfs, cn_cumulative, rdfs_sem, cumcn_sem
+    return r, rdfs, cn_cumulative

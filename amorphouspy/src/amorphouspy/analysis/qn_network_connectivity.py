@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import get_neighbors
 
 if TYPE_CHECKING:
@@ -87,52 +86,32 @@ def compute_qn(
     cutoff: float,
     former_types: list[int],
     o_type: int,
-    *,
-    frame_averaging: bool = False,
-) -> tuple[dict[int, float], dict[int, dict[int, float]], dict[int, float], dict[int, dict[int, float]]]:
+) -> tuple[dict[int, float], dict[int, dict[int, float]]]:
     """Calculate Qn distribution.
 
     The Q^n distribution characterizes connectivity of tetrahedral
     network-forming units based on bridging oxygens (BOs) count.
 
     Args:
-        structure: The atomic structure as ASE object, or a list of frames when frame_averaging=True.
+        structure: The atomic structure as ASE object. Pass a list to use the first frame.
         cutoff: Cutoff radius for former-O neighbor search.
         former_types: Atom types considered as formers.
         o_type: Atom type considered as oxygen.
-        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
-        A 4-tuple containing:
-            total_qn: Total Qn distribution (or mean when frame_averaging=True).
-            partial_qn: Partial Qn by former type (or mean when frame_averaging=True).
-            total_qn_sem: SEM of total Qn (zeros when frame_averaging=False).
-            partial_qn_sem: SEM of partial Qn (zeros when frame_averaging=False).
+        A 2-tuple containing:
+            total_qn: Total Qn distribution.
+            partial_qn: Partial Qn by former type.
 
     Example:
         >>> structure = read('glass.xyz')
-        >>> total_qn, partial_qn, total_sem, partial_sem = compute_qn(
-        ...     structure, cutoff=2.0, former_types=[14], o_type=8
-        ... )
+        >>> total_qn, partial_qn = compute_qn(structure, cutoff=2.0, former_types=[14], o_type=8)
 
     """
-    if frame_averaging:
-        if isinstance(structure, list) and len(structure) == 0:
-            msg = "frame_averaging=True requires a non-empty list[Atoms]"
-            raise ValueError(msg)
-        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        means, sems = frame_average(
-            lambda f: compute_qn(f, cutoff, former_types, o_type),
-            frames,
-            avg_indices=[0, 1],
-        )
-        return means[0], means[1], sems[0], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
-    total_qn, partial_qn, _o_classes, total_sem, partial_sem = compute_qn_and_classify(
-        structure, cutoff, former_types, o_type
-    )
-    return total_qn, partial_qn, total_sem, partial_sem
+    total_qn, partial_qn, _o_classes = compute_qn_and_classify(structure, cutoff, former_types, o_type)
+    return total_qn, partial_qn
 
 
 def compute_qn_and_classify(
@@ -140,30 +119,23 @@ def compute_qn_and_classify(
     cutoff: float,
     former_types: list[int],
     o_type: int,
-    *,
-    frame_averaging: bool = False,
-) -> tuple[
-    dict[int, float], dict[int, dict[int, float]], dict[int, str], dict[int, float], dict[int, dict[int, float]]
-]:
+) -> tuple[dict[int, float], dict[int, dict[int, float]], dict[int, str]]:
     """Calculate Qn distribution and classify each oxygen as BO/NBO/free/tri.
 
     Performs a single neighbour search pass to compute both the Q^n
     distribution *and* the per-oxygen classification.
 
     Args:
-        structure: The atomic structure as ASE object, or a list of frames when frame_averaging=True.
+        structure: The atomic structure as ASE object. Pass a list to use the first frame.
         cutoff: Cutoff radius for former-O neighbor search (Å).
         former_types: Atom types (atomic numbers) considered as formers.
         o_type: Atom type (atomic number) considered as oxygen.
-        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
-        A 5-tuple containing:
-            total_qn: Total Qn distribution (or mean when frame_averaging=True).
-            partial_qn: Partial Qn by former type (or mean when frame_averaging=True).
-            oxygen_classes: Mapping from real atom ID to oxygen class string (last frame when frame_averaging=True).
-            total_qn_sem: SEM of total Qn (zeros when frame_averaging=False).
-            partial_qn_sem: SEM of partial Qn (zeros when frame_averaging=False).
+        A 3-tuple containing:
+            total_qn: Total Qn distribution.
+            partial_qn: Partial Qn by former type.
+            oxygen_classes: Mapping from real atom ID to oxygen class string.
 
     Example:
         >>> total_qn, partial_qn, o_classes = compute_qn_and_classify(
@@ -171,18 +143,6 @@ def compute_qn_and_classify(
         ... )
 
     """
-    if frame_averaging:
-        if isinstance(structure, list) and len(structure) == 0:
-            msg = "frame_averaging=True requires a non-empty list[Atoms]"
-            raise ValueError(msg)
-        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        # avg_indices=[0, 1] — total_qn and partial_qn; oxygen_classes (index 2) passes through from last frame
-        means, sems = frame_average(
-            lambda f: compute_qn_and_classify(f, cutoff, former_types, o_type),
-            frames,
-            avg_indices=[0, 1],
-        )
-        return means[0], means[1], means[2], sems[0], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     types = structure.get_atomic_numbers()
@@ -199,9 +159,7 @@ def compute_qn_and_classify(
     partial_float: dict[int, dict[int, float]] = {
         f: {n: float(v) for n, v in qn.items()} for f, qn in partial_plain.items()
     }
-    total_sem: dict[int, float] = dict.fromkeys(total_qn_norm, 0.0)
-    partial_sem: dict[int, dict[int, float]] = {f: dict.fromkeys(qn, 0.0) for f, qn in partial_plain.items()}
-    return total_qn_float, partial_float, oxygen_classes, total_sem, partial_sem
+    return total_qn_float, partial_float, oxygen_classes
 
 
 def classify_oxygens(
@@ -230,9 +188,7 @@ def classify_oxygens(
         >>> o_classes = classify_oxygens(atoms, cutoff=2.0, former_types=[14], o_type=8)
 
     """
-    _total_qn, _partial_qn, o_classes, _total_sem, _partial_sem = compute_qn_and_classify(
-        structure, cutoff, former_types, o_type
-    )
+    _total_qn, _partial_qn, o_classes = compute_qn_and_classify(structure, cutoff, former_types, o_type)
     return o_classes
 
 

@@ -42,7 +42,6 @@ import networkx as nx
 import numpy as np
 from ase.data import atomic_numbers as ase_atomic_numbers
 
-from amorphouspy.analysis.averaging import frame_average
 from amorphouspy.neighbors import get_neighbors
 from amorphouspy.shared import type_to_dict
 
@@ -418,9 +417,7 @@ def compute_guttmann_rings(
     bond_lengths: dict[tuple[str, str], float],
     max_size: int = 24,
     n_cpus: int = 1,
-    *,
-    frame_averaging: bool = False,
-) -> tuple[dict[int, float], float, dict[int, float], float]:
+) -> tuple[dict[int, float], float]:
     """Compute the Guttman ring size distribution and mean ring size.
 
     Rings are detected using a native networkx-based BFS implementation of
@@ -431,8 +428,8 @@ def compute_guttmann_rings(
     the ring, following Guttman's original convention.
 
     Args:
-        structure: ASE Atoms object containing atomic coordinates and types,
-            or a list of frames when frame_averaging=True.
+        structure: ASE Atoms object containing atomic coordinates and types.
+            Pass a list to use the first frame.
         bond_lengths: Maximum bond lengths for each element pair, e.g.
             ``{('Si', 'O'): 1.8, ('Al', 'O'): 1.95}``. All T-O pairs must
             be specified; T-T and O-O pairs are ignored.
@@ -441,14 +438,10 @@ def compute_guttmann_rings(
             ``1``  — sequential execution (default).
             ``N``  — distribute edge loop across N worker processes.
             ``-1`` — use all logical CPUs (``os.cpu_count()``).
-        frame_averaging: If True, average results over all frames in structure (list[Atoms]).
 
     Returns:
         histogram: Mapping from ring size to ring count.
         mean_ring_size: Mean ring size weighted by count.
-
-        When frame_averaging=True, returns a 4-tuple:
-            (histogram_mean, mean_size_mean, histogram_sem, mean_size_sem).
 
     Raises:
         ValueError: If ``bond_lengths`` contains no T-O pairs (i.e. all
@@ -475,17 +468,6 @@ def compute_guttmann_rings(
         ...     n_cpus=-1,
         ... )
     """
-    if frame_averaging:
-        if isinstance(structure, list) and len(structure) == 0:
-            msg = "frame_averaging=True requires a non-empty list[Atoms]"
-            raise ValueError(msg)
-        frames = cast("list[Atoms]", structure if isinstance(structure, list) else [structure])
-        means, sems = frame_average(
-            lambda f: compute_guttmann_rings(f, bond_lengths, max_size, n_cpus),
-            frames,
-            avg_indices=[0, 1],
-        )
-        return means[0], means[1], sems[0], sems[1]
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
     z_cutoffs, former_atomic_numbers = _symbols_to_z_cutoffs(bond_lengths)
@@ -509,13 +491,12 @@ def compute_guttmann_rings(
     ring_counts = _find_guttman_rings(former_graph, max_size, n_cpus=n_cpus)
 
     if not ring_counts:
-        return {}, 0.0, {}, 0.0
+        return {}, 0.0
 
     total_rings = sum(ring_counts.values())
     mean_ring_size = sum(size * count for size, count in ring_counts.items()) / total_rings
     ring_counts_float: dict[int, float] = {k: float(v) for k, v in ring_counts.items()}
-    hist_sem: dict[int, float] = dict.fromkeys(ring_counts, 0.0)
-    return ring_counts_float, float(mean_ring_size), hist_sem, 0.0
+    return ring_counts_float, float(mean_ring_size)
 
 
 def generate_bond_length_dict(
