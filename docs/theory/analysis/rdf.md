@@ -123,7 +123,7 @@ Computes coordination number distribution for atoms of a target type.
 from amorphouspy import compute_coordination
 
 # Si (atomic number 14) coordinated by O (atomic number 8), cutoff 2.0 Å
-coord_dist, per_atom_cn = compute_coordination(
+coord_dist = compute_coordination(
     glass_structure,
     target_type=14,       # Atomic number of central atom (Si)
     cutoff=2.0,           # Cutoff radius (Å)
@@ -131,7 +131,6 @@ coord_dist, per_atom_cn = compute_coordination(
 )
 
 # coord_dist: {cn: count} e.g. {4: 195, 5: 5}
-# per_atom_cn: {atom_id: cn}
 ```
 
 **Parameters:**

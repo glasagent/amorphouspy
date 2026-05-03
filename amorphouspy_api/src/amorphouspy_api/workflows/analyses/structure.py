@@ -18,8 +18,8 @@ def run_structural_analysis(submission: JobSubmission, config: StructureAnalysis
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
     from amorphouspy.workflows.structural_analysis import analyze_structure
 
-    data = analyze_structure(atoms=result["melt_quench"]["final_structure"])
-    return data.model_dump() if hasattr(data, "model_dump") else data
+    mean_data, _sem_data = analyze_structure(atoms=result["melt_quench"]["final_structure"])
+    return mean_data.model_dump()
 
 
 # ---------------------------------------------------------------------------

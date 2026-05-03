@@ -4,12 +4,14 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 """
 
+from __future__ import annotations
+
 import math
 import warnings
 from itertools import combinations_with_replacement
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
-from ase import Atoms
 
 from amorphouspy.neighbors import (
     NUMBA_AVAILABLE,
@@ -21,31 +23,34 @@ from amorphouspy.neighbors import (
 )
 from amorphouspy.shared import count_distribution
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 
 def compute_coordination(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     target_type: int,
     cutoff: float,
     neighbor_types: list[int] | None = None,
-) -> tuple[dict[int, int], dict[int, int]]:
-    """Compute coordination number for atoms of a target type.
+) -> dict[int, float]:
+    """Compute coordination number distribution for atoms of a target type.
 
     Args:
-        structure: The atomic structure as ASE object.
+        structure: The atomic structure as ASE object. Pass a list to use the first frame.
         target_type: Atom type (atomic number) for which to compute coordination.
         cutoff: Cutoff radius in Å.
         neighbor_types: Valid neighbor atomic numbers. None means all types.
 
     Returns:
-        A tuple containing:
-            coordination_distribution: Mapping from coordination number to count.
-            per_atom_coordination: Mapping from atom ID to coordination number.
+        Mapping from coordination number to atom count.
 
     Example:
         >>> structure = read('glass.xyz')
-        >>> dist, cn = compute_coordination(structure, target_type=14, cutoff=2.0)
+        >>> dist = compute_coordination(structure, target_type=14, cutoff=2.0)
 
     """
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     neighbors = get_neighbors(
         structure,
         cutoff=cutoff,
@@ -65,7 +70,7 @@ def compute_coordination(
     }
 
     coord_numbers_distribution = count_distribution(coord_numbers)
-    return dict(sorted(coord_numbers_distribution.items())), coord_numbers
+    return {k: float(v) for k, v in sorted(coord_numbers_distribution.items())}
 
 
 def _compute_distances(  # noqa: C901, PLR0912, PLR0915
@@ -251,11 +256,15 @@ def _compute_cn_cumulative(
 
 
 def compute_rdf(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     r_max: float = 10.0,
     n_bins: int = 500,
     type_pairs: list[tuple[int, int]] | None = None,
-) -> tuple[np.ndarray, dict, dict]:
+) -> tuple[
+    np.ndarray,
+    dict[tuple[int, int], np.ndarray],
+    dict[tuple[int, int], np.ndarray],
+]:
     """Compute radial distribution functions (RDFs) and cumulative coordination numbers.
 
     Calculates the pair-wise radial distribution function g(r) for specified
@@ -263,7 +272,7 @@ def compute_rdf(
     triclinic), along with the cumulative coordination number n(r).
 
     Args:
-        structure:  ASE Atoms object.
+        structure:  ASE Atoms object. Pass a list to use the first frame.
         r_max:      Maximum distance in Å (default 10.0).
         n_bins:     Number of radial bins (default 500).
         type_pairs: List of (atomic_number_1, atomic_number_2) pairs.
@@ -271,10 +280,10 @@ def compute_rdf(
                     plus all same-type pairs.
 
     Returns:
-        r: Radial bin centres in Å, shape (n_bins,).
-        rdfs: Normalised g(r) for each type pair, shape (n_bins,).
-        cn_cumulative: Mean number of neighbours of the second type within radius r
-            around an atom of the first type, shape (n_bins,).
+        A 3-tuple containing:
+            r: Radial bin centres in Å, shape (n_bins,).
+            rdfs: Normalised g(r) for each type pair.
+            cn_cumulative: Cumulative coordination numbers.
 
     Notes:
         - If r_max exceeds half the smallest perpendicular cell height, it is
@@ -295,6 +304,8 @@ def compute_rdf(
         >>> cn_OSi = cn[(14, 8)]   # Si around O
 
     """
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     types = structure.get_atomic_numbers()
     unique_types = np.unique(types)
     type_counts = {int(t): int(np.sum(types == t)) for t in unique_types}
@@ -329,8 +340,9 @@ def compute_rdf(
             if a != b:
                 requested_ordered.append((b, a))
     else:
-        unordered_pairs = list({(min(a, b), max(a, b)) for a, b in type_pairs})
-        requested_ordered = list(dict.fromkeys(type_pairs))
+        valid_pairs = [(a, b) for a, b in type_pairs if a in type_counts and b in type_counts]
+        unordered_pairs = list({(min(a, b), max(a, b)) for a, b in valid_pairs})
+        requested_ordered = list(dict.fromkeys(valid_pairs))
 
     bin_edges = np.linspace(0, r_max, n_bins + 1)
     r = 0.5 * (bin_edges[1:] + bin_edges[:-1])

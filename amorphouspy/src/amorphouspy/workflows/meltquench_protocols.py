@@ -468,7 +468,7 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     history.append(parsed.get("generic", None))
 
     # Stage 5: Annealing at 300 K and 0 GPa for 100 ps in NPT
-    structure_final, parsed = run2(
+    structure, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps
@@ -476,6 +476,18 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         else int(100_000 / params.timestep),  # 100 ps
         initial_temperature=0,
         pressure=0.0,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 6: Annealing at 300 K for 100 ps in NVT
+    structure_final, parsed = run2(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=params.equilibration_steps
+        if params.equilibration_steps is not None
+        else int(100_000 / params.timestep),  # 100 ps
+        initial_temperature=0,
+        pressure=None,
     )
     history.append(parsed.get("generic", None))
 

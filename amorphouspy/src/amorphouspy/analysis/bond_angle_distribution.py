@@ -15,16 +15,22 @@ Currently implemented:
 
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
-from ase import Atoms
 
 from amorphouspy.neighbors import get_neighbors
+
+if TYPE_CHECKING:
+    from ase import Atoms
 
 MIN_NEIGHBORS_FOR_ANGLE = 2
 
 
 def compute_angles(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     center_type: int,
     neighbor_type: int,
     cutoff: float,
@@ -33,14 +39,14 @@ def compute_angles(
     """Compute bond angle distribution between triplets of neighbor_type-center-neighbor_type.
 
     Args:
-        structure: Atomic structure.
+        structure: Atomic structure. Pass a list to use the first frame.
         center_type: Atom type at the angle center.
         neighbor_type: Atom type forming the angle with center.
         cutoff: Neighbor search cutoff.
         bins: Number of histogram bins. Defaults to 180.
 
     Returns:
-        A tuple containing:
+        A 2-tuple containing:
             bin_centers: Bin centers (degrees).
             angle_hist: Normalized angle histogram.
 
@@ -48,6 +54,8 @@ def compute_angles(
         >>> bins, hist = compute_angles(structure, center_type=1, neighbor_type=2, cutoff=3.0)
 
     """
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     # Wrap and extract positions/cell once — needed for minimum-image vectors
     structure_wrapped = structure.copy()
     structure_wrapped.wrap()

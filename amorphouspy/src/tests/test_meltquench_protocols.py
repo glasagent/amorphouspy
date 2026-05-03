@@ -234,7 +234,7 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
     shik_protocol(mock_runner, params)
 
     # 5 stages in the protocol
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 6
 
 
 def _make_params(structure, potential, **kwargs):

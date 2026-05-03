@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.radial_distribution_functions import (
     _compute_cn_cumulative,
     _compute_distances,
@@ -283,7 +284,7 @@ def test_compute_rdf_cristobalite_ortho_first_peak() -> None:
 def test_compute_coordination_cristobalite_four_fold() -> None:
     """Every Si in the cristobalite supercell is exactly 4-coordinated by O."""
     atoms = _cristobalite_ortho()
-    coord_dist, _ = compute_coordination(atoms, target_type=14, cutoff=1.75)
+    coord_dist = compute_coordination(atoms, target_type=14, cutoff=1.75)
     # All 32 Si atoms in the 2x2x2 supercell must have coordination number 4
     assert coord_dist == {4: 32}
 
@@ -311,3 +312,49 @@ def test_compute_rdf_ordered_pair_remapped_to_canonical() -> None:
     assert (8, 14) in rdfs_ab
     assert (8, 14) in rdfs_ba
     np.testing.assert_array_equal(rdfs_ab[(8, 14)], rdfs_ba[(8, 14)])
+
+
+# ---------------------------------------------------------------------------
+# average_over_frames — compute_rdf and compute_coordination
+# ---------------------------------------------------------------------------
+
+
+def test_average_over_frames_rdf_identical_frames() -> None:
+    """Three identical frames: rdfs_mean equals single-frame rdfs, all SEM ≈ 0."""
+    atoms = _cristobalite_ortho()
+    r_s, rdfs_s, cumcn_s = compute_rdf(atoms, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    (r_a, rdfs_mean, cumcn_mean), (_, rdfs_sem, cumcn_sem) = average_over_frames(
+        compute_rdf, [atoms, atoms, atoms], r_max=4.0, n_bins=300, type_pairs=[(8, 14)]
+    )
+    np.testing.assert_array_almost_equal(r_a, r_s)
+    np.testing.assert_array_almost_equal(rdfs_mean[(8, 14)], rdfs_s[(8, 14)])
+    np.testing.assert_array_almost_equal(cumcn_mean[(8, 14)], cumcn_s[(8, 14)])
+    assert np.allclose(rdfs_sem[(8, 14)], 0.0, atol=1e-10)
+    assert np.allclose(cumcn_sem[(8, 14)], 0.0, atol=1e-10)
+
+
+def test_average_over_frames_empty_list_raises() -> None:
+    """average_over_frames with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="requires a non-empty list"):
+        average_over_frames(compute_rdf, [])
+
+
+def test_compute_rdf_list_uses_first_frame() -> None:
+    """list[Atoms] without average_over_frames uses first frame without error."""
+    atoms = _cristobalite_ortho()
+    r_s, rdfs_s, _ = compute_rdf(atoms, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    r_a, rdfs_a, _ = compute_rdf([atoms, atoms], r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    np.testing.assert_array_almost_equal(r_a, r_s)
+    np.testing.assert_array_almost_equal(rdfs_a[(8, 14)], rdfs_s[(8, 14)])
+
+
+def test_average_over_frames_coordination_identical_frames() -> None:
+    """Three identical frames: dist_mean equals single-frame dist, SEM ≈ 0."""
+    atoms = _cristobalite_ortho()
+    dist_s = compute_coordination(atoms, target_type=14, cutoff=1.75)
+    (dist_mean,), (dist_sem,) = average_over_frames(
+        compute_coordination, [atoms, atoms, atoms], target_type=14, cutoff=1.75
+    )
+    for cn in dist_s:
+        assert dist_mean[cn] == pytest.approx(dist_s[cn], abs=1e-10)
+        assert dist_sem[cn] == pytest.approx(0.0, abs=1e-10)

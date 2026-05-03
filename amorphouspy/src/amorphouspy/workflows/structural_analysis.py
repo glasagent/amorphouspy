@@ -3,16 +3,21 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from __future__ import annotations
+
 import warnings
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import plotly.graph_objects as go
-from ase.atoms import Atoms
 from ase.data import chemical_symbols
 from plotly.subplots import make_subplots
 from pydantic import BaseModel, Field
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
+
+if TYPE_CHECKING:
+    from ase.atoms import Atoms
 
 from amorphouspy.analysis.bond_angle_distribution import compute_angles
 from amorphouspy.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn_and_classify
@@ -35,11 +40,11 @@ GLASS_MODIFIERS = {"Li", "Na", "K", "Rb", "Cs", "Mg", "Ca", "Sr", "Ba", "La", "Y
 class CoordinationData(BaseModel):
     """Coordination number distributions for different element types."""
 
-    oxygen: dict[str, int] = Field(default_factory=dict, description="Oxygen coordination number distribution")
-    formers: dict[str, dict[str, int]] = Field(
+    oxygen: dict[str, float] = Field(default_factory=dict, description="Oxygen coordination number distribution")
+    formers: dict[str, dict[str, float]] = Field(
         default_factory=dict, description="Network former coordination distributions"
     )
-    modifiers: dict[str, dict[str, int]] = Field(
+    modifiers: dict[str, dict[str, float]] = Field(
         default_factory=dict, description="Modifier coordination distributions"
     )
 
@@ -60,8 +65,9 @@ class StructuralDistributions(BaseModel):
     bond_angles: dict[str, tuple[list[float], list[float]]] = Field(
         ..., description="Bond angle distributions for each former type"
     )
-    rings: dict[str, dict[str, int] | float] = Field(
-        default_factory=dict, description="Ring statistics with 'distribution' (dict[str, int]) and 'mean_size' (float)"
+    rings: dict[str, dict[str, float] | float] = Field(
+        default_factory=dict,
+        description="Ring statistics with 'distribution' (dict[str, float]) and 'mean_size' (float)",
     )
 
 
@@ -216,35 +222,311 @@ def _classify_elements(unique_z: np.ndarray) -> tuple[dict[int, str], set[str], 
     return type_map, network_formers, modifiers, oxygen_present
 
 
-def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PLR0915
-    """Perform a comprehensive structural analysis of an atomic configuration.
+def _sem(values: list[float]) -> float:
+    """Standard error of the mean for a list of floats.
 
     Args:
-        atoms: Atomic configuration to analyze.
+        values: List of scalar measurements.
 
     Returns:
-        StructureData: Object containing structured analysis results.
-
-    Example:
-        >>> structure_data = analyze_structure(my_atoms)
-        >>> print(structure_data.density)
+        SEM value. Returns the population std / sqrt(n) for single-element lists.
 
     """
-    atomic_numbers = atoms.get_atomic_numbers()
-    unique_z = np.unique(atomic_numbers)
+    arr = np.array(values, dtype=float)
+    ddof = 1 if len(arr) > 1 else 0
+    return float(arr.std(ddof=ddof) / np.sqrt(len(arr)))
 
-    # Calculate density
-    volume_cm3 = atoms.get_volume() * 1e-24  # Convert Å³ to cm³
-    avogadro_number = 6.022140857e23  # Avogadro's number (mol⁻¹)
-    total_mass_g = atoms.get_masses().sum() / avogadro_number  # Convert amu to g
-    density = total_mass_g / volume_cm3
 
-    type_map, network_formers, modifiers, _oxygen_present = _classify_elements(unique_z)
-    former_types = [z for z, sym in type_map.items() if sym in network_formers]
-    modifier_types = [z for z, sym in type_map.items() if sym in modifiers]
-    O_type = [z for z, sym in type_map.items() if sym == "O"]
+def _merge_dict_mean_sem(
+    per_frame_dicts: list[dict],
+) -> tuple[dict, dict]:
+    """Average a flat ``dict[key, float]`` across frames and compute SEM per key.
 
-    r, rdfs, cumcn = compute_rdf(atoms)
+    Missing keys in a given frame are treated as 0.0.
+
+    Args:
+        per_frame_dicts: One dict per frame, each mapping string keys to float values.
+
+    Returns:
+        Tuple of ``(mean_dict, sem_dict)`` with the union of all keys.
+
+    """
+    all_keys = sorted({k for d in per_frame_dicts for k in d})
+    mean_d = {k: float(np.mean([d.get(k, 0.0) for d in per_frame_dicts])) for k in all_keys}
+    sem_d = {k: _sem([d.get(k, 0.0) for d in per_frame_dicts]) for k in all_keys}
+    return mean_d, sem_d
+
+
+def _merge_nested_dict_mean_sem(
+    per_frame_dicts: list[dict],
+) -> tuple[dict, dict]:
+    """Average a nested ``dict[outer, dict[inner, float]]`` across frames and compute SEM.
+
+    Args:
+        per_frame_dicts: One nested dict per frame.
+
+    Returns:
+        Tuple of ``(mean_dict, sem_dict)`` preserving the two-level structure.
+
+    """
+    outer_keys = sorted({k for d in per_frame_dicts for k in d})
+    mean_d: dict = {}
+    sem_d: dict = {}
+    for ok in outer_keys:
+        inner_dicts = [d.get(ok, {}) for d in per_frame_dicts]
+        m, s = _merge_dict_mean_sem(inner_dicts)
+        mean_d[ok] = m
+        sem_d[ok] = s
+    return mean_d, sem_d
+
+
+def _avg_list_arrays(per_frame: list[list[float]]) -> tuple[list[float], list[float]]:
+    """Element-wise average a list of equal-length arrays across frames and compute SEM.
+
+    Args:
+        per_frame: One array (as a list of floats) per frame; all must have the same length.
+
+    Returns:
+        Tuple of ``(mean, sem)`` as plain Python lists of the same length.
+
+    """
+    arr = np.array(per_frame, dtype=float)
+    mean = arr.mean(axis=0).tolist()
+    ddof = 1 if len(per_frame) > 1 else 0
+    sem = (arr.std(axis=0, ddof=ddof) / np.sqrt(len(per_frame))).tolist()
+    return mean, sem
+
+
+def _build_bond_angles_mean_sem(
+    frames: list[StructureData],
+) -> tuple[dict[str, tuple[list[float], list[float]]], dict[str, tuple[list[float], list[float]]]]:
+    """Average bond-angle distributions across frames and compute SEM.
+
+    Args:
+        frames: Per-frame StructureData results.
+
+    Returns:
+        Tuple of ``(ba_mean, ba_sem)`` each mapping former symbol to
+        ``(bins, histogram)`` lists.
+
+    """
+    all_formers = sorted({k for f in frames for k in f.distributions.bond_angles})
+    ba_mean: dict[str, tuple[list[float], list[float]]] = {}
+    ba_sem: dict[str, tuple[list[float], list[float]]] = {}
+    for former in all_formers:
+        hists = [f.distributions.bond_angles[former][1] for f in frames if former in f.distributions.bond_angles]
+        bins = frames[0].distributions.bond_angles[former][0]
+        hist_mean, hist_sem_arr = _avg_list_arrays(hists)
+        ba_mean[former] = (bins, hist_mean)
+        ba_sem[former] = (bins, hist_sem_arr)
+    return ba_mean, ba_sem
+
+
+def _build_rings_mean_sem(frames: list[StructureData]) -> tuple[dict, dict]:
+    """Average ring statistics across frames and compute SEM.
+
+    Args:
+        frames: Per-frame StructureData results.
+
+    Returns:
+        Tuple of ``(mean_rings, sem_rings)`` each with keys ``"distribution"``
+        (``dict[str, float]``) and ``"mean_size"`` (``float``).
+
+    """
+    rings_dist_per_frame = []
+    mean_sizes = []
+    for frame_result in frames:
+        dist = frame_result.distributions.rings.get("distribution", {})
+        rings_dist_per_frame.append({k: float(v) for k, v in dist.items()} if isinstance(dist, dict) else {})
+        mean_size_value = frame_result.distributions.rings.get("mean_size", 0.0)
+        mean_sizes.append(float(mean_size_value) if isinstance(mean_size_value, (int, float)) else 0.0)
+    rings_dist_mean, rings_dist_sem = _merge_dict_mean_sem(rings_dist_per_frame)
+    return (
+        {"distribution": rings_dist_mean, "mean_size": float(np.mean(mean_sizes))},
+        {"distribution": rings_dist_sem, "mean_size": _sem(mean_sizes)},
+    )
+
+
+def _build_rdfs_mean_sem(frames: list[StructureData]) -> tuple[list[float], dict, dict, dict, dict]:
+    """Average RDF and cumulative coordination data across frames and compute SEM.
+
+    Args:
+        frames: Per-frame StructureData results.
+
+    Returns:
+        Tuple of ``(r, rdfs_mean, rdfs_sem, cumcn_mean, cumcn_sem)`` where ``r`` is the
+        shared radial grid and the remaining dicts map ``"El1-El2"`` keys to value lists.
+
+    """
+    r = frames[0].rdfs.r
+    all_rdf_keys = sorted({k for f in frames for k in f.rdfs.rdfs})
+    rdfs_m: dict[str, list[float]] = {}
+    rdfs_s: dict[str, list[float]] = {}
+    cumcn_m: dict[str, list[float]] = {}
+    cumcn_s: dict[str, list[float]] = {}
+    for key in all_rdf_keys:
+        rdf_vals = [f.rdfs.rdfs[key] for f in frames if key in f.rdfs.rdfs]
+        m, s = _avg_list_arrays(rdf_vals)
+        rdfs_m[key] = m
+        rdfs_s[key] = s
+        cn_vals = [f.rdfs.cumulative_coordination[key] for f in frames if key in f.rdfs.cumulative_coordination]
+        if cn_vals:
+            cm, cs = _avg_list_arrays(cn_vals)
+            cumcn_m[key] = cm
+            cumcn_s[key] = cs
+    return r, rdfs_m, rdfs_s, cumcn_m, cumcn_s
+
+
+def _build_sf_mean_sem(
+    frames: list[StructureData],
+) -> tuple[StructureFactorData | None, StructureFactorData | None]:
+    """Average structure factor data across frames and compute SEM.
+
+    Args:
+        frames: Per-frame StructureData results.
+
+    Returns:
+        Tuple of ``(sf_mean, sf_sem)`` as StructureFactorData instances, or
+        ``(None, None)`` if no structure factor was computed.
+
+    """
+    if frames[0].structure_factor is None:
+        return None, None
+    q = frames[0].structure_factor.q
+    sq_n_vals = [f.structure_factor.sq_neutron for f in frames if f.structure_factor]
+    sq_x_vals = [f.structure_factor.sq_xray for f in frames if f.structure_factor]
+    sq_n_m, sq_n_s = _avg_list_arrays(sq_n_vals)
+    sq_x_m, sq_x_s = _avg_list_arrays(sq_x_vals)
+    all_partial_keys = sorted({k for f in frames if f.structure_factor for k in f.structure_factor.sq_partials})
+    partials_m: dict[str, list[float]] = {}
+    partials_s: dict[str, list[float]] = {}
+    for pk in all_partial_keys:
+        pv = [
+            f.structure_factor.sq_partials[pk]
+            for f in frames
+            if f.structure_factor and pk in f.structure_factor.sq_partials
+        ]
+        pm, ps = _avg_list_arrays(pv)
+        partials_m[pk] = pm
+        partials_s[pk] = ps
+    return (
+        StructureFactorData(q=q, sq_neutron=sq_n_m, sq_xray=sq_x_m, sq_partials=partials_m),
+        StructureFactorData(q=q, sq_neutron=sq_n_s, sq_xray=sq_x_s, sq_partials=partials_s),
+    )
+
+
+def _build_sem_structure_data(frames: list[StructureData]) -> tuple[StructureData, StructureData]:
+    """Aggregate per-frame StructureData results into mean and SEM StructureData objects.
+
+    Args:
+        frames: Non-empty list of per-frame StructureData results.
+
+    Returns:
+        Tuple of ``(mean_data, sem_data)`` as StructureData instances. The ``elements``
+        field is copied from the first frame without averaging.
+
+    """
+    densities = [f.density for f in frames]
+    density_mean = float(np.mean(densities))
+    density_sem = _sem(densities)
+
+    o_coord_mean, o_coord_sem = _merge_dict_mean_sem([f.coordination.oxygen for f in frames])
+    formers_mean, formers_sem = _merge_nested_dict_mean_sem([f.coordination.formers for f in frames])
+    modifiers_mean, modifiers_sem = _merge_nested_dict_mean_sem([f.coordination.modifiers for f in frames])
+
+    qn_mean, qn_sem = _merge_dict_mean_sem([f.network.Qn_distribution for f in frames])
+    qn_partial_mean, qn_partial_sem = _merge_nested_dict_mean_sem([f.network.Qn_distribution_partial for f in frames])
+    conn_values = [f.network.connectivity for f in frames]
+    conn_mean = float(np.mean(conn_values))
+    conn_sem = _sem(conn_values)
+
+    ba_mean, ba_sem = _build_bond_angles_mean_sem(frames)
+    rings_mean, rings_sem = _build_rings_mean_sem(frames)
+    r, rdfs_m, rdfs_s, cumcn_m, cumcn_s = _build_rdfs_mean_sem(frames)
+    sf_mean_data, sf_sem_data = _build_sf_mean_sem(frames)
+
+    elements_ref = frames[0].elements
+
+    mean_data = StructureData(
+        density=density_mean,
+        coordination=CoordinationData(oxygen=o_coord_mean, formers=formers_mean, modifiers=modifiers_mean),
+        network=NetworkData(Qn_distribution=qn_mean, Qn_distribution_partial=qn_partial_mean, connectivity=conn_mean),
+        distributions=StructuralDistributions(bond_angles=ba_mean, rings=rings_mean),
+        rdfs=RadialDistributionData(r=r, rdfs=rdfs_m, cumulative_coordination=cumcn_m),
+        structure_factor=sf_mean_data,
+        elements=elements_ref,
+    )
+    sem_data = StructureData(
+        density=density_sem,
+        coordination=CoordinationData(oxygen=o_coord_sem, formers=formers_sem, modifiers=modifiers_sem),
+        network=NetworkData(Qn_distribution=qn_sem, Qn_distribution_partial=qn_partial_sem, connectivity=conn_sem),
+        distributions=StructuralDistributions(bond_angles=ba_sem, rings=rings_sem),
+        rdfs=RadialDistributionData(r=r, rdfs=rdfs_s, cumulative_coordination=cumcn_s),
+        structure_factor=sf_sem_data,
+        elements=elements_ref,
+    )
+    return mean_data, sem_data
+
+
+_ELEMENT_CUTOFF_FALLBACKS: dict[str, float] = {
+    "Si": 2.0,
+    "B": 1.8,
+    "P": 1.8,
+    "Ge": 2.0,
+    "Al": 2.0,
+    "Ti": 2.0,
+    "Zr": 2.2,
+    "Na": 3.52,
+    "K": 3.8,
+    "Ca": 3.0,
+    "Mg": 2.8,
+    "Li": 2.5,
+    "Ba": 3.2,
+    "Zn": 2.5,
+}
+
+
+def _compute_density(atoms: Atoms) -> float:
+    """Compute mass density of an ASE Atoms object in g/cm³.
+
+    Args:
+        atoms: ASE Atoms object with cell and masses set.
+
+    Returns:
+        Density in g/cm³.
+
+    """
+    volume_cm3 = atoms.get_volume() * 1e-24
+    avogadro_number = 6.022140857e23
+    total_mass_g = atoms.get_masses().sum() / avogadro_number
+    return total_mass_g / volume_cm3
+
+
+def _build_cutoff_map(
+    unique_z: np.ndarray,
+    type_map: dict[int, str],
+    former_types: list[int],
+    o_type: list[int],
+    r: np.ndarray,
+    rdfs: dict,
+) -> dict[str, float]:
+    """Build a coordination cutoff map by locating the first RDF minimum for each element.
+
+    For each element, the cutoff is taken as the first minimum of the element-oxygen RDF.
+    Falls back to ``_ELEMENT_CUTOFF_FALLBACKS`` when no minimum is detected.
+
+    Args:
+        unique_z: Unique atomic numbers present in the structure.
+        type_map: Mapping from atomic number to element symbol.
+        former_types: Atomic numbers of network-forming elements.
+        o_type: Atomic numbers of oxygen atoms (empty list if no oxygen).
+        r: Radial distance array used during RDF computation (Å).
+        rdfs: Raw RDF dict keyed by ``(z1, z2)`` atomic-number tuples.
+
+    Returns:
+        Dict mapping element symbol to cutoff distance in Å.
+
+    """
 
     def _canonical(a: int, b: int) -> tuple[int, int]:
         return (min(a, b), max(a, b))
@@ -254,150 +536,290 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
         symbol = type_map[z]
         if symbol == "O":
             if former_types:
-                pair = _canonical(O_type[0], former_types[0])
+                pair = _canonical(o_type[0], former_types[0])
                 if pair in rdfs:
                     r_min = find_rdf_minimum(r, rdfs[pair])
                     cutoff_map[symbol] = r_min if r_min is not None else 2.0
         else:
-            pair = _canonical(z, O_type[0]) if O_type else None
+            pair = _canonical(z, o_type[0]) if o_type else None
             if pair and pair in rdfs:
                 r_min = find_rdf_minimum(r, rdfs[pair])
-                if r_min is not None:
-                    cutoff_map[symbol] = r_min
-                else:
-                    element_fallbacks = {
-                        "Si": 2.0,
-                        "B": 1.8,
-                        "P": 1.8,
-                        "Ge": 2.0,
-                        "Al": 2.0,
-                        "Ti": 2.0,
-                        "Zr": 2.2,
-                        "Na": 3.52,
-                        "K": 3.8,
-                        "Ca": 3.0,
-                        "Mg": 2.8,
-                        "Li": 2.5,
-                        "Ba": 3.2,
-                        "Zn": 2.5,
-                    }
-                    cutoff_map[symbol] = element_fallbacks.get(symbol, 3.0)
+                cutoff_map[symbol] = r_min if r_min is not None else _ELEMENT_CUTOFF_FALLBACKS.get(symbol, 3.0)
+    return cutoff_map
 
-    # Coordination calculations
-    O_coord = {}
-    if O_type:
-        O_cutoff = cutoff_map.get("O", 2.0)
-        O_coord_raw, _ = compute_coordination(atoms, O_type[0], O_cutoff, former_types + modifier_types)
-        # Convert integer keys to strings for HDF5 compatibility
-        O_coord = {str(k): v for k, v in O_coord_raw.items()}
 
-    former_coords = {}
+def _compute_coordination_data(
+    atoms: Atoms,
+    type_map: dict[int, str],
+    network_formers: set[str],
+    modifiers: set[str],
+    former_types: list[int],
+    modifier_types: list[int],
+    o_type: list[int],
+    cutoff_map: dict[str, float],
+) -> tuple[dict, dict, dict]:
+    """Compute coordination number distributions for oxygen, formers, and modifiers.
+
+    Args:
+        atoms: ASE Atoms object to analyse.
+        type_map: Mapping from atomic number to element symbol.
+        network_formers: Set of network-former element symbols.
+        modifiers: Set of modifier element symbols.
+        former_types: Atomic numbers of network formers.
+        modifier_types: Atomic numbers of modifiers.
+        o_type: Atomic numbers of oxygen (empty list if no oxygen).
+        cutoff_map: Element symbol → coordination cutoff (Å).
+
+    Returns:
+        Tuple of ``(o_coord, former_coords, modifier_coords)`` where each is a
+        ``dict[str, int]`` or ``dict[str, dict[str, int]]`` coordination distribution.
+
+    """
+    o_coord: dict[str, float] = {}
+    if o_type:
+        o_cutoff = cutoff_map.get("O", 2.0)
+        o_coord_raw = compute_coordination(atoms, o_type[0], o_cutoff, former_types + modifier_types)
+        o_coord = {str(k): v for k, v in o_coord_raw.items()}
+
+    former_coords: dict[str, dict[str, float]] = {}
     for former in network_formers:
         z = next(k for k, v in type_map.items() if v == former)
-        if O_type:
-            coord_raw, _ = compute_coordination(atoms, z, cutoff_map[former], O_type)
-            # Convert integer keys to strings for HDF5 compatibility
+        if o_type:
+            coord_raw = compute_coordination(atoms, z, cutoff_map[former], o_type)
             former_coords[former] = {str(k): v for k, v in coord_raw.items()}
 
-    modifier_coords = {}
+    modifier_coords: dict[str, dict[str, float]] = {}
     for mod in modifiers:
         z = next(k for k, v in type_map.items() if v == mod)
-        if O_type:
-            coord_raw, _ = compute_coordination(atoms, z, cutoff_map[mod], O_type)
-            # Convert integer keys to strings for HDF5 compatibility
+        if o_type:
+            coord_raw = compute_coordination(atoms, z, cutoff_map[mod], o_type)
             modifier_coords[mod] = {str(k): v for k, v in coord_raw.items()}
 
-    Qn_dist = {}
-    Qn_dist_partial = {}
+    return o_coord, former_coords, modifier_coords
+
+
+def _compute_network_data(
+    atoms: Atoms,
+    network_formers: set[str],
+    former_types: list[int],
+    o_type: list[int],
+    cutoff_map: dict[str, float],
+) -> tuple[dict, dict, float, dict[str, int], dict[str, list[int]]]:
+    """Compute Q^n distribution, network connectivity, and oxygen classification.
+
+    Args:
+        atoms: ASE Atoms object to analyse.
+        network_formers: Set of network-former element symbols.
+        former_types: Atomic numbers of network formers.
+        o_type: Atomic numbers of oxygen (empty list if no oxygen).
+        cutoff_map: Element symbol → coordination cutoff (Å).
+
+    Returns:
+        Tuple of ``(qn_dist, qn_dist_partial, network_connectivity,
+        oxygen_class_counts, oxygen_class_ids)`` where:
+            - ``qn_dist``: Overall Q^n distribution ``{str(n): fraction}``.
+            - ``qn_dist_partial``: Per-former Q^n distribution.
+            - ``network_connectivity``: Scalar network connectivity value.
+            - ``oxygen_class_counts``: Count per oxygen class (BO, NBO, free, tri).
+            - ``oxygen_class_ids``: 1-based atom IDs per oxygen class.
+
+    """
+    qn_dist: dict = {}
+    qn_dist_partial: dict = {}
     network_connectivity = 0.0
     oxygen_class_counts: dict[str, int] = {}
     oxygen_class_ids: dict[str, list[int]] = {}
-    if network_formers and O_type:
-        Qn_dist_raw, Qn_dist_partial_raw, o_classes = compute_qn_and_classify(
-            atoms, cutoff_map["O"], former_types, O_type[0]
+    if network_formers and o_type:
+        qn_dist_raw, qn_dist_partial_raw, o_classes = compute_qn_and_classify(
+            atoms, cutoff_map["O"], former_types, o_type[0]
         )
-
-        # Aggregate oxygen classification
         for aid, cls in o_classes.items():
             oxygen_class_counts[cls] = oxygen_class_counts.get(cls, 0) + 1
             oxygen_class_ids.setdefault(cls, []).append(aid)
+        qn_dist = {str(k): v for k, v in qn_dist_raw.items()} if qn_dist_raw else {}
+        if qn_dist_partial_raw:
+            for element_key, qn_dict in qn_dist_partial_raw.items():
+                qn_dist_partial[str(element_key)] = {str(k): v for k, v in qn_dict.items()}
+        if qn_dist_raw and sum(qn_dist_raw.values()) > 0:
+            network_connectivity = compute_network_connectivity(qn_dist_raw)
+    return qn_dist, qn_dist_partial, network_connectivity, oxygen_class_counts, oxygen_class_ids
 
-        # Convert integer keys to strings for Pydantic compatibility
-        Qn_dist = {str(k): v for k, v in Qn_dist_raw.items()} if Qn_dist_raw else {}
-        Qn_dist_partial = {}
-        if Qn_dist_partial_raw:
-            for element_key, qn_dict in Qn_dist_partial_raw.items():
-                # Convert both outer and inner keys to strings
-                Qn_dist_partial[str(element_key)] = {str(k): v for k, v in qn_dict.items()}
 
-        if Qn_dist_raw and sum(Qn_dist_raw.values()) > 0:
-            network_connectivity = compute_network_connectivity(Qn_dist_raw)
+def _compute_distributions(
+    atoms: Atoms,
+    type_map: dict[int, str],
+    network_formers: set[str],
+    o_type: list[int],
+    cutoff_map: dict[str, float],
+) -> tuple[dict, dict]:
+    """Compute bond-angle distributions and ring statistics.
 
-    # Bond angles and rings
-    bond_angle_distributions = {}
+    Args:
+        atoms: ASE Atoms object to analyse.
+        type_map: Mapping from atomic number to element symbol.
+        network_formers: Set of network-former element symbols.
+        o_type: Atomic numbers of oxygen (empty list if no oxygen).
+        cutoff_map: Element symbol → coordination cutoff (Å).
+
+    Returns:
+        Tuple of ``(bond_angle_distributions, ring_statistics_data)`` where:
+            - ``bond_angle_distributions``: ``{former: (bins, histogram)}`` per former.
+            - ``ring_statistics_data``: ``{"distribution": {...}, "mean_size": float}``.
+
+    """
+    bond_angle_distributions: dict = {}
     for former in network_formers:
         z = next(k for k, v in type_map.items() if v == former)
-        if O_type:
-            bond_angle_distributions[former] = compute_angles(
-                atoms, center_type=z, neighbor_type=O_type[0], cutoff=cutoff_map[former], bins=180
+        if o_type:
+            _bins, _hist = compute_angles(
+                atoms, center_type=z, neighbor_type=o_type[0], cutoff=cutoff_map[former], bins=180
             )
+            bond_angle_distributions[former] = (_bins, _hist)
 
-    ring_statistics_data = {}
-    if network_formers and O_type:
+    ring_statistics_data: dict = {}
+    if network_formers and o_type:
         specific_cutoffs = {(former, "O"): cutoff_map[former] for former in network_formers}
         bond_lengths = generate_bond_length_dict(atoms, specific_cutoffs=specific_cutoffs)
         rings_dist, mean_ring_size = compute_guttmann_rings(atoms, bond_lengths=bond_lengths, max_size=40, n_cpus=1)
-        # Convert integer keys to strings for HDF5 compatibility
         rings_dist_str = {str(k): v for k, v in rings_dist.items()}
         ring_statistics_data = {"distribution": rings_dist_str, "mean_size": mean_ring_size}
 
-    # Convert data for serialization
+    return bond_angle_distributions, ring_statistics_data
+
+
+def _serialize_rdfs(
+    type_map: dict[int, str], r: np.ndarray, rdfs: dict, cumcn: dict
+) -> tuple[list[float], dict[str, list[float]], dict[str, list[float]]]:
+    """Convert raw RDF dicts (keyed by atomic-number pairs) to JSON-serialisable form.
+
+    Args:
+        type_map: Mapping from atomic number to element symbol.
+        r: Radial distance array (Å).
+        rdfs: RDF data keyed by ``(z1, z2)`` pairs.
+        cumcn: Cumulative coordination number data keyed by ``(z1, z2)`` pairs.
+
+    Returns:
+        Tuple of ``(r_list, rdfs_serialisable, cumcn_serialisable)`` where keys are
+        ``"El1-El2"`` strings and values are plain Python lists.
+
+    """
+
     def to_list(data: np.ndarray | list[float]) -> list[float]:
-        if isinstance(data, np.ndarray):
-            return data.tolist()
-        return list(data)
+        return data.tolist() if isinstance(data, np.ndarray) else list(data)
 
-    bond_angle_distributions_serializable = {
-        former: (to_list(angles), to_list(counts)) for former, (angles, counts) in bond_angle_distributions.items()
-    }
-
-    rdfs_serializable = {}
-    cumcn_serializable = {}
+    rdfs_serializable: dict[str, list[float]] = {}
+    cumcn_serializable: dict[str, list[float]] = {}
     for pair, rdf_data in rdfs.items():
         elem1, elem2 = type_map[pair[0]], type_map[pair[1]]
         key = f"{elem1}-{elem2}"
         rdfs_serializable[key] = to_list(rdf_data)
         if pair in cumcn:
             cumcn_serializable[key] = to_list(cumcn[pair])
+    return to_list(r), rdfs_serializable, cumcn_serializable
 
-    # Structure factor S(q) — neutron and X-ray
+
+def _compute_structure_factor_data(atoms: Atoms, type_map: dict[int, str]) -> StructureFactorData:
+    """Compute neutron- and X-ray-weighted structure factors and pack them into a StructureFactorData.
+
+    Args:
+        atoms: ASE Atoms object to analyse.
+        type_map: Mapping from atomic number to element symbol.
+
+    Returns:
+        StructureFactorData with q array, total S(q) for both radiations, and neutron partials.
+
+    """
+
+    def to_list(data: np.ndarray | list[float]) -> list[float]:
+        return data.tolist() if isinstance(data, np.ndarray) else list(data)
+
     q_sf, sq_neutron, sq_partials_neutron = compute_structure_factor(atoms, radiation="neutron")
     _, sq_xray, _ = compute_structure_factor(atoms, radiation="xray")
-    sq_partials_serializable = {}
-    for pair, sq_data in sq_partials_neutron.items():
-        elem1, elem2 = type_map[pair[0]], type_map[pair[1]]
-        sq_partials_serializable[f"{elem1}-{elem2}"] = to_list(sq_data)
-    structure_factor_data = StructureFactorData(
+    sq_partials_serializable = {
+        f"{type_map[pair[0]]}-{type_map[pair[1]]}": to_list(sq_data) for pair, sq_data in sq_partials_neutron.items()
+    }
+    return StructureFactorData(
         q=to_list(q_sf),
         sq_neutron=to_list(sq_neutron),
         sq_xray=to_list(sq_xray),
         sq_partials=sq_partials_serializable,
     )
 
-    return StructureData(
+
+def analyze_structure(
+    atoms: Atoms | list[Atoms],
+    *,
+    frame_averaging: bool = False,
+) -> tuple[StructureData, StructureData]:
+    """Perform a comprehensive structural analysis of an atomic configuration.
+
+    Args:
+        atoms: Atomic configuration to analyze, or a list of frames when frame_averaging=True.
+        frame_averaging: If True, average results over all frames in atoms (list[Atoms]).
+            Returns a tuple (mean_data, sem_data) where both are StructureData instances.
+
+    Returns:
+        StructureData: Object containing structured analysis results.
+        When frame_averaging=True, returns tuple[StructureData, StructureData] — (mean, sem).
+
+    Example:
+        >>> structure_data = analyze_structure(my_atoms)
+        >>> print(structure_data.density)
+
+    """
+    if frame_averaging:
+        if isinstance(atoms, list) and len(atoms) == 0:
+            msg = "frame_averaging=True requires a non-empty list[Atoms]"
+            raise ValueError(msg)
+        frames = cast("list[Atoms]", atoms if isinstance(atoms, list) else [atoms])
+        per_frame_results = [analyze_structure(frame_atoms)[0] for frame_atoms in frames]
+        return _build_sem_structure_data(per_frame_results)
+    if isinstance(atoms, list):
+        atoms = cast("Atoms", atoms[0])
+
+    unique_z = np.unique(atoms.get_atomic_numbers())
+    density = _compute_density(atoms)
+    type_map, network_formers, modifiers, _oxygen_present = _classify_elements(unique_z)
+    former_types = [z for z, sym in type_map.items() if sym in network_formers]
+    modifier_types = [z for z, sym in type_map.items() if sym in modifiers]
+    o_type = [z for z, sym in type_map.items() if sym == "O"]
+
+    r, rdfs, cumcn = compute_rdf(atoms)
+    cutoff_map = _build_cutoff_map(unique_z, type_map, former_types, o_type, r, rdfs)
+
+    o_coord, former_coords, modifier_coords = _compute_coordination_data(
+        atoms, type_map, network_formers, modifiers, former_types, modifier_types, o_type, cutoff_map
+    )
+    qn_dist, qn_dist_partial, network_connectivity, oxygen_class_counts, oxygen_class_ids = _compute_network_data(
+        atoms, network_formers, former_types, o_type, cutoff_map
+    )
+    bond_angle_distributions, ring_statistics_data = _compute_distributions(
+        atoms, type_map, network_formers, o_type, cutoff_map
+    )
+
+    def to_list(data: np.ndarray | list[float]) -> list[float]:
+        return data.tolist() if isinstance(data, np.ndarray) else list(data)
+
+    bond_angle_distributions_serializable = {
+        former: (to_list(angles), to_list(counts)) for former, (angles, counts) in bond_angle_distributions.items()
+    }
+    r_list, rdfs_serializable, cumcn_serializable = _serialize_rdfs(type_map, r, rdfs, cumcn)
+    structure_factor_data = _compute_structure_factor_data(atoms, type_map)
+
+    mean_data = StructureData(
         density=density,
-        coordination=CoordinationData(oxygen=O_coord, formers=former_coords, modifiers=modifier_coords),
+        coordination=CoordinationData(oxygen=o_coord, formers=former_coords, modifiers=modifier_coords),
         network=NetworkData(
-            Qn_distribution={k: float(v) for k, v in Qn_dist.items()},
+            Qn_distribution={k: float(v) for k, v in qn_dist.items()},
             Qn_distribution_partial={
-                outer: {inner: float(v) for inner, v in inner_d.items()} for outer, inner_d in Qn_dist_partial.items()
+                outer: {inner: float(v) for inner, v in inner_d.items()} for outer, inner_d in qn_dist_partial.items()
             },
             connectivity=network_connectivity,
         ),
         distributions=StructuralDistributions(
             bond_angles=bond_angle_distributions_serializable, rings=ring_statistics_data
         ),
-        rdfs=RadialDistributionData(r=to_list(r), rdfs=rdfs_serializable, cumulative_coordination=cumcn_serializable),
+        rdfs=RadialDistributionData(r=r_list, rdfs=rdfs_serializable, cumulative_coordination=cumcn_serializable),
         structure_factor=structure_factor_data,
         elements=ElementInfo(
             formers=list(network_formers),
@@ -407,10 +829,22 @@ def analyze_structure(atoms: Atoms) -> StructureData:  # noqa: C901, PLR0912, PL
             oxygen_ids=oxygen_class_ids,
         ),
     )
+    _, sem_data = _build_sem_structure_data([mean_data])
+    return mean_data, sem_data
 
 
 def _add_coordination_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
-    """Add coordination distribution plots to the figure."""
+    """Add coordination distribution bar plots for oxygen and network formers.
+
+    Populates subplots (row=1, col=1) for oxygen coordination and (row=1, col=2)
+    for per-former coordination.
+
+    Args:
+        fig: Plotly figure with a 4x3 subplot grid.
+        structure_data: Structural analysis results.
+        colors: Colour cycle list used to distinguish traces.
+
+    """
     # Plot 1: Oxygen coordination distribution
     if structure_data.coordination.oxygen:
         keys = [int(k) for k in structure_data.coordination.oxygen]
@@ -460,7 +894,17 @@ def _add_coordination_plots(fig: go.Figure, structure_data: StructureData, color
 
 
 def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
-    """Add modifier coordination and Q^n distribution plots to the figure."""
+    """Add modifier coordination and Q^n distribution bar plots.
+
+    Populates subplots (row=1, col=3) for modifier coordination and (row=2, col=1)
+    for the Q^n distribution.
+
+    Args:
+        fig: Plotly figure with a 4x3 subplot grid.
+        structure_data: Structural analysis results.
+        colors: Colour cycle list used to distinguish traces.
+
+    """
     # Plot 3: Modifier coordination distributions
     if structure_data.coordination.modifiers:
         for i, (modifier, coord_data) in enumerate(structure_data.coordination.modifiers.items()):
@@ -510,7 +954,17 @@ def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: li
 
 
 def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
-    """Add ring statistics and bond angle plots to the figure."""
+    """Add bond-angle distribution and ring-size distribution plots.
+
+    Populates subplots (row=2, col=2) for bond angles and (row=2, col=3) for
+    ring-size histograms.
+
+    Args:
+        fig: Plotly figure with a 4x3 subplot grid.
+        structure_data: Structural analysis results.
+        colors: Colour cycle list used to distinguish traces.
+
+    """
     # Constants
     EXPECTED_TUPLE_LENGTH = 2
 
@@ -565,7 +1019,16 @@ def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[
 def _classify_rdf_pairs(
     structure_data: StructureData,
 ) -> dict[str, list[tuple[str, list[float]]]]:
-    """Classify RDF pairs into O-O, former-O and modifier-O categories."""
+    """Classify RDF pairs into O-O, former-O, and modifier-O categories.
+
+    Args:
+        structure_data: Structural analysis results containing RDF data and element info.
+
+    Returns:
+        Dict with keys ``"oo"``, ``"former"``, and ``"modifier"``, each mapping to a list
+        of ``(pair_label, rdf_data)`` tuples.
+
+    """
     formers = set(structure_data.elements.formers)
     modifiers = set(structure_data.elements.modifiers)
 
@@ -586,7 +1049,18 @@ def _classify_rdf_pairs(
 
 
 def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
-    """Add radial distribution function plots to the figure."""
+    """Add radial distribution function and cumulative coordination number plots.
+
+    Populates subplots (row=3, col=1) for O-O pairs, (row=3, col=2) for former-O pairs,
+    and (row=3, col=3) for modifier-O pairs. Each RDF trace is accompanied by a dashed
+    cumulative coordination number trace when available.
+
+    Args:
+        fig: Plotly figure with a 4x3 subplot grid.
+        structure_data: Structural analysis results.
+        colors: Colour cycle list used to distinguish traces.
+
+    """
     if not structure_data.rdfs.rdfs:
         return
 
@@ -636,7 +1110,18 @@ def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[s
 
 
 def _add_structure_factor_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
-    """Add structure factor S(q) plots to the figure."""
+    """Add neutron S(q), X-ray S(q), and partial S_ab(q) plots.
+
+    Populates subplots (row=4, col=1) for neutron S(q), (row=4, col=2) for X-ray S(q),
+    and (row=4, col=3) for partial structure factors. Does nothing if no structure factor
+    was computed.
+
+    Args:
+        fig: Plotly figure with a 4x3 subplot grid.
+        structure_data: Structural analysis results.
+        colors: Colour cycle list used to distinguish partial S(q) traces.
+
+    """
     if structure_data.structure_factor is None:
         return
 

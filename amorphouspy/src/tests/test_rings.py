@@ -7,6 +7,7 @@ requires the 20Na2O-80SiO2 dump file).  Atom type mapping: O=type1, Si=type2, Na
 import networkx as nx
 import numpy as np
 import pytest
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.rings import (
     _find_guttman_rings,
     _process_edge,
@@ -123,7 +124,7 @@ def test_compute_guttmann_rings_counts_positive(glass_structure):
         bond_lengths={("Si", "O"): 2.0},
         max_size=6,
     )
-    assert all(isinstance(v, int) and v > 0 for v in hist.values())
+    assert all(isinstance(v, (int, float)) and v > 0 for v in hist.values())
 
 
 def test_compute_guttmann_rings_mean_nonnegative(glass_structure):
@@ -199,3 +200,43 @@ def test_compute_guttmann_rings_silicate_dominant_size(glass_structure):
     if hist:
         most_common = max(hist, key=hist.get)
         assert 3 <= most_common <= 10
+
+
+# ---------------------------------------------------------------------------
+# average_over_frames — compute_guttmann_rings
+# ---------------------------------------------------------------------------
+
+
+def test_average_over_frames_rings_identical_frames(glass_structure):
+    """Three identical frames: mean equals single-frame, SEM ≈ 0."""
+    hist_s, mean_s = compute_guttmann_rings(glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6)
+    (hist_mean, mean_size_mean), (hist_sem, mean_size_sem) = average_over_frames(
+        compute_guttmann_rings,
+        [glass_structure, glass_structure, glass_structure],
+        bond_lengths={("Si", "O"): 2.0},
+        max_size=6,
+    )
+    assert isinstance(hist_mean, dict)
+    assert isinstance(mean_size_mean, float)
+    assert mean_size_mean == pytest.approx(mean_s, abs=1e-10)
+    assert mean_size_sem == pytest.approx(0.0, abs=1e-10)
+    for size, count in hist_s.items():
+        assert hist_mean[size] == pytest.approx(count, abs=1e-10)
+        assert hist_sem[size] == pytest.approx(0.0, abs=1e-10)
+
+
+def test_average_over_frames_empty_list_raises():
+    """average_over_frames with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="requires a non-empty list"):
+        average_over_frames(compute_guttmann_rings, [], bond_lengths={("Si", "O"): 2.0})
+
+
+def test_compute_guttmann_rings_list_uses_first_frame(glass_structure):
+    """Passing a list without average_over_frames uses the first frame."""
+    hist_s, mean_s = compute_guttmann_rings(glass_structure, bond_lengths={("Si", "O"): 2.0}, max_size=6)
+    hist_a, mean_a = compute_guttmann_rings(
+        [glass_structure, glass_structure], bond_lengths={("Si", "O"): 2.0}, max_size=6
+    )
+    assert mean_a == pytest.approx(mean_s, abs=1e-10)
+    for size in hist_s:
+        assert hist_a[size] == pytest.approx(hist_s[size], abs=1e-10)

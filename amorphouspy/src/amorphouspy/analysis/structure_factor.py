@@ -4,12 +4,18 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
 import numpy as np
-from ase import Atoms
 from ase.data import chemical_symbols
 from pymatgen.analysis.diffraction.xrd import ATOMIC_SCATTERING_PARAMS
 
 from amorphouspy.analysis.radial_distribution_functions import compute_rdf
+
+if TYPE_CHECKING:
+    from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # Coherent neutron scattering lengths in fm (10^-15 m) for natural elements.
@@ -231,7 +237,7 @@ def _sine_transform_rdf(
 
 
 def compute_structure_factor(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     q_min: float = 0.5,
     q_max: float = 20.0,
     n_q: int = 500,
@@ -260,7 +266,7 @@ def compute_structure_factor(
     form factor f_a(q) (four-Gaussian fit via pymatgen), making the weights q-dependent.
 
     Args:
-        structure: ASE Atoms object with periodic boundary conditions.
+        structure: ASE Atoms object with periodic boundary conditions. Pass a list to use the first frame.
         q_min: Minimum momentum transfer in Angstroms^-1 (default 0.5).
         q_max: Maximum momentum transfer in Angstroms^-1 (default 20.0).
         n_q: Number of q-grid points (default 500).
@@ -294,6 +300,8 @@ def compute_structure_factor(
         >>> sq_SiO = sq_partials[(8, 14)]  # partial S_SiO(q)
 
     """
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     if radiation not in ("neutron", "xray"):
         msg = f"radiation must be 'neutron' or 'xray', got {radiation!r}."
         raise ValueError(msg)

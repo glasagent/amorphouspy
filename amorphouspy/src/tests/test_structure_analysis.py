@@ -27,6 +27,7 @@ Reference: https://doi.org/10.1039/D4TB02414A
 
 import numpy as np
 import pytest
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.qn_network_connectivity import classify_oxygens, compute_qn_and_classify
 from ase.io import read
 
@@ -72,8 +73,7 @@ def test_compute_coordination_o() -> None:
     O_type = [8]
     former_types = [14]
 
-    # compute_coordination returns (distribution_dict, per-atom coordination dict)
-    o_coord_dist, _ = compute_coordination(
+    o_coord_dist = compute_coordination(
         atoms,
         [O_type],
         cutoff_map["O"],
@@ -83,7 +83,9 @@ def test_compute_coordination_o() -> None:
     # Check types
     assert isinstance(o_coord_dist, dict), "O coordination should return a dictionary"
     assert all(isinstance(k, int) for k in o_coord_dist), "Keys of O coordination should be integers"
-    assert all(isinstance(v, int) for v in o_coord_dist.values()), "Values of O coordination should be integers"
+    assert all(isinstance(v, (int, float)) for v in o_coord_dist.values()), (
+        "Values of O coordination should be integers or floats"
+    )
 
     # Two categories: NBO (coordination = 1) and BO (coordination = 2)
     assert o_coord_dist.get(1, 0) == N_NBO, f"NBO count mismatch. Expected {N_NBO}, got {o_coord_dist.get(1, 0)}"
@@ -262,3 +264,59 @@ def test_compute_qn_and_classify_oxygen_classes_valid_labels():
     _, _, o_classes = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
     valid = {"BO", "NBO", "free", "tri"}
     assert all(v in valid for v in o_classes.values())
+
+
+# ---------------------------------------------------------------------------
+# average_over_frames — compute_qn and compute_qn_and_classify
+# ---------------------------------------------------------------------------
+
+
+def test_average_over_frames_qn_identical_frames():
+    """Three identical frames: mean equals single-frame result, SEM ≈ 0."""
+    atoms = _load_na_si_o_structure()
+    total_single, partial_single = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    (total_mean, partial_mean), (total_sem, partial_sem) = average_over_frames(
+        compute_qn, [atoms, atoms, atoms], cutoff=CUTOFF, former_types=FORMER_TYPES, o_type=O_TYPE
+    )
+    for q in range(7):
+        assert total_mean[q] == pytest.approx(total_single[q], abs=1e-10)
+        assert total_sem[q] == pytest.approx(0.0, abs=1e-10)
+    for ft in FORMER_TYPES:
+        for q in range(7):
+            assert partial_mean[ft][q] == pytest.approx(partial_single[ft][q], abs=1e-10)
+            assert partial_sem[ft][q] == pytest.approx(0.0, abs=1e-10)
+
+
+def test_average_over_frames_qn_empty_list_raises():
+    """average_over_frames with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="requires a non-empty list"):
+        average_over_frames(compute_qn, [], cutoff=CUTOFF, former_types=FORMER_TYPES, o_type=O_TYPE)
+
+
+def test_compute_qn_list_uses_first_frame():
+    """Passing a list without average_over_frames uses the first frame."""
+    atoms = _load_na_si_o_structure()
+    total_s, _partial_s = compute_qn(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    total_a, _partial_a = compute_qn([atoms, atoms], CUTOFF, FORMER_TYPES, O_TYPE)
+    for q in range(7):
+        assert total_a[q] == pytest.approx(total_s[q], abs=1e-10)
+
+
+def test_average_over_frames_qn_and_classify_identical_frames():
+    """Three identical frames: qn means equal single-frame, SEM ≈ 0, o_classes passes through."""
+    atoms = _load_na_si_o_structure()
+    total_s, _partial_s, o_cls_s = compute_qn_and_classify(atoms, CUTOFF, FORMER_TYPES, O_TYPE)
+    (total_mean, _partial_mean, o_cls_last), (total_sem, _partial_sem, o_cls_sem) = average_over_frames(
+        compute_qn_and_classify, [atoms, atoms, atoms], cutoff=CUTOFF, former_types=FORMER_TYPES, o_type=O_TYPE
+    )
+    for q in range(7):
+        assert total_mean[q] == pytest.approx(total_s[q], abs=1e-10)
+        assert total_sem[q] == pytest.approx(0.0, abs=1e-10)
+    assert o_cls_last == o_cls_s
+    assert o_cls_sem is None
+
+
+def test_compute_network_connectivity_zero_formers_raises():
+    """compute_network_connectivity raises ValueError when all counts are zero."""
+    with pytest.raises(ValueError, match="total_formers is zero"):
+        compute_network_connectivity({0: 0, 1: 0, 2: 0})

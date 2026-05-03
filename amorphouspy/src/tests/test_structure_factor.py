@@ -6,8 +6,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import numpy as np
 import numpy.typing as npt
 import pytest
-
-# Assuming the original script is named structure_factor.py
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.structure_factor import (
     _neutron_scattering_length,
     _sine_transform_rdf,
@@ -75,9 +74,7 @@ def test_compute_structure_factor_integration() -> None:
     lattice: Atoms = Atoms("Si2", scaled_positions=[(0, 0, 0), (0.25, 0.25, 0.25)], cell=(a, a, a), pbc=True)
 
     try:
-        results: tuple[
-            npt.NDArray[np.float64], npt.NDArray[np.float64], dict[tuple[int, int], npt.NDArray[np.float64]]
-        ] = compute_structure_factor(lattice, q_min=1.0, q_max=10.0, n_q=50, r_max=5.0, radiation="neutron")
+        results = compute_structure_factor(lattice, q_min=1.0, q_max=10.0, n_q=50, r_max=5.0, radiation="neutron")
 
         q, sq, partials = results
 
@@ -114,3 +111,41 @@ def test_structure_factor_output_shapes(rad: str) -> None:
     assert sq.shape == (n_q,)
     # SiO2 should have Si-Si, O-O, and Si-O partials
     assert len(partials) == 3
+
+
+# ---------------------------------------------------------------------------
+# average_over_frames — compute_structure_factor
+# ---------------------------------------------------------------------------
+
+
+def test_average_over_frames_structure_factor_identical_frames() -> None:
+    """Three identical frames: mean equals single-frame result, SEM ≈ 0."""
+    structure = Atoms("SiO2", positions=[(0, 0, 0), (1, 1, 1), (2, 2, 2)], cell=(5, 5, 5), pbc=True)
+    n_q = 20
+    q_s, sq_s, partials_s = compute_structure_factor(structure, n_q=n_q, r_max=4.0)
+    (q_a, sq_mean, partials_mean), (_, sq_sem, partials_sem) = average_over_frames(
+        compute_structure_factor, [structure, structure, structure], n_q=n_q, r_max=4.0
+    )
+    assert np.allclose(q_a, q_s)
+    assert np.allclose(sq_mean, sq_s)
+    assert np.allclose(sq_sem, 0.0, atol=1e-10)
+    for k in partials_s:
+        assert np.allclose(partials_mean[k], partials_s[k])
+        assert np.allclose(partials_sem[k], 0.0, atol=1e-10)
+
+
+def test_compute_structure_factor_list_uses_first_frame() -> None:
+    """Passing a list without average_over_frames uses the first frame."""
+    structure = Atoms("SiO2", positions=[(0, 0, 0), (1, 1, 1), (2, 2, 2)], cell=(5, 5, 5), pbc=True)
+    q_s, sq_s, _ = compute_structure_factor(structure, n_q=20, r_max=4.0)
+    q_a, sq_a, _ = compute_structure_factor([structure, structure], n_q=20, r_max=4.0)
+    assert np.allclose(q_a, q_s)
+    assert np.allclose(sq_a, sq_s)
+
+
+def test_compute_structure_factor_unknown_xray_element_raises() -> None:
+    """X-ray form factor for an element not in ATOMIC_SCATTERING_PARAMS raises KeyError."""
+    # Oganesson (Z=118) is not in the Doyle-Turner table
+    structure = Atoms([118], positions=[(0, 0, 0)], cell=(5, 5, 5), pbc=True)
+    with pytest.raises(KeyError):
+        compute_structure_factor(structure, radiation="xray", n_q=10, r_max=4.0)
