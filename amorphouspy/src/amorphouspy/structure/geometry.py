@@ -267,6 +267,7 @@ def get_structure_dict(
     density: float | None = None,
     min_distance: float = 1.6,
     max_attempts_per_atom: int = 10000,
+    random_seed: int = 42,
 ) -> dict:
     """Generate a structure dictionary for a given composition.
 
@@ -282,6 +283,7 @@ def get_structure_dict(
         density: Density in g/cm^3, default is calculated from model.
         min_distance: Minimum distance between any two atoms in angstroms, default is 1.6 Å.
         max_attempts_per_atom: Maximum attempts to place an atom before giving up, default is 10000.
+        random_seed: Random seed for reproducibility, default is 42.
 
     Returns:
         A dictionary containing:
@@ -322,6 +324,7 @@ def get_structure_dict(
         min_distance=min_distance,
         max_attempts_per_atom=max_attempts_per_atom,
         stoichiometry=stoichiometry,
+        seed=random_seed,
     )
 
     if target_atoms is not None:
