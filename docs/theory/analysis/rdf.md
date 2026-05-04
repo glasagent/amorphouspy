@@ -45,17 +45,17 @@ The coordination number is usually read at the first minimum of $g(r)$, which co
 
 ## Computing RDFs
 
-### `compute_rdf(structure, r_max, dr, pairs)`
+### `compute_rdf(structure, r_max, n_bins, type_pairs)`
 
 ```python
 from amorphouspy import compute_rdf
 
-# Compute all partial RDFs up to 8 Å with 0.02 Å bin width
-rdfs = compute_rdf(
+# Compute all partial RDFs up to 8 Å with 500 bins
+r, rdfs, cn = compute_rdf(
     structure=glass_structure,
-    r_max=8.0,       # Maximum distance (Å)
-    dr=0.02,         # Bin width (Å)
-    pairs=None,      # None → all unique pairs
+    r_max=8.0,         # Maximum distance (Å)
+    n_bins=500,        # Number of radial bins
+    type_pairs=None,   # None → all unique pairs
 )
 ```
 
@@ -64,17 +64,17 @@ rdfs = compute_rdf(
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `structure` | `Atoms` | — | ASE Atoms object with periodic boundaries |
-| `r_max` | `float` | `8.0` | Maximum distance for RDF calculation (Å) |
-| `dr` | `float` | `0.02` | Bin width (Å) — smaller = smoother RDF |
-| `pairs` | `list[tuple]` or `None` | `None` | Specific element pairs, e.g. `[("Si", "O"), ("Na", "O")]`. `None` = all pairs |
+| `r_max` | `float` | `10.0` | Maximum distance for RDF calculation (Å) |
+| `n_bins` | `int` | `500` | Number of radial bins |
+| `type_pairs` | `list[tuple[int, int]]` or `None` | `None` | Specific pairs as atomic numbers, e.g. `[(14, 8), (11, 8)]`. `None` = all pairs |
 
-**Returns:** A dictionary with:
+**Returns:** A tuple `(r, rdfs, cn_cumulative)`:
 
-| Key | Type | Description |
+| Variable | Type | Description |
 |---|---|---|
-| `"r"` | `np.ndarray` | Bin center positions (Å) |
-| `"g_r"` | `dict[str, np.ndarray]` | Partial RDFs keyed by pair label (e.g. `"Si-O"`) |
-| `"n_r"` | `dict[str, np.ndarray]` | Running coordination numbers |
+| `r` | `np.ndarray` | Bin center positions (Å) |
+| `rdfs` | `dict[tuple[int,int], np.ndarray]` | Partial RDFs keyed by atomic number pair |
+| `cn_cumulative` | `dict[tuple[int,int], np.ndarray]` | Running coordination numbers |
 
 ### Example: Typical oxide glass RDF analysis
 
@@ -82,11 +82,11 @@ rdfs = compute_rdf(
 from amorphouspy import compute_rdf
 import plotly.graph_objects as go
 
-rdfs = compute_rdf(glass_structure, r_max=8.0, dr=0.02)
+r, rdfs, cn = compute_rdf(glass_structure, r_max=8.0, n_bins=500)
 
 fig = go.Figure()
-for pair, g_r in rdfs["g_r"].items():
-    fig.add_trace(go.Scatter(x=rdfs["r"], y=g_r, name=pair))
+for pair, g_r in rdfs.items():
+    fig.add_trace(go.Scatter(x=r, y=g_r, name=str(pair)))
 
 fig.update_layout(
     xaxis_title="r (Å)",
@@ -94,6 +94,10 @@ fig.update_layout(
     title="Partial Radial Distribution Functions",
 )
 fig.show()
+
+# Access specific pairs by atomic numbers (e.g. Si=14, O=8)
+g_SiO = rdfs[(14, 8)]
+cn_SiO = cn[(14, 8)]
 ```
 
 ### Typical peak positions for oxide glasses
@@ -111,26 +115,22 @@ fig.show()
 
 ## Computing Coordination Numbers
 
-### `compute_coordination(structure, cutoff_dict)`
+### `compute_coordination(structure, target_type, cutoff, neighbor_types)`
 
-Extracts integer coordination numbers from neighbor lists using element-pair-specific cutoff distances.
+Computes coordination number distribution for atoms of a target type.
 
 ```python
 from amorphouspy import compute_coordination
 
-# Define cutoffs for each pair (first minimum of g(r))
-cutoffs = {
-    ("Si", "O"): 2.0,   # Å
-    ("Al", "O"): 2.2,
-    ("Na", "O"): 3.0,
-    ("Ca", "O"): 3.0,
-}
+# Si (atomic number 14) coordinated by O (atomic number 8), cutoff 2.0 Å
+coord_dist = compute_coordination(
+    glass_structure,
+    target_type=14,       # Atomic number of central atom (Si)
+    cutoff=2.0,           # Cutoff radius (Å)
+    neighbor_types=[8],   # Atomic numbers of neighbors (O); None = all types
+)
 
-coord = compute_coordination(glass_structure, cutoff_dict=cutoffs)
-
-# Returns average coordination numbers
-print(f"Si-O coordination: {coord['Si-O']:.2f}")  # Should be ~4.0
-print(f"Al-O coordination: {coord['Al-O']:.2f}")  # Should be ~4.0–5.0
+# coord_dist: {cn: count} e.g. {4: 195, 5: 5}
 ```
 
 **Parameters:**
@@ -138,7 +138,9 @@ print(f"Al-O coordination: {coord['Al-O']:.2f}")  # Should be ~4.0–5.0
 | Parameter | Type | Description |
 |---|---|---|
 | `structure` | `Atoms` | ASE Atoms object |
-| `cutoff_dict` | `dict[tuple, float]` | Cutoff distance for each (element1, element2) pair |
+| `target_type` | `int` | Atomic number of the central atom type |
+| `cutoff` | `float` | Cutoff radius in Å |
+| `neighbor_types` | `list[int]` or `None` | Atomic numbers of valid neighbors; `None` = all types |
 
 > **`r_max` clamping:** If `r_max` exceeds half the smallest perpendicular cell height, it is automatically reduced to the largest integer that stays within the limit and a `UserWarning` is emitted. To suppress it: `warnings.filterwarnings("ignore", category=UserWarning, module="amorphouspy")`.
 

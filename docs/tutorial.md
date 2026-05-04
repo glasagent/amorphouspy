@@ -23,7 +23,7 @@ graph TD
 Each step is handled by a Python function, whose output feeds naturally into the next step.
 
 - **Inputs**: They take an [ASE `Atoms`](https://wiki.fysik.dtu.dk/ase/ase/atoms.html) object representing a structure, alongside a pandas DataFrame representing the [Interatomic Potential](theory/potentials/index.md). 
-- **Outputs**: They return structured dictionaries, pandas DataFrames, or dedicated namedtuples (like `StructuralAnalysisData`).
+- **Outputs**: They return structured dictionaries, pandas DataFrames, or Pydantic models (like `StructureData`).
 
 
 ## Quick Start
@@ -52,7 +52,7 @@ print(f"Element counts: {structure_dict['element_counts']}")
 
 ### 2. Set up an interatomic potential
 
-Choose from three built-in classical force fields. The potential generator returns a DataFrame containing all LAMMPS configuration lines:
+Choose from the built-in classical force fields. The potential generator returns a DataFrame containing all LAMMPS configuration lines:
 
 ```python
 from amorphouspy import generate_potential
@@ -61,8 +61,10 @@ from amorphouspy import generate_potential
 potential = generate_potential(structure_dict, potential_type="pmmcs")
 
 # Other options:
-# potential = generate_potential(structure_dict, potential_type="bjp")   # CAS glasses
-# potential = generate_potential(structure_dict, potential_type="shik")  # Si/Al/B glasses
+# potential = generate_potential(structure_dict, potential_type="bjp")       # CAS glasses
+# potential = generate_potential(structure_dict, potential_type="shik")      # Si/Al/B glasses
+# potential = generate_potential(structure_dict, potential_type="bmp-harmonic")  # Multi-modifier silicates/phosphates
+# potential = generate_potential(structure_dict, potential_type="bmp-screened-harmonic")  # Borate/borosilicate glasses
 ```
 
 ### 3. Run a melt-quench simulation
@@ -146,7 +148,7 @@ from amorphouspy import elastic_simulation
 elastic_result = elastic_simulation(
     structure=glass_structure,
     potential=potential,
-    temperature=300.0,
+    temperature_sim=300.0,
     strain=1e-3,
     production_steps=10_000,
 )

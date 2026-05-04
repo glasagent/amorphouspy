@@ -66,12 +66,12 @@ print(data.elements.cutoffs)    # e.g. {"Si": 2.0, "Al": 2.1, "Na": 3.4, "O": 1.
 
 Generates a multi-panel interactive Plotly figure with:
 
-- All partial RDFs $g_{\alpha\beta}(r)$ overlaid
-- Coordination numbers table
-- $Q^n$ distribution bar chart per former species
+- All partial RDFs $g_{\alpha\beta}(r)$ overlaid with cumulative coordination numbers
+- Coordination distributions for oxygen, formers, and modifiers
+- $Q^n$ distribution bar chart
 - Bond angle histograms for O-X-O and X-O-X
 - Ring size distribution histogram
-- Cavity volume distribution histogram
+- Neutron and X-ray $S(q)$ with partial $S_{\alpha\beta}(q)$
 
 ---
 
@@ -84,8 +84,8 @@ Each analysis method has its own dedicated page with full parameter documentatio
 | **Radial Distribution Function** | [RDF & Coordination](rdf.md) | $g(r)$, partial RDFs, running coordination numbers |
 | **$Q^n$ Distribution** | [$Q^n$ & Network Connectivity](qn.md) | Bridging oxygen analysis, network connectivity |
 | **Bond Angles** | [Bond Angle Distribution](bond_angles.md) | O-X-O and X-O-X angle histograms |
-| **Ring Statistics** | [Ring Analysis](rings.md) | Guttman ring counting via sovapy |
-| **Cavity Analysis** | [Cavity / Void Analysis](cavities.md) | Void volume and size distributions via sovapy |
+| **Ring Statistics** | [Ring Analysis](rings.md) | Guttman ring counting via networkx BFS |
+| **Cavity Analysis** | [Cavity / Void Analysis](cavities.md) | Void volume and size distributions via mcubes voxelization |
 | **Thermal Expansion** | [CTE Analysis](cte_analysis.md) | From NPT enthalpy-volume fluctuations |
 
 ---
@@ -94,7 +94,7 @@ Each analysis method has its own dedicated page with full parameter documentatio
 
 All analysis methods depend on neighbor finding. `amorphouspy` provides a cell-list based neighbor search that handles periodic boundary conditions efficiently.
 
-### `compute_neighbors(structure, cutoff)`
+### `get_neighbors(structure, cutoff)`
 
 Uses a cell-list algorithm (with Numba JIT compilation for performance) to find all pairs of atoms within a given cutoff distance. The algorithm:
 
@@ -104,9 +104,9 @@ Uses a cell-list algorithm (with Numba JIT compilation for performance) to find 
 4. Returns neighbor lists as arrays of pairs and distances
 
 ```python
-from amorphouspy.neighbors import compute_neighbors
+from amorphouspy import get_neighbors
 
-neighbors = compute_neighbors(glass_structure, cutoff=3.0)
+neighbors = get_neighbors(glass_structure, cutoff=3.0)
 # Returns arrays of (i, j, distance) for all pairs within cutoff
 ```
 

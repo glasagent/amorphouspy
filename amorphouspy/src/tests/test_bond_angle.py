@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.bond_angle_distribution import compute_angles
 from ase import Atoms
 
@@ -109,3 +110,64 @@ def test_compute_angles_bin_centers_range() -> None:
     bin_centers, _ = compute_angles(atoms, center_type=14, neighbor_type=8, cutoff=2.0)
     assert bin_centers[0] > 0.0
     assert bin_centers[-1] < 180.0
+
+
+# ---------------------------------------------------------------------------
+# average_over_frames — compute_angles
+# ---------------------------------------------------------------------------
+
+
+def test_average_over_frames_angles_identical_frames() -> None:
+    """Three identical frames: mean equals single-frame result, SEM ≈ 0."""
+    atoms = _atoms_with_known_angle(90.0)
+    bins_s, hist_s = compute_angles(atoms, center_type=14, neighbor_type=8, cutoff=2.0)
+    (bins_a, hist_mean), (_, hist_sem) = average_over_frames(
+        compute_angles, [atoms, atoms, atoms], center_type=14, neighbor_type=8, cutoff=2.0
+    )
+    assert np.allclose(bins_a, bins_s)
+    assert np.allclose(hist_mean, hist_s)
+    assert np.allclose(hist_sem, 0.0, atol=1e-10)
+
+
+def test_average_over_frames_angles_empty_list_raises() -> None:
+    """average_over_frames with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="requires a non-empty list"):
+        average_over_frames(compute_angles, [], center_type=14, neighbor_type=8, cutoff=2.0)
+
+
+def test_compute_angles_list_uses_first_frame() -> None:
+    """Passing a list without average_over_frames uses the first frame."""
+    atoms = _atoms_with_known_angle(90.0)
+    bins_s, hist_s = compute_angles(atoms, 14, 8, 2.0)
+    bins_a, hist_a = compute_angles([atoms, atoms], 14, 8, 2.0)
+    assert np.allclose(bins_a, bins_s)
+    assert np.allclose(hist_a, hist_s)
+
+
+def test_compute_angles_triclinic_cell() -> None:
+    """Triclinic (sheared) cell produces same peak as orthogonal cell — covers fractional minimum-image branch."""
+    atoms_ortho = _atoms_with_known_angle(90.0)
+    cell_shear = atoms_ortho.get_cell().array.copy()
+    cell_shear[1, 0] = 1.0  # shear b-vector along a
+    atoms_tri = Atoms(
+        numbers=atoms_ortho.get_atomic_numbers(),
+        positions=atoms_ortho.get_positions(),
+        cell=cell_shear,
+        pbc=True,
+    )
+    bins_ortho, hist_ortho = compute_angles(atoms_ortho, center_type=14, neighbor_type=8, cutoff=2.0)
+    bins_tri, hist_tri = compute_angles(atoms_tri, center_type=14, neighbor_type=8, cutoff=2.0)
+    peak_ortho = bins_ortho[np.argmax(hist_ortho)]
+    peak_tri = bins_tri[np.argmax(hist_tri)]
+    assert abs(peak_ortho - peak_tri) < 2.0
+
+
+def test_compute_angles_fewer_than_two_neighbors() -> None:
+    """Atom with only 1 neighbor after filtering is skipped — histogram has no signal."""
+    # Single Si with only one O neighbor within cutoff
+    coords = np.array([[5.0, 5.0, 5.0], [6.6, 5.0, 5.0]])
+    types = np.array([14, 8])
+    atoms = Atoms(numbers=types, positions=coords, cell=np.diag([10.0, 10.0, 10.0]), pbc=True)
+    bins, hist = compute_angles(atoms, center_type=14, neighbor_type=8, cutoff=2.0)
+    assert bins.shape == hist.shape
+    assert np.nansum(hist) == pytest.approx(0.0)

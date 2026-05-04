@@ -5,17 +5,28 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 import pandas as pd
 
+from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
+
 from . import bjp_potential as bjp
+from . import bmp_potential as bmp
+from . import du_teter_potential as du_teter
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
+from . import yang_potential as yang2026
+
+__all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfConfig"]
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
-POTENTIAL_PREFERENCE = ("pmmcs", "shik", "bjp")
+POTENTIAL_PREFERENCE = ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter", "yang2026")
 
 _POTENTIAL_MODULES = {
     "pmmcs": pmmcs,
     "bjp": bjp,
     "shik": shik,
+    "du_teter": du_teter,
+    "bmp-harmonic": bmp,
+    "bmp-screened-harmonic": bmp,
+    "yang2026": yang2026,
 }
 
 
@@ -23,7 +34,7 @@ def get_supported_elements(potential_type: str) -> set[str]:
     """Return the set of non-oxygen elements supported by *potential_type*.
 
     Args:
-        potential_type: One of ``"pmmcs"``, ``"bjp"``, or ``"shik"``.
+        potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``, ``"du_teter"``, ``"bmp"``, or ``"yang2026"``.
 
     Returns:
         Set of element symbols.
@@ -42,7 +53,9 @@ def get_supported_elements(potential_type: str) -> set[str]:
 def select_potential(elements: set[str]) -> str | None:
     """Choose the best potential that supports all *elements*.
 
-    Potentials are tried in preference order: pmmcs → shik → bjp.
+    Potentials are tried in preference order: pmmcs → bmp → shik → bjp → du_teter → yang2026.
+    When boron (B) is present, ``bmp-screened-harmonic`` is preferred over ``bmp-harmonic``
+    because its three-body term explicitly covers B-O-B and B-O-Si interactions.
 
     Args:
         elements: Element symbols required by the composition.
@@ -52,7 +65,10 @@ def select_potential(elements: set[str]) -> str | None:
         handle the full element set.
 
     """
-    for name in POTENTIAL_PREFERENCE:
+    preference = (
+        ("pmmcs", "bmp-screened-harmonic", "bmp-harmonic", "shik", "bjp") if "B" in elements else POTENTIAL_PREFERENCE
+    )
+    for name in preference:
         if elements <= _POTENTIAL_MODULES[name].supported_elements():
             return name
     return None
@@ -71,29 +87,47 @@ def compatible_potentials(elements: set[str]) -> list[str]:
     return [name for name in POTENTIAL_PREFERENCE if elements <= _POTENTIAL_MODULES[name].supported_elements()]
 
 
-def generate_potential(atoms_dict: dict, potential_type: str = "pmmcs", *, melt: bool = True) -> pd.DataFrame:
+def generate_potential(
+    atoms_dict: dict,
+    potential_type: str = "pmmcs",
+    *,
+    melt: bool = False,
+    electrostatics: InteractionConfig | None = None,
+) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 
     Args:
-        atoms_dict: Dictionary containing atomic structure information.
-        potential_type: Type of potential to generate. Options are "pmmcs", "bjp", or "shik".
-            (default is "pmmcs").
-        melt: Append a Langevin + NVE/limit melt run block (10000 steps). Only used when
-            ``potential_type="shik"``.
+        atoms_dict: Structure dict from ``get_structure_dict()``.
+        potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``, ``"du_teter"``,
+            ``"bmp-harmonic"``, ``"bmp-screened-harmonic"``, or ``"yang2026"``.
+        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K (all potentials).
+        electrostatics: Coulomb solver settings. Defaults to DSF with each
+            potential's built-in cutoffs and damping parameter.
 
     Returns:
-        DataFrame containing potential configuration.
+        DataFrame with columns Name, Filename, Model, Species, Config.
 
     Example:
         >>> potential = generate_potential(struct_dict, potential_type="shik")
         >>> potential = generate_potential(struct_dict, potential_type="shik", melt=False)
+        >>> potential = generate_potential(struct_dict, potential_type="bmp-harmonic")
+        >>> potential = generate_potential(struct_dict, potential_type="bmp-screened-harmonic", melt=False)
+        >>> potential = generate_potential(struct_dict, potential_type="du_teter")
+        >>> potential = generate_potential(struct_dict, potential_type="yang2026")
 
     """
     if potential_type.lower() == "pmmcs":
-        return pmmcs.generate_pmmcs_potential(atoms_dict)
+        return pmmcs.generate_pmmcs_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
     if potential_type.lower() == "bjp":
-        return bjp.generate_bjp_potential(atoms_dict)
+        return bjp.generate_bjp_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
     if potential_type.lower() == "shik":
-        return shik.generate_shik_potential(atoms_dict, melt=melt)
+        return shik.generate_shik_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
+    if potential_type.lower() == "du_teter":
+        return du_teter.generate_du_teter_potential(atoms_dict, melt=melt)
+    if potential_type.lower() in ("bmp-harmonic", "bmp-screened-harmonic"):
+        variant = "harmonic" if potential_type.lower() == "bmp-harmonic" else "screened-harmonic"
+        return bmp.generate_bmp_potential(atoms_dict, variant=variant, melt=melt, electrostatics=electrostatics)
+    if potential_type.lower() == "yang2026":
+        return yang2026.generate_yang2026_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
     msg = f"Unsupported potential type: {potential_type}"
     raise ValueError(msg)

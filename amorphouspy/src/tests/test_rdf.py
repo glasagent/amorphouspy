@@ -2,13 +2,16 @@
 
 import numpy as np
 import pytest
+from amorphouspy.analysis.averaging import average_over_frames
 from amorphouspy.analysis.radial_distribution_functions import (
     _compute_cn_cumulative,
     _compute_distances,
     _compute_rdf_histograms,
+    compute_coordination,
     compute_rdf,
 )
 from ase import Atoms
+from ase.build import make_supercell
 from ase.io import read
 
 from . import DATA_DIR
@@ -217,3 +220,141 @@ def test_compute_rdf_with_dump_si_o_peak() -> None:
     # First peak of Si-O RDF is ~1.6 Å
     peak_r = r[np.argmax(g_si_o)]
     assert 1.4 <= peak_r <= 1.9, f"Si-O peak at unexpected position: {peak_r:.3f} Å"
+
+
+# ---------------------------------------------------------------------------
+# Alpha-cristobalite fixtures
+# Primitive cell: space group P4_1 2_1 2 (#92), a=b=4.978 A, c=6.948 A, 4 Si + 8 O.
+# A 2x2x2 supercell (96 atoms, ~9.956x9.956x13.896 A) is used so that r_max=4.0 A
+# stays within the half-cell limit and periodic images don't inflate coordination counts.
+# ---------------------------------------------------------------------------
+
+_CRISTOBALITE_FRAC = np.array(
+    [
+        [0.30004, 0.30004, 0.00000],  # Si
+        [0.69996, 0.69996, 0.50000],  # Si
+        [0.19996, 0.80004, 0.25000],  # Si
+        [0.80004, 0.19996, 0.75000],  # Si
+        [0.23976, 0.10324, 0.17844],  # O
+        [0.76024, 0.89676, 0.67844],  # O
+        [0.39676, 0.73976, 0.42844],  # O
+        [0.60324, 0.26024, 0.92844],  # O
+        [0.10324, 0.23976, 0.82156],  # O
+        [0.89676, 0.76024, 0.32156],  # O
+        [0.26024, 0.60324, 0.07156],  # O
+        [0.73976, 0.39676, 0.57156],  # O
+    ]
+)
+_CRISTOBALITE_TYPES = np.array([14, 14, 14, 14, 8, 8, 8, 8, 8, 8, 8, 8])
+
+
+def _cristobalite_ortho() -> Atoms:
+    """2x2x2 supercell of alpha-cristobalite in its natural tetragonal geometry."""
+    a, c = 4.978, 6.948
+    cell = np.diag([a, a, c])
+    prim = Atoms(numbers=_CRISTOBALITE_TYPES, scaled_positions=_CRISTOBALITE_FRAC, cell=cell, pbc=True)
+    return make_supercell(prim, 2 * np.eye(3, dtype=int))
+
+
+def _cristobalite_sheared() -> Atoms:
+    """2x2x2 supercell of alpha-cristobalite in a triclinic cell (b sheared 1 A along a).
+
+    Cartesian positions are taken from the ortho supercell; the cell b-vector is then sheared.
+    All pairwise distances are therefore identical to the ortho case.
+    """
+    ortho = _cristobalite_ortho()
+    cell_shear = ortho.get_cell().array.copy()
+    cell_shear[1, 0] = 1.0
+    return Atoms(numbers=ortho.get_atomic_numbers(), positions=ortho.get_positions(), cell=cell_shear, pbc=True)
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+def test_compute_rdf_cristobalite_ortho_first_peak() -> None:
+    """Si-O first peak in the cristobalite supercell lands near 1.61 A."""
+    atoms = _cristobalite_ortho()
+    r, rdfs, _ = compute_rdf(atoms, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    peak_r = r[np.argmax(rdfs[(8, 14)])]
+    assert 1.55 <= peak_r <= 1.70, f"Si-O peak at unexpected position: {peak_r:.3f} A"
+
+
+def test_compute_coordination_cristobalite_four_fold() -> None:
+    """Every Si in the cristobalite supercell is exactly 4-coordinated by O."""
+    atoms = _cristobalite_ortho()
+    coord_dist = compute_coordination(atoms, target_type=14, cutoff=1.75)
+    # All 32 Si atoms in the 2x2x2 supercell must have coordination number 4
+    assert coord_dist == {4: 32}
+
+
+def test_compute_rdf_sheared_matches_ortho() -> None:
+    """Shearing the cell must not shift the Si-O RDF peak (distances are Cartesian)."""
+    ortho = _cristobalite_ortho()
+    sheared = _cristobalite_sheared()
+    r, rdfs_ortho, _ = compute_rdf(ortho, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    _, rdfs_sheared, _ = compute_rdf(sheared, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    peak_ortho = r[np.argmax(rdfs_ortho[(8, 14)])]
+    peak_sheared = r[np.argmax(rdfs_sheared[(8, 14)])]
+    assert abs(peak_ortho - peak_sheared) < 0.02, f"Peak shifted by {abs(peak_ortho - peak_sheared):.4f} A under shear"
+
+
+def test_compute_rdf_ordered_pair_remapped_to_canonical() -> None:
+    """Requesting (14,8) and (8,14) both produce the same rdfs[(8,14)] histogram.
+
+    compute_rdf normalises type_pairs to unordered (min,max) form for distance collection,
+    so the g(r) curve must be identical regardless of the request order.
+    """
+    atoms = _cristobalite_ortho()
+    _, rdfs_ab, _ = compute_rdf(atoms, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    _, rdfs_ba, _ = compute_rdf(atoms, r_max=4.0, n_bins=300, type_pairs=[(14, 8)])
+    assert (8, 14) in rdfs_ab
+    assert (8, 14) in rdfs_ba
+    np.testing.assert_array_equal(rdfs_ab[(8, 14)], rdfs_ba[(8, 14)])
+
+
+# ---------------------------------------------------------------------------
+# average_over_frames — compute_rdf and compute_coordination
+# ---------------------------------------------------------------------------
+
+
+def test_average_over_frames_rdf_identical_frames() -> None:
+    """Three identical frames: rdfs_mean equals single-frame rdfs, all SEM ≈ 0."""
+    atoms = _cristobalite_ortho()
+    r_s, rdfs_s, cumcn_s = compute_rdf(atoms, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    (r_a, rdfs_mean, cumcn_mean), (_, rdfs_sem, cumcn_sem) = average_over_frames(
+        compute_rdf, [atoms, atoms, atoms], r_max=4.0, n_bins=300, type_pairs=[(8, 14)]
+    )
+    np.testing.assert_array_almost_equal(r_a, r_s)
+    np.testing.assert_array_almost_equal(rdfs_mean[(8, 14)], rdfs_s[(8, 14)])
+    np.testing.assert_array_almost_equal(cumcn_mean[(8, 14)], cumcn_s[(8, 14)])
+    assert np.allclose(rdfs_sem[(8, 14)], 0.0, atol=1e-10)
+    assert np.allclose(cumcn_sem[(8, 14)], 0.0, atol=1e-10)
+
+
+def test_average_over_frames_empty_list_raises() -> None:
+    """average_over_frames with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="requires a non-empty list"):
+        average_over_frames(compute_rdf, [])
+
+
+def test_compute_rdf_list_uses_first_frame() -> None:
+    """list[Atoms] without average_over_frames uses first frame without error."""
+    atoms = _cristobalite_ortho()
+    r_s, rdfs_s, _ = compute_rdf(atoms, r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    r_a, rdfs_a, _ = compute_rdf([atoms, atoms], r_max=4.0, n_bins=300, type_pairs=[(8, 14)])
+    np.testing.assert_array_almost_equal(r_a, r_s)
+    np.testing.assert_array_almost_equal(rdfs_a[(8, 14)], rdfs_s[(8, 14)])
+
+
+def test_average_over_frames_coordination_identical_frames() -> None:
+    """Three identical frames: dist_mean equals single-frame dist, SEM ≈ 0."""
+    atoms = _cristobalite_ortho()
+    dist_s = compute_coordination(atoms, target_type=14, cutoff=1.75)
+    (dist_mean,), (dist_sem,) = average_over_frames(
+        compute_coordination, [atoms, atoms, atoms], target_type=14, cutoff=1.75
+    )
+    for cn in dist_s:
+        assert dist_mean[cn] == pytest.approx(dist_s[cn], abs=1e-10)
+        assert dist_sem[cn] == pytest.approx(0.0, abs=1e-10)

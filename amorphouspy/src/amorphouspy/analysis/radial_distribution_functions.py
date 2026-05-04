@@ -4,14 +4,18 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 """
 
+from __future__ import annotations
+
 import math
 import warnings
 from itertools import combinations_with_replacement
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
-from ase import Atoms
 
 from amorphouspy.neighbors import (
+    NUMBA_AVAILABLE,
+    build_distances,
     cell_perpendicular_heights,
     compute_cell_list_orthogonal,
     compute_cell_list_triclinic,
@@ -19,31 +23,34 @@ from amorphouspy.neighbors import (
 )
 from amorphouspy.shared import count_distribution
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 
 def compute_coordination(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     target_type: int,
     cutoff: float,
     neighbor_types: list[int] | None = None,
-) -> tuple[dict[int, int], dict[int, int]]:
-    """Compute coordination number for atoms of a target type.
+) -> dict[int, float]:
+    """Compute coordination number distribution for atoms of a target type.
 
     Args:
-        structure: The atomic structure as ASE object.
+        structure: The atomic structure as ASE object. Pass a list to use the first frame.
         target_type: Atom type (atomic number) for which to compute coordination.
         cutoff: Cutoff radius in Å.
         neighbor_types: Valid neighbor atomic numbers. None means all types.
 
     Returns:
-        A tuple containing:
-            coordination_distribution: Mapping from coordination number to count.
-            per_atom_coordination: Mapping from atom ID to coordination number.
+        Mapping from coordination number to atom count.
 
     Example:
         >>> structure = read('glass.xyz')
-        >>> dist, cn = compute_coordination(structure, target_type=14, cutoff=2.0)
+        >>> dist = compute_coordination(structure, target_type=14, cutoff=2.0)
 
     """
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     neighbors = get_neighbors(
         structure,
         cutoff=cutoff,
@@ -63,25 +70,35 @@ def compute_coordination(
     }
 
     coord_numbers_distribution = count_distribution(coord_numbers)
-    return dict(sorted(coord_numbers_distribution.items())), coord_numbers
+    return {k: float(v) for k, v in sorted(coord_numbers_distribution.items())}
 
 
-def _compute_distances(structure: Atoms, r_max: float) -> tuple:  # noqa: C901, PLR0912, PLR0915
+def _compute_distances(  # noqa: C901, PLR0912, PLR0915
+    structure: Atoms,
+    r_max: float,
+    types: np.ndarray | None = None,
+    unordered_pairs: list[tuple[int, int]] | None = None,
+) -> tuple:
     """Collect all pairwise distances up to r_max using a cell list.
 
-    Replaces the O(N²) all-pairs Numba kernel with the cell-list
-    infrastructure from amorphouspy.neighbors, reducing complexity to
-    approximately O(N) for uniform density systems.
+    Uses Numba-compiled parallel kernels when available, falling back to a
+    pure-Python cell-list loop.
 
     Args:
         structure: The atomic structure.
         r_max: Maximum distance for pair collection.
+        types: Atomic-number array; forwarded to the Numba kernel for type filtering.
+        unordered_pairs: Canonical type pairs to restrict collection to.
 
     Returns:
         A tuple of (distances, i_indices, j_indices).
     """
     structure_wrapped = structure.copy()
     structure_wrapped.wrap()
+
+    if NUMBA_AVAILABLE:
+        return build_distances(structure_wrapped, r_max, types, unordered_pairs)
+
     coords = structure_wrapped.get_positions()
     cell = structure_wrapped.get_cell().array
     n = len(coords)
@@ -239,11 +256,15 @@ def _compute_cn_cumulative(
 
 
 def compute_rdf(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     r_max: float = 10.0,
     n_bins: int = 500,
     type_pairs: list[tuple[int, int]] | None = None,
-) -> tuple[np.ndarray, dict, dict]:
+) -> tuple[
+    np.ndarray,
+    dict[tuple[int, int], np.ndarray],
+    dict[tuple[int, int], np.ndarray],
+]:
     """Compute radial distribution functions (RDFs) and cumulative coordination numbers.
 
     Calculates the pair-wise radial distribution function g(r) for specified
@@ -251,7 +272,7 @@ def compute_rdf(
     triclinic), along with the cumulative coordination number n(r).
 
     Args:
-        structure:  ASE Atoms object.
+        structure:  ASE Atoms object. Pass a list to use the first frame.
         r_max:      Maximum distance in Å (default 10.0).
         n_bins:     Number of radial bins (default 500).
         type_pairs: List of (atomic_number_1, atomic_number_2) pairs.
@@ -259,10 +280,10 @@ def compute_rdf(
                     plus all same-type pairs.
 
     Returns:
-        r: Radial bin centres in Å, shape (n_bins,).
-        rdfs: Normalised g(r) for each type pair, shape (n_bins,).
-        cn_cumulative: Mean number of neighbours of the second type within radius r
-            around an atom of the first type, shape (n_bins,).
+        A 3-tuple containing:
+            r: Radial bin centres in Å, shape (n_bins,).
+            rdfs: Normalised g(r) for each type pair.
+            cn_cumulative: Cumulative coordination numbers.
 
     Notes:
         - If r_max exceeds half the smallest perpendicular cell height, it is
@@ -283,6 +304,8 @@ def compute_rdf(
         >>> cn_OSi = cn[(14, 8)]   # Si around O
 
     """
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     types = structure.get_atomic_numbers()
     unique_types = np.unique(types)
     type_counts = {int(t): int(np.sum(types == t)) for t in unique_types}
@@ -317,15 +340,16 @@ def compute_rdf(
             if a != b:
                 requested_ordered.append((b, a))
     else:
-        unordered_pairs = list({(min(a, b), max(a, b)) for a, b in type_pairs})
-        requested_ordered = list(dict.fromkeys(type_pairs))
+        valid_pairs = [(a, b) for a, b in type_pairs if a in type_counts and b in type_counts]
+        unordered_pairs = list({(min(a, b), max(a, b)) for a, b in valid_pairs})
+        requested_ordered = list(dict.fromkeys(valid_pairs))
 
     bin_edges = np.linspace(0, r_max, n_bins + 1)
     r = 0.5 * (bin_edges[1:] + bin_edges[:-1])
     dr = bin_edges[1] - bin_edges[0]
     shell_volumes = 4.0 * np.pi * r**2 * dr
 
-    distances, i_idx, j_idx = _compute_distances(structure, r_max)
+    distances, i_idx, j_idx = _compute_distances(structure, r_max, types, unordered_pairs)
     type_i = types[i_idx]
     type_j = types[j_idx]
 

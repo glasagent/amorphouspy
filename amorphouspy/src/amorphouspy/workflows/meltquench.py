@@ -78,7 +78,7 @@ def _run_lammps_md(  # pragma: no cover
         t_end = temperature_end if temperature_end is not None else temperature
 
         input_control: dict[str, Any] = {
-            "dump_modify": f"1 every {n_ionic_steps} first yes",
+            "dump_modify": f"1 every {n_print} first yes",
             "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
             "thermo_modify": "flush yes",
         }
@@ -183,8 +183,11 @@ def melt_quench_simulation(
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
+    if potential_name in {"bmp-screened-harmonic", "bmp-harmonic"}:
+        potential_name = "bmp"  # both variants share the same MD protocol
+
     # Check if protocol exists
-    if potential_name not in PROTOCOL_MAP:
+    elif potential_name not in PROTOCOL_MAP:
         available = ", ".join(PROTOCOL_MAP.keys())
         msg = f"Unknown potential: {potential_name}. Available protocols: {available}"
         raise ValueError(msg)

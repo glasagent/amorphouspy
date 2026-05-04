@@ -22,10 +22,12 @@ from __future__ import annotations
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from itertools import combinations_with_replacement
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Iterable as _Iterable
+
+    from ase import Atoms
 
 try:
     from tqdm import tqdm as _tqdm
@@ -411,11 +413,11 @@ def _find_guttman_rings(
 
 
 def compute_guttmann_rings(
-    structure: Atoms,
+    structure: Atoms | list[Atoms],
     bond_lengths: dict[tuple[str, str], float],
     max_size: int = 24,
     n_cpus: int = 1,
-) -> tuple[dict[int, int], float]:
+) -> tuple[dict[int, float], float]:
     """Compute the Guttman ring size distribution and mean ring size.
 
     Rings are detected using a native networkx-based BFS implementation of
@@ -427,6 +429,7 @@ def compute_guttmann_rings(
 
     Args:
         structure: ASE Atoms object containing atomic coordinates and types.
+            Pass a list to use the first frame.
         bond_lengths: Maximum bond lengths for each element pair, e.g.
             ``{('Si', 'O'): 1.8, ('Al', 'O'): 1.95}``. All T-O pairs must
             be specified; T-T and O-O pairs are ignored.
@@ -465,6 +468,8 @@ def compute_guttmann_rings(
         ...     n_cpus=-1,
         ... )
     """
+    if isinstance(structure, list):
+        structure = cast("Atoms", structure[0])
     z_cutoffs, former_atomic_numbers = _symbols_to_z_cutoffs(bond_lengths)
 
     if not former_atomic_numbers:
@@ -490,8 +495,8 @@ def compute_guttmann_rings(
 
     total_rings = sum(ring_counts.values())
     mean_ring_size = sum(size * count for size, count in ring_counts.items()) / total_rings
-
-    return ring_counts, float(mean_ring_size)
+    ring_counts_float: dict[int, float] = {k: float(v) for k, v in ring_counts.items()}
+    return ring_counts_float, float(mean_ring_size)
 
 
 def generate_bond_length_dict(

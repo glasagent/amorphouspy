@@ -1,6 +1,7 @@
 """Tests for amorphouspy.workflows.structural_analysis — full coverage."""
 
 import warnings
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 import amorphouspy.workflows.structural_analysis as sa_module
@@ -26,6 +27,9 @@ from amorphouspy.workflows.structural_analysis import (
 )
 from ase.data import chemical_symbols as _ase_chemical_symbols
 from ase.io import read
+
+if TYPE_CHECKING:
+    from ase import Atoms
 from plotly.subplots import make_subplots
 from pydantic import ValidationError
 from scipy.ndimage import gaussian_filter1d as _gaussian_filter1d
@@ -249,7 +253,7 @@ def test_analyze_structure_sio2_glass() -> None:
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
-        result = analyze_structure(atoms)
+        result, _sem = analyze_structure(atoms)
 
     assert isinstance(result, StructureData)
     assert result.density > 0.0
@@ -264,7 +268,7 @@ def test_analyze_structure_density_reasonable() -> None:
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
-        result = analyze_structure(atoms)
+        result, _sem = analyze_structure(atoms)
 
     # SiO2 glass density ≈ 2.2 g/cm³, allow wide range
     assert 1.0 < result.density < 5.0
@@ -277,7 +281,7 @@ def test_analyze_structure_has_rdfs() -> None:
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
-        result = analyze_structure(atoms)
+        result, _sem = analyze_structure(atoms)
 
     assert len(result.rdfs.rdfs) > 0
     assert len(result.rdfs.r) > 0
@@ -290,7 +294,7 @@ def test_analyze_structure_has_qn_distribution() -> None:
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
-        result = analyze_structure(atoms)
+        result, _sem = analyze_structure(atoms)
 
     # SiO2 glass should have non-empty Qn distribution (Q4 dominant)
     assert isinstance(result.network.Qn_distribution, dict)
@@ -310,7 +314,7 @@ def test_analyze_structure_with_modifier() -> None:
         "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
         return_value=({4: 5, 6: 15}, 5.2),
     ):
-        result = analyze_structure(atoms)
+        result, _sem = analyze_structure(atoms)
 
     assert isinstance(result, StructureData)
     # Na should appear as modifier
@@ -327,7 +331,7 @@ def test_analyze_structure_fallback_cutoff() -> None:
             return_value=({4: 10, 6: 20}, 5.5),
         ),
     ):
-        result = analyze_structure(atoms)
+        result, _sem = analyze_structure(atoms)
     # Si fallback cutoff is 2.0
     assert result.elements.cutoffs.get("Si") == pytest.approx(2.0)
 
@@ -583,3 +587,68 @@ def test_structure_factor_data_invalid_q_type_raises() -> None:
             sq_neutron=[1.0],
             sq_xray=[1.0],
         )
+
+
+# ---------------------------------------------------------------------------
+# frame_averaging — analyze_structure
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_structure_frame_averaging_returns_tuple() -> None:
+    """frame_averaging=True returns a 2-tuple of StructureData."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with patch(
+        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        return_value=({4: 10, 6: 20}, 5.5),
+    ):
+        result = analyze_structure([atoms, atoms, atoms], frame_averaging=True)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    mean_data, sem_data = result
+    assert isinstance(mean_data, StructureData)
+    assert isinstance(sem_data, StructureData)
+
+
+def test_analyze_structure_frame_averaging_mean_density_matches_single() -> None:
+    """Mean density from frame_averaging equals single-frame density (identical frames)."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with patch(
+        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        return_value=({4: 10, 6: 20}, 5.5),
+    ):
+        single, _sem_single = analyze_structure(atoms)
+        mean_data, sem_data = analyze_structure([atoms, atoms, atoms], frame_averaging=True)
+    assert mean_data.density == pytest.approx(single.density, rel=1e-6)
+    assert isinstance(sem_data.density, float)
+    assert sem_data.density == pytest.approx(0.0, abs=1e-10)
+
+
+def test_analyze_structure_frame_averaging_empty_list_raises() -> None:
+    """frame_averaging=True with empty list raises ValueError."""
+    with pytest.raises(ValueError, match="frame_averaging=True requires"):
+        analyze_structure([], frame_averaging=True)
+
+
+def test_analyze_structure_frame_averaging_single_atoms_fallback() -> None:
+    """frame_averaging=True with single Atoms falls back to single-frame result with SEM=0."""
+    atoms = read(SIO2_XYZ)
+    with patch(
+        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        return_value=({4: 10, 6: 20}, 5.5),
+    ):
+        single, _sem_single = analyze_structure(atoms)
+        mean_data, sem_data = analyze_structure(atoms, frame_averaging=True)
+    assert mean_data.density == pytest.approx(single.density, rel=1e-6)
+    assert sem_data.density == pytest.approx(0.0, abs=1e-10)
+
+
+def test_analyze_structure_list_uses_first_frame() -> None:
+    """Passing a list without frame_averaging=True uses the first frame."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with patch(
+        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        return_value=({4: 10, 6: 20}, 5.5),
+    ):
+        single, _sem_single = analyze_structure(atoms)
+        result, _sem_result = analyze_structure([atoms, atoms])
+    assert result.density == pytest.approx(single.density, rel=1e-6)
