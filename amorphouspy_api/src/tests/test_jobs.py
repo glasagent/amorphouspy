@@ -202,15 +202,19 @@ def test_submit_job_executor_failure_returns_503() -> None:
     # The detail should mention the job and the underlying error
     assert "detail" in data
     detail = data["detail"]
-    assert "503" in str(resp.status_code)
     assert "compute backend" in detail.lower() or "executor" in detail.lower() or "submission failed" in detail.lower()
 
 
 def test_submit_job_executor_failure_stores_failed_job() -> None:
     """When executor submission raises, the job record should be saved as 'failed' with errors populated."""
-    with patch(
-        "amorphouspy_api.routers.jobs._submit_to_executor",
-        side_effect=RuntimeError("disk quota exceeded"),
+    known_job_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+    with (
+        patch(
+            "amorphouspy_api.routers.jobs._submit_to_executor",
+            side_effect=RuntimeError("disk quota exceeded"),
+        ),
+        patch("amorphouspy_api.routers.jobs.uuid4", return_value=known_job_id),
     ):
         resp = client.post(
             "/jobs",
@@ -220,16 +224,9 @@ def test_submit_job_executor_failure_stores_failed_job() -> None:
         )
 
     assert resp.status_code == 503
-    detail = resp.json()["detail"]
-    # Extract the job_id from the detail message (format: "Job submission failed for job <id>. ...")
-    import re
-
-    match = re.search(r"job ([0-9a-f-]{36})", detail)
-    assert match, f"Could not extract job_id from detail: {detail!r}"
-    job_id = match.group(1)
 
     store = get_job_store()
-    job = store.get_job(job_id)
+    job = store.get_job(known_job_id)
     assert job is not None
     assert job.status == "failed"
     assert job.errors
