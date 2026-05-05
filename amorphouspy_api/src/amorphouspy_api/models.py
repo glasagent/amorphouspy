@@ -13,6 +13,7 @@ from ase.io import read, write
 from pydantic import (
     AfterValidator,
     BaseModel,
+    ConfigDict,
     Discriminator,
     Field,
     PlainSerializer,
@@ -48,6 +49,12 @@ class Composition(RootModel[dict[str, float]]):
     >>> c.canonical
     'CaO 15 - Na2O 15 - SiO2 70'
     """
+
+    # Open WebUI / OpenAI function-calling requires all "object" schemas to
+    # include a "properties" key.  RootModel[dict[...]] emits only
+    # additionalProperties; adding an empty properties object satisfies the
+    # validator without changing semantics.
+    model_config = ConfigDict(json_schema_extra={"properties": {}})
 
     @property
     def canonical(self) -> str:
