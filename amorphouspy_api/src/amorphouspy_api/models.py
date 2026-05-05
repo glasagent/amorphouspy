@@ -435,6 +435,10 @@ class JobCreatedResponse(BaseModel):
     potential: Potential
     tags: list[str] = Field(default_factory=list)
     created_at: str
+    errors: dict[str, str] = Field(
+        default_factory=dict,
+        description="Non-empty when the job has recorded errors; maps step/category to error message.",
+    )
     urls: dict[str, str] = Field(
         default_factory=dict,
         description=(
