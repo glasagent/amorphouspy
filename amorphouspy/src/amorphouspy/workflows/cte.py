@@ -180,8 +180,7 @@ def cte_from_fluctuations_simulation(
         The "data" holds the collected data from all individual production runs. "run_index" is to
         clearly identify which production run the data belongs to. "steps" contains the number of steps
         for each run. Thermodynamic and structural data are averaged over each production run and these
-        averages are listed under the respective key. Finally, also the structure after the simulation
-        has finished is stored for further use or analysis. Example:
+        averages are listed under the respective key. Example:
         { 'summary' : {"CTE_V_mean" : ..., "CTE_x_mean" : ...,
                        "CTE_y_mean" : ..., "CTE_z_mean" : ...,
                        "CTE_V_uncertainty" : ..., "CTE_x_uncertainty" : ...,
@@ -205,7 +204,6 @@ def cte_from_fluctuations_simulation(
                     "CTE_x" : [...],
                     "CTE_y" : [...],
                     "CTE_z" : [...],
-                    "structure_final" : Atoms
                     }
         }
 
@@ -446,36 +444,35 @@ def temperature_scan_simulation(
         tmp_working_directory: Temporary directory for job execution.
 
     Returns:
-        Nested dictionary containing collected output of the simulations. The main keys are the
-        temperature steps in the format "01_300K", "02_400K", etc. Under each temperature key,
-        the dictionary contains another dictionary with keys "run01", "run02", ... for each
-        production run. Under each run key, the dictionary contains the parsed output from the
-        production run as well as computed CTE values and other thermodynamic averages.
-        Structure is:
-        {   "01_300K" : { "run01" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          "run02" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          ...
-                      },
-            "02_400K" : { "run01" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          "run02" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          ...
-                      },
-            ...
+        Dictionary containing the "data" key. The "data" holds the collected thermodynamic and
+        structural data from the production run at each temperature. "run_index" identifies which
+        temperature step the data belongs to (1, 2, 3, ...). Thermodynamic and structural quantities
+        are averaged over each production run and these averages are listed under the respective key.
+        The CTE is *not* computed in this workflow — the returned data is intended for subsequent
+        CTE analysis by the user. Example:
+        { 'data':  {"run_index" : [1, 2, 3, ...],
+                    "steps" : [...],
+                    "T" : [...],
+                    "E_tot" : [...],
+                    "ptot" : [...],
+                    "pxx" : [...],
+                    "pyy" : [...],
+                    "pzz" : [...],
+                    "V" : [...],
+                    "Lx" : [...],
+                    "Ly" : [...],
+                    "Lz" : [...],
+                    }
         }
-        On the lowest level, the structure is the same as returned by `_cte_fluctuation_workflow_analysis`.
-        Additionally, on the run key level, the following entries are added for bookkeeping:
-        "is_converged" : bool            # Whether convergence was reached within the max_production_runs
-        "convergence_criterion" : float  # The convergence criterion
-        "structure_final" : Atoms        # Final structure at this temperature
 
     Notes:
         - For every temperature, the structure is first pre-equilibrated with short (10 ps) NVT.
-        - Simulation settings for the NVT equilibration run are hard-coded
-        - CTEs are calculated sequentially if a list of temperatures is provided. Alternatively, multiple
-          jobs with independent temperatures can be submitted to achieve parallelization.
+        - Simulation settings for the NVT equilibration run are hard-coded.
+        - Temperatures are simulated sequentially. Alternatively, multiple jobs with independent
+          temperatures can be submitted to achieve parallelization.
 
     Example:
-        >>> result = cte_simulation(
+        >>> result = temperature_scan_simulation(
         ...     structure=my_atoms,
         ...     potential=my_potential,
         ...     temperature=[300, 400, 500],
