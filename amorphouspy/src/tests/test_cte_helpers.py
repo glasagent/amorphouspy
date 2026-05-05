@@ -7,11 +7,14 @@ import pytest
 from amorphouspy.workflows.cte_helpers import (
     _collect_sim_data,
     _create_logger,
+    _ensure_equilibration_steps,
     _fluctuation_simulation_cte_calculation,
     _fluctuation_simulation_input_checker,
     _fluctuation_simulation_merge_results,
     _fluctuation_simulation_uncertainty_check,
+    _get_tail_data,
     _initialize_datadict,
+    _prepend_tail_data,
     _sanity_check_sim_data,
     _temperature_scan_input_checker,
     _temperature_scan_merge_results,
@@ -674,3 +677,130 @@ def test_temperature_scan_merge_results_keys_unchanged() -> None:
     sim_data = _make_sim_data(n=10)
     merged = _temperature_scan_merge_results(base, sim_data)
     assert set(merged.keys()) == set(base.keys())
+
+
+# ---------------------------------------------------------------------------
+# _get_tail_data
+# ---------------------------------------------------------------------------
+
+
+def test_get_tail_data_extracts_last_n_points() -> None:
+    """_get_tail_data returns the last n_points for each time-series key."""
+    sim_data = _make_sim_data(n=50, run_index=1)
+    tail = _get_tail_data(sim_data, n_points=10)
+    for key, values in tail.items():
+        if key == "run_index":
+            np.testing.assert_array_equal(values, sim_data["run_index"])
+        else:
+            assert len(values) == 10
+            np.testing.assert_array_equal(values, sim_data[key][-10:])
+
+
+def test_get_tail_data_preserves_run_index() -> None:
+    """run_index is copied as-is, not sliced."""
+    sim_data = _make_sim_data(n=100, run_index=5)
+    tail = _get_tail_data(sim_data, n_points=20)
+    np.testing.assert_array_equal(tail["run_index"], sim_data["run_index"])
+
+
+def test_get_tail_data_full_length() -> None:
+    """When n_points >= len(data), the full data is returned."""
+    sim_data = _make_sim_data(n=30)
+    tail = _get_tail_data(sim_data, n_points=30)
+    for key in sim_data:
+        if key != "run_index":
+            assert len(tail[key]) == 30
+
+
+# ---------------------------------------------------------------------------
+# _prepend_tail_data
+# ---------------------------------------------------------------------------
+
+
+def test_prepend_tail_data_concatenates() -> None:
+    """_prepend_tail_data prepends tail arrays to current sim data."""
+    sim_data = _make_sim_data(n=40, run_index=2)
+    tail_data = _make_sim_data(n=10, run_index=1)
+    combined = _prepend_tail_data(sim_data, tail_data)
+    for key, value in combined.items():
+        if key == "run_index":
+            # run_index comes from sim_data (current run)
+            np.testing.assert_array_equal(value, sim_data["run_index"])
+        else:
+            assert len(value) == 50  # 10 + 40
+            np.testing.assert_array_equal(value[:10], tail_data[key])
+            np.testing.assert_array_equal(value[10:], sim_data[key])
+
+
+def test_prepend_tail_data_run_index_from_current() -> None:
+    """run_index in result is taken from sim_data, not tail_data."""
+    sim_data = _make_sim_data(n=20, run_index=7)
+    tail_data = _make_sim_data(n=5, run_index=3)
+    combined = _prepend_tail_data(sim_data, tail_data)
+    assert combined["run_index"][0] == 7
+
+
+# ---------------------------------------------------------------------------
+# _ensure_equilibration_steps (the warning branch)
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_equilibration_steps_increases_when_too_small(tmp_path, monkeypatch, caplog) -> None:
+    """equilibration_steps is increased when below the minimum window threshold."""
+    monkeypatch.chdir(tmp_path)
+    _clean_logger_handlers()
+    try:
+        logger = _create_logger()
+        # N_for_averaging=1000, n_log=10 → min = 10_000
+        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+            result = _ensure_equilibration_steps(
+                equilibration_steps=5_000,
+                N_for_averaging=1000,
+                n_log=10,
+                logger=logger,
+            )
+        assert result == 10_000
+        assert any("equilibration" in r.message.lower() for r in caplog.records)
+    finally:
+        _clean_logger_handlers()
+
+
+def test_ensure_equilibration_steps_unchanged_when_sufficient(tmp_path, monkeypatch, caplog) -> None:
+    """equilibration_steps is returned unchanged when it meets the minimum."""
+    monkeypatch.chdir(tmp_path)
+    _clean_logger_handlers()
+    try:
+        logger = _create_logger()
+        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+            result = _ensure_equilibration_steps(
+                equilibration_steps=50_000,
+                N_for_averaging=1000,
+                n_log=10,
+                logger=logger,
+            )
+        assert result == 50_000
+        assert not caplog.records
+    finally:
+        _clean_logger_handlers()
+
+
+def test_input_checker_corrects_equilibration_steps(tmp_path, monkeypatch, caplog) -> None:
+    """_fluctuation_simulation_input_checker corrects too-small equilibration_steps."""
+    logger = _make_dummy_input_checker_logger(tmp_path, monkeypatch)
+    try:
+        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
+            _, _, _, _, _, eq_steps = _fluctuation_simulation_input_checker(
+                production_steps=100_000,
+                min_production_runs=3,
+                max_production_runs=10,
+                n_log=10,
+                timestep=1.0,
+                n_dump=50_000,
+                equilibration_steps=100,  # way too small
+                logger=logger,
+            )
+        # N_for_averaging = 10*1000/(10*1) = 1000, min_eq = 1000*10 = 10000
+        assert eq_steps == 10_000
+        assert any("equilibration" in r.message.lower() for r in caplog.records)
+    finally:
+        _clean_logger_handlers()
