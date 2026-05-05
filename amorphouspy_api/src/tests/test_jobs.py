@@ -184,6 +184,59 @@ def test_submit_job_returns_cached() -> None:
     assert data["status"] == "completed"
 
 
+def test_submit_job_executor_failure_returns_503() -> None:
+    """When executor submission raises, the endpoint returns HTTP 503 and marks the job as failed."""
+    with patch(
+        "amorphouspy_api.routers.jobs._submit_to_executor",
+        side_effect=RuntimeError("compute backend unavailable"),
+    ):
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+            },
+        )
+
+    assert resp.status_code == 503
+    data = resp.json()
+    # The detail should mention the job and the underlying error
+    assert "detail" in data
+    detail = data["detail"]
+    assert "503" in str(resp.status_code)
+    assert "compute backend" in detail.lower() or "executor" in detail.lower() or "submission failed" in detail.lower()
+
+
+def test_submit_job_executor_failure_stores_failed_job() -> None:
+    """When executor submission raises, the job record should be saved as 'failed' with errors populated."""
+    with patch(
+        "amorphouspy_api.routers.jobs._submit_to_executor",
+        side_effect=RuntimeError("disk quota exceeded"),
+    ):
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+            },
+        )
+
+    assert resp.status_code == 503
+    detail = resp.json()["detail"]
+    # Extract the job_id from the detail message (format: "Job submission failed for job <id>. ...")
+    import re
+
+    match = re.search(r"job ([0-9a-f-]{36})", detail)
+    assert match, f"Could not extract job_id from detail: {detail!r}"
+    job_id = match.group(1)
+
+    store = get_job_store()
+    job = store.get_job(job_id)
+    assert job is not None
+    assert job.status == "failed"
+    assert job.errors
+    assert "submission" in job.errors
+    assert "disk quota exceeded" in job.errors["submission"]
+
+
 # ---------------------------------------------------------------------------
 # GET /jobs/{id}
 # ---------------------------------------------------------------------------
