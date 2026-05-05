@@ -278,10 +278,11 @@ def test_input_checker_no_warnings_good_params(tmp_path, monkeypatch, caplog) ->
                 n_log=10,
                 timestep=1.0,
                 n_dump=50_000,
+                equilibration_steps=100_000,
                 logger=logger,
             )
         assert not caplog.records
-        assert len(result) == 5
+        assert len(result) == 6
     finally:
         _clean_logger_handlers()
 
@@ -298,6 +299,7 @@ def test_input_checker_corrects_min_production_runs(tmp_path, monkeypatch, caplo
                 n_log=10,
                 timestep=1.0,
                 n_dump=50_000,
+                equilibration_steps=100_000,
                 logger=logger,
             )
         assert min_runs == 2
@@ -318,6 +320,7 @@ def test_input_checker_corrects_max_less_than_min(tmp_path, monkeypatch, caplog)
                 n_log=10,
                 timestep=1.0,
                 n_dump=50_000,
+                equilibration_steps=100_000,
                 logger=logger,
             )
         assert max_runs >= min_runs
@@ -338,6 +341,7 @@ def test_input_checker_corrects_short_production_steps(tmp_path, monkeypatch, ca
                 n_log=10,
                 timestep=1.0,
                 n_dump=50,
+                equilibration_steps=100_000,
                 logger=logger,
             )
         assert prod_steps > 100
@@ -360,6 +364,7 @@ def test_input_checker_warns_low_averaging_points(tmp_path, monkeypatch, caplog)
                 n_log=500,  # high n_log → few averaging points
                 timestep=1.0,
                 n_dump=100_000,
+                equilibration_steps=500_000,
                 logger=logger,
             )
         # At least warning about running mean data points
@@ -373,13 +378,14 @@ def test_input_checker_corrects_n_dump_too_large(tmp_path, monkeypatch, caplog) 
     logger = _make_dummy_input_checker_logger(tmp_path, monkeypatch)
     try:
         with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            prod_steps, _, _, _, n_dump = _fluctuation_simulation_input_checker(
+            prod_steps, _, _, _, n_dump, _ = _fluctuation_simulation_input_checker(
                 production_steps=100_000,
                 min_production_runs=2,
                 max_production_runs=5,
                 n_log=10,
                 timestep=1.0,
                 n_dump=999_999,  # larger than production_steps
+                equilibration_steps=100_000,
                 logger=logger,
             )
         assert n_dump == prod_steps

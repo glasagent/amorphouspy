@@ -244,9 +244,16 @@ def cte_from_fluctuations_simulation(
     logger = _create_logger()
 
     # Check and adjust input parameters if necessary
-    production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump = (
+    production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump, equilibration_steps = (
         _fluctuation_simulation_input_checker(
-            production_steps, min_production_runs, max_production_runs, n_log, timestep, n_dump, logger
+            production_steps,
+            min_production_runs,
+            max_production_runs,
+            n_log,
+            timestep,
+            n_dump,
+            equilibration_steps,
+            logger,
         )
     )
 
