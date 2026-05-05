@@ -300,7 +300,7 @@ def _fluctuation_simulation_cte_calculation(
     return cte_data
 
 
-def _fluctuation_simulation_uncertainty_check(data: dict, criterion: float) -> tuple[bool, dict]:
+def _fluctuation_simulation_uncertainty_check(data: dict, criterion: float) -> tuple[bool, dict[str, float | str]]:
     """Check for convergence of CTE values over multiple production runs.
 
     This function uses the CTE values that have been collected in all previous productions runs.
