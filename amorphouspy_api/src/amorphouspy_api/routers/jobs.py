@@ -249,7 +249,7 @@ def submit_job(
 
     # Re-read to get final state
     final = store.get_job(job_id)
-    errors = final.errors or {} if final else {}
+    errors = (final.errors or {}) if final else {}
     return JobCreatedResponse(
         id=job_id,
         status=JobStatus(final.status) if final else JobStatus.PENDING,
