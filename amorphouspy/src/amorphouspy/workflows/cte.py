@@ -261,9 +261,9 @@ def cte_from_fluctuations_simulation(
     # initial structure used. Afterwards, it is updated after each temperature
     structure0 = structure
 
+    # Stage 1: Short equilibration in NVT at T for 10 ps
     logger.info("Starting 10 ps (hardcoded) NVT equilibration at %.2f K.", temperature)
 
-    # Stage 1: Short equilibration in NVT at T for 10 ps
     structure1, _ = _run_lammps_md(
         structure=structure0,
         potential=potential,
@@ -279,10 +279,10 @@ def cte_from_fluctuations_simulation(
         server_kwargs=server_kwargs,
     )
 
-    equilibration_time = equilibration_steps / timestep / 1000
-    logger.info("Starting %.1f ps NVT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, pressure)
-
     # Stage 2: NPT equilibration runs at T,p.
+    equilibration_time = equilibration_steps / timestep / 1000
+    logger.info("Starting %.1f ps NPT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, pressure)
+
     structure2, parsed_output = _run_lammps_md(
         structure=structure1,
         potential=potential,
@@ -299,7 +299,7 @@ def cte_from_fluctuations_simulation(
     )
 
     # Collect the tail of the equilibration data to prepend to the first production run.
-    # This avoids losing one window of data at the start of every production run.
+    # This avoids losing one window of data (half a window at both the start and end) of every production run.
     equil_sim_data = _collect_sim_data(parsed_output, counter_production_run=0)
     tail_data = _get_tail_data(equil_sim_data, N_for_averaging)
 
