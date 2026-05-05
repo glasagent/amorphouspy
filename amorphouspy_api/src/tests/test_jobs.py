@@ -184,6 +184,56 @@ def test_submit_job_returns_cached() -> None:
     assert data["status"] == "completed"
 
 
+def test_submit_job_executor_failure_returns_503() -> None:
+    """When executor submission raises, the endpoint returns HTTP 503 and marks the job as failed."""
+    with patch(
+        "amorphouspy_api.routers.jobs._submit_to_executor",
+        side_effect=RuntimeError("compute backend unavailable"),
+    ):
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+            },
+        )
+
+    assert resp.status_code == 503
+    data = resp.json()
+    # The detail should mention the job and the underlying error
+    assert "detail" in data
+    detail = data["detail"]
+    assert "compute backend" in detail.lower() or "executor" in detail.lower() or "submission failed" in detail.lower()
+
+
+def test_submit_job_executor_failure_stores_failed_job() -> None:
+    """When executor submission raises, the job record should be saved as 'failed' with errors populated."""
+    known_job_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+    with (
+        patch(
+            "amorphouspy_api.routers.jobs._submit_to_executor",
+            side_effect=RuntimeError("disk quota exceeded"),
+        ),
+        patch("amorphouspy_api.routers.jobs.uuid4", return_value=known_job_id),
+    ):
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+            },
+        )
+
+    assert resp.status_code == 503
+
+    store = get_job_store()
+    job = store.get_job(known_job_id)
+    assert job is not None
+    assert job.status == "failed"
+    assert job.errors
+    assert "submission" in job.errors
+    assert "disk quota exceeded" in job.errors["submission"]
+
+
 # ---------------------------------------------------------------------------
 # GET /jobs/{id}
 # ---------------------------------------------------------------------------
