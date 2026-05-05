@@ -230,16 +230,26 @@ def submit_job(
     try:
         resolved = _submit_to_executor(submission, job_id, req_hash)
         _update_from_resolved(job_id, resolved, submission)
-    except Exception:
+    except Exception as exc:
         logger.exception("Failed to submit job %s", job_id)
+        error_msg = f"Failed to start executor: {exc}"
         store.update_job(
             job_id,
             status="failed",
-            errors={"submission": "Failed to start executor"},
+            errors={"submission": error_msg},
         )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "id": job_id,
+                "error": error_msg,
+                "message": "Job submission failed. The compute backend is unavailable.",
+            },
+        ) from exc
 
     # Re-read to get final state
     final = store.get_job(job_id)
+    errors = final.errors or {} if final else {}
     return JobCreatedResponse(
         id=job_id,
         status=JobStatus(final.status) if final else JobStatus.PENDING,
@@ -247,6 +257,7 @@ def submit_job(
         potential=submission.potential,
         tags=final.tags or [] if final else submission.tags,
         created_at=(final.created_at.isoformat() if final and final.created_at else _iso_now()),
+        errors=errors,
         urls=_job_urls(job_id),
     )
 
