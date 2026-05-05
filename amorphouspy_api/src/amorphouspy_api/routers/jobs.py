@@ -240,11 +240,10 @@ def submit_job(
         )
         raise HTTPException(
             status_code=503,
-            detail={
-                "id": job_id,
-                "error": error_msg,
-                "message": "Job submission failed. The compute backend is unavailable.",
-            },
+            detail=(
+                f"Job submission failed for job {job_id}. "
+                f"The compute backend is unavailable. {error_msg}"
+            ),
         ) from exc
 
     # Re-read to get final state
