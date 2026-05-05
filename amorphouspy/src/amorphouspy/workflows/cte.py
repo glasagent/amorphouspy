@@ -20,7 +20,9 @@ from amorphouspy.workflows.cte_helpers import (
     _fluctuation_simulation_input_checker,
     _fluctuation_simulation_merge_results,
     _fluctuation_simulation_uncertainty_check,
+    _get_tail_data,
     _initialize_datadict,
+    _prepend_tail_data,
     _sanity_check_sim_data,
     _temperature_scan_input_checker,
     _temperature_scan_merge_results,
@@ -276,7 +278,7 @@ def cte_from_fluctuations_simulation(
     logger.info("Starting %.1f ps NVT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, pressure)
 
     # Stage 2: NPT equilibration runs at T,p.
-    structure2, _ = _run_lammps_md(
+    structure2, parsed_output = _run_lammps_md(
         structure=structure1,
         potential=potential,
         tmp_working_directory=tmp_working_directory,
@@ -285,14 +287,20 @@ def cte_from_fluctuations_simulation(
         n_ionic_steps=equilibration_steps,
         timestep=timestep,
         n_dump=equilibration_steps,
-        n_log=100,
+        n_log=n_log,
         initial_temperature=0,
         langevin=True,
         server_kwargs=server_kwargs,
     )
 
+    # Collect the tail of the equilibration data to prepend to the first production run.
+    # This avoids losing one window of data at the start of every production run.
+    equil_sim_data = _collect_sim_data(parsed_output, counter_production_run=0)
+    tail_data = _get_tail_data(equil_sim_data, N_for_averaging)
+
     # Stage 3: NPT production runs (loop) at T,p.
     results = _initialize_datadict(with_CTE_keys=True)
+    cte_summary: dict[str, float | str] = {}
     counter_production_run = 1
     production_time = production_steps / timestep / 1000
     while counter_production_run <= max_production_runs:
@@ -325,14 +333,21 @@ def cte_from_fluctuations_simulation(
         _sim_data = _collect_sim_data(parsed_output, counter_production_run)
         _sanity_check_sim_data(sim_data=_sim_data, T_target=temperature, p_target=pressure, logger=logger)
 
-        # Calculate cte based on the data of the current production run
+        # Prepend the tail of the previous run (or equilibration) so that the running-mean
+        # window can cover the boundary and no data is lost at the start of each production run.
+        _sim_data_with_tail = _prepend_tail_data(_sim_data, tail_data)
+
+        # Calculate cte based on the data of the current production run (with prepended tail)
         _cte_results = _fluctuation_simulation_cte_calculation(
-            sim_data=_sim_data,
+            sim_data=_sim_data_with_tail,
             temperature=temperature,
             p=pressure,
             use_running_mean=True,
             N_points=N_for_averaging,
         )
+
+        # Save the tail of the current production run for the next iteration
+        tail_data = _get_tail_data(_sim_data, N_for_averaging)
 
         # merge results to have the averages over all production runs so far
         results = _fluctuation_simulation_merge_results(

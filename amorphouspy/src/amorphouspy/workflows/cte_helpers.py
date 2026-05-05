@@ -97,6 +97,55 @@ def _collect_sim_data(parsed_output: dict, counter_production_run: int) -> dict[
     return data
 
 
+def _get_tail_data(sim_data: dict, n_points: int) -> dict[str, Any]:
+    """Extract the last n_points of time-series data from a simulation data dictionary.
+
+    This is used to carry over the tail of one run's data to the next run, so that the
+    moving window used for running-mean fluctuation analysis does not cause data loss at
+    run boundaries.
+
+    Args:
+        sim_data: Simulation data dictionary as returned by ``_collect_sim_data``.
+        n_points: Number of trailing data points to extract.
+
+    Returns:
+        Dictionary with the same time-series keys, each trimmed to the last *n_points* entries.
+        The ``run_index`` key is copied as-is.
+
+    """
+    tail: dict[str, Any] = {}
+    for key, values in sim_data.items():
+        if key == "run_index":
+            tail[key] = values
+        else:
+            tail[key] = values[-n_points:]
+    return tail
+
+
+def _prepend_tail_data(sim_data: dict, tail_data: dict) -> dict[str, Any]:
+    """Prepend tail data from a previous run to the current run's simulation data.
+
+    The combined data array is used for the CTE fluctuation calculation so that the
+    running-mean window can cover the boundary between runs without data loss.
+
+    Args:
+        sim_data: Current production run simulation data.
+        tail_data: Tail data extracted from the previous run (or equilibration).
+
+    Returns:
+        New dictionary with time-series arrays that have *tail_data* prepended.
+        The ``run_index`` key is taken from *sim_data* (current run).
+
+    """
+    combined: dict[str, Any] = {}
+    for key, value in sim_data.items():
+        if key == "run_index":
+            combined[key] = value
+        else:
+            combined[key] = np.concatenate([tail_data[key], value])
+    return combined
+
+
 def _sanity_check_sim_data(
     sim_data: dict,
     T_target: float,
