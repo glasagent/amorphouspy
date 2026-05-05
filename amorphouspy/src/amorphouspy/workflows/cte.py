@@ -369,7 +369,6 @@ def cte_from_fluctuations_simulation(
         counter_production_run += 1
         structure2 = structure_production
 
-    results.update({"structure_final": structure_production})
     return {"summary": cte_summary, "data": results}
 
 
@@ -553,7 +552,6 @@ def temperature_scan_simulation(
         # Use this structure as starting point for next temperature
         structure0 = structure_production
 
-    results.update({"structure_final": structure_production})
     msg = "FINISHED SUCCESSFULLY."
     logger.info(msg)
     return {"data": results}
