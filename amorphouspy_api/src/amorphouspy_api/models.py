@@ -355,6 +355,8 @@ class MeltQuenchParams(BaseModel):
     )
     structure_seed: int = Field(
         default=42,
+        ge=0,
+        le=2**32 - 1,
         description="Random seed for initial atom placement during structure generation.",
     )
 
