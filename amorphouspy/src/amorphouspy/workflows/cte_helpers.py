@@ -97,6 +97,55 @@ def _collect_sim_data(parsed_output: dict, counter_production_run: int) -> dict[
     return data
 
 
+def _get_tail_data(sim_data: dict, n_points: int) -> dict[str, Any]:
+    """Extract the last n_points of time-series data from a simulation data dictionary.
+
+    This is used to carry over the tail of one run's data to the next run, so that the
+    moving window used for running-mean fluctuation analysis does not cause data loss at
+    run boundaries.
+
+    Args:
+        sim_data: Simulation data dictionary as returned by ``_collect_sim_data``.
+        n_points: Number of trailing data points to extract.
+
+    Returns:
+        Dictionary with the same time-series keys, each trimmed to the last *n_points* entries.
+        The ``run_index`` key is copied as-is.
+
+    """
+    tail: dict[str, Any] = {}
+    for key, values in sim_data.items():
+        if key == "run_index":
+            tail[key] = values
+        else:
+            tail[key] = values[-n_points:]
+    return tail
+
+
+def _prepend_tail_data(sim_data: dict, tail_data: dict) -> dict[str, Any]:
+    """Prepend tail data from a previous run to the current run's simulation data.
+
+    The combined data array is used for the CTE fluctuation calculation so that the
+    running-mean window can cover the boundary between runs without data loss.
+
+    Args:
+        sim_data: Current production run simulation data.
+        tail_data: Tail data extracted from the previous run (or equilibration).
+
+    Returns:
+        New dictionary with time-series arrays that have *tail_data* prepended.
+        The ``run_index`` key is taken from *sim_data* (current run).
+
+    """
+    combined: dict[str, Any] = {}
+    for key, value in sim_data.items():
+        if key == "run_index":
+            combined[key] = value
+        else:
+            combined[key] = np.concatenate([tail_data[key], value])
+    return combined
+
+
 def _sanity_check_sim_data(
     sim_data: dict,
     T_target: float,
@@ -153,29 +202,20 @@ def _sanity_check_sim_data(
         logger.warning(msg)
 
 
-def _fluctuation_simulation_input_checker(
-    production_steps: int,
+def _check_min_max_runs(
     min_production_runs: int,
     max_production_runs: int,
-    n_log: int,
-    timestep: float,
-    n_dump: int,
     logger: logging.Logger,
-) -> tuple[int, int, int, int, int]:
-    """Check and adjust input parameters for cte_from_fluctuations_simulation workflow."""
-    # Minimum choices for a working CTE calculation. For reliable results, use considreably higher values!
-    MIN_PRODUCTION_RUNS = 2
-    AVERAGING_TIME_IN_PS = 10
-    MIN_PRODUCTION_STEPS = int(2 * AVERAGING_TIME_IN_PS * 1000 / timestep)
-    MIN_RUNNING_MEAN_POINTS = 1000
-
-    if min_production_runs < MIN_PRODUCTION_RUNS:
+    min_allowed: int = 2,
+) -> tuple[int, int]:
+    """Ensure min/max production runs are sensible."""
+    if min_production_runs < min_allowed:
         msg = "\n  At least 2 individual production runs are needed to check for CTE convergence."
         msg += f"\n  However, a value of {min_production_runs} was provided."
-        msg += f"\n  Automatically setting min_production_runs to {MIN_PRODUCTION_RUNS} and continue."
+        msg += f"\n  Automatically setting min_production_runs to {min_allowed} and continue."
         msg += "\n  Consider increasing min_production_runs even further if convergence is not reached."
         logger.warning(msg)
-        min_production_runs = MIN_PRODUCTION_RUNS
+        min_production_runs = min_allowed
 
     if max_production_runs < min_production_runs:
         msg = "\n  Maximum number of production runs needs to be at least the minimum number of production runs."
@@ -186,33 +226,97 @@ def _fluctuation_simulation_input_checker(
         logger.warning(msg)
         max_production_runs = min_production_runs
 
-    if production_steps < MIN_PRODUCTION_STEPS:
+    return min_production_runs, max_production_runs
+
+
+def _ensure_prod_steps_minimum(
+    production_steps: int,
+    averaging_time_ps: int,
+    timestep: float,
+    logger: logging.Logger,
+) -> int:
+    """Ensure production steps are long enough for running-mean based fluctuation analysis."""
+    min_production_steps = int(2 * averaging_time_ps * 1000 / timestep)
+    if production_steps < min_production_steps:
         msg = "\n  For calculating fluctuations based on running averages, sufficient data is needed."
-        msg += f"\n  With currently averaging over {AVERAGING_TIME_IN_PS} ps, production runs are too short "
-        msg += f"and we recommend at least {2 * AVERAGING_TIME_IN_PS} ps."
+        msg += f"\n  With currently averaging over {averaging_time_ps} ps, production runs are too short "
+        msg += f"and we recommend at least {2 * averaging_time_ps} ps."
         msg += f"\n  Automatically re-setting the user-specified production_steps of {production_steps} "
-        msg += f"to {MIN_PRODUCTION_STEPS} and continue."
+        msg += f"to {min_production_steps} and continue."
         msg += "\n  Consider increasing production_steps even further to get more reliable results."
         logger.warning(msg)
-        production_steps = MIN_PRODUCTION_STEPS
+        production_steps = min_production_steps
+    return production_steps
 
-    N_for_averaging = int(AVERAGING_TIME_IN_PS * 1000 / n_log / timestep)
-    if N_for_averaging < MIN_RUNNING_MEAN_POINTS:
+
+def _warn_running_mean_points(
+    N_for_averaging: int,
+    min_points: int,
+    logger: logging.Logger,
+) -> None:
+    """Warn if too few data points are used for the running mean."""
+    if N_for_averaging < min_points:
         msg = "\n  Running mean values are most likely based on insufficient data points."
-        msg += f"\n  We recommend averaging over at least {MIN_RUNNING_MEAN_POINTS} data points, "
+        msg += f"\n  We recommend averaging over at least {min_points} data points, "
         msg += f"but currently only {N_for_averaging} are used."
         msg += "\n  Consider decreasing n_log or change hard-coded AVERAGING_TIME_IN_PS variable."
         msg += "\n  Continuing regardless."
         logger.warning(msg)
 
+
+def _ensure_n_dump(n_dump: int, production_steps: int, logger: logging.Logger) -> int:
+    """Clamp n_dump to production_steps if it exceeds it."""
     if n_dump > production_steps:
         msg = "\n  Dump frequency n_dump is larger than the total number of production steps."
         msg += f"\n  Currently, n_dump = {n_dump} and production_steps = {production_steps}."
         msg += f"\n  Automatically setting n_dump to production_steps ({production_steps}) and continue."
         logger.warning(msg)
         n_dump = production_steps
+    return n_dump
 
-    return production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump
+
+def _ensure_equilibration_steps(
+    equilibration_steps: int,
+    N_for_averaging: int,
+    n_log: int,
+    logger: logging.Logger,
+) -> int:
+    """Ensure equilibration produces at least one full window of data."""
+    min_equilibration_steps = N_for_averaging * n_log
+    if equilibration_steps < min_equilibration_steps:
+        msg = "\n  The equilibration must produce at least one window width of data for the tail carry-over."
+        msg += f"\n  The current window size requires {min_equilibration_steps} equilibration steps,"
+        msg += f" but only {equilibration_steps} were specified."
+        msg += f"\n  Automatically setting equilibration_steps to {min_equilibration_steps} and continue."
+        logger.warning(msg)
+        equilibration_steps = min_equilibration_steps
+    return equilibration_steps
+
+
+def _fluctuation_simulation_input_checker(
+    production_steps: int,
+    min_production_runs: int,
+    max_production_runs: int,
+    n_log: int,
+    timestep: float,
+    n_dump: int,
+    equilibration_steps: int,
+    logger: logging.Logger,
+) -> tuple[int, int, int, int, int, int]:
+    """Check and adjust input parameters for cte_from_fluctuations_simulation workflow."""
+    AVERAGING_TIME_IN_PS = 10
+    MIN_RUNNING_MEAN_POINTS = 1000
+
+    min_production_runs, max_production_runs = _check_min_max_runs(min_production_runs, max_production_runs, logger)
+    production_steps = _ensure_prod_steps_minimum(production_steps, AVERAGING_TIME_IN_PS, timestep, logger)
+
+    N_for_averaging = int(AVERAGING_TIME_IN_PS * 1000 / n_log / timestep)
+    _warn_running_mean_points(N_for_averaging, MIN_RUNNING_MEAN_POINTS, logger)
+
+    n_dump = _ensure_n_dump(n_dump, production_steps, logger)
+    equilibration_steps = _ensure_equilibration_steps(equilibration_steps, N_for_averaging, n_log, logger)
+
+    return production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump, equilibration_steps
 
 
 def _fluctuation_simulation_cte_calculation(
@@ -300,7 +404,7 @@ def _fluctuation_simulation_cte_calculation(
     return cte_data
 
 
-def _fluctuation_simulation_uncertainty_check(data: dict, criterion: float) -> tuple[bool, dict]:
+def _fluctuation_simulation_uncertainty_check(data: dict, criterion: float) -> tuple[bool, dict[str, float | str]]:
     """Check for convergence of CTE values over multiple production runs.
 
     This function uses the CTE values that have been collected in all previous productions runs.

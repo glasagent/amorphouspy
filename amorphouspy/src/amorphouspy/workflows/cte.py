@@ -20,7 +20,9 @@ from amorphouspy.workflows.cte_helpers import (
     _fluctuation_simulation_input_checker,
     _fluctuation_simulation_merge_results,
     _fluctuation_simulation_uncertainty_check,
+    _get_tail_data,
     _initialize_datadict,
+    _prepend_tail_data,
     _sanity_check_sim_data,
     _temperature_scan_input_checker,
     _temperature_scan_merge_results,
@@ -178,8 +180,7 @@ def cte_from_fluctuations_simulation(
         The "data" holds the collected data from all individual production runs. "run_index" is to
         clearly identify which production run the data belongs to. "steps" contains the number of steps
         for each run. Thermodynamic and structural data are averaged over each production run and these
-        averages are listed under the respective key. Finally, also the structure after the simulation
-        has finished is stored for further use or analysis. Example:
+        averages are listed under the respective key. Example:
         { 'summary' : {"CTE_V_mean" : ..., "CTE_x_mean" : ...,
                        "CTE_y_mean" : ..., "CTE_z_mean" : ...,
                        "CTE_V_uncertainty" : ..., "CTE_x_uncertainty" : ...,
@@ -203,7 +204,6 @@ def cte_from_fluctuations_simulation(
                     "CTE_x" : [...],
                     "CTE_y" : [...],
                     "CTE_z" : [...],
-                    "structure_final" : Atoms
                     }
         }
 
@@ -242,9 +242,16 @@ def cte_from_fluctuations_simulation(
     logger = _create_logger()
 
     # Check and adjust input parameters if necessary
-    production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump = (
+    production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump, equilibration_steps = (
         _fluctuation_simulation_input_checker(
-            production_steps, min_production_runs, max_production_runs, n_log, timestep, n_dump, logger
+            production_steps,
+            min_production_runs,
+            max_production_runs,
+            n_log,
+            timestep,
+            n_dump,
+            equilibration_steps,
+            logger,
         )
     )
 
@@ -254,9 +261,9 @@ def cte_from_fluctuations_simulation(
     # initial structure used. Afterwards, it is updated after each temperature
     structure0 = structure
 
+    # Stage 1: Short equilibration in NVT at T for 10 ps
     logger.info("Starting 10 ps (hardcoded) NVT equilibration at %.2f K.", temperature)
 
-    # Stage 1: Short equilibration in NVT at T for 10 ps
     structure1, _ = _run_lammps_md(
         structure=structure0,
         potential=potential,
@@ -272,11 +279,11 @@ def cte_from_fluctuations_simulation(
         server_kwargs=server_kwargs,
     )
 
-    equilibration_time = equilibration_steps / timestep / 1000
-    logger.info("Starting %.1f ps NVT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, pressure)
-
     # Stage 2: NPT equilibration runs at T,p.
-    structure2, _ = _run_lammps_md(
+    equilibration_time = equilibration_steps / timestep / 1000
+    logger.info("Starting %.1f ps NPT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, pressure)
+
+    structure2, parsed_output = _run_lammps_md(
         structure=structure1,
         potential=potential,
         tmp_working_directory=tmp_working_directory,
@@ -285,14 +292,20 @@ def cte_from_fluctuations_simulation(
         n_ionic_steps=equilibration_steps,
         timestep=timestep,
         n_dump=equilibration_steps,
-        n_log=100,
+        n_log=n_log,
         initial_temperature=0,
         langevin=True,
         server_kwargs=server_kwargs,
     )
 
+    # Collect the tail of the equilibration data to prepend to the first production run.
+    # This avoids losing one window of data (half a window at both the start and end) of every production run.
+    equil_sim_data = _collect_sim_data(parsed_output, counter_production_run=0)
+    tail_data = _get_tail_data(equil_sim_data, N_for_averaging)
+
     # Stage 3: NPT production runs (loop) at T,p.
     results = _initialize_datadict(with_CTE_keys=True)
+    cte_summary: dict[str, float | str] = {}
     counter_production_run = 1
     production_time = production_steps / timestep / 1000
     while counter_production_run <= max_production_runs:
@@ -325,14 +338,21 @@ def cte_from_fluctuations_simulation(
         _sim_data = _collect_sim_data(parsed_output, counter_production_run)
         _sanity_check_sim_data(sim_data=_sim_data, T_target=temperature, p_target=pressure, logger=logger)
 
-        # Calculate cte based on the data of the current production run
+        # Prepend the tail of the previous run (or equilibration) so that the running-mean
+        # window can cover the boundary and no data is lost at the start of each production run.
+        _sim_data_with_tail = _prepend_tail_data(_sim_data, tail_data)
+
+        # Calculate cte based on the data of the current production run (with prepended tail)
         _cte_results = _fluctuation_simulation_cte_calculation(
-            sim_data=_sim_data,
+            sim_data=_sim_data_with_tail,
             temperature=temperature,
             p=pressure,
             use_running_mean=True,
             N_points=N_for_averaging,
         )
+
+        # Save the tail of the current production run for the next iteration
+        tail_data = _get_tail_data(_sim_data, N_for_averaging)
 
         # merge results to have the averages over all production runs so far
         results = _fluctuation_simulation_merge_results(
@@ -369,7 +389,6 @@ def cte_from_fluctuations_simulation(
         counter_production_run += 1
         structure2 = structure_production
 
-    results.update({"structure_final": structure_production})
     return {"summary": cte_summary, "data": results}
 
 
@@ -425,36 +444,35 @@ def temperature_scan_simulation(
         tmp_working_directory: Temporary directory for job execution.
 
     Returns:
-        Nested dictionary containing collected output of the simulations. The main keys are the
-        temperature steps in the format "01_300K", "02_400K", etc. Under each temperature key,
-        the dictionary contains another dictionary with keys "run01", "run02", ... for each
-        production run. Under each run key, the dictionary contains the parsed output from the
-        production run as well as computed CTE values and other thermodynamic averages.
-        Structure is:
-        {   "01_300K" : { "run01" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          "run02" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          ...
-                      },
-            "02_400K" : { "run01" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          "run02" : { "CTE_V" : ..., "CTE_x" : ..., "CTE_y" : ..., "CTE_z" : ..., etc},
-                          ...
-                      },
-            ...
+        Dictionary containing the "data" key. The "data" holds the collected thermodynamic and
+        structural data from the production run at each temperature. "run_index" identifies which
+        temperature step the data belongs to (1, 2, 3, ...). Thermodynamic and structural quantities
+        are averaged over each production run and these averages are listed under the respective key.
+        The CTE is *not* computed in this workflow — the returned data is intended for subsequent
+        CTE analysis by the user. Example:
+        { 'data':  {"run_index" : [1, 2, 3, ...],
+                    "steps" : [...],
+                    "T" : [...],
+                    "E_tot" : [...],
+                    "ptot" : [...],
+                    "pxx" : [...],
+                    "pyy" : [...],
+                    "pzz" : [...],
+                    "V" : [...],
+                    "Lx" : [...],
+                    "Ly" : [...],
+                    "Lz" : [...],
+                    }
         }
-        On the lowest level, the structure is the same as returned by `_cte_fluctuation_workflow_analysis`.
-        Additionally, on the run key level, the following entries are added for bookkeeping:
-        "is_converged" : bool            # Whether convergence was reached within the max_production_runs
-        "convergence_criterion" : float  # The convergence criterion
-        "structure_final" : Atoms        # Final structure at this temperature
 
     Notes:
         - For every temperature, the structure is first pre-equilibrated with short (10 ps) NVT.
-        - Simulation settings for the NVT equilibration run are hard-coded
-        - CTEs are calculated sequentially if a list of temperatures is provided. Alternatively, multiple
-          jobs with independent temperatures can be submitted to achieve parallelization.
+        - Simulation settings for the NVT equilibration run are hard-coded.
+        - Temperatures are simulated sequentially. Alternatively, multiple jobs with independent
+          temperatures can be submitted to achieve parallelization.
 
     Example:
-        >>> result = cte_simulation(
+        >>> result = temperature_scan_simulation(
         ...     structure=my_atoms,
         ...     potential=my_potential,
         ...     temperature=[300, 400, 500],
@@ -553,7 +571,6 @@ def temperature_scan_simulation(
         # Use this structure as starting point for next temperature
         structure0 = structure_production
 
-    results.update({"structure_final": structure_production})
     msg = "FINISHED SUCCESSFULLY."
     logger.info(msg)
     return {"data": results}
