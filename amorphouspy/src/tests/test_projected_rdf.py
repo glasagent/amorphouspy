@@ -195,6 +195,54 @@ def test_rmax_clamping_warning() -> None:
         _, _, _ = compute_projected_rdf(atoms, deformation_axis="z", r_max=10.0, n_bins=20)
 
 
+def test_rmax_raises_on_tiny_box() -> None:
+    """ValueError raised when box is too small for any valid integer r_max."""
+    tiny = Atoms("Si", positions=[(0, 0, 0)], cell=(1.0, 1.0, 1.0), pbc=True)
+    with pytest.raises(ValueError, match="no valid integer cutoff"):
+        compute_projected_rdf(tiny, deformation_axis="z", r_max=1.0, n_bins=10)
+
+
+# ---------------------------------------------------------------------------
+# Multi-species: explicit type_pairs + cross-species normalisation
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_type_pairs() -> None:
+    """Explicit type_pairs is canonicalized; cross-species normalisation branch is exercised."""
+    rng = np.random.default_rng(42)
+    n_si, n_o = 8, 16
+    positions = rng.uniform(0, 10, size=(n_si + n_o, 3))
+    numbers = np.array([14] * n_si + [8] * n_o)
+    atoms = Atoms(numbers=numbers, positions=positions, cell=(10, 10, 10), pbc=True)
+
+    _, uniaxial, _ = compute_projected_rdf(
+        atoms,
+        deformation_axis="z",
+        n_bins=50,
+        r_max=4.0,
+        type_pairs=[(14, 8), (8, 14)],
+    )
+    assert uniaxial is not None
+    assert list(uniaxial.keys()) == [(8, 14)]
+    assert not np.isnan(uniaxial[(8, 14)]).any()
+
+
+def test_cross_species_auto_pairs() -> None:
+    """Auto-detected pairs for a binary system include cross-species pairs with correct normalisation."""
+    rng = np.random.default_rng(0)
+    n_si, n_o = 8, 16
+    positions = rng.uniform(0, 10, size=(n_si + n_o, 3))
+    numbers = np.array([14] * n_si + [8] * n_o)
+    atoms = Atoms(numbers=numbers, positions=positions, cell=(10, 10, 10), pbc=True)
+
+    _, uniaxial, _ = compute_projected_rdf(atoms, deformation_axis="z", n_bins=50, r_max=4.0)
+    assert uniaxial is not None
+    assert (8, 8) in uniaxial
+    assert (14, 14) in uniaxial
+    assert (8, 14) in uniaxial
+    assert not np.isnan(uniaxial[(8, 14)]).any()
+
+
 # ---------------------------------------------------------------------------
 # Y₀₀ normalization consistency: g₂₀(z) = sqrt(5)*g(r) when all bonds are along z
 # ---------------------------------------------------------------------------
