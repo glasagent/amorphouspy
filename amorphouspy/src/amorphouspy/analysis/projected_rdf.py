@@ -4,7 +4,7 @@ Computes the Y20 (uniaxial) and Y22/Y21 (shear) components of the projected
 pair correlation function. The caller explicitly provides the deformation axis
 and shear plane so that the correct signal component is always extracted.
 
-Authors: Achraf Atila (achraf.atila@bam.de)
+Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 from __future__ import annotations
