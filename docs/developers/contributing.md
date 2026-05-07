@@ -44,41 +44,51 @@ pixi run docs-build
 pixi run docs-serve
 ```
 
-## Tagging Pull Requests
+## Labelling Pull Requests
 
 Every pull request should have a label so it lands in the right section of the release notes.
+Labels are applied **automatically** based on the branch name prefix:
 
-| Category | Labels |
-|---|---|
-| 💥 Breaking Changes | `breaking` |
-| 🚀 Features | `feature`, `enhancement` |
-| 🐛 Bug Fixes | `bug` |
-| 📚 Documentation | `documentation`, `docs` |
-| 🔧 Maintenance | `dependencies`, `ci`, `refactor` |
+| Branch prefix | Label | Release-notes category |
+|---|---|---|
+| `feat/`, `perf/` | `type: feature` | 🚀 Features |
+| `fix/` | `type: bug` | 🐛 Bug Fixes |
+| `docs/` | `type: documentation` | 📚 Documentation |
+| `refactor/`, `style/` | `type: refactor` | 🔧 Maintenance |
+| `ci/`, `chore/` | `type: ci` | 🔧 Maintenance |
+| `test/` | `type: tests` | 🔧 Maintenance |
+| `dep/`, `deps/` | `type: dependencies` | 🔧 Maintenance |
+
+You can always add or override labels manually. The `type: breaking` label (💥 Breaking Changes) must be added by hand.
 
 Use `skip-changelog` to exclude a PR from the release notes entirely.
 
 ## Making a Release (maintainers only)
 
-Releases are intentional acts — not every merged PR needs one. When you are ready to cut a release, add one of the version-bump labels to the PR before merging:
+Releases are intentional acts — not every merged PR needs one.
 
-| Label | Effect |
+### Version resolution
+
+The release drafter resolves the next version automatically based on PR labels:
+
+| Labels | Version bump |
 |---|---|
-| `patch` | Bumps `0.4.1` → `0.4.2` |
-| `minor` | Bumps `0.4.1` → `0.5.0` |
-| `major` | Bumps `0.4.1` → `1.0.0` |
+| `type: breaking`, `semver: major` | major (`0.4.1` → `1.0.0`) |
+| `type: feature`, `semver: minor` | minor (`0.4.1` → `0.5.0`) |
+| `type: bug`, `semver: patch` | patch (`0.4.1` → `0.4.2`) |
+| *(none of the above)* | patch (default) |
 
-These labels trigger the version-bump workflow, which updates `pyproject.toml`, commits the change, and pushes a new tag. Regular contributors should not add these labels.
+### Release procedure
 
-## Making a Release
+1. **Trigger the version bump.** Either:
+    - Add a `patch`, `minor`, or `major` label to a PR before merging it, **or**
+    - Run the *Version Bump* workflow manually from the Actions tab (`workflow_dispatch`).
 
-Releases are made whenever convenient, and can be made by any maintainer (push rights to the repository).
+    This does **not** tag or release directly. Instead it opens a new PR (e.g. *"chore: bump version to 0.5.0"*) that updates `pyproject.toml` and `pixi.lock`. The PR is labelled `skip-changelog` so it stays out of the release notes.
 
-**Release procedure:**
+2. **Merge the version-bump PR.** When it merges, a separate job detects the title, creates and pushes a `v<version>` tag.
 
-1. Merge a pull request labeled with `patch`, `minor`, or `major`. This automatically bumps the version in `pyproject.toml`, commits it, and creates a new tag.
-2. Go to [GitHub Releases](https://github.com/glasagent/amorphouspy/releases)
-3. Edit the latest draft release (pre-populated automatically by the release drafter action) and select the newly created tag
-    - Note: you can also use the "Generate release notes" button, but it won't filter commits into different categories
-4. Publish the release
+3. **Publish the release.** Go to [GitHub Releases](https://github.com/glasagent/amorphouspy/releases), edit the latest draft (pre-populated by the release drafter action), select the newly created tag, and publish.
+
+Regular contributors should not add `patch` / `minor` / `major` labels.
 
