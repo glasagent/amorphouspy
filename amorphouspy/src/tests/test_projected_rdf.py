@@ -42,10 +42,11 @@ def _sheared_xy(atoms: Atoms, gamma: float = 0.05) -> Atoms:
 # ---------------------------------------------------------------------------
 
 
-def test_output_shapes_uniaxial_only() -> None:
-    """Output shapes are correct when only deformation_axis is given."""
+def test_output_shapes() -> None:
+    """Output shapes and None-routing are correct for all three calling modes."""
     atoms = _simple_cubic_sc(n=3)
     n_bins = 50
+
     r, uniaxial, shear = compute_projected_rdf(atoms, deformation_axis="z", n_bins=n_bins, r_max=4.0)
     assert r.shape == (n_bins,)
     assert uniaxial is not None
@@ -53,22 +54,12 @@ def test_output_shapes_uniaxial_only() -> None:
     assert (14, 14) in uniaxial
     assert uniaxial[(14, 14)].shape == (n_bins,)
 
-
-def test_output_shapes_shear_only() -> None:
-    """Output shapes are correct when only shear_plane is given."""
-    atoms = _simple_cubic_sc(n=3)
-    n_bins = 50
     r, uniaxial, shear = compute_projected_rdf(atoms, shear_plane="xy", n_bins=n_bins, r_max=4.0)
     assert r.shape == (n_bins,)
     assert uniaxial is None
     assert shear is not None
     assert (14, 14) in shear
 
-
-def test_output_shapes_both() -> None:
-    """Both dicts are populated when both axis and plane are given."""
-    atoms = _simple_cubic_sc(n=3)
-    n_bins = 50
     _, uniaxial, shear = compute_projected_rdf(atoms, deformation_axis="z", shear_plane="xy", n_bins=n_bins, r_max=4.0)
     assert uniaxial is not None
     assert shear is not None
