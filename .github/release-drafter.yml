@@ -43,11 +43,11 @@ categories:
 
 version-resolver:
   major:
-    labels: ['type: breaking', 'semver: major']
+    labels: ['type: breaking']
   minor:
-    labels: ['type: feature', 'semver: minor']
+    labels: ['type: feature']
   patch:
-    labels: ['type: bug', 'semver: patch']
+    labels: ['type: bug']
   default: patch
 
 exclude-labels:
