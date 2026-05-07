@@ -73,22 +73,24 @@ The release drafter resolves the next version automatically based on PR labels:
 
 | Labels | Version bump |
 |---|---|
-| `type: breaking`, `semver: major` | major (`0.4.1` → `1.0.0`) |
-| `type: feature`, `semver: minor` | minor (`0.4.1` → `0.5.0`) |
-| `type: bug`, `semver: patch` | patch (`0.4.1` → `0.4.2`) |
+| `type: breaking` | major (`0.4.1` → `1.0.0`) |
+| `type: feature` | minor (`0.4.1` → `0.5.0`) |
+| `type: bug` | patch (`0.4.1` → `0.4.2`) |
 | *(none of the above)* | patch (default) |
 
 ### Release procedure
 
 1. **Trigger the version bump.** Either:
-    - Add a `patch`, `minor`, or `major` label to a PR before merging it, **or**
+    - Add the `release` label to a PR before merging it, **or**
     - Run the *Version Bump* workflow manually from the Actions tab (`workflow_dispatch`).
+
+    The next version is read directly from the release drafter's draft release (visible under [GitHub Releases](https://github.com/glasagent/amorphouspy/releases) as a draft).
 
     This does **not** tag or release directly. Instead it opens a new PR (e.g. *"chore: bump version to 0.5.0"*) that updates `pyproject.toml` and `pixi.lock`. The PR is labelled `skip-changelog` so it stays out of the release notes.
 
 2. **Merge the version-bump PR.** When it merges, a separate job detects the title, creates and pushes a `v<version>` tag.
 
-3. **Publish the release.** Go to [GitHub Releases](https://github.com/glasagent/amorphouspy/releases), edit the latest draft (pre-populated by the release drafter action), select the newly created tag, and publish.
+3. **Publish the release.** Go to [GitHub Releases](https://github.com/glasagent/amorphouspy/releases), edit the latest draft, select the newly created tag, and publish.
 
-Regular contributors should not add `patch` / `minor` / `major` labels.
+Regular contributors should not add the `release` label.
 
