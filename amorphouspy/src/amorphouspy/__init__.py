@@ -7,6 +7,7 @@ from amorphouspy.analysis.cte import (
     cte_from_npt_fluctuations,
     cte_from_volume_temperature_data,
 )
+from amorphouspy.analysis.projected_rdf import compute_projected_rdf
 from amorphouspy.analysis.qn_network_connectivity import (
     classify_oxygens,
     compute_network_connectivity,
@@ -63,6 +64,7 @@ __all__ = [
     "compute_coordination",
     "compute_guttmann_rings",
     "compute_network_connectivity",
+    "compute_projected_rdf",
     "compute_qn",
     "compute_qn_and_classify",
     "compute_rdf",

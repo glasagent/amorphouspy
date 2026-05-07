@@ -82,6 +82,7 @@ Each analysis method has its own dedicated page with full parameter documentatio
 | Method | Page | Description |
 |---|---|---|
 | **Radial Distribution Function** | [RDF & Coordination](rdf.md) | $g(r)$, partial RDFs, running coordination numbers |
+| **Projected RDF** | [Projected RDF](projected_rdf.md) | Uniaxial (Y₂₀) and shear (Y₂₁/Y₂₂) anisotropy from deformed glasses |
 | **$Q^n$ Distribution** | [$Q^n$ & Network Connectivity](qn.md) | Bridging oxygen analysis, network connectivity |
 | **Bond Angles** | [Bond Angle Distribution](bond_angles.md) | O-X-O and X-O-X angle histograms |
 | **Ring Statistics** | [Ring Analysis](rings.md) | Guttman ring counting via networkx BFS |
