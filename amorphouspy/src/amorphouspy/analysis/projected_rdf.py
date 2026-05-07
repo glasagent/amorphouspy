@@ -46,7 +46,7 @@ _MIN_SAME_TYPE_COUNT: int = 2
 
 
 @jit(nopython=True, cache=True, fastmath=True)
-def _accumulate_projected_rdf_orthogonal(
+def _accumulate_projected_rdf_orthogonal(  # pragma: no cover
     coords: np.ndarray,
     atomic_types: np.ndarray,
     box_size: np.ndarray,
@@ -158,7 +158,7 @@ def _accumulate_projected_rdf_orthogonal(
 
 
 @jit(nopython=True, cache=True, fastmath=True)
-def _accumulate_projected_rdf_triclinic(
+def _accumulate_projected_rdf_triclinic(  # pragma: no cover
     coords_frac: np.ndarray,
     atomic_types: np.ndarray,
     cell: np.ndarray,
