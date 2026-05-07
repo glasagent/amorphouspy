@@ -14,7 +14,7 @@ $$
 g(\mathbf{r}) = \sum_{l,m} g_{lm}(r) \, Y_l^m(\hat{\mathbf{r}})
 $$
 
-For amorphous materials the $l=0$ term recovers the standard isotropic $g(r)$. The $l=2$ terms carry the lowest-order anisotropy signal and are the ones accessible from glasses under deformation.
+For amorphous materials the $l=0$ term recovers the standard isotropic $g(r)$. The $l=2$ terms carry the lowest-order anisotropy signal and are the ones accessible from glasses under deformation. The spherical harmonic decomposition of the pair correlation has been used to quantify shear- and deformation-induced structural anisotropy in model glass formers [1] and oxide glasses [2,3].
 
 ### $l=2$ components
 
@@ -108,3 +108,13 @@ See the [Projected RDF Tutorial](../../notebooks/ProjectedRDFTutorial.ipynb) not
 ## API reference
 
 ::: amorphouspy.analysis.projected_rdf.compute_projected_rdf
+
+---
+
+## References
+
+1. J. Zausch and J. Horbach, "The build-up and relaxation of stresses in a glass-forming soft-sphere mixture under shear: A computer simulation study," *EPL* **88**, 60001 (2009). <https://doi.org/10.1209/0295-5075/88/60001>
+
+2. S. Ganisetti, A. Atila, J. Guénolé, A. Prakash, J. Horbach, L. Wondraczek, and E. Bitzek, "The origin of deformation induced topological anisotropy in silica glass," *Acta Mater.* **257**, 119108 (2023). <https://doi.org/10.1016/j.actamat.2023.119108>
+
+3. A. Atila and E. Bitzek, "Atomistic origins of deformation-induced structural anisotropy in metaphosphate glasses and its influence on mechanical properties," *J. Non-Cryst. Solids* **627**, 122822 (2024). <https://doi.org/10.1016/j.jnoncrysol.2024.122822>
