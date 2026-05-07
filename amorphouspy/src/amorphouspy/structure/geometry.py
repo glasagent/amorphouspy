@@ -161,7 +161,7 @@ def create_random_atoms(
         ... )
 
     """
-    # Independent on system and python/numpy versions
+    # Independent on operating system. Might break reproducibility across different Python/numpy versions
     rng = Generator(PCG64(seed))
 
     validate_target_mode(n_molecules, target_atoms)
