@@ -86,7 +86,7 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
     mq = melt_quench_simulation(
         structure=structure,
         potential=potential,
-        n_print=1000,
+        n_print=100000,
         heating_rate=heating_rate,
         cooling_rate=cooling_rate,
         timestep=timestep,
