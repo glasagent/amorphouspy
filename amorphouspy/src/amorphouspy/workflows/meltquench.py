@@ -77,8 +77,12 @@ def _run_lammps_md(  # pragma: no cover
         t_start = temperature
         t_end = temperature_end if temperature_end is not None else temperature
 
+        # Clamp dump frequency so the final step is always captured when the run is
+        # shorter than the requested print interval (e.g. fast heating stages).
+        effective_n_print = min(n_print, n_ionic_steps)
+
         input_control: dict[str, Any] = {
-            "dump_modify": f"1 every {n_print} first yes",
+            "dump_modify": f"1 every {effective_n_print} first yes",
             "thermo_style": "custom step temp density pe etotal pxx pxy pxz pyy pyz pzz vol",
             "thermo_modify": "flush yes",
         }
@@ -101,7 +105,7 @@ def _run_lammps_md(  # pragma: no cover
                 "temperature": temp_setting,
                 "n_ionic_steps": n_ionic_steps,
                 "time_step": timestep,
-                "n_print": n_print,
+                "n_print": effective_n_print,
                 "initial_temperature": initial_temperature,
                 "seed": seed,
                 "pressure": passed_pressure,
