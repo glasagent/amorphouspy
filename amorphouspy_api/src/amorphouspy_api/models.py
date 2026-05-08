@@ -148,7 +148,7 @@ type Potential = Annotated[
 
 
 class LongRangeMethod(StrEnum):
-    """Coulomb solver method for LAMMPS potential generation."""
+    """Coulomb solver method."""
 
     dsf = "dsf"
     wolf = "wolf"
@@ -203,9 +203,9 @@ class ViscosityAnalysis(BaseModel):
     timestep: float = Field(default=1.0, description="MD timestep in fs for the viscosity production run")
     n_timesteps: int = Field(
         default=10_000_000,
-        description="Number of MD steps per viscosity production run",
+        description="MD steps per production run",
     )
-    n_print: int = Field(default=1, description="Thermodynamic output frequency")
+    n_print: int = Field(default=1, description="Output frequency in steps")
     max_lag: int | None = Field(
         default=1_000_000,
         description="Maximum correlation lag (steps) for Green-Kubo post-processing; None uses full trajectory",
@@ -221,7 +221,7 @@ class ElasticAnalysis(BaseModel):
 
     type: Literal["elastic"] = "elastic"
     temperature: float = Field(default=300.0, description="Simulation temperature in K")
-    pressure: float | None = Field(default=None, description="Target pressure for equilibration (None = NVT)")
+    pressure: float | None = Field(default=None, description="Pressure in GPa; None = NVT")
     timestep: float = Field(default=1.0, description="MD timestep in fs")
     equilibration_steps: int = Field(default=1_000_000, description="Equilibration MD steps")
     production_steps: int = Field(default=10_000, description="Production MD steps per strain direction")
@@ -230,13 +230,13 @@ class ElasticAnalysis(BaseModel):
 
 
 class _CTEBase(BaseModel):
-    """Shared simulation parameters for both CTE methods."""
+    """Shared CTE simulation parameters."""
 
     type: Literal["cte"] = "cte"
-    pressure: float = Field(default=1e-4, description="Target pressure in GPa (default ≈ 1 bar)")
+    pressure: float = Field(default=1e-4, description="Pressure in GPa (default ≈ 1 bar)")
     timestep: float = Field(default=1.0, description="MD timestep in fs")
-    equilibration_steps: int = Field(default=100_000, description="Equilibration MD steps")
-    production_steps: int = Field(default=200_000, description="Production MD steps per run")
+    equilibration_steps: int = Field(default=100_000, description="Equilibration steps")
+    production_steps: int = Field(default=200_000, description="Production steps per run")
 
 
 class CTEFluctuations(_CTEBase):
@@ -340,14 +340,14 @@ class MeltQuenchParams(BaseModel):
 
     melt_temperature: float | None = Field(
         default=None,
-        description="Melt temperature in K. If None, protocol-specific melt temperature is used. ",
+        description="Melt temperature in K; None = protocol default",
     )
     quench_rate: float = Field(default=1e12, description="Quench rate in K/s")
     n_atoms: int = Field(default=6000, description="Number of atoms")
     timestep: float = Field(default=1.0, description="MD timestep in fs")
     equilibration_steps: int | None = Field(
         default=None,
-        description="Override for all fixed equilibration stages. If None, protocol-specific defaults are used.",
+        description="Equilibration steps override; None = protocol default",
     )
     target_density: float | None = Field(
         default=None,
@@ -357,7 +357,7 @@ class MeltQuenchParams(BaseModel):
         default=42,
         ge=0,
         le=2**32 - 1,
-        description="Random seed for initial atom placement during structure generation.",
+        description="Random seed for initial structure generation",
     )
 
 
@@ -367,11 +367,7 @@ class MeltQuenchParams(BaseModel):
 
 
 class ElectrostaticsParams(BaseModel):
-    """Coulomb solver settings for LAMMPS potential generation.
-
-    Controls the long-range electrostatics method and associated cutoffs.
-    All fields are optional; unset values fall back to each potential's defaults.
-    """
+    """Coulomb solver and cutoff settings for LAMMPS potentials."""
 
     method: LongRangeMethod = Field(default=LongRangeMethod.dsf, description="Coulomb solver")
     long_range_cutoff: float | None = Field(default=None, description="Coulomb cutoff in Å")
@@ -402,17 +398,13 @@ class JobSubmission(BaseModel):
 
     composition: Composition = Field(
         ...,
-        description=(
-            "Oxide glass composition as a mapping of oxide formula to mol%. "
-            "Values are rescaled to sum to 100%. "
-            "Example: {'SiO2': 70, 'Na2O': 15, 'CaO': 15}"
-        ),
+        description="Oxide glass composition as {oxide: mol%}, rescaled to 100%",
     )
     potential: Potential = Field(default="pmmcs")
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(  # type: ignore[ty:invalid-assignment]
         default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
-        description="Analyses to run. Each can carry its own parameters. Defaults to all available analyses.",
+        description="Analyses to run; defaults to all available",
     )
     electrostatics: ElectrostaticsParams = Field(
         default_factory=ElectrostaticsParams,
@@ -525,21 +517,17 @@ class JobSearchRequest(BaseModel):
     analyses: list[str] | None = None
     tags: list[str] | None = Field(
         default=None,
-        description="Filter results to jobs that have all of the specified tags.",
+        description="Filter to jobs with all specified tags",
     )
     threshold: float = Field(
         default=0.05,
-        description=(
-            "Maximum Euclidean distance in elemental atom-fraction space for a "
-            "composition to be included as a close match. Set to 0 for exact "
-            "matches only. Typical values: 0.01-0.1."
-        ),
+        description="Max distance in atom-fraction space; 0 = exact only",
     )
     max_results: int = Field(
         default=10,
         ge=1,
         le=100,
-        description="Maximum number of close matches to return.",
+        description="Max close matches to return",
     )
 
 
