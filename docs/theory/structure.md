@@ -125,6 +125,10 @@ print(f"Predicted density: {density:.4f} g/cm³")
 
 The main entry point for generating complete structure dictionaries. This function chains all sub-steps automatically: composition parsing → density estimation → box calculation → atom placement.
 
+If specified manually, using (combinations of) an unrealistically high `density`, too high `min_distance`, too many `target_atoms` or `n_molecules`, or too few `max_attempts_per_atom` can lead to placement failures. 
+
+Internally, the random placement of atoms is controlled by the `random_seed` parameter. This ensures reproducibility on the one hand (see also comment further below). On the other hand, if statistics are checked and the same system is simulated several times it is recommended to use different seeds for each run to get a better sampling of the configuration space.
+
 ```python
 from amorphouspy import get_structure_dict
 
@@ -136,6 +140,7 @@ structure_dict = get_structure_dict(
     density=None,            # Auto-calculate density (Fluegel model)
     min_distance=1.6,        # Minimum inter-atomic distance (Å)
     max_attempts_per_atom=10000,  # Max placement attempts per atom
+    random_seed=42,       # Seed controlling the random placement of atoms
 )
 
 # Mode 2: Specify molecule (formula unit) count
@@ -212,6 +217,8 @@ atoms_list, atom_counts = create_random_atoms(
 ```
 
 > **Tip:** If you get a `RuntimeError` about placement failure, either increase `box_length` or decrease `min_distance`. A `min_distance` of 1.6 Å works well for most oxide glasses; the melt-quench simulation will relax any remaining stress.
+
+> **Note:** The `seed` parameter controls the random number generator for the atom placement. Using the same seed will yield the same structure accross different operating systems if the remaining inputs are the same. This should also hold true for different Python or numpy versions (as long as there are no heavy changes in numpy that break backwards-compatibility). For best reproducibility, do not change the Python/numpy version for one project as this can also affect other processes.
 
 ---
 

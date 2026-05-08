@@ -9,6 +9,7 @@ from typing import cast
 import numpy as np
 from ase.atoms import Atoms
 from ase.io import read
+from numpy.random import PCG64, Generator
 
 from amorphouspy.mass import get_atomic_mass
 from amorphouspy.shared import get_element_types_dict
@@ -160,7 +161,8 @@ def create_random_atoms(
         ... )
 
     """
-    rng = np.random.default_rng(seed)
+    # Independent on operating system. Might break reproducibility across different Python/numpy versions
+    rng = Generator(PCG64(seed))
 
     validate_target_mode(n_molecules, target_atoms)
 

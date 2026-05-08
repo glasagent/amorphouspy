@@ -42,7 +42,11 @@ def generate_structure(submission: "JobSubmission", config: "BaseModel", result:
     potential_type = submission.potential
     density = submission.simulation.target_density
 
-    atoms_dict = get_structure_dict(composition=composition, target_atoms=n_atoms, density=density)
+    structure_seed = submission.simulation.structure_seed
+
+    atoms_dict = get_structure_dict(
+        composition=composition, target_atoms=n_atoms, density=density, random_seed=structure_seed
+    )
     structure = get_ase_structure(atoms_dict=atoms_dict)
     potential = generate_potential(
         atoms_dict=atoms_dict,
