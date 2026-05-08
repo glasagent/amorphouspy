@@ -218,7 +218,7 @@ atoms_list, atom_counts = create_random_atoms(
 
 > **Tip:** If you get a `RuntimeError` about placement failure, either increase `box_length` or decrease `min_distance`. A `min_distance` of 1.6 Å works well for most oxide glasses; the melt-quench simulation will relax any remaining stress.
 
-> **Note:** The `seed` parameter controls the random number generator for the atom placement. Using the same seed will yield the same structure accross different operating systems if the remaining inputs are the same. This should also hold true for different Python or numpy versions, but we cannot guarantee this to 100%. For best reproducibility, do not change the Python/numpy version for one project.
+> **Note:** The `seed` parameter controls the random number generator for the atom placement. Using the same seed will yield the same structure accross different operating systems if the remaining inputs are the same. This should also hold true for different Python or numpy versions (as long as there are no heavy changes in numpy that break backwards-compatibility). For best reproducibility, do not change the Python/numpy version for one project as this can also affect other processes.
 
 ---
 
