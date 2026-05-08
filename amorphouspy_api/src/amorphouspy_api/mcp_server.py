@@ -69,6 +69,29 @@ def register_tools() -> None:
     ]:
         mcp.add_tool(fn)
 
+    # Strip auto-generated 'title' fields from MCP tool schemas.
+    # Pydantic titles duplicate the field/class name and waste LLM tokens.
+    for tool in mcp._tool_manager._tools.values():
+        _strip_titles(tool.parameters)
+
+
+# ---------------------------------------------------------------------------
+# Schema helpers — reduce MCP tool token cost
+# ---------------------------------------------------------------------------
+
+
+def _strip_titles(obj: dict | list) -> None:
+    """Remove ``title`` keys from a JSON schema dict in-place (recursive)."""
+    if isinstance(obj, dict):
+        obj.pop("title", None)
+        for v in obj.values():
+            if isinstance(v, (dict, list)):
+                _strip_titles(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            if isinstance(v, (dict, list)):
+                _strip_titles(v)
+
 
 # ---------------------------------------------------------------------------
 # ASGI middleware for routing /mcp -> MCP server
