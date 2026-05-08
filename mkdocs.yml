@@ -50,6 +50,7 @@ nav:
     # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
     # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
     - Structure Tutorial: notebooks/StructureTutorial.ipynb
+    - Projected RDF: notebooks/ProjectedRDFTutorial.ipynb
     - Trajectory Averaging: notebooks/TrajectoryAveragingTutorial.ipynb
     - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/ViscosityTutorial.ipynb
@@ -75,6 +76,7 @@ nav:
     - Structural Analysis:
         - theory/analysis/index.md
         - RDF & Coordination: theory/analysis/rdf.md
+        - Projected RDF: theory/analysis/projected_rdf.md
         - Qn Distribution: theory/analysis/qn.md
         - Bond Angles: theory/analysis/bond_angles.md
         - Ring Statistics: theory/analysis/rings.md

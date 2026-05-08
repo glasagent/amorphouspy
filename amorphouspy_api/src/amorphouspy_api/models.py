@@ -353,6 +353,12 @@ class MeltQuenchParams(BaseModel):
         default=None,
         description="Target density in g/cm³ for initial structure generation. If None, estimated from Fluegel's empirical model.",
     )
+    structure_seed: int = Field(
+        default=42,
+        ge=0,
+        le=2**32 - 1,
+        description="Random seed for initial atom placement during structure generation.",
+    )
 
 
 # ---------------------------------------------------------------------------

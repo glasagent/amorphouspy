@@ -1172,3 +1172,67 @@ def test_submit_job_with_electrostatics_accepted():
 
     assert resp.status_code == 200
     assert resp.json()["status"] in ("pending", "completed")
+
+
+# ---------------------------------------------------------------------------
+# Structure seed
+# ---------------------------------------------------------------------------
+
+
+def test_job_hash_differs_with_structure_seed():
+    """Job hash changes when structure_seed differs."""
+    from amorphouspy_api.models import JobSubmission, MeltQuenchParams
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
+
+    sub1 = JobSubmission(composition={"SiO2": 100})
+    sub2 = JobSubmission(
+        composition={"SiO2": 100},
+        simulation=MeltQuenchParams(structure_seed=99),
+    )
+
+    assert _job_hash(sub1, sub1.composition.canonical) != _job_hash(sub2, sub2.composition.canonical)
+
+
+def test_generate_structure_passes_structure_seed():
+    """generate_structure forwards structure_seed as random_seed to get_structure_dict."""
+    from amorphouspy_api.models import JobSubmission, MeltQuenchParams
+    from amorphouspy_api.workflows.meltquench import generate_structure
+
+    sub = JobSubmission(
+        composition={"SiO2": 100},
+        simulation=MeltQuenchParams(structure_seed=777),
+    )
+    with (
+        patch("amorphouspy_api.workflows.meltquench.get_structure_dict") as mock_gsd,
+        patch("amorphouspy_api.workflows.meltquench.get_ase_structure"),
+        patch("amorphouspy_api.workflows.meltquench.generate_potential"),
+    ):
+        mock_gsd.return_value = {}
+        generate_structure(sub, MagicMock(), {})
+        mock_gsd.assert_called_once()
+        assert mock_gsd.call_args.kwargs["random_seed"] == 777
+
+
+def test_submit_job_with_structure_seed():
+    """POST /jobs accepts structure_seed in simulation params."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch("amorphouspy_api.routers.jobs_helpers.submit_pipeline", return_value=mock_future),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 70, "Na2O": 30},
+                "simulation": {"structure_seed": 123},
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("pending", "completed")
