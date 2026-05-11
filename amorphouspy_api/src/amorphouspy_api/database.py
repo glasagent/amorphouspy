@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from sqlalchemy import JSON, DateTime, Index, String, create_engine, func, text
+from sqlalchemy import JSON, DateTime, Index, String, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -59,6 +59,19 @@ class Job(Base):
     __table_args__ = (
         Index("ix_jobs_composition_status", "composition", "status"),
         Index("ix_jobs_hash_status", "request_hash", "status"),
+        # Covering index for GET /glasses - avoids reading huge result_data
+        # overflow pages on every row scan.
+        Index(
+            "ix_jobs_glasses_listing",
+            "status",
+            "composition",
+            "created_at",
+            "job_id",
+            "potential",
+            "tags",
+            "completed_at",
+            "progress",
+        ),
     )
 
 
@@ -174,32 +187,32 @@ class JobStore:
     def list_glasses(self, tag: str | None = None) -> list[dict[str, Any]]:
         """Return lightweight summaries for all completed jobs.
 
-        Only fetches the columns needed for the listing (no heavy
-        ``result_data`` or ``elemental_vector``).  Analysis type names
-        are extracted via SQLite ``json_each`` so the full result blob
-        is never loaded into Python.
+        Only fetches the columns needed for the listing — the heavy
+        ``result_data`` and ``elemental_vector`` columns are never
+        touched.  Completed analysis names are derived from the small
+        ``progress`` JSON column instead.
         """
-        with self.session() as s:
-            rows = s.execute(
-                text(
-                    "SELECT j.job_id, j.composition, j.potential, j.tags,"
-                    "       j.completed_at,"
-                    "       (SELECT group_concat(key) FROM json_each(j.result_data))"
-                    "           AS analysis_keys"
-                    "  FROM jobs j"
-                    " WHERE j.status = 'completed'"
-                    " ORDER BY j.composition, j.created_at DESC"
-                )
-            ).all()
+        _NON_ANALYSIS_STEPS = {"structure_generation", "melt_quench"}
 
-            import json
+        with self.session() as s:
+            q = s.query(
+                Job.job_id,
+                Job.composition,
+                Job.potential,
+                Job.tags,
+                Job.completed_at,
+                Job.progress,
+            ).filter(Job.status == "completed")
+            if tag is not None:
+                q = q.filter(Job.tags.isnot(None))
+            rows = q.order_by(Job.composition, Job.created_at.desc()).all()
 
             results = []
-            for job_id, comp, potential, tags_json, completed_at, ak in rows:
-                tag_list = json.loads(tags_json) if tags_json else []
+            for job_id, comp, potential, tags, completed_at, progress in rows:
+                tag_list = tags or []
                 if tag is not None and tag not in tag_list:
                     continue
-                analyses = ak.split(",") if ak else []
+                analyses = [k for k, v in (progress or {}).items() if k not in _NON_ANALYSIS_STEPS and v == "completed"]
                 results.append(
                     {
                         "job_id": job_id,

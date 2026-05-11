@@ -1,5 +1,6 @@
 """Tests for the JobStore database layer."""
 
+import sqlite3
 import tempfile
 import threading
 from pathlib import Path
@@ -263,3 +264,107 @@ def test_persistence() -> None:
         assert job is not None
         assert job.status == "completed"
         store2.close()
+
+
+def test_list_glasses() -> None:
+    """Test list_glasses returns correct lightweight summaries."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-lg-1",
+                request_hash="h-lg-1",
+                composition="SiO2 70 - Na2O 30",
+                potential="pmmcs",
+                status="completed",
+                progress={
+                    "structure_generation": "completed",
+                    "melt_quench": "completed",
+                    "structure_characterization": "completed",
+                    "viscosity": "completed",
+                },
+                tags=["batch-1", "project-a"],
+            )
+        )
+        store.create_job(
+            Job(
+                job_id="j-lg-2",
+                request_hash="h-lg-2",
+                composition="SiO2 100",
+                potential="shik",
+                status="completed",
+                progress={
+                    "structure_generation": "completed",
+                    "melt_quench": "completed",
+                    "structure_characterization": "completed",
+                },
+                tags=["batch-2"],
+            )
+        )
+        # Pending job should not appear
+        store.create_job(
+            Job(
+                job_id="j-lg-pending",
+                request_hash="h-lg-pending",
+                composition="B2O3 100",
+                potential="pmmcs",
+                status="pending",
+            )
+        )
+
+        # No tag filter
+        results = store.list_glasses()
+        assert len(results) == 2
+        ids = {r["job_id"] for r in results}
+        assert ids == {"j-lg-1", "j-lg-2"}
+
+        # Check analyses are extracted from progress (excluding non-analysis steps)
+        by_id = {r["job_id"]: r for r in results}
+        assert set(by_id["j-lg-1"]["analyses"]) == {"structure_characterization", "viscosity"}
+        assert by_id["j-lg-1"]["tags"] == ["batch-1", "project-a"]
+
+        # Tag filter
+        results_b1 = store.list_glasses(tag="batch-1")
+        assert len(results_b1) == 1
+        assert results_b1[0]["job_id"] == "j-lg-1"
+
+        results_b2 = store.list_glasses(tag="batch-2")
+        assert len(results_b2) == 1
+        assert results_b2[0]["job_id"] == "j-lg-2"
+
+        results_none = store.list_glasses(tag="nonexistent")
+        assert results_none == []
+        store.close()
+
+
+def test_list_glasses_uses_covering_index() -> None:
+    """Verify the list_glasses query uses the covering index and never touches row data."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        store = JobStore(db_path)
+        store.create_job(
+            Job(
+                job_id="j-idx",
+                request_hash="h-idx",
+                composition="SiO2 100",
+                potential="pmmcs",
+                status="completed",
+                progress={"structure_generation": "completed", "melt_quench": "completed"},
+            )
+        )
+        store.close()
+
+        conn = sqlite3.connect(str(db_path))
+        # The exact query issued by list_glasses (via ORM)
+        plan_rows = conn.execute(
+            "EXPLAIN QUERY PLAN "
+            "SELECT jobs.job_id, jobs.composition, jobs.potential, "
+            "jobs.tags, jobs.completed_at, jobs.progress "
+            "FROM jobs "
+            "WHERE jobs.status = 'completed' "
+            "ORDER BY jobs.composition, jobs.created_at DESC"
+        ).fetchall()
+        plan_text = " ".join(str(r) for r in plan_rows)
+        assert "COVERING INDEX" in plan_text, f"Expected covering index usage, got: {plan_text}"
+        assert "ix_jobs_glasses_listing" in plan_text
+        conn.close()
