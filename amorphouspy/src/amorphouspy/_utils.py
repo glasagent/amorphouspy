@@ -1,7 +1,44 @@
-"""Shared utilities for amorphouspy package."""
+"""Internal utilities for the amorphouspy package.
+
+Provides helper functions for atomic masses, element type mappings,
+coordination number histograms, and numerical smoothing.
+"""
 
 import numpy as np
-from ase.data import chemical_symbols
+from ase.data import atomic_masses_iupac2016, chemical_symbols
+
+# ---------------------------------------------------------------------------
+# Atomic mass
+# ---------------------------------------------------------------------------
+
+
+def get_atomic_mass(element: str | int) -> float:
+    """Get the atomic mass of an element.
+
+    Args:
+        element: Chemical symbol or atomic number. Multi-valence BMP labels like
+            "Fe3" or "Ce4" are resolved to their base symbol ("Fe", "Ce").
+
+    Returns:
+        Atomic mass in g/mol.
+
+    Example:
+        >>> mass = get_atomic_mass("Si")
+        >>> print(mass)
+        28.085
+
+    """
+    if isinstance(element, str):
+        symbol = element.rstrip("0123456789") or element
+        atomic_number = chemical_symbols.index(symbol)
+    else:
+        atomic_number = element
+    return atomic_masses_iupac2016[atomic_number]
+
+
+# ---------------------------------------------------------------------------
+# Element type helpers
+# ---------------------------------------------------------------------------
 
 
 # See issue #31: It could be beneficial to hardcode
@@ -69,6 +106,11 @@ def type_to_dict(types: np.ndarray) -> dict[int, str]:
     type_dict: dict[int, str] = dict(zip(unique_types, element_symbols, strict=True))
 
     return type_dict
+
+
+# ---------------------------------------------------------------------------
+# Numerical utilities
+# ---------------------------------------------------------------------------
 
 
 def running_mean(data: list | np.ndarray, n: int) -> np.ndarray:

@@ -1,23 +1,7 @@
 """amorphouspy - workflows for atomistic modeling of oxide glasses."""
 
-from amorphouspy.analysis.averaging import average_over_frames
-from amorphouspy.analysis.bond_angle_distribution import compute_angles
-from amorphouspy.analysis.cavities import compute_cavities
-from amorphouspy.analysis.cte import (
-    cte_from_npt_fluctuations,
-    cte_from_volume_temperature_data,
-)
-from amorphouspy.analysis.projected_rdf import compute_projected_rdf
-from amorphouspy.analysis.qn_network_connectivity import (
-    classify_oxygens,
-    compute_network_connectivity,
-    compute_qn,
-    compute_qn_and_classify,
-)
-from amorphouspy.analysis.radial_distribution_functions import compute_coordination, compute_rdf
-from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
-from amorphouspy.analysis.structure_factor import compute_structure_factor
-from amorphouspy.io_utils import (
+from amorphouspy._utils import count_distribution, get_atomic_mass, running_mean, type_to_dict
+from amorphouspy.io import (
     frames_from_melt_quench_result,
     load_lammps_dump,
     structure_from_parsed_output,
@@ -25,12 +9,37 @@ from amorphouspy.io_utils import (
     write_distribution_to_file,
     write_xyz,
 )
-from amorphouspy.mass import get_atomic_mass
 from amorphouspy.neighbors import get_neighbors
 from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 from amorphouspy.potentials.potential import generate_potential
-from amorphouspy.shared import count_distribution, running_mean, type_to_dict
-from amorphouspy.structure import (
+from amorphouspy.simulation.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
+from amorphouspy.simulation.elastic import elastic_simulation
+from amorphouspy.simulation.md import md_simulation
+from amorphouspy.simulation.meltquench import melt_quench_simulation
+from amorphouspy.simulation.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
+from amorphouspy.structure_characterization.averaging import average_over_frames
+from amorphouspy.structure_characterization.bond_angle_distribution import compute_angles
+from amorphouspy.structure_characterization.cavities import compute_cavities
+from amorphouspy.structure_characterization.cte import (
+    cte_from_npt_fluctuations,
+    cte_from_volume_temperature_data,
+)
+from amorphouspy.structure_characterization.pipeline import (
+    analyze_structure,
+    find_rdf_minimum,
+    plot_analysis_results_plotly,
+)
+from amorphouspy.structure_characterization.projected_rdf import compute_projected_rdf
+from amorphouspy.structure_characterization.qn_network_connectivity import (
+    classify_oxygens,
+    compute_network_connectivity,
+    compute_qn,
+    compute_qn_and_classify,
+)
+from amorphouspy.structure_characterization.radial_distribution_functions import compute_coordination, compute_rdf
+from amorphouspy.structure_characterization.rings import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.structure_characterization.structure_factor import compute_structure_factor
+from amorphouspy.structure_generation import (
     check_neutral_oxide,
     create_random_atoms,
     extract_composition,
@@ -42,12 +51,6 @@ from amorphouspy.structure import (
     parse_formula,
     plan_system,
 )
-from amorphouspy.workflows.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
-from amorphouspy.workflows.elastic_mod import elastic_simulation
-from amorphouspy.workflows.md import md_simulation
-from amorphouspy.workflows.meltquench import melt_quench_simulation
-from amorphouspy.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results_plotly
-from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
 
 __all__ = [
     "DsfConfig",

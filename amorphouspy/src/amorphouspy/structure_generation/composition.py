@@ -8,7 +8,7 @@ import re
 from ase.data import chemical_symbols
 from pymatgen.core import Composition
 
-from amorphouspy.mass import get_atomic_mass
+from amorphouspy._utils import get_atomic_mass
 
 # Compile once: match an element symbol ([A-Z][a-z]*) followed by an optional integer count (\d*)
 ELEMENT = re.compile(r"([A-Z][a-z]*)(\d*)")

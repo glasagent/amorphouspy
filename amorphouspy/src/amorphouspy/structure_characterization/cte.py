@@ -11,7 +11,7 @@ Author: Marcel Sadowski (github.com/Gitdowski)
 import numpy as np
 from scipy.stats import linregress
 
-from amorphouspy.shared import running_mean
+from amorphouspy._utils import running_mean
 
 
 def cte_from_npt_fluctuations(

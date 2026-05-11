@@ -12,7 +12,7 @@ import numpy as np
 from ase.data import chemical_symbols
 from pymatgen.analysis.diffraction.xrd import ATOMIC_SCATTERING_PARAMS
 
-from amorphouspy.analysis.radial_distribution_functions import compute_rdf
+from amorphouspy.structure_characterization.radial_distribution_functions import compute_rdf
 
 if TYPE_CHECKING:
     from ase import Atoms

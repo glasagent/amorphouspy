@@ -44,7 +44,7 @@ The default uses element-specific ASE Van der Waals radii (e.g. Si = 2.10 Å, O 
 ### `compute_cavities(structure, resolution, cutoff_radii)`
 
 ```python
-from amorphouspy.analysis.cavities import compute_cavities
+from amorphouspy.structure_characterization.cavities import compute_cavities
 
 result = compute_cavities(
     structure=glass_structure,
@@ -105,7 +105,7 @@ fig.show()
 ### 3D Visualization
 
 ```python
-from amorphouspy.analysis.cavities import visualize_cavities
+from amorphouspy.structure_characterization.cavities import visualize_cavities
 
 fig = visualize_cavities(
     structure=glass_structure,

@@ -1,9 +1,9 @@
-"""Structure generation and analysis for oxide glass systems.
+"""Structure generation for oxide glass systems.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
-from amorphouspy.structure.composition import (
+from amorphouspy.structure_generation.composition import (
     COMPOSITION_TOLERANCE,
     ELEMENT,
     check_neutral_oxide,
@@ -15,14 +15,14 @@ from amorphouspy.structure.composition import (
     parse_formula,
     weight_percent_to_mol_fraction,
 )
-from amorphouspy.structure.density import TRACE_OXIDES, get_glass_density_from_model
-from amorphouspy.structure.geometry import (
+from amorphouspy.structure_generation.density import TRACE_OXIDES, get_glass_density_from_model
+from amorphouspy.structure_generation.geometry import (
     create_random_atoms,
     get_ase_structure,
     get_structure_dict,
     minimum_image_distance,
 )
-from amorphouspy.structure.planner import (
+from amorphouspy.structure_generation.planner import (
     DENSITY_TOLERANCE,
     allocate_formula_units_to_target_atoms,
     element_counts_from_formula_units,

@@ -8,15 +8,15 @@ from collections.abc import Mapping
 import numpy as np
 from scipy.constants import Avogadro
 
-from amorphouspy.mass import get_atomic_mass
-from amorphouspy.structure.composition import (
+from amorphouspy._utils import get_atomic_mass
+from amorphouspy.structure_generation.composition import (
     OXIDE_TO_SPECIES_MAP,
     extract_composition,
     extract_stoichiometry,
     get_composition,
     parse_formula,
 )
-from amorphouspy.structure.density import get_glass_density_from_model
+from amorphouspy.structure_generation.density import get_glass_density_from_model
 
 DENSITY_TOLERANCE = 1e-10
 

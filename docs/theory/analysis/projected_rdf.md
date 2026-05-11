@@ -107,7 +107,7 @@ See the [Projected RDF Tutorial](../../notebooks/ProjectedRDFTutorial.ipynb) not
 
 ## API reference
 
-::: amorphouspy.analysis.projected_rdf.compute_projected_rdf
+::: amorphouspy.structure_characterization.projected_rdf.compute_projected_rdf
 
 ---
 

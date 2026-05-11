@@ -1,6 +1,6 @@
 """Tests for density calculation utilities."""
 
-from amorphouspy.structure import get_glass_density_from_model
+from amorphouspy.structure_generation import get_glass_density_from_model
 
 # Constants
 TOLERANCE = 0.01  # g/cm³ acceptable deviation

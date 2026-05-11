@@ -21,7 +21,7 @@ from ase.atoms import Atoms
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
 
-from amorphouspy.workflows.shared import _run_lammps_md
+from amorphouspy.simulation.lammps import _run_lammps_md
 
 NPOINTS = 2
 

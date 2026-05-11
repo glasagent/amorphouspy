@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import fsolve
 
-from amorphouspy.shared import get_element_types_dict
+from amorphouspy._utils import get_element_types_dict
 
 _MELT_TEMPERATURE = 5000
 

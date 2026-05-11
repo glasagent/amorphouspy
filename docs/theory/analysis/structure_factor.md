@@ -131,7 +131,7 @@ For a Na₂O–SiO₂ glass the practical consequence is:
 
 ```python
 from ase.io import read
-from amorphouspy.analysis.structure_factor import compute_structure_factor
+from amorphouspy.structure_characterization.structure_factor import compute_structure_factor
 
 atoms = read("sodium_silicate.extxyz")
 

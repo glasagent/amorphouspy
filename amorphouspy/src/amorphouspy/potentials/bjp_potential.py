@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from amorphouspy._utils import get_element_types_dict
 from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
-from amorphouspy.shared import get_element_types_dict
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 8.0
 _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0

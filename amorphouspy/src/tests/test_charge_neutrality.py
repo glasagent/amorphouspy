@@ -1,7 +1,7 @@
 """Tests for oxide charge neutrality validation."""
 
 import pytest
-from amorphouspy.structure import check_neutral_oxide
+from amorphouspy.structure_generation import check_neutral_oxide
 
 
 def test_check_neutral_oxide_na2o() -> None:

@@ -4,7 +4,7 @@ import logging
 
 import numpy as np
 import pytest
-from amorphouspy.workflows.cte_helpers import (
+from amorphouspy.simulation.cte_helpers import (
     _collect_sim_data,
     _create_logger,
     _ensure_equilibration_steps,
@@ -24,7 +24,7 @@ from amorphouspy.workflows.cte_helpers import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-LOGGER_NAME = "amorphouspy.workflows.cte"
+LOGGER_NAME = "amorphouspy.simulation.cte"
 
 
 def _clean_logger_handlers() -> None:

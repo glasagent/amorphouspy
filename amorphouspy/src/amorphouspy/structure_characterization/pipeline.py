@@ -19,11 +19,14 @@ from scipy.signal import savgol_filter
 if TYPE_CHECKING:
     from ase.atoms import Atoms
 
-from amorphouspy.analysis.bond_angle_distribution import compute_angles
-from amorphouspy.analysis.qn_network_connectivity import compute_network_connectivity, compute_qn_and_classify
-from amorphouspy.analysis.radial_distribution_functions import compute_coordination, compute_rdf
-from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
-from amorphouspy.analysis.structure_factor import compute_structure_factor
+from amorphouspy.structure_characterization.bond_angle_distribution import compute_angles
+from amorphouspy.structure_characterization.qn_network_connectivity import (
+    compute_network_connectivity,
+    compute_qn_and_classify,
+)
+from amorphouspy.structure_characterization.radial_distribution_functions import compute_coordination, compute_rdf
+from amorphouspy.structure_characterization.rings import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.structure_characterization.structure_factor import compute_structure_factor
 
 # Network Formers: Elements that can form a glass network on their own.
 GLASS_FORMERS = {"Si", "B", "P", "Ge", "As", "Sb", "Te", "V"}

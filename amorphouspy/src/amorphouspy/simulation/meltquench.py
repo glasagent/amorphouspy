@@ -12,13 +12,13 @@ from typing import Any, cast
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.io_utils import structure_from_parsed_output
-from amorphouspy.workflows.meltquench_protocols import (
+from amorphouspy.io.lammps import structure_from_parsed_output
+from amorphouspy.simulation.lammps import LammpsPotential, get_lammps_command, run_lammps_with_error_capture
+from amorphouspy.simulation.meltquench_protocols import (
     DEFAULT_MELT_TEMPERATURES,
     PROTOCOL_MAP,
     MeltQuenchParams,
 )
-from amorphouspy.workflows.shared import LammpsPotential, get_lammps_command, run_lammps_with_error_capture
 
 
 def _run_lammps_md(  # pragma: no cover

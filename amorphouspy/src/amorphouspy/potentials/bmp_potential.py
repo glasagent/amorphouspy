@@ -30,8 +30,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from amorphouspy._utils import get_element_types_dict
 from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
-from amorphouspy.shared import get_element_types_dict
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 7.0
 _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF = 8.0

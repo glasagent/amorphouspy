@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
-from amorphouspy.workflows.viscosity import (
+from amorphouspy.simulation.viscosity import (
     helfand_viscosity,
     viscosity_ensemble,
     viscosity_simulation,
@@ -71,7 +71,7 @@ def _minimal_potential() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-@patch("amorphouspy.workflows.viscosity._viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity._viscosity_simulation")
 def test_viscosity_simulation_budget_exhausted(mock_sim: MagicMock) -> None:
     """viscosity_simulation returns after hitting the time budget without converging."""
     n = 1000
@@ -94,7 +94,7 @@ def test_viscosity_simulation_budget_exhausted(mock_sim: MagicMock) -> None:
     assert "iterations" in result
 
 
-@patch("amorphouspy.workflows.viscosity._viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity._viscosity_simulation")
 def test_viscosity_simulation_returns_structure(mock_sim: MagicMock) -> None:
     """viscosity_simulation passes back a structure object in the result."""
     n = 1000
@@ -113,8 +113,8 @@ def test_viscosity_simulation_returns_structure(mock_sim: MagicMock) -> None:
     assert "structure" in result
 
 
-@patch("amorphouspy.workflows.viscosity._run_lammps_md")
-@patch("amorphouspy.workflows.viscosity._viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity._run_lammps_md")
+@patch("amorphouspy.simulation.viscosity._viscosity_simulation")
 def test_viscosity_simulation_extension_step(mock_sim: MagicMock, mock_lammps: MagicMock) -> None:
     """viscosity_simulation can extend the trajectory by one 100-ps block."""
     n = 500
@@ -161,7 +161,7 @@ def test_viscosity_simulation_empty_potential_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("amorphouspy.workflows.viscosity.viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity.viscosity_simulation")
 def test_viscosity_ensemble_sequential_runs_n_replicas(mock_sim: MagicMock) -> None:
     """viscosity_ensemble calls viscosity_simulation exactly n_replicas times."""
     mock_sim.return_value = _make_viscosity_sim_output()
@@ -178,7 +178,7 @@ def test_viscosity_ensemble_sequential_runs_n_replicas(mock_sim: MagicMock) -> N
     assert len(result["viscosities"]) == 3
 
 
-@patch("amorphouspy.workflows.viscosity.viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity.viscosity_simulation")
 def test_viscosity_ensemble_output_keys(mock_sim: MagicMock) -> None:
     """viscosity_ensemble returns all expected top-level keys."""
     mock_sim.return_value = _make_viscosity_sim_output()
@@ -207,7 +207,7 @@ def test_viscosity_ensemble_output_keys(mock_sim: MagicMock) -> None:
     assert expected_keys.issubset(result.keys())
 
 
-@patch("amorphouspy.workflows.viscosity.viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity.viscosity_simulation")
 def test_viscosity_ensemble_single_replica_zero_std(mock_sim: MagicMock) -> None:
     """With n_replicas=1, std and sem are both 0."""
     mock_sim.return_value = _make_viscosity_sim_output()
@@ -227,7 +227,7 @@ def test_viscosity_ensemble_single_replica_zero_std(mock_sim: MagicMock) -> None
 # ---------------------------------------------------------------------------
 
 
-@patch("amorphouspy.workflows.viscosity.viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity.viscosity_simulation")
 def test_viscosity_ensemble_explicit_seeds(mock_sim: MagicMock) -> None:
     """Explicit seeds list is passed through to the result."""
     mock_sim.return_value = _make_viscosity_sim_output()
@@ -259,7 +259,7 @@ def test_viscosity_ensemble_seed_count_mismatch_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("amorphouspy.workflows.viscosity.viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity.viscosity_simulation")
 def test_viscosity_ensemble_parallel(mock_sim: MagicMock) -> None:
     """parallel=True produces the same structure of output as sequential."""
     mock_sim.return_value = _make_viscosity_sim_output()
@@ -280,7 +280,7 @@ def test_viscosity_ensemble_parallel(mock_sim: MagicMock) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("amorphouspy.workflows.viscosity.viscosity_simulation")
+@patch("amorphouspy.simulation.viscosity.viscosity_simulation")
 def test_viscosity_ensemble_saves_seed_file(mock_sim: MagicMock, tmp_path) -> None:
     """Seeds are written to disk when tmp_working_directory is provided."""
     mock_sim.return_value = _make_viscosity_sim_output()

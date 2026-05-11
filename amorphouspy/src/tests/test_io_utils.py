@@ -4,7 +4,7 @@ import textwrap
 
 import numpy as np
 import pytest
-from amorphouspy.io_utils import (
+from amorphouspy.io.lammps import (
     load_lammps_dump,
     structure_from_parsed_output,
     write_angle_distribution,

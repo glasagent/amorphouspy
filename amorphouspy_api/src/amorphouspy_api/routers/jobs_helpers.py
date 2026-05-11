@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from amorphouspy.structure import element_counts_from_formula_units, normalize
+from amorphouspy.structure_generation import element_counts_from_formula_units, normalize
 from ase.data import chemical_symbols
 
 from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR

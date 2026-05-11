@@ -39,7 +39,7 @@ Compositions are specified as a dict mapping oxide formulas to mol% values. Valu
 Normalizes a composition dict into molar fractions. When `mode="weight"`, it first converts weight percentages to molar fractions using the molar masses of each oxide.
 
 ```python
-from amorphouspy.structure import get_composition
+from amorphouspy.structure_generation import get_composition
 
 # Molar composition
 mol_frac = get_composition({"CaO": 0.25, "Al2O3": 0.25, "SiO2": 0.5})
@@ -68,7 +68,7 @@ A stricter validator that performs additional checks on top of `get_composition`
 3. **Sum validation** — checks that fractions sum to ~1.0 or percentages sum to ~100
 
 ```python
-from amorphouspy.structure import extract_composition
+from amorphouspy.structure_generation import extract_composition
 
 comp = extract_composition({"SiO2": 0.75, "Na2O": 0.15, "CaO": 0.10})
 # Returns: {'SiO2': 0.75, 'Na2O': 0.15, 'CaO': 0.1}
@@ -108,7 +108,7 @@ where $x_i$ is the mole percentage of oxide $i$ and $b$ values are fitted coeffi
 | **Others** | CdO, ThO₂, UO, SbO, SO₃, F, Cl |
 
 ```python
-from amorphouspy.structure import get_glass_density_from_model
+from amorphouspy.structure_generation import get_glass_density_from_model
 
 density = get_glass_density_from_model({"SiO2": 75, "Na2O": 15, "CaO": 10})
 print(f"Predicted density: {density:.4f} g/cm³")
@@ -202,7 +202,7 @@ The placement algorithm:
 5. Raise `RuntimeError` after `max_attempts_per_atom` consecutive failures
 
 ```python
-from amorphouspy.structure import create_random_atoms
+from amorphouspy.structure_generation import create_random_atoms
 
 atoms_list, atom_counts = create_random_atoms(
     composition={"SiO2": 75, "Na2O": 15, "CaO": 10},
@@ -236,7 +236,7 @@ The algorithm uses the **largest-remainder method** to fairly distribute formula
 4. This minimizes the deviation from ideal composition while ensuring integer counts
 
 ```python
-from amorphouspy.structure import plan_system
+from amorphouspy.structure_generation import plan_system
 
 # Plan for ~3000 atoms
 plan = plan_system(
@@ -267,7 +267,7 @@ L = \left(\frac{V_{\text{Å}^3}}{1}\right)^{1/3} \quad \text{where} \quad V_{\te
 $$
 
 ```python
-from amorphouspy.structure import get_box_from_density
+from amorphouspy.structure_generation import get_box_from_density
 
 box_length = get_box_from_density(
     composition={"SiO2": 75, "Na2O": 15, "CaO": 10},
@@ -292,7 +292,7 @@ print(f"Box length: {box_length:.2f} Å")
 | `extract_stoichiometry(composition)` | Stoichiometry of all composition components | See below |
 
 ```python
-from amorphouspy.structure import parse_formula, extract_stoichiometry
+from amorphouspy.structure_generation import parse_formula, extract_stoichiometry
 
 # Single formula
 parse_formula("Ca3(PO4)2")  # {'Ca': 3, 'P': 2, 'O': 8}

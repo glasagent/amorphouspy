@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from amorphouspy.shared import count_distribution, get_element_types_dict, running_mean, type_to_dict
+from amorphouspy._utils import count_distribution, get_element_types_dict, running_mean, type_to_dict
 
 
 def test_get_element_types_dict_basic() -> None:

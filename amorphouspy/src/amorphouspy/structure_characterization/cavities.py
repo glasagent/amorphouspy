@@ -573,7 +573,7 @@ def visualize_cavities(
 
     Examples:
         >>> from ase.io import read
-        >>> from amorphouspy.analysis.cavities import visualize_cavities
+        >>> from amorphouspy.structure_characterization.cavities import visualize_cavities
         >>> structure = read('glass.xyz')
         >>> fig = visualize_cavities(structure, excluded_cavities=50.0)
         >>> fig.show()

@@ -11,8 +11,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from amorphouspy._utils import get_element_types_dict
 from amorphouspy.potentials._config import DsfConfig, InteractionConfig
-from amorphouspy.shared import get_element_types_dict
 
 _DEFAULT_LONG_RANGE_CUTOFF = 10.0
 _DEFAULT_SHORT_RANGE_CUTOFF = 8.0

@@ -1,6 +1,6 @@
 """Testing structure generation."""
 
-import amorphouspy.structure as ps
+import amorphouspy.structure_generation as ps
 
 
 def test_reproducibility() -> None:

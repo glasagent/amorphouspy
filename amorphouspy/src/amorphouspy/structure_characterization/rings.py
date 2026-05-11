@@ -42,8 +42,8 @@ import networkx as nx
 import numpy as np
 from ase.data import atomic_numbers as ase_atomic_numbers
 
+from amorphouspy._utils import type_to_dict
 from amorphouspy.neighbors import get_neighbors
-from amorphouspy.shared import type_to_dict
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

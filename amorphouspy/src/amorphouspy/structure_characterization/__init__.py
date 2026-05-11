@@ -1,4 +1,4 @@
-"""Analysis subpackage of amorphouspy.
+"""Structure characterization subpackage of amorphouspy.
 
 Contains modules for structural analysis of atomistic glass simulations,
 including ring statistics, cavity detection, Qn calculation,

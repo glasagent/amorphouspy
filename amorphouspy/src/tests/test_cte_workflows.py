@@ -9,8 +9,8 @@ import logging
 
 import numpy as np
 import pytest
-from amorphouspy.workflows import cte as cte_module
-from amorphouspy.workflows.cte import (
+from amorphouspy.simulation import cte as cte_module
+from amorphouspy.simulation.cte import (
     cte_from_fluctuations_simulation,
     temperature_scan_simulation,
 )
@@ -20,7 +20,7 @@ from ase import Atoms
 # Helpers
 # ---------------------------------------------------------------------------
 
-LOGGER_NAME = "amorphouspy.workflows.cte"
+LOGGER_NAME = "amorphouspy.simulation.cte"
 
 
 def _clean_logger_handlers() -> None:

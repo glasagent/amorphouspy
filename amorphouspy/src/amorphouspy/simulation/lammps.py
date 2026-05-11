@@ -12,7 +12,7 @@ import pandas as pd
 from ase.atoms import Atoms
 from lammpsparser.compatibility.file import lammps_file_interface_function
 
-from amorphouspy.io_utils import structure_from_parsed_output
+from amorphouspy.io.lammps import structure_from_parsed_output
 
 LammpsPotential = str | pd.DataFrame | dict[str, Any]
 

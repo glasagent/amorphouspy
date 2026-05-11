@@ -43,7 +43,7 @@ Import `average_over_frames` and pass it the analysis function, a `list[Atoms]`,
 
 ```python
 from ase.io import read
-from amorphouspy.analysis.averaging import average_over_frames
+from amorphouspy.structure_characterization.averaging import average_over_frames
 from amorphouspy import compute_rdf
 
 # Load 10 decorrelated frames from an equilibrated trajectory
@@ -92,7 +92,7 @@ import numpy as np
 import plotly.graph_objects as go
 from ase.io import read
 from amorphouspy import compute_rdf
-from amorphouspy.analysis.averaging import average_over_frames
+from amorphouspy.structure_characterization.averaging import average_over_frames
 
 frames = read("production.extxyz", index=":")
 
@@ -125,7 +125,7 @@ fig.show()
 
 ```python
 from amorphouspy import compute_structure_factor
-from amorphouspy.analysis.averaging import average_over_frames
+from amorphouspy.structure_characterization.averaging import average_over_frames
 
 (q, sq_mean, partials_mean), (_, sq_sem, partials_sem) = average_over_frames(
     compute_structure_factor,
@@ -142,7 +142,7 @@ from amorphouspy.analysis.averaging import average_over_frames
 
 ```python
 from amorphouspy import compute_qn
-from amorphouspy.analysis.averaging import average_over_frames
+from amorphouspy.structure_characterization.averaging import average_over_frames
 
 (total_qn_mean, partial_qn_mean), (total_qn_sem, partial_qn_sem) = average_over_frames(
     compute_qn,

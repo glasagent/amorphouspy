@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
+from amorphouspy._utils import count_distribution
 from amorphouspy.neighbors import (
     NUMBA_AVAILABLE,
     build_distances,
@@ -21,7 +22,6 @@ from amorphouspy.neighbors import (
     compute_cell_list_triclinic,
     get_neighbors,
 )
-from amorphouspy.shared import count_distribution
 
 if TYPE_CHECKING:
     from ase import Atoms

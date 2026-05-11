@@ -12,8 +12,8 @@ from typing import Any
 
 from ase.atoms import Atoms
 
-from amorphouspy.io_utils import structure_from_parsed_output
-from amorphouspy.workflows.cte_helpers import (
+from amorphouspy.io.lammps import structure_from_parsed_output
+from amorphouspy.simulation.cte_helpers import (
     _collect_sim_data,
     _create_logger,
     _fluctuation_simulation_cte_calculation,
@@ -27,7 +27,7 @@ from amorphouspy.workflows.cte_helpers import (
     _temperature_scan_input_checker,
     _temperature_scan_merge_results,
 )
-from amorphouspy.workflows.shared import get_lammps_command, run_lammps_with_error_capture
+from amorphouspy.simulation.lammps import get_lammps_command, run_lammps_with_error_capture
 
 
 def _run_lammps_md(  # pragma: no cover

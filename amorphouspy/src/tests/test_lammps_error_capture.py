@@ -1,7 +1,7 @@
 """Tests for run_lammps_with_error_capture error handling."""
 
 import pytest
-from amorphouspy.workflows.shared import get_lammps_command, run_lammps_with_error_capture
+from amorphouspy.simulation.lammps import get_lammps_command, run_lammps_with_error_capture
 from ase.io import read
 
 from amorphouspy import generate_potential, get_structure_dict

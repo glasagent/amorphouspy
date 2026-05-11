@@ -46,7 +46,7 @@ This approach is statistically more efficient than directly fitting volume vs. t
 This is the analysis function that computes CTE from pre-collected time series data.
 
 ```python
-from amorphouspy.analysis.cte import cte_from_npt_fluctuations
+from amorphouspy.structure_characterization.cte import cte_from_npt_fluctuations
 import numpy as np
 
 # enthalpy and volume are 1D arrays from NPT simulation output
@@ -100,4 +100,4 @@ The H-V cross-correlation requires sufficiently long NPT trajectories for conver
 - **Recommended**: 500 ps – 1 ns for reliable values
 - **Check**: Plot the running average of $\langle \delta H \cdot \delta V \rangle$ to verify convergence
 
-The CTE workflow module (`amorphouspy.workflows.cte`) includes built-in convergence checking.
+The CTE workflow module (`amorphouspy.simulation.cte`) includes built-in convergence checking.

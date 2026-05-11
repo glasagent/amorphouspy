@@ -3,7 +3,7 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
-from amorphouspy.structure.composition import extract_composition
+from amorphouspy.structure_generation.composition import extract_composition
 
 # Predefined list of trace oxides for the "Remainder" term
 TRACE_OXIDES = {

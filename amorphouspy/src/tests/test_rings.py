@@ -7,8 +7,8 @@ requires the 20Na2O-80SiO2 dump file).  Atom type mapping: O=type1, Si=type2, Na
 import networkx as nx
 import numpy as np
 import pytest
-from amorphouspy.analysis.averaging import average_over_frames
-from amorphouspy.analysis.rings import (
+from amorphouspy.structure_characterization.averaging import average_over_frames
+from amorphouspy.structure_characterization.rings import (
     _find_guttman_rings,
     _process_edge,
     compute_guttmann_rings,

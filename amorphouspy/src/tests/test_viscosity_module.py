@@ -19,7 +19,7 @@ functionalities include:
 
 import numpy as np
 import pytest
-from amorphouspy.workflows.viscosity import (
+from amorphouspy.simulation.viscosity import (
     _extract_md_data,
     _viscosity_plateaued,
     auto_cutoff,

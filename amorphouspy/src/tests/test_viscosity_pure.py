@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from amorphouspy.workflows.viscosity import fit_vft, vft_model
+from amorphouspy.simulation.viscosity import fit_vft, vft_model
 
 # ---------------------------------------------------------------------------
 # vft_model

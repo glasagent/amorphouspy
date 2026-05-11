@@ -11,10 +11,9 @@ from ase.atoms import Atoms
 from ase.io import read
 from numpy.random import PCG64, Generator
 
-from amorphouspy.mass import get_atomic_mass
-from amorphouspy.shared import get_element_types_dict
-from amorphouspy.structure.composition import extract_composition, extract_stoichiometry, get_composition
-from amorphouspy.structure.planner import (
+from amorphouspy._utils import get_atomic_mass, get_element_types_dict
+from amorphouspy.structure_generation.composition import extract_composition, extract_stoichiometry, get_composition
+from amorphouspy.structure_generation.planner import (
     _counts_from_n_molecules,
     get_box_from_density,
     plan_system,

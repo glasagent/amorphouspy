@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.workflows.shared import _run_lammps_md
+from amorphouspy.simulation.lammps import _run_lammps_md
 
 
 # =========================

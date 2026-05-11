@@ -6,7 +6,7 @@ get_box_from_density, create_random_atoms, get_ase_structure, get_structure_dict
 
 from collections import Counter
 
-import amorphouspy.structure as ps
+import amorphouspy.structure_generation as ps
 import numpy as np
 import pytest
 from ase.atoms import Atoms as AseAtoms

@@ -11,13 +11,13 @@ from typing import Any
 
 import numpy as np
 
-from amorphouspy.analysis.cte import cte_from_npt_fluctuations
+from amorphouspy.structure_characterization.cte import cte_from_npt_fluctuations
 
 
 def _create_logger() -> logging.Logger:
     """Create and configure a logger for CTE workflow warnings."""
     # create logger
-    logger = logging.getLogger("amorphouspy.workflows.cte")
+    logger = logging.getLogger("amorphouspy.simulation.cte")
     logger.setLevel(logging.INFO)
 
     # Create file handler
