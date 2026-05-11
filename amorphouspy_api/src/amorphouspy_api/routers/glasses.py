@@ -55,7 +55,7 @@ def list_glasses(
                 potential=r["potential"],
                 tags=r["tags"],
                 analyses=r["analyses"],
-                completed_at=str(r["completed_at"]) if r["completed_at"] else None,
+                completed_at=r["completed_at"].isoformat() if r["completed_at"] else None,
                 urls=_job_urls(r["job_id"]),
             )
             for r in comp_jobs
