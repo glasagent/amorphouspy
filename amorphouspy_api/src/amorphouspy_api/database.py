@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from sqlalchemy import JSON, DateTime, Index, String, create_engine, func
+from sqlalchemy import JSON, DateTime, Index, String, create_engine, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -170,6 +170,47 @@ class JobStore:
                 .all()
             )
             return [{"composition": comp, "n_jobs": n} for comp, n in rows]
+
+    def list_glasses(self, tag: str | None = None) -> list[dict[str, Any]]:
+        """Return lightweight summaries for all completed jobs.
+
+        Only fetches the columns needed for the listing (no heavy
+        ``result_data`` or ``elemental_vector``).  Analysis type names
+        are extracted via SQLite ``json_each`` so the full result blob
+        is never loaded into Python.
+        """
+        with self.session() as s:
+            rows = s.execute(
+                text(
+                    "SELECT j.job_id, j.composition, j.potential, j.tags,"
+                    "       j.completed_at,"
+                    "       (SELECT group_concat(key) FROM json_each(j.result_data))"
+                    "           AS analysis_keys"
+                    "  FROM jobs j"
+                    " WHERE j.status = 'completed'"
+                    " ORDER BY j.composition, j.created_at DESC"
+                )
+            ).all()
+
+            import json
+
+            results = []
+            for job_id, comp, potential, tags_json, completed_at, ak in rows:
+                tag_list = json.loads(tags_json) if tags_json else []
+                if tag is not None and tag not in tag_list:
+                    continue
+                analyses = ak.split(",") if ak else []
+                results.append(
+                    {
+                        "job_id": job_id,
+                        "composition": comp,
+                        "potential": potential,
+                        "tags": tag_list,
+                        "analyses": analyses,
+                        "completed_at": completed_at,
+                    }
+                )
+            return results
 
     def list_completed_vectors(
         self,

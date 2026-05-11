@@ -6,14 +6,17 @@ Read-only materials layer: a view over completed jobs.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from amorphouspy_api.auth import verify_token
 from amorphouspy_api.database import get_job_store
 from amorphouspy_api.models import (
     AvailableStructure,
     Composition,
+    GlassJobSummary,
     GlassListResponse,
     GlassLookupRequest,
     GlassPropertiesResponse,
@@ -28,19 +31,44 @@ router = APIRouter(prefix="/glasses", tags=["tool"], dependencies=[Depends(verif
 
 
 @router.get("", response_model=GlassListResponse)
-def list_glasses() -> GlassListResponse:
-    """List all compositions with completed simulation data."""
+def list_glasses(
+    tag: Annotated[str | None, Query(description="Filter to jobs with this tag")] = None,
+) -> GlassListResponse:
+    """List all compositions with completed simulation data.
+
+    Returns per-composition summaries including individual job details
+    (potential, tags, completed analyses).  Use the ``tag`` query parameter
+    to restrict results to jobs carrying a specific tag.
+    """
     store = get_job_store()
-    rows = store.list_compositions()
-    return GlassListResponse(
-        glasses=[
-            GlassSummary(
-                composition=Composition.from_canonical(r["composition"]),
-                n_jobs=r["n_jobs"],
+    rows = store.list_glasses(tag=tag)
+
+    grouped: dict[str, list] = defaultdict(list)
+    for r in rows:
+        grouped[r["composition"]].append(r)
+
+    glasses: list[GlassSummary] = []
+    for comp_str, comp_jobs in grouped.items():
+        job_summaries = [
+            GlassJobSummary(
+                job_id=r["job_id"],
+                potential=r["potential"],
+                tags=r["tags"],
+                analyses=r["analyses"],
+                completed_at=str(r["completed_at"]) if r["completed_at"] else None,
+                urls=_job_urls(r["job_id"]),
             )
-            for r in rows
-        ],
-    )
+            for r in comp_jobs
+        ]
+        glasses.append(
+            GlassSummary(
+                composition=Composition.from_canonical(comp_str),
+                n_jobs=len(comp_jobs),
+                jobs=job_summaries,
+            )
+        )
+
+    return GlassListResponse(glasses=glasses)
 
 
 @router.post(":lookup", response_model=GlassPropertiesResponse)

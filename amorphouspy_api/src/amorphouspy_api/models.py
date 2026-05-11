@@ -582,11 +582,23 @@ class TagsResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class GlassJobSummary(BaseModel):
+    """Per-job summary inside a glass composition listing."""
+
+    job_id: str
+    potential: Potential
+    tags: list[str] = Field(default_factory=list)
+    analyses: list[str] = Field(default_factory=list, description="Completed analysis types")
+    completed_at: str | None = None
+    urls: dict[str, str] = Field(default_factory=dict)
+
+
 class GlassSummary(BaseModel):
     """Summary entry for one glass composition."""
 
     composition: Composition
     n_jobs: int
+    jobs: list[GlassJobSummary] = Field(default_factory=list, description="Summary of each completed job")
 
 
 class GlassListResponse(BaseModel):
