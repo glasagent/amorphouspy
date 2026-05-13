@@ -90,6 +90,7 @@ Supported by the [Federal Ministry of Research, Technology and Space](https://ww
 
 If you use `amorphouspy` in your research, please cite it using the citation information provided on our [Zenodo record](https://doi.org/10.5281/zenodo.19553302) (see the "Citation" box on the right-hand side), or use the reference below.
 
+```
 @misc{amorphouspy,
   doi = {10.5281/ZENODO.19564118},
   url = {https://zenodo.org/doi/10.5281/zenodo.19564118},
@@ -99,6 +100,7 @@ If you use `amorphouspy` in your research, please cite it using the citation inf
   year = {2026},
   copyright = {Apache License 2.0}
 }
+```
 
 ## License
 
