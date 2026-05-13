@@ -57,6 +57,13 @@ jobs:
     - name: Update pyproject.toml
       run: sed -i "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
 
+    - name: Update README citation
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        YEAR=$(date +%Y)
+        sed -i "s|title = {glasagent/amorphouspy: v[^}]*}|title = {glasagent/amorphouspy: v${VERSION}}|" README.md
+        sed -i "s|year = {[0-9]\{4\}}|year = {${YEAR}}|" README.md
+
     - name: Update pixi.lock
       run: pixi install
 

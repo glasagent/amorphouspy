@@ -88,7 +88,17 @@ Supported by the [Federal Ministry of Research, Technology and Space](https://ww
 
 ## How to Cite
 
-If you use `amorphouspy` in your research, please cite it using the citation information provided on our [Zenodo record](https://doi.org/10.5281/zenodo.19553302) (see the "Citation" box on the right-hand side).
+If you use `amorphouspy` in your research, please cite it using the citation information provided on our [Zenodo record](https://doi.org/10.5281/zenodo.19553302) (see the "Citation" box on the right-hand side), or use the reference below.
+
+@misc{amorphouspy,
+  doi = {10.5281/ZENODO.19564118},
+  url = {https://zenodo.org/doi/10.5281/zenodo.19564118},
+  author = {Leopold Talirz, and Achraf Atila, and Jan Janssen, and Marcel Sadowski,  },
+  title = {glasagent/amorphouspy: v0.5.7},
+  publisher = {Zenodo},
+  year = {2026},
+  copyright = {Apache License 2.0}
+}
 
 ## License
 
