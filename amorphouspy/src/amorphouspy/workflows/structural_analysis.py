@@ -852,11 +852,13 @@ def _add_coordination_plots(fig: go.Figure, structure_data: StructureData, color
         total = sum(values)
         percentages = [v * 100 / total for v in values] if total > 0 else values
 
+        rc = structure_data.elements.cutoffs.get("O")
+        o_label = f"O coordination (r={rc:.2f} Å)" if rc else "O coordination"
         fig.add_trace(
             go.Bar(
                 x=keys,
                 y=percentages,
-                name="O coordination",
+                name=o_label,
                 marker_color=colors[0],
                 opacity=0.85,
                 marker_line_color="white",
@@ -876,11 +878,13 @@ def _add_coordination_plots(fig: go.Figure, structure_data: StructureData, color
                 total = sum(values)
                 percentages = [v * 100 / total for v in values] if total > 0 else values
 
+                rc = structure_data.elements.cutoffs.get(former)
+                label = f"CN_{former} (r={rc:.2f} Å)" if rc else f"CN_{former}"
                 fig.add_trace(
                     go.Bar(
                         x=keys,
                         y=percentages,
-                        name=f"CN_{former}",
+                        name=label,
                         marker_color=colors[i % len(colors)],
                         opacity=0.85,
                         marker_line_color="white",
@@ -914,11 +918,13 @@ def _add_network_plots(fig: go.Figure, structure_data: StructureData, colors: li
                 total = sum(values)
                 percentages = [v * 100 / total for v in values] if total > 0 else values
 
+                rc = structure_data.elements.cutoffs.get(modifier)
+                label = f"CN_{modifier} (r={rc:.2f} Å)" if rc else f"CN_{modifier}"
                 fig.add_trace(
                     go.Bar(
                         x=keys,
                         y=percentages,
-                        name=f"CN_{modifier}",
+                        name=label,
                         marker_color=colors[i % len(colors)],
                         opacity=0.85,
                         marker_line_color="white",
