@@ -30,10 +30,10 @@ Find the documentation at **[glasagent.github.io/amorphouspy](https://glasagent.
 `amorphouspy`
 
 - **Structure Generation**: Create random oxide glass structures from composition dicts (e.g. `{"SiO2": 75, "Na2O": 15, "CaO": 10}`) with automatic density estimation using Fluegel's empirical model.
-- **Interatomic Potentials**: Built-in support for PMMCS (Pedone), BJP (Bouhadja), and SHIK (Sundararaman) classical force fields with automatic LAMMPS input generation. Support for machine-learning interatomic potentials will come later.
+- **Interatomic Potentials**: Built-in support for PMMCS (Pedone), BJP (Bouhadja), SHIK (Sundararaman), Du/Teter, BMP (Bertani, Menziani, Pedone) classical force fields with automatic LAMMPS input generation. Support for machine-learning interatomic potentials will come later.
 - **Melt-Quench Simulations**: Multi-stage heating/cooling protocols with potential-specific temperature programs and ensemble control.
 - **Structural Analysis**: RDFs, coordination numbers, Qn distributions, bond angle distributions, ring statistics, cavity analysis.
-- **Property Calculations**: Elastic moduli (stress-strain finite differences), viscosity (Green-Kubo formalism), coefficient of thermal expansion (NPT fluctuations).
+- **Property Calculations**: Elastic moduli (stress-strain finite differences), viscosity (Green-Kubo formalism), coefficient of thermal expansion (temperature scan or from NPT fluctuations).
 
 `amorphouspy_api`
 
@@ -79,7 +79,7 @@ Developed at the [Bundesanstant für Materialforschung und -prüfung (BAM)](http
 Supported by the [Federal Ministry of Research, Technology and Space](https://www.bmftr.bund.de/EN) via the [GlasAgent MaterialDigital 3 project](https://www.materialdigital.de/project/28).
 
 <p align="center">
-  <a href="https://www.bmbf.de/"><img src="docs/assets/BMFTR_logo_en.svg" alt="BMFTR logo" width="165"/></a>
+  <a href="https://www.bmbf.de/"><img src="docs/assets/BMFTR_white_background.png" alt="BMFTR logo" width="165"/></a>
   &emsp;&emsp;&emsp;
   <a href="https://www.materialdigital.de/"><img src="docs/assets/Logo_MaterialDigital.svg" alt="MaterialDigital logo" width="141"/></a>
   &emsp;&emsp;&emsp;
