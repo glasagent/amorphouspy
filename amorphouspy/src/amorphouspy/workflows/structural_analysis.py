@@ -979,12 +979,15 @@ def _add_ring_plots(fig: go.Figure, structure_data: StructureData, colors: list[
         for i, (angle_type, angle_data) in enumerate(structure_data.distributions.bond_angles.items()):
             if angle_data and len(angle_data) == EXPECTED_TUPLE_LENGTH:
                 angles, distribution = angle_data
+                rc = structure_data.elements.cutoffs.get(angle_type)
+                rc_str = f" (r={rc:.2f} Å)" if rc else ""
+                angle_label = f"O-{angle_type}-O{rc_str}"
                 fig.add_trace(
                     go.Scatter(
                         x=angles,
                         y=distribution,
                         mode="lines",
-                        name=f"Angles {angle_type}",
+                        name=angle_label,
                         line={"color": colors[i % len(colors)], "width": 2},
                         showlegend=True,
                     ),
