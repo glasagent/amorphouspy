@@ -76,12 +76,18 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
     structure = result["structure_generation"]["structure"]
     potential = result["structure_generation"]["potential"]
 
+    from amorphouspy.workflows.meltquench_protocols import DEFAULT_MELT_TEMPERATURES
+
     heating_rate = int(submission.simulation.quench_rate * 100)
     cooling_rate = int(submission.simulation.quench_rate)
 
     temperature_high = submission.simulation.melt_temperature
     temperature_low = 300.0
     timestep = submission.simulation.timestep
+
+    # Resolve protocol default so the stored result always has the actual value
+    if temperature_high is None:
+        temperature_high = DEFAULT_MELT_TEMPERATURES.get(submission.potential, 5000.0)
 
     mq = melt_quench_simulation(
         structure=structure,
