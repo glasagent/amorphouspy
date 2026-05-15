@@ -2,8 +2,8 @@
 
 import numpy as np
 import pytest
-from amorphouspy.structure_characterization.averaging import average_over_frames
-from amorphouspy.structure_characterization.radial_distribution_functions import (
+from amorphouspy.properties.structural.averaging import average_over_frames
+from amorphouspy.properties.structural.rdf import (
     _compute_cn_cumulative,
     _compute_distances,
     _compute_rdf_histograms,

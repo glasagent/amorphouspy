@@ -72,7 +72,7 @@ ignore   = [
 fixable  = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
-"amorphouspy/src/amorphouspy/neighbors.py" = [
+"amorphouspy/src/amorphouspy/atoms/neighbors.py" = [
   "C901",    # numba jit functions can't be split into helpers in nopython mode
   "PLR0912", # numba jit functions can't be split into helpers in nopython mode
 ]

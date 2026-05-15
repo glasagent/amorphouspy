@@ -2,11 +2,11 @@
 
 from unittest.mock import MagicMock
 
-import amorphouspy.simulation.meltquench as mq_module
+import amorphouspy.fabrication.meltquench as mq_module
 import pandas as pd
 import pytest
-from amorphouspy.simulation.meltquench import melt_quench_simulation
-from amorphouspy.simulation.meltquench_protocols import (
+from amorphouspy.fabrication.meltquench import melt_quench_simulation
+from amorphouspy.fabrication.meltquench_protocols import (
     MeltQuenchParams,
     bjp_protocol,
     bmp_protocol,

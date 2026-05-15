@@ -9,7 +9,7 @@ import builtins
 import numpy as np
 import plotly.graph_objects as go
 import pytest
-from amorphouspy.structure_characterization.cavities import (
+from amorphouspy.properties.structural.cavities import (
     _build_occupied_grid,
     _compute_grid_shape,
     _compute_gyration_tensor_descriptors,

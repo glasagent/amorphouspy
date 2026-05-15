@@ -155,8 +155,8 @@ def test_submit_job_new() -> None:
 
 def test_submit_job_returns_cached() -> None:
     """Test that submitting a duplicate request returns the cached job."""
-    from amorphouspy.structure_generation.composition import extract_composition
-    from amorphouspy.structure_generation.density import get_glass_density_from_model
+    from amorphouspy.fabrication.composition import extract_composition
+    from amorphouspy.fabrication.density import get_glass_density_from_model
     from amorphouspy_api.models import Composition, JobSubmission
     from amorphouspy_api.routers.jobs_helpers import _job_hash
 

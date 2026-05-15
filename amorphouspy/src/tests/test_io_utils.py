@@ -4,12 +4,14 @@ import textwrap
 
 import numpy as np
 import pytest
-from amorphouspy.io.lammps import (
-    load_lammps_dump,
-    structure_from_parsed_output,
+from amorphouspy.io import (
     write_angle_distribution,
     write_distribution_to_file,
     write_xyz,
+)
+from amorphouspy.lammps.io import (
+    load_lammps_dump,
+    structure_from_parsed_output,
 )
 from ase import Atoms
 

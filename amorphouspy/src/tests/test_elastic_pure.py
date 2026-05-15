@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from amorphouspy.simulation.elastic import apply_strain, isotropic_moduli_from_Cij
+from amorphouspy.properties.elastic import apply_strain, isotropic_moduli_from_Cij
 from ase import Atoms
 
 # ---------------------------------------------------------------------------

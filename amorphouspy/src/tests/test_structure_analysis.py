@@ -27,8 +27,8 @@ Reference: https://doi.org/10.1039/D4TB02414A
 
 import numpy as np
 import pytest
-from amorphouspy.structure_characterization.averaging import average_over_frames
-from amorphouspy.structure_characterization.qn_network_connectivity import classify_oxygens, compute_qn_and_classify
+from amorphouspy.properties.structural.averaging import average_over_frames
+from amorphouspy.properties.structural.qn import classify_oxygens, compute_qn_and_classify
 from ase.io import read
 
 from amorphouspy import (

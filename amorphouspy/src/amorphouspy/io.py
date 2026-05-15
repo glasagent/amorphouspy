@@ -1,0 +1,110 @@
+"""Generic I/O utilities for amorphouspy: writing structural data files.
+
+Author: Achraf Atila (achraf.atila@bam.de)
+"""
+
+from pathlib import Path
+
+import numpy as np
+
+
+def write_distribution_to_file(
+    composition: float | str,
+    filepath: str,
+    dist: dict[int, int],
+    label: str,
+    *,
+    append: bool = False,
+) -> None:
+    """Write a coordination/Qn histogram to a text file.
+
+    Args:
+        composition: Composition value to label row.
+        filepath: Output filepath.
+        dist: Histogram data.
+        label: Prefix for headers (e.g., Si or Q).
+        append: Append mode; writes header only if file does not exist.
+
+    Example:
+        >>> write_distribution_to_file(0.5, "qn.txt", qn_dist, "Q")
+
+    """
+    max_n = max(dist.keys(), default=0)
+    total = sum(dist.values())
+    headers = [f"{label}_{i}" for i in range(max_n + 1)] + [f"{label}_tot"]
+    values = [dist.get(i, 0) for i in range(max_n + 1)] + [total]
+    mode = "a" if append else "w"
+    write_header = not append or not Path(filepath).exists()
+    with Path(filepath).open(mode, encoding="utf-8") as f:
+        if write_header:
+            f.write("Composition " + " ".join(headers) + "\n")
+        f.write(str(composition) + " " + " ".join(map(str, values)) + "\n")
+
+
+def write_angle_distribution(
+    bin_centers: np.ndarray,
+    angle_hist: np.ndarray,
+    composition: float,
+    filepath: str,
+    *,
+    append: bool = False,
+) -> None:
+    """Write angle distribution to a text file.
+
+    Args:
+        bin_centers: Angle bin centers in degrees.
+        angle_hist: Normalized angle histogram.
+        composition: Composition value (e.g., % modifier).
+        filepath: Output filepath.
+        append: Whether to append to file.
+
+    Example:
+        >>> write_angle_distribution(centers, hist, 0.5, "angles.txt")
+
+    """
+    mode = "a" if append else "w"
+    write_header = not append or not Path(filepath).exists()
+    with Path(filepath).open(mode, encoding="utf-8") as f:
+        if write_header:
+            f.write("Composition " + " ".join(f"{b:.1f}" for b in bin_centers) + "\n")
+        f.write(f"{composition} " + " ".join(f"{v:.6f}" for v in angle_hist) + "\n")
+
+
+def write_xyz(
+    filename: str,
+    coords: np.ndarray,
+    types: np.ndarray,
+    box_size: np.ndarray | None = None,
+    type_dict: dict[int, str] | None = None,
+) -> None:
+    """Write atomic configuration to an XYZ file.
+
+    Args:
+        filename: Output XYZ file name.
+        coords: Atomic coordinates.
+        types: Atomic types as integers.
+        box_size: Simulation box size in x, y, z.
+        type_dict: Dictionary mapping atomic type integers to element symbols.
+
+    Example:
+        >>> write_xyz("output.xyz", coords, types, box, {14: "Si", 8: "O"})
+
+    """
+    if type_dict is None:
+        msg = "type_dict must be provided"
+        raise ValueError(msg)
+
+    n_atoms = coords.shape[0]
+    path = Path(filename)
+    with path.open("w") as f:
+        f.write(f"{n_atoms}\n")
+        if box_size is not None:
+            f.write(f"CUB {box_size[0]:.8f} {box_size[1]:.8f} {box_size[2]:.8f}\n")
+        else:
+            f.write("\n")
+        for t, (x, y, z) in zip(types, coords, strict=False):
+            symbol = type_dict.get(t)
+            if symbol is None:
+                msg = f"Unknown atomic type: {t}"
+                raise ValueError(msg)
+            f.write(f"{symbol} {x:.8f} {y:.8f} {z:.8f}\n")

@@ -154,7 +154,7 @@ Both functions accept the `result` dict returned by `viscosity_simulation` (or
 `_viscosity_simulation`) and perform post-processing only.
 
 ```python
-from amorphouspy.simulation.viscosity import helfand_viscosity, get_viscosity
+from amorphouspy.properties.viscosity import helfand_viscosity, get_viscosity
 
 # Helfand method (recommended)
 helfand = helfand_viscosity(result, timestep=1.0, output_frequency=1)
@@ -174,7 +174,7 @@ print(gk["sacf"])                    # normalised SACF list
 
 ```python
 import numpy as np
-from amorphouspy.simulation.viscosity import fit_vft, vft_model
+from amorphouspy.properties.viscosity import fit_vft, vft_model
 
 temperatures = np.array([2000, 2500, 3000, 3500, 4000], dtype=float)
 log10_eta = np.array([-0.5, -1.0, -1.8, -2.5, -3.1])

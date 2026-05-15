@@ -2,8 +2,8 @@
 
 import numpy as np
 import pytest
-from amorphouspy.structure_characterization.averaging import average_over_frames
-from amorphouspy.structure_characterization.bond_angle_distribution import compute_angles
+from amorphouspy.properties.structural.averaging import average_over_frames
+from amorphouspy.properties.structural.bond_angles import compute_angles
 from ase import Atoms
 
 # ---------------------------------------------------------------------------
