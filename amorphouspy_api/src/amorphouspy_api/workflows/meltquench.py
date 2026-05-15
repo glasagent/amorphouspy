@@ -118,4 +118,7 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
         "heating_rate": heating_rate,
         "temperature_high": temperature_high,
         "temperature_low": temperature_low,
+        "n_averaging_frames": submission.simulation.n_averaging_frames
+        if hasattr(submission.simulation, "n_averaging_frames")
+        else 100,
     }
