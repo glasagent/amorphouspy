@@ -1,7 +1,7 @@
 """Tests for pure helper functions in amorphouspy.structure."""
 
-import amorphouspy.structure as ps
-import amorphouspy.structure.planner as ps_planner
+import amorphouspy.fabrication as ps
+import amorphouspy.fabrication.planner as ps_planner
 import numpy as np
 import pytest
 

@@ -6,8 +6,8 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import numpy as np
 import numpy.typing as npt
 import pytest
-from amorphouspy.analysis.averaging import average_over_frames
-from amorphouspy.analysis.structure_factor import (
+from amorphouspy.properties.structural.averaging import average_over_frames
+from amorphouspy.properties.structural.structure_factor import (
     _neutron_scattering_length,
     _sine_transform_rdf,
     _xray_form_factor,

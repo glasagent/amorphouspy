@@ -7,7 +7,7 @@ from enum import StrEnum
 from io import StringIO
 from typing import Annotated, Any, Literal, cast
 
-from amorphouspy.potentials.potential import POTENTIAL_PREFERENCE
+from amorphouspy.lammps.potentials.potential import POTENTIAL_PREFERENCE
 from ase import Atoms
 from ase.io import read, write
 from pydantic import (

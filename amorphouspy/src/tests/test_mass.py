@@ -1,7 +1,7 @@
 """Tests for mass calculation utilities."""
 
 import pytest
-from amorphouspy.mass import get_atomic_mass
+from amorphouspy.atoms.mass import get_atomic_mass
 
 
 def test_get_atomic_mass() -> None:

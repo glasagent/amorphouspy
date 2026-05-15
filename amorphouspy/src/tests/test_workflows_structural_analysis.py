@@ -1,14 +1,14 @@
-"""Tests for amorphouspy.workflows.structural_analysis — full coverage."""
+"""Tests for amorphouspy.properties.structural.all — full coverage."""
 
 import warnings
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
-import amorphouspy.workflows.structural_analysis as sa_module
+import amorphouspy.properties.structural.all as sa_module
 import numpy as np
 import plotly.graph_objects as go
 import pytest
-from amorphouspy.workflows.structural_analysis import (
+from amorphouspy.properties.structural.all import (
     CoordinationData,
     ElementInfo,
     NetworkData,
@@ -250,7 +250,7 @@ def test_analyze_structure_sio2_glass() -> None:
     """analyze_structure works on SiO2 glass and returns StructureData."""
     atoms = read(SIO2_XYZ)
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
@@ -265,7 +265,7 @@ def test_analyze_structure_density_reasonable() -> None:
     """Computed density for SiO2 glass is in a physically reasonable range."""
     atoms = read(SIO2_XYZ)
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
@@ -278,7 +278,7 @@ def test_analyze_structure_has_rdfs() -> None:
     """analyze_structure populates the rdfs field."""
     atoms = read(SIO2_XYZ)
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
@@ -291,7 +291,7 @@ def test_analyze_structure_has_qn_distribution() -> None:
     """analyze_structure populates the Qn distribution."""
     atoms = read(SIO2_XYZ)
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         result, _sem = analyze_structure(atoms)
@@ -311,7 +311,7 @@ def test_analyze_structure_with_modifier() -> None:
     atoms.set_atomic_numbers(new_numbers)
 
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 5, 6: 15}, 5.2),
     ):
         result, _sem = analyze_structure(atoms)
@@ -327,7 +327,7 @@ def test_analyze_structure_fallback_cutoff() -> None:
     with (
         patch.object(sa_module, "find_rdf_minimum", return_value=None),
         patch(
-            "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+            "amorphouspy.properties.structural.all.compute_guttmann_rings",
             return_value=({4: 10, 6: 20}, 5.5),
         ),
     ):
@@ -598,7 +598,7 @@ def test_analyze_structure_frame_averaging_returns_tuple() -> None:
     """frame_averaging=True returns a 2-tuple of StructureData."""
     atoms = cast("Atoms", read(SIO2_XYZ))
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         result = analyze_structure([atoms, atoms, atoms], frame_averaging=True)
@@ -613,7 +613,7 @@ def test_analyze_structure_frame_averaging_mean_density_matches_single() -> None
     """Mean density from frame_averaging equals single-frame density (identical frames)."""
     atoms = cast("Atoms", read(SIO2_XYZ))
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         single, _sem_single = analyze_structure(atoms)
@@ -633,7 +633,7 @@ def test_analyze_structure_frame_averaging_single_atoms_fallback() -> None:
     """frame_averaging=True with single Atoms falls back to single-frame result with SEM=0."""
     atoms = read(SIO2_XYZ)
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         single, _sem_single = analyze_structure(atoms)
@@ -646,7 +646,7 @@ def test_analyze_structure_list_uses_first_frame() -> None:
     """Passing a list without frame_averaging=True uses the first frame."""
     atoms = cast("Atoms", read(SIO2_XYZ))
     with patch(
-        "amorphouspy.workflows.structural_analysis.compute_guttmann_rings",
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
         return_value=({4: 10, 6: 20}, 5.5),
     ):
         single, _sem_single = analyze_structure(atoms)

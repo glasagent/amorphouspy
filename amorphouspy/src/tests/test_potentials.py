@@ -6,10 +6,10 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import numpy as np
 import pandas as pd
 import pytest
-from amorphouspy.potentials.bjp_potential import generate_bjp_potential
-from amorphouspy.potentials.bjp_potential import supported_elements as bjp_supported_elements
-from amorphouspy.potentials.bmp_potential import generate_bmp_potential
-from amorphouspy.potentials.du_teter_potential import (
+from amorphouspy.lammps.potentials.bjp_potential import generate_bjp_potential
+from amorphouspy.lammps.potentials.bjp_potential import supported_elements as bjp_supported_elements
+from amorphouspy.lammps.potentials.bmp_potential import generate_bmp_potential
+from amorphouspy.lammps.potentials.du_teter_potential import (
     Buckingham,
     Du,
     N4_dbx,
@@ -31,12 +31,12 @@ from amorphouspy.potentials.du_teter_potential import (
     stillinger_weber_params,
     write_sw_file,
 )
-from amorphouspy.potentials.du_teter_potential import (
+from amorphouspy.lammps.potentials.du_teter_potential import (
     write_table_file as du_teter_write_table_file,
 )
-from amorphouspy.potentials.pmmcs_potential import generate_pmmcs_potential
-from amorphouspy.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
-from amorphouspy.potentials.potential import (
+from amorphouspy.lammps.potentials.pmmcs_potential import generate_pmmcs_potential
+from amorphouspy.lammps.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
+from amorphouspy.lammps.potentials.potential import (
     DsfConfig,
     EwaldConfig,
     PppmConfig,
@@ -46,7 +46,7 @@ from amorphouspy.potentials.potential import (
     get_supported_elements,
     select_potential,
 )
-from amorphouspy.potentials.shik_potential import (
+from amorphouspy.lammps.potentials.shik_potential import (
     compute_oxygen_charge,
     generate_shik_potential,
     potential_and_force,
@@ -54,15 +54,15 @@ from amorphouspy.potentials.shik_potential import (
     shik_params,
     write_table_file,
 )
-from amorphouspy.potentials.shik_potential import (
+from amorphouspy.lammps.potentials.shik_potential import (
     supported_elements as shik_supported_elements,
 )
-from amorphouspy.potentials.yang_potential import (
+from amorphouspy.lammps.potentials.yang_potential import (
     generate_yang2026_potential,
     yang2026_charges,
     yang2026_params,
 )
-from amorphouspy.potentials.yang_potential import (
+from amorphouspy.lammps.potentials.yang_potential import (
     supported_elements as yang_supported_elements,
 )
 

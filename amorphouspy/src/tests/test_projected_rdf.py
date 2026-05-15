@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from amorphouspy.analysis.projected_rdf import compute_projected_rdf
-from amorphouspy.analysis.radial_distribution_functions import compute_rdf
+from amorphouspy.properties.structural.projected_rdf import compute_projected_rdf
+from amorphouspy.properties.structural.rdf import compute_rdf
 from ase import Atoms
 
 # ---------------------------------------------------------------------------

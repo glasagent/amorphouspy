@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
-    from amorphouspy.workflows.structural_analysis import analyze_structure
+    from amorphouspy.properties.structural.all import analyze_structure
 
     mq = result["melt_quench"]
     frames = _extract_equilibration_frames(mq)
@@ -147,7 +147,7 @@ def prepare_structure_context(result_data: dict[str, Any]) -> dict[str, Any]:
     ``plotly_json``, ``structure_xyz``, ``density``, ``network_connectivity``,
     ``network_formers``, ``modifiers``.
     """
-    from amorphouspy.workflows.structural_analysis import (
+    from amorphouspy.properties.structural.all import (
         StructureData,
         plot_analysis_results_plotly,
     )

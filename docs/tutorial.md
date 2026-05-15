@@ -123,7 +123,7 @@ Run a comprehensive structural analysis with a single function call:
 
 ```python
 from amorphouspy import analyze_structure
-from amorphouspy.workflows.structural_analysis import plot_analysis_results_plotly
+from amorphouspy.properties.structural.all import plot_analysis_results_plotly
 
 # Compute all structural properties
 data = analyze_structure(glass_structure)

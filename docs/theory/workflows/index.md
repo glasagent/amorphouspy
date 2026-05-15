@@ -39,7 +39,7 @@ graph LR
 The LAMMPS executable path is determined by `get_lammps_command()`:
 
 ```python
-from amorphouspy.workflows.shared import get_lammps_command
+from amorphouspy.lammps.runner import get_lammps_command
 
 cmd = get_lammps_command()
 # Returns: "lmp_mpi" (or custom path from environment)

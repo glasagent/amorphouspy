@@ -48,7 +48,7 @@ Small rings (3, 4) are energetically strained but kinetically trapped during the
 ### `compute_guttmann_rings(structure, bond_lengths, max_size)`
 
 ```python
-from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.properties.structural.rings import compute_guttmann_rings, generate_bond_length_dict
 
 # Generate bond length cutoffs for all element pairs
 bond_lengths = generate_bond_length_dict(
@@ -89,7 +89,7 @@ print(histogram)
 Generates all symmetric element-pair combinations from the structure and assigns cutoff values.
 
 ```python
-from amorphouspy.analysis.rings import generate_bond_length_dict
+from amorphouspy.properties.structural.rings import generate_bond_length_dict
 
 bond_lengths = generate_bond_length_dict(
     glass_structure,

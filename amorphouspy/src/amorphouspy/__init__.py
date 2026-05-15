@@ -1,36 +1,9 @@
 """amorphouspy - workflows for atomistic modeling of oxide glasses."""
 
-from amorphouspy.analysis.averaging import average_over_frames
-from amorphouspy.analysis.bond_angle_distribution import compute_angles
-from amorphouspy.analysis.cavities import compute_cavities
-from amorphouspy.analysis.cte import (
-    cte_from_npt_fluctuations,
-    cte_from_volume_temperature_data,
-)
-from amorphouspy.analysis.projected_rdf import compute_projected_rdf
-from amorphouspy.analysis.qn_network_connectivity import (
-    classify_oxygens,
-    compute_network_connectivity,
-    compute_qn,
-    compute_qn_and_classify,
-)
-from amorphouspy.analysis.radial_distribution_functions import compute_coordination, compute_rdf
-from amorphouspy.analysis.rings import compute_guttmann_rings, generate_bond_length_dict
-from amorphouspy.analysis.structure_factor import compute_structure_factor
-from amorphouspy.io_utils import (
-    frames_from_melt_quench_result,
-    load_lammps_dump,
-    structure_from_parsed_output,
-    write_angle_distribution,
-    write_distribution_to_file,
-    write_xyz,
-)
-from amorphouspy.mass import get_atomic_mass
-from amorphouspy.neighbors import get_neighbors
-from amorphouspy.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
-from amorphouspy.potentials.potential import generate_potential
-from amorphouspy.shared import count_distribution, running_mean, type_to_dict
-from amorphouspy.structure import (
+from amorphouspy.atoms.mass import get_atomic_mass
+from amorphouspy.atoms.neighbors import get_neighbors
+from amorphouspy.atoms.shared import count_distribution, running_mean, type_to_dict
+from amorphouspy.fabrication import (
     check_neutral_oxide,
     create_random_atoms,
     extract_composition,
@@ -42,12 +15,37 @@ from amorphouspy.structure import (
     parse_formula,
     plan_system,
 )
-from amorphouspy.workflows.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
-from amorphouspy.workflows.elastic_mod import elastic_simulation
-from amorphouspy.workflows.md import md_simulation
-from amorphouspy.workflows.meltquench import melt_quench_simulation
-from amorphouspy.workflows.structural_analysis import analyze_structure, find_rdf_minimum, plot_analysis_results_plotly
-from amorphouspy.workflows.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
+from amorphouspy.fabrication.meltquench import melt_quench_simulation
+from amorphouspy.io import write_angle_distribution, write_distribution_to_file, write_xyz
+from amorphouspy.lammps.io import frames_from_melt_quench_result, load_lammps_dump, structure_from_parsed_output
+from amorphouspy.lammps.md import md_simulation
+from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
+from amorphouspy.lammps.potentials.potential import generate_potential
+from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
+from amorphouspy.properties.cte_analysis import (
+    cte_from_npt_fluctuations,
+    cte_from_volume_temperature_data,
+)
+from amorphouspy.properties.elastic import elastic_simulation
+from amorphouspy.properties.structural.all import (
+    analyze_structure,
+    find_rdf_minimum,
+    plot_analysis_results_plotly,
+)
+from amorphouspy.properties.structural.averaging import average_over_frames
+from amorphouspy.properties.structural.bond_angles import compute_angles
+from amorphouspy.properties.structural.cavities import compute_cavities
+from amorphouspy.properties.structural.projected_rdf import compute_projected_rdf
+from amorphouspy.properties.structural.qn import (
+    classify_oxygens,
+    compute_network_connectivity,
+    compute_qn,
+    compute_qn_and_classify,
+)
+from amorphouspy.properties.structural.rdf import compute_coordination, compute_rdf
+from amorphouspy.properties.structural.rings import compute_guttmann_rings, generate_bond_length_dict
+from amorphouspy.properties.structural.structure_factor import compute_structure_factor
+from amorphouspy.properties.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
 
 __all__ = [
     "DsfConfig",

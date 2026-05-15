@@ -1,6 +1,6 @@
 """Tests for multi-valence oxide → BMP element label threading."""
 
-from amorphouspy.structure.planner import element_counts_from_formula_units, plan_system
+from amorphouspy.fabrication.planner import element_counts_from_formula_units, plan_system
 
 
 def test_mixed_iron_oxides_produce_both_labels() -> None:

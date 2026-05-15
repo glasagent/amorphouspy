@@ -1,11 +1,11 @@
-"""Tests for amorphouspy.neighbors — cell lists, cutoff parsing, and get_neighbors."""
+"""Tests for amorphouspy.atoms.neighbors — cell lists, cutoff parsing, and get_neighbors."""
 
 import importlib
 import sys
 
 import numpy as np
 import pytest
-from amorphouspy.neighbors import (
+from amorphouspy.atoms.neighbors import (
     NUMBA_AVAILABLE,
     _build_nl_ortho_numba,
     _build_nl_tri_numba,
@@ -354,12 +354,12 @@ def test_numba_fallback_jit_and_prange() -> None:
     """When numba is unavailable, jit is a no-op and prange == range."""
     # Stash original module if present
     original_numba = sys.modules.get("numba")
-    original_neighbors = sys.modules.pop("amorphouspy.neighbors", None)
+    original_neighbors = sys.modules.pop("amorphouspy.atoms.neighbors", None)
 
     try:
         # Pretend numba is not installed
         sys.modules["numba"] = None  # type: ignore[assignment]
-        mod = importlib.import_module("amorphouspy.neighbors")
+        mod = importlib.import_module("amorphouspy.atoms.neighbors")
         assert mod.NUMBA_AVAILABLE is False
         # prange must be the builtin range when numba is absent
         assert mod.prange is range
@@ -372,9 +372,9 @@ def test_numba_fallback_jit_and_prange() -> None:
             sys.modules.pop("numba", None)
         else:
             sys.modules["numba"] = original_numba  # type: ignore[assignment]
-        sys.modules.pop("amorphouspy.neighbors", None)
+        sys.modules.pop("amorphouspy.atoms.neighbors", None)
         if original_neighbors is not None:
-            sys.modules["amorphouspy.neighbors"] = original_neighbors
+            sys.modules["amorphouspy.atoms.neighbors"] = original_neighbors
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from amorphouspy.structure import extract_composition
+from amorphouspy.fabrication import extract_composition
 from ase.io import write as ase_write
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
@@ -81,7 +81,7 @@ def _clear_executor_cache(request_hash: str) -> None:
 
 def _composition_elements(composition: dict[str, float]) -> set[str]:
     """Extract element symbols from a composition dict."""
-    from amorphouspy.structure import parse_formula
+    from amorphouspy.fabrication import parse_formula
 
     elements: set[str] = set()
     for oxide in composition:
@@ -98,7 +98,7 @@ def _validate_or_select_potential(
     composition, raise 422 with suggestions.  If the default (pmmcs) was
     kept and it doesn't fit, silently pick the best compatible one.
     """
-    from amorphouspy.potentials.potential import (
+    from amorphouspy.lammps.potentials.potential import (
         compatible_potentials,
         get_supported_elements,
         select_potential,
@@ -166,7 +166,7 @@ def submit_job(
     # Resolve target density: predict from model if not supplied, fail fast
     # if the model cannot handle the composition.
     if submission.simulation.target_density is None:
-        from amorphouspy.structure.density import get_glass_density_from_model
+        from amorphouspy.fabrication.density import get_glass_density_from_model
 
         try:
             submission.simulation.target_density = get_glass_density_from_model(
