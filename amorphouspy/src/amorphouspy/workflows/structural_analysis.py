@@ -1164,8 +1164,9 @@ def _add_structure_factor_plots(fig: go.Figure, structure_data: StructureData, c
         col=2,
     )
 
-    # Partial S_ab(q)
-    for i, (pair, sq_data) in enumerate(sf.sq_partials.items()):
+    # Partial S_ab(q) — only O-X pairs (consistent with RDF plots)
+    o_partials = {pair: sq for pair, sq in sf.sq_partials.items() if "O" in pair.split("-")}
+    for i, (pair, sq_data) in enumerate(o_partials.items()):
         fig.add_trace(
             go.Scatter(
                 x=sf.q,
