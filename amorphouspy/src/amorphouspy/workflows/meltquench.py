@@ -135,6 +135,7 @@ def melt_quench_simulation(
     n_print: int = 1000,
     equilibration_steps: int | None = None,
     *,
+    n_averaging_frames: int = 10,
     server_kwargs: dict | None = None,
     langevin: bool = False,
     seed: int = 12345,
@@ -160,6 +161,9 @@ def melt_quench_simulation(
         n_print: The frequency of output during the simulation (default is 1000).
         equilibration_steps: Override for all fixed equilibration stages inside the protocol.
             If None, each protocol uses its own hardcoded defaults.
+        n_averaging_frames: Number of equally-spaced frames to dump during the
+            final equilibration stage for trajectory-averaged structural analysis
+            (default is 10).
         server_kwargs: Additional keyword arguments for the server.
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
@@ -211,6 +215,7 @@ def melt_quench_simulation(
         server_kwargs=server_kwargs,
         tmp_working_directory=tmp_working_directory,
         equilibration_steps=equilibration_steps,
+        n_averaging_frames=n_averaging_frames,
     )
 
     # Run the protocol using the function-based approach

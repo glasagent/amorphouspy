@@ -184,8 +184,8 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
 
     pmmcs_protocol(mock_runner, params)
 
-    # 5 stages in the protocol
-    assert mock_runner.call_count == 5
+    # 5 stages + 1 sampling stage
+    assert mock_runner.call_count == 6
 
 
 def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_potential):
@@ -205,8 +205,8 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
 
     bjp_protocol(mock_runner, params)
 
-    # 5 stages in the protocol
-    assert mock_runner.call_count == 5
+    # 5 stages + 1 sampling stage
+    assert mock_runner.call_count == 6
 
 
 def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
@@ -233,8 +233,8 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
 
     shik_protocol(mock_runner, params)
 
-    # 5 stages in the protocol
-    assert mock_runner.call_count == 6
+    # 6 stages + 1 sampling stage
+    assert mock_runner.call_count == 7
 
 
 def _make_params(structure, potential, **kwargs):
@@ -268,17 +268,17 @@ def test_bmp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potent
 
 
 def test_bmp_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
-    """bmp_protocol calls the runner exactly 5 times (5 stages)."""
+    """bmp_protocol calls the runner exactly 6 times (5 stages + sampling)."""
     params = _make_params(mock_structure, mock_potential)
     bmp_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 6
 
 
 def test_bmp_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
-    """bmp_protocol returns a list of 5 history entries."""
+    """bmp_protocol returns a list of 6 history entries (5 stages + sampling)."""
     params = _make_params(mock_structure, mock_potential)
     _, history = bmp_protocol(mock_runner, params)
-    assert len(history) == 5
+    assert len(history) == 6
 
 
 def test_bmp_protocol_strips_exclude_patterns(mock_runner, mock_structure):
@@ -300,14 +300,14 @@ def test_bmp_protocol_strips_exclude_patterns(mock_runner, mock_structure):
     )
     params = _make_params(mock_structure, potential)
     bmp_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 6
 
 
 def test_bmp_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
     """bmp_protocol respects custom equilibration_steps."""
     params = _make_params(mock_structure, mock_potential, equilibration_steps=50_000)
     bmp_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 6
 
 
 # ---------------------------------------------------------------------------
@@ -324,17 +324,17 @@ def test_du_teter_protocol_accepts_dataclass(mock_runner, mock_structure, mock_p
 
 
 def test_du_teter_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
-    """du_teter_protocol calls the runner exactly 5 times (5 stages)."""
+    """du_teter_protocol calls the runner exactly 6 times (5 stages + sampling)."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
     du_teter_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 6
 
 
 def test_du_teter_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
-    """du_teter_protocol returns a list of 5 history entries."""
+    """du_teter_protocol returns a list of 6 history entries (5 stages + sampling)."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
     _, history = du_teter_protocol(mock_runner, params)
-    assert len(history) == 5
+    assert len(history) == 6
 
 
 def test_du_teter_protocol_strips_5000_langevin(mock_runner, mock_structure):
@@ -356,14 +356,14 @@ def test_du_teter_protocol_strips_5000_langevin(mock_runner, mock_structure):
     )
     params = _make_params(mock_structure, potential, temperature_high=5000.0)
     du_teter_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 6
 
 
 def test_du_teter_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
     """du_teter_protocol respects custom equilibration_steps."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0, equilibration_steps=50_000)
     du_teter_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 6
 
 
 def test_bmp_protocol_strips_melt_block_for_later_stages(mock_runner, mock_structure):
