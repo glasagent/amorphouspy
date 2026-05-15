@@ -7,8 +7,7 @@ All commands run inside the pixi environment. Prefix every command with `pixi ru
 Before finishing any task that touched Python files:
 
 ```bash
-pixi run ruff format .
-pixi run ruff check --fix .
+pixi run pre-commit run -a
 ```
 
-Both must pass cleanly. `ruff format` first, then `ruff check --fix` — the order matters because some lint rules are formatting-adjacent.
+This runs ruff check, ruff format, and ty type-check on all changed files.

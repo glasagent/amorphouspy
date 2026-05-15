@@ -288,6 +288,7 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
             tags=j.tags or [],
             analyses=_analyses_list(j),
             status=JobStatus(j.status),
+            created_at=j.created_at.isoformat() if j.created_at else None,
             completed_at=j.completed_at.isoformat() if j.completed_at else None,
             visualization_url=_job_urls(j.job_id)["visualization"],
         )

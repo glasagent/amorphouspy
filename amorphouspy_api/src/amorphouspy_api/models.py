@@ -534,6 +534,7 @@ class JobSearchMatch(BaseModel):
     tags: list[str] = Field(default_factory=list)
     analyses: list[str]
     status: JobStatus = JobStatus.COMPLETED
+    created_at: str | None = None
     completed_at: str | None = None
     visualization_url: str = Field(
         default="",
