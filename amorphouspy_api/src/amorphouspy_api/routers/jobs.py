@@ -1,8 +1,15 @@
 """Jobs router — ``/jobs`` endpoints.
 
+Job management endpoints for submitting, monitoring, and retrieving
+simulation jobs in any stage of their lifecycle (pending, running,
+completed, failed, cancelled).
+
+For querying completed simulation results by composition similarity,
+use the ``/glasses`` endpoints instead.
+
 Endpoints:
   POST /jobs          - submit a new simulation
-  POST /jobs:search   - find cached / similar jobs
+  POST /jobs:search   - search jobs across all statuses
   GET  /jobs/{id}     - poll job status
   POST /jobs/{id}:cancel - cancel a running job
   GET  /jobs/{id}/results            - all analysis results
@@ -258,16 +265,21 @@ def submit_job(
 
 @router.post(":search", response_model=JobSearchResponse, dependencies=[Depends(verify_token)])
 def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
-    """Search for jobs matching a composition.
+    """Search for jobs across all lifecycle stages.
 
-    Returns jobs with an exact composition match.  Use *statuses* to
-    filter by job status (default: all statuses).
+    Use this endpoint for job management: finding pending, running,
+    completed, or failed jobs.  All filters are optional.  When
+    *composition* is provided, only jobs with that exact composition
+    are returned.  Use *statuses* to restrict to specific stages.
+
+    To search completed results by composition similarity, use
+    ``POST /glasses:search`` instead.
     """
     store = get_job_store()
-    norm_comp = body.composition.canonical
+    norm_comp = body.composition.canonical if body.composition else None
 
     statuses = [s.value for s in body.statuses] if body.statuses else None
-    jobs = store.search_by_composition(norm_comp, body.potential, statuses=statuses)
+    jobs = store.search_jobs(composition=norm_comp, potential=body.potential, statuses=statuses)
     matches = [
         JobSearchMatch(
             job_id=j.job_id,

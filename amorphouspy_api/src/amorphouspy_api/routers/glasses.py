@@ -1,6 +1,10 @@
 """Glasses router — ``/glasses`` endpoints.
 
-Read-only materials layer: a view over completed jobs.
+Read-only materials layer: a view over completed simulation jobs.
+Use these endpoints to browse and search computed glass properties.
+
+For job management (submitting, monitoring, cancelling jobs in any
+stage), use the ``/jobs`` endpoints instead.
 """
 
 from __future__ import annotations
@@ -142,9 +146,12 @@ def lookup_glass(body: GlassLookupRequest) -> GlassPropertiesResponse:
 def search_glasses(body: GlassSearchRequest) -> GlassSearchResponse:
     """Search for completed glasses by composition similarity.
 
-    Returns exact composition matches first, then close matches within
-    *threshold* Euclidean distance in elemental atom-fraction space,
-    sorted by ascending distance.
+    Only includes completed jobs.  Returns exact composition matches
+    first, then close matches within *threshold* Euclidean distance
+    in elemental atom-fraction space, sorted by ascending distance.
+
+    To search jobs in any lifecycle stage, use
+    ``POST /jobs:search`` instead.
     """
     store = get_job_store()
     norm_comp = body.composition.canonical

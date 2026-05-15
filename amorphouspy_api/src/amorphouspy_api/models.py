@@ -505,8 +505,8 @@ class JobResultsResponse(BaseModel):
 class JobSearchRequest(BaseModel):
     """Request body for ``POST /jobs:search``."""
 
-    composition: Composition = Field(
-        ...,
+    composition: Composition | None = Field(
+        default=None,
         description=(
             "Oxide glass composition as a mapping of oxide formula to mol%. "
             "Values are rescaled to sum to 100%. "

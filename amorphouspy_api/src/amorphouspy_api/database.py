@@ -173,6 +173,23 @@ class JobStore:
                 q = q.filter(Job.potential == potential)
             return list(q.order_by(Job.created_at.desc()).all())
 
+    def search_jobs(
+        self,
+        composition: str | None = None,
+        potential: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[Job]:
+        """Search jobs with optional filters."""
+        with self.session() as s:
+            q = s.query(Job)
+            if composition:
+                q = q.filter(Job.composition == composition)
+            if statuses:
+                q = q.filter(Job.status.in_(statuses))
+            if potential:
+                q = q.filter(Job.potential == potential)
+            return list(q.order_by(Job.created_at.desc()).all())
+
     def list_compositions(self) -> list[dict[str, Any]]:
         """Return ``[{composition, n_jobs}, …]`` for all completed jobs."""
         with self.session() as s:
