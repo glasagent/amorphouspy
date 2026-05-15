@@ -56,7 +56,7 @@ def _run_lammps_md(  # pragma: no cover
         pressure_end: End pressure in GPa for a linear pressure ramp. Requires ``pressure`` to be set.
         server_kwargs: Additional keyword arguments for the server.
         langevin: Whether to use Langevin dynamics.
-        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        seed: Random seed for velocity initialization. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
 
     Returns:
@@ -135,6 +135,7 @@ def melt_quench_simulation(
     n_print: int = 1000,
     equilibration_steps: int | None = None,
     *,
+    n_averaging_frames: int = 100,
     server_kwargs: dict | None = None,
     langevin: bool = False,
     seed: int = 12345,
@@ -151,18 +152,20 @@ def melt_quench_simulation(
         potential: The potential file to be used for the simulation.
         temperature_high: The high temperature to which the structure will be heated.
             If None, the protocol's default melt temperature is used (e.g. 4000 K for SHIK, 5000 K for others).
-        temperature_low: The low temperature to which the structure will be cooled (default is 300.0 K).
-        timestep: Time step for integration in femtoseconds (default is 1.0 fs).
+        temperature_low: The low temperature to which the structure will be cooled.
+        timestep: Time step for integration in femtoseconds.
         heating_rate: The rate at which the temperature is increased during the heating phase,
-            in K/s (default is 1e12 K/s).
+            in K/s.
         cooling_rate: The rate at which the temperature is decreased during the cooling phase,
-            in K/s (default is 1e12 K/s).
-        n_print: The frequency of output during the simulation (default is 1000).
+            in K/s.
+        n_print: The frequency of output during the simulation.
         equilibration_steps: Override for all fixed equilibration stages inside the protocol.
             If None, each protocol uses its own hardcoded defaults.
+        n_averaging_frames: Number of equally-spaced frames to dump during the
+            final NVT sampling stage for trajectory-averaged structural analysis.
         server_kwargs: Additional keyword arguments for the server.
         langevin: Whether to use Langevin dynamics.
-        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
+        seed: Random seed for velocity initialization. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
 
     Returns:
@@ -211,6 +214,7 @@ def melt_quench_simulation(
         server_kwargs=server_kwargs,
         tmp_working_directory=tmp_working_directory,
         equilibration_steps=equilibration_steps,
+        n_averaging_frames=n_averaging_frames,
     )
 
     # Run the protocol using the function-based approach

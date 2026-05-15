@@ -184,7 +184,7 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
 
     pmmcs_protocol(mock_runner, params)
 
-    # 5 stages in the protocol
+    # 5 stages (last one is NVT sampling)
     assert mock_runner.call_count == 5
 
 
@@ -205,7 +205,7 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
 
     bjp_protocol(mock_runner, params)
 
-    # 5 stages in the protocol
+    # 5 stages (last one is NVT sampling)
     assert mock_runner.call_count == 5
 
 
@@ -233,7 +233,7 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
 
     shik_protocol(mock_runner, params)
 
-    # 5 stages in the protocol
+    # 6 stages (last one is NVT sampling)
     assert mock_runner.call_count == 6
 
 
@@ -268,7 +268,7 @@ def test_bmp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potent
 
 
 def test_bmp_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
-    """bmp_protocol calls the runner exactly 5 times (5 stages)."""
+    """bmp_protocol calls the runner exactly 5 times."""
     params = _make_params(mock_structure, mock_potential)
     bmp_protocol(mock_runner, params)
     assert mock_runner.call_count == 5
@@ -324,7 +324,7 @@ def test_du_teter_protocol_accepts_dataclass(mock_runner, mock_structure, mock_p
 
 
 def test_du_teter_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
-    """du_teter_protocol calls the runner exactly 5 times (5 stages)."""
+    """du_teter_protocol calls the runner exactly 5 times."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
     du_teter_protocol(mock_runner, params)
     assert mock_runner.call_count == 5
@@ -484,8 +484,8 @@ def test_yang2026_protocol_equilibration_steps_override(mock_runner, mock_struct
         equilibration_steps=77,
     )
     yang2026_protocol(mock_runner, params)
-    # Stages 1, 2, 3, 4, 6, 7 use eq_steps (indices 1-4, 6, 7)
-    for idx in (1, 2, 3, 4, 6, 7):
+    # Stages 1-4 and 6 use eq_steps; stage 7 is now NVT sampling (not equilibration)
+    for idx in (1, 2, 3, 4, 6):
         n_steps = mock_runner.call_args_list[idx].kwargs["n_ionic_steps"]
         assert n_steps == 77, f"Stage {idx}: expected 77 steps, got {n_steps}"
 

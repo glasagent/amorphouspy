@@ -26,6 +26,17 @@ DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
     "yang2026": 4000.0,
 }
 
+# Dump interval (in fs) for the structural-averaging sampling stage.
+# 1000 fs = 1 ps between frames -- well beyond the longest bond-vibration
+# periods in oxide glasses:
+#   Si-O / P-O stretch  ~28-33 fs  (1000-1200 cm^-1)
+#   Al-O stretch        ~42-48 fs  (700-800 cm^-1)
+#   O-X-O bending       ~67-83 fs  (400-500 cm^-1)
+#   Modifier-O modes    ~83-167 fs (200-400 cm^-1)
+# A 1 ps spacing (~6-35x the longest periods) ensures thermally
+# decorrelated snapshots suitable for averaging structural properties.
+SAMPLING_DUMP_INTERVAL_FS: float = 1000.0
+
 
 @dataclass
 class MeltQuenchParams:
@@ -46,6 +57,8 @@ class MeltQuenchParams:
         tmp_working_directory: Temporary directory path.
         equilibration_steps: Override for all fixed equilibration stages inside a protocol.
             If None, each protocol uses its own hardcoded defaults.
+        n_averaging_frames: Number of equally-spaced frames to dump during the
+            final NVT sampling stage for trajectory-averaged structural analysis.
 
     """
 
@@ -62,6 +75,17 @@ class MeltQuenchParams:
     server_kwargs: dict | None = None
     tmp_working_directory: str | Path | None = None
     equilibration_steps: int | None = None
+    n_averaging_frames: int = 100
+
+    @property
+    def sampling_dump_interval(self) -> int:
+        """Dump interval in MD steps, derived from SAMPLING_DUMP_INTERVAL_FS and timestep."""
+        return int(SAMPLING_DUMP_INTERVAL_FS / self.timestep)
+
+    @property
+    def sampling_steps(self) -> int:
+        """Total MD steps for the sampling stage (n_averaging_frames x sampling_dump_interval)."""
+        return self.n_averaging_frames * self.sampling_dump_interval
 
 
 def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
@@ -153,12 +177,13 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: Long equilibration at low T
+    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
     structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
+        n_ionic_steps=params.sampling_steps,
         initial_temperature=0,
+        n_print=params.sampling_dump_interval,
     )
     history.append(parsed.get("generic", None))
 
@@ -254,12 +279,13 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: Long equilibration at low T
+    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
     structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
+        n_ionic_steps=params.sampling_steps,
         initial_temperature=0,
+        n_print=params.sampling_dump_interval,
     )
     history.append(parsed.get("generic", None))
 
@@ -358,12 +384,13 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: Long equilibration at low T
+    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
     structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
+        n_ionic_steps=params.sampling_steps,
         initial_temperature=0,
+        n_print=params.sampling_dump_interval,
     )
     history.append(parsed.get("generic", None))
 
@@ -479,15 +506,14 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 6: Annealing at 300 K for 100 ps in NVT
+    # Stage 6: NVT sampling at low T -- collect decorrelated frames for averaging
     structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=params.equilibration_steps
-        if params.equilibration_steps is not None
-        else int(100_000 / params.timestep),  # 100 ps
+        n_ionic_steps=params.sampling_steps,
         initial_temperature=0,
         pressure=None,
+        n_print=params.sampling_dump_interval,
     )
     history.append(parsed.get("generic", None))
 
@@ -583,12 +609,13 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: Long equilibration at low T
+    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
     structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
+        n_ionic_steps=params.sampling_steps,
         initial_temperature=0,
+        n_print=params.sampling_dump_interval,
     )
     history.append(parsed.get("generic", None))
 
@@ -735,13 +762,14 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 7: NVT 300 K for 100 ps
+    # Stage 7: NVT sampling at low T -- collect decorrelated frames for averaging
     structure_final, parsed = run2(
         structure=structure,
         temperature=params.temperature_low,
-        n_ionic_steps=steps_100ps,
+        n_ionic_steps=params.sampling_steps,
         initial_temperature=0,
         pressure=None,
+        n_print=params.sampling_dump_interval,
     )
     history.append(parsed.get("generic", None))
 
