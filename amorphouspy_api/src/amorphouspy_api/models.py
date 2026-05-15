@@ -519,15 +519,9 @@ class JobSearchRequest(BaseModel):
         default=None,
         description="Filter to jobs with all specified tags",
     )
-    threshold: float = Field(
-        default=0.05,
-        description="Max distance in atom-fraction space; 0 = exact only",
-    )
-    max_results: int = Field(
-        default=10,
-        ge=1,
-        le=100,
-        description="Max close matches to return",
+    statuses: list[JobStatus] | None = Field(
+        default=None,
+        description=("Filter to jobs with these statuses. If not provided, all statuses are included."),
     )
 
 
@@ -539,15 +533,7 @@ class JobSearchMatch(BaseModel):
     potential: Potential
     tags: list[str] = Field(default_factory=list)
     analyses: list[str]
-    similarity: float = 1.0
-    match_type: str = Field(
-        default="exact",
-        description="'exact' for identical composition, 'close' for nearby.",
-    )
-    distance: float = Field(
-        default=0.0,
-        description="Euclidean distance in elemental atom-fraction space (0 for exact matches).",
-    )
+    status: JobStatus = JobStatus.COMPLETED
     completed_at: str | None = None
     visualization_url: str = Field(
         default="",
@@ -646,3 +632,60 @@ class GlassPropertiesResponse(BaseModel):
     properties: dict[str, dict] = Field(default_factory=dict)
     available_structures: list[AvailableStructure] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
+
+
+class GlassSearchRequest(BaseModel):
+    """Request body for ``POST /glasses:search``."""
+
+    composition: Composition = Field(
+        ...,
+        description=(
+            "Oxide glass composition as a mapping of oxide formula to mol%. "
+            "Values are rescaled to sum to 100%. "
+            "Example: {'SiO2': 70, 'Na2O': 15, 'CaO': 15}"
+        ),
+    )
+    potential: Potential | None = None
+    tags: list[str] | None = Field(
+        default=None,
+        description="Filter to glasses with all specified tags",
+    )
+    threshold: float = Field(
+        default=0.05,
+        description=(
+            "Maximum Euclidean distance in elemental atom-fraction space. "
+            "Only glasses within this distance are returned. Use 0 for exact matches only."
+        ),
+    )
+    max_results: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of close matches to return",
+    )
+
+
+class GlassSearchMatch(BaseModel):
+    """A single match from a glass composition search."""
+
+    job_id: str
+    composition: Composition
+    potential: Potential
+    tags: list[str] = Field(default_factory=list)
+    analyses: list[str]
+    similarity: float = Field(description="Similarity score: 1/(1+distance). 1.0 for exact matches.")
+    match_type: str = Field(description="'exact' for identical composition, 'close' for nearby.")
+    distance: float = Field(
+        description="Euclidean distance in elemental atom-fraction space (0 for exact matches).",
+    )
+    completed_at: str | None = None
+    visualization_url: str = Field(
+        default="",
+        description="URL for an interactive HTML visualization dashboard of this job's results.",
+    )
+
+
+class GlassSearchResponse(BaseModel):
+    """Response for ``POST /glasses:search``."""
+
+    matches: list[GlassSearchMatch]

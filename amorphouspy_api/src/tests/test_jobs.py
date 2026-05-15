@@ -373,21 +373,20 @@ def test_search_jobs_no_match() -> None:
         "/jobs:search",
         json={
             "composition": {"B2O3": 100},
-            "threshold": 0,
         },
     )
     assert resp.status_code == 200
     assert len(resp.json()["matches"]) == 0
 
 
-def test_search_jobs_close_match() -> None:
-    """A nearby composition should appear as a close match."""
+def test_search_glasses_close_match() -> None:
+    """A nearby composition should appear as a close match via glasses:search."""
     _insert_completed_job("j-close-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
 
     # The mock structure has only Si+O atoms, so the elemental distance
     # from an Al2O3-CaO-SiO2 query is ~0.18 — use threshold 0.2.
     resp = client.post(
-        "/jobs:search",
+        "/glasses:search",
         json={
             "composition": {"SiO2": 62, "CaO": 23, "Al2O3": 15},
             "threshold": 0.2,
@@ -402,12 +401,12 @@ def test_search_jobs_close_match() -> None:
     assert close[0]["similarity"] < 1.0
 
 
-def test_search_jobs_close_match_outside_threshold() -> None:
+def test_search_glasses_close_match_outside_threshold() -> None:
     """A composition outside the threshold should not appear."""
     _insert_completed_job("j-far-1", composition="SiO2 100")
 
     resp = client.post(
-        "/jobs:search",
+        "/glasses:search",
         json={
             "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
             "threshold": 0.01,
@@ -419,12 +418,12 @@ def test_search_jobs_close_match_outside_threshold() -> None:
     assert all(m["job_id"] != "j-far-1" for m in close)
 
 
-def test_search_jobs_threshold_zero_exact_only() -> None:
+def test_search_glasses_threshold_zero_exact_only() -> None:
     """threshold=0 should return only exact matches, no close ones."""
     _insert_completed_job("j-exact-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
 
     resp = client.post(
-        "/jobs:search",
+        "/glasses:search",
         json={
             "composition": {"SiO2": 62, "CaO": 23, "Al2O3": 15},
             "threshold": 0,

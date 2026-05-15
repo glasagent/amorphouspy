@@ -20,8 +20,16 @@ from amorphouspy_api.models import (
     GlassListResponse,
     GlassLookupRequest,
     GlassPropertiesResponse,
+    GlassSearchMatch,
+    GlassSearchRequest,
+    GlassSearchResponse,
     GlassSummary,
     _job_urls,
+)
+from amorphouspy_api.routers.jobs_helpers import (
+    _analyses_list,
+    find_close_matches,
+    oxide_to_elemental_vector,
 )
 from amorphouspy_api.workflows import ANALYSES
 
@@ -81,7 +89,7 @@ def lookup_glass(body: GlassLookupRequest) -> GlassPropertiesResponse:
     """
     store = get_job_store()
     norm = body.composition.canonical
-    jobs = store.search_by_composition(norm)
+    jobs = store.search_by_composition(norm, statuses=["completed"])
     if not jobs:
         raise HTTPException(status_code=404, detail=f"No completed jobs for composition: {norm}")
 
@@ -128,3 +136,74 @@ def lookup_glass(body: GlassLookupRequest) -> GlassPropertiesResponse:
         available_structures=available_structures,
         missing=missing,
     )
+
+
+@router.post(":search", response_model=GlassSearchResponse)
+def search_glasses(body: GlassSearchRequest) -> GlassSearchResponse:
+    """Search for completed glasses by composition similarity.
+
+    Returns exact composition matches first, then close matches within
+    *threshold* Euclidean distance in elemental atom-fraction space,
+    sorted by ascending distance.
+    """
+    store = get_job_store()
+    norm_comp = body.composition.canonical
+    query_vec = oxide_to_elemental_vector(body.composition.root)
+
+    # --- exact matches ---
+    exact_jobs = store.search_by_composition(norm_comp, body.potential, statuses=["completed"])
+    exact_ids = {j.job_id for j in exact_jobs}
+    matches: list[GlassSearchMatch] = [
+        GlassSearchMatch(
+            job_id=j.job_id,
+            composition=Composition.from_canonical(j.composition),
+            potential=j.potential,
+            tags=j.tags or [],
+            analyses=_analyses_list(j),
+            similarity=1.0,
+            match_type="exact",
+            distance=0.0,
+            completed_at=j.completed_at.isoformat() if j.completed_at else None,
+            visualization_url=_job_urls(j.job_id)["visualization"],
+        )
+        for j in exact_jobs
+    ]
+
+    # --- close matches (if threshold > 0) ---
+    if body.threshold > 0:
+        rows = store.list_completed_vectors(body.potential)
+        scored = find_close_matches(
+            query_vec,
+            rows,
+            exclude_ids=exact_ids,
+            threshold=body.threshold,
+            max_results=body.max_results,
+        )
+        # Batch-fetch tags for close matches
+        close_ids = [job_id for _, job_id, *_ in scored]
+        tags_map = store.get_tags_for_jobs(close_ids) if close_ids else {}
+
+        for dist, job_id, comp, potential, req_data, completed_at in scored:
+            sim = 1.0 / (1.0 + dist)
+            analyses = [a.get("type", "structure_characterization") for a in (req_data or {}).get("analyses", [])]
+            matches.append(
+                GlassSearchMatch(
+                    job_id=job_id,
+                    composition=Composition.from_canonical(comp),
+                    potential=potential,
+                    tags=tags_map.get(job_id, []),
+                    analyses=analyses,
+                    similarity=round(sim, 4),
+                    match_type="close",
+                    distance=round(dist, 4),
+                    completed_at=completed_at.isoformat() if completed_at else None,
+                    visualization_url=_job_urls(job_id)["visualization"],
+                )
+            )
+
+    # --- filter by tags (if requested) ---
+    if body.tags:
+        required = set(body.tags)
+        matches = [m for m in matches if required <= set(m.tags)]
+
+    return GlassSearchResponse(matches=matches)

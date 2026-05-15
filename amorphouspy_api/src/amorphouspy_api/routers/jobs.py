@@ -50,8 +50,6 @@ from amorphouspy_api.routers.jobs_helpers import (
     _submit_to_executor,
     _update_from_resolved,
     build_visualization_context,
-    find_close_matches,
-    oxide_to_elemental_vector,
     refresh_job_from_cache,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -260,19 +258,16 @@ def submit_job(
 
 @router.post(":search", response_model=JobSearchResponse, dependencies=[Depends(verify_token)])
 def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
-    """Search for existing completed / running jobs matching a spec.
+    """Search for jobs matching a composition.
 
-    Returns exact composition matches first (similarity=1.0), then
-    close matches within *threshold* Euclidean distance in elemental
-    atom-fraction space, sorted by ascending distance.
+    Returns jobs with an exact composition match.  Use *statuses* to
+    filter by job status (default: all statuses).
     """
     store = get_job_store()
     norm_comp = body.composition.canonical
-    query_vec = oxide_to_elemental_vector(body.composition.root)
 
-    # --- exact matches ---
-    exact_jobs = store.search_by_composition(norm_comp, body.potential)
-    exact_ids = {j.job_id for j in exact_jobs}
+    statuses = [s.value for s in body.statuses] if body.statuses else None
+    jobs = store.search_by_composition(norm_comp, body.potential, statuses=statuses)
     matches = [
         JobSearchMatch(
             job_id=j.job_id,
@@ -280,46 +275,12 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
             potential=j.potential,
             tags=j.tags or [],
             analyses=_analyses_list(j),
-            similarity=1.0,
-            match_type="exact",
-            distance=0.0,
+            status=JobStatus(j.status),
             completed_at=j.completed_at.isoformat() if j.completed_at else None,
             visualization_url=_job_urls(j.job_id)["visualization"],
         )
-        for j in exact_jobs
+        for j in jobs
     ]
-
-    # --- close matches (if threshold > 0) ---
-    if body.threshold > 0:
-        rows = store.list_completed_vectors(body.potential)
-        scored = find_close_matches(
-            query_vec,
-            rows,
-            exclude_ids=exact_ids,
-            threshold=body.threshold,
-            max_results=body.max_results,
-        )
-        # Batch-fetch tags for close matches
-        close_ids = [job_id for _, job_id, *_ in scored]
-        tags_map = store.get_tags_for_jobs(close_ids) if close_ids else {}
-
-        for dist, job_id, comp, potential, req_data, completed_at in scored:
-            sim = 1.0 / (1.0 + dist)
-            analyses = [a.get("type", "structure_characterization") for a in (req_data or {}).get("analyses", [])]
-            matches.append(
-                JobSearchMatch(
-                    job_id=job_id,
-                    composition=Composition.from_canonical(comp),
-                    potential=potential,
-                    tags=tags_map.get(job_id, []),
-                    analyses=analyses,
-                    similarity=round(sim, 4),
-                    match_type="close",
-                    distance=round(dist, 4),
-                    completed_at=completed_at.isoformat() if completed_at else None,
-                    visualization_url=_job_urls(job_id)["visualization"],
-                )
-            )
 
     # --- filter by tags (if requested) ---
     if body.tags:
