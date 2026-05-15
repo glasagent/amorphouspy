@@ -450,7 +450,7 @@ def get_structure(
     fmt: Annotated[
         str,
         Query(alias="format", description="Export format: xyz, cif, poscar, extxyz"),
-    ] = "xyz",
+    ] = "extxyz",
 ) -> Response:
     """Export the final quenched structure."""
     store = get_job_store()
