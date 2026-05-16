@@ -1,8 +1,15 @@
 """Jobs router — ``/jobs`` endpoints.
 
+Job management endpoints for submitting, monitoring, and retrieving
+simulation jobs in any stage of their lifecycle (pending, running,
+completed, failed, cancelled).
+
+For querying completed simulation results by composition similarity,
+use the ``/glasses`` endpoints instead.
+
 Endpoints:
   POST /jobs          - submit a new simulation
-  POST /jobs:search   - find cached / similar jobs
+  POST /jobs:search   - search jobs across all statuses
   GET  /jobs/{id}     - poll job status
   POST /jobs/{id}:cancel - cancel a running job
   GET  /jobs/{id}/results            - all analysis results
@@ -50,8 +57,6 @@ from amorphouspy_api.routers.jobs_helpers import (
     _submit_to_executor,
     _update_from_resolved,
     build_visualization_context,
-    find_close_matches,
-    oxide_to_elemental_vector,
     refresh_job_from_cache,
 )
 from amorphouspy_api.workflows import ANALYSES
@@ -260,19 +265,21 @@ def submit_job(
 
 @router.post(":search", response_model=JobSearchResponse, dependencies=[Depends(verify_token)])
 def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
-    """Search for existing completed / running jobs matching a spec.
+    """Search for jobs across all lifecycle stages.
 
-    Returns exact composition matches first (similarity=1.0), then
-    close matches within *threshold* Euclidean distance in elemental
-    atom-fraction space, sorted by ascending distance.
+    Use this endpoint for job management: finding pending, running,
+    completed, or failed jobs.  All filters are optional.  When
+    *composition* is provided, only jobs with that exact composition
+    are returned.  Use *statuses* to restrict to specific stages.
+
+    To search completed results by composition similarity, use
+    ``POST /glasses:search`` instead.
     """
     store = get_job_store()
-    norm_comp = body.composition.canonical
-    query_vec = oxide_to_elemental_vector(body.composition.root)
+    norm_comp = body.composition.canonical if body.composition else None
 
-    # --- exact matches ---
-    exact_jobs = store.search_by_composition(norm_comp, body.potential)
-    exact_ids = {j.job_id for j in exact_jobs}
+    statuses = [s.value for s in body.statuses] if body.statuses else None
+    jobs = store.search_jobs(composition=norm_comp, potential=body.potential, statuses=statuses)
     matches = [
         JobSearchMatch(
             job_id=j.job_id,
@@ -280,46 +287,13 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
             potential=j.potential,
             tags=j.tags or [],
             analyses=_analyses_list(j),
-            similarity=1.0,
-            match_type="exact",
-            distance=0.0,
+            status=JobStatus(j.status),
+            created_at=j.created_at.isoformat() if j.created_at else None,
             completed_at=j.completed_at.isoformat() if j.completed_at else None,
             visualization_url=_job_urls(j.job_id)["visualization"],
         )
-        for j in exact_jobs
+        for j in jobs
     ]
-
-    # --- close matches (if threshold > 0) ---
-    if body.threshold > 0:
-        rows = store.list_completed_vectors(body.potential)
-        scored = find_close_matches(
-            query_vec,
-            rows,
-            exclude_ids=exact_ids,
-            threshold=body.threshold,
-            max_results=body.max_results,
-        )
-        # Batch-fetch tags for close matches
-        close_ids = [job_id for _, job_id, *_ in scored]
-        tags_map = store.get_tags_for_jobs(close_ids) if close_ids else {}
-
-        for dist, job_id, comp, potential, req_data, completed_at in scored:
-            sim = 1.0 / (1.0 + dist)
-            analyses = [a.get("type", "structure_characterization") for a in (req_data or {}).get("analyses", [])]
-            matches.append(
-                JobSearchMatch(
-                    job_id=job_id,
-                    composition=Composition.from_canonical(comp),
-                    potential=potential,
-                    tags=tags_map.get(job_id, []),
-                    analyses=analyses,
-                    similarity=round(sim, 4),
-                    match_type="close",
-                    distance=round(dist, 4),
-                    completed_at=completed_at.isoformat() if completed_at else None,
-                    visualization_url=_job_urls(job_id)["visualization"],
-                )
-            )
 
     # --- filter by tags (if requested) ---
     if body.tags:

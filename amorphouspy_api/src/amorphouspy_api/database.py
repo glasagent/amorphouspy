@@ -162,13 +162,30 @@ class JobStore:
         self,
         composition: str,
         potential: str | None = None,
+        statuses: list[str] | None = None,
     ) -> list[Job]:
-        """Find completed jobs matching a normalised composition."""
+        """Find jobs matching a normalised composition, optionally filtered by status."""
         with self.session() as s:
-            q = s.query(Job).filter(
-                Job.composition == composition,
-                Job.status == "completed",
-            )
+            q = s.query(Job).filter(Job.composition == composition)
+            if statuses:
+                q = q.filter(Job.status.in_(statuses))
+            if potential:
+                q = q.filter(Job.potential == potential)
+            return list(q.order_by(Job.created_at.desc()).all())
+
+    def search_jobs(
+        self,
+        composition: str | None = None,
+        potential: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[Job]:
+        """Search jobs with optional filters."""
+        with self.session() as s:
+            q = s.query(Job)
+            if composition:
+                q = q.filter(Job.composition == composition)
+            if statuses:
+                q = q.filter(Job.status.in_(statuses))
             if potential:
                 q = q.filter(Job.potential == potential)
             return list(q.order_by(Job.created_at.desc()).all())
