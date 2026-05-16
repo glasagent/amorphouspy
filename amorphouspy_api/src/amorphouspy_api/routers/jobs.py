@@ -29,7 +29,7 @@ from uuid import uuid4
 from amorphouspy.fabrication import extract_composition
 from ase.io import write as ase_write
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from amorphouspy_api.auth import verify_token
 from amorphouspy_api.database import Job, get_job_store
@@ -456,6 +456,24 @@ def get_structure(
     ase_write(buf, atoms, format=ase_fmt)
 
     return Response(content=buf.getvalue(), media_type=content_type)
+
+
+@router.get("/{job_id}/trajectory")
+def get_trajectory(job_id: str) -> JSONResponse:
+    """Return the full simulation history (trajectory) for a job.
+
+    This is a large payload (can be hundreds of MB) containing per-stage
+    positions, forces, velocities, and thermodynamic data.
+    """
+    store = get_job_store()
+    job = store.get_job_with_history(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job.simulation_history:
+        raise HTTPException(status_code=404, detail="No trajectory data available")
+
+    return JSONResponse(content={"job_id": job.job_id, "simulation_history": job.simulation_history})
 
 
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
