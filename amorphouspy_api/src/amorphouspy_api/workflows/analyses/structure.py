@@ -21,13 +21,16 @@ def run_structural_analysis(submission: JobSubmission, config: StructureAnalysis
     mq = result["melt_quench"]
     frames = _extract_equilibration_frames(mq)
 
-    if len(frames) > 1:
-        logger.info("Frame-averaging structural analysis over %d frames", len(frames))
+    n_frames = len(frames)
+    if n_frames > 1:
+        logger.info("Frame-averaging structural analysis over %d frames", n_frames)
         mean_data, _sem_data = analyze_structure(atoms=frames, frame_averaging=True)
     else:
         mean_data, _sem_data = analyze_structure(atoms=frames[0])
 
-    return mean_data.model_dump()
+    result_dict = mean_data.model_dump()
+    result_dict["n_averaging_frames"] = n_frames
+    return result_dict
 
 
 def _extract_equilibration_frames(mq: dict) -> list[Atoms]:
@@ -177,11 +180,13 @@ def prepare_structure_context(result_data: dict[str, Any]) -> dict[str, Any]:
     # Scalar properties
     density = structural_analysis.get("density", "N/A")
     if isinstance(density, (int, float)):
-        density = f"{density:.3f}"
+        density = f"{density:.2f}"
 
     network_connectivity = structural_analysis.get("network", {}).get("connectivity", "N/A")
     if isinstance(network_connectivity, (int, float)):
-        network_connectivity = f"{network_connectivity:.3f}"
+        network_connectivity = f"{network_connectivity:.2f}"
+
+    n_averaging_frames = structural_analysis.get("n_averaging_frames", 1)
 
     return {
         "plotly_json": json.dumps(plotly_fig),
@@ -190,4 +195,5 @@ def prepare_structure_context(result_data: dict[str, Any]) -> dict[str, Any]:
         "network_connectivity": network_connectivity,
         "network_formers": structural_analysis.get("elements", {}).get("formers", []),
         "modifiers": structural_analysis.get("elements", {}).get("modifiers", []),
+        "n_averaging_frames": n_averaging_frames,
     }
