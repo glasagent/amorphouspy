@@ -712,12 +712,20 @@ def _serialize_rdfs(
 
     rdfs_serializable: dict[str, list[float]] = {}
     cumcn_serializable: dict[str, list[float]] = {}
+    z_oxygen = 8
     for pair, rdf_data in rdfs.items():
-        elem1, elem2 = type_map[pair[0]], type_map[pair[1]]
+        z1, z2 = pair
+        # For cross-type pairs involving O, put the non-O element first so
+        # labels read "Former-O" / "Modifier-O" and the coordination number
+        # counts O neighbours around each former/modifier (not vice-versa).
+        if z1 != z2 and z1 == z_oxygen:
+            z1, z2 = z2, z1
+        elem1, elem2 = type_map[z1], type_map[z2]
         key = f"{elem1}-{elem2}"
         rdfs_serializable[key] = to_list(rdf_data)
-        if pair in cumcn:
-            cumcn_serializable[key] = to_list(cumcn[pair])
+        cn_pair = (z1, z2)
+        if cn_pair in cumcn:
+            cumcn_serializable[key] = to_list(cumcn[cn_pair])
     return to_list(r), rdfs_serializable, cumcn_serializable
 
 
