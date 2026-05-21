@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from sqlalchemy import JSON, DateTime, Index, String, create_engine, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.orm import defer as _defer
 from sqlalchemy.pool import NullPool
 
 from .models import serialize_atoms
@@ -52,6 +53,11 @@ class Job(Base):
 
     # User-defined tags for labelling / grouping jobs (e.g. project names).
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Heavy trajectory data stored in a separate column so it is never loaded
+    # unless explicitly requested.  Kept out of result_data to avoid bloating
+    # routine queries (can be hundreds of MB).
+    simulation_history: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -121,7 +127,12 @@ class JobStore:
             s.commit()
 
     def get_job(self, job_id: str) -> Job | None:
-        """Fetch a job by ID, or ``None``."""
+        """Fetch a job by ID (excludes heavy simulation_history column)."""
+        with self.session() as s:
+            return s.query(Job).options(_defer(Job.simulation_history)).filter(Job.job_id == job_id).first()
+
+    def get_job_with_history(self, job_id: str) -> Job | None:
+        """Fetch a job by ID including the heavy simulation_history column."""
         with self.session() as s:
             return s.get(Job, job_id)
 
@@ -134,6 +145,11 @@ class JobStore:
             for k, val in fields.items():
                 # Serialise ASE Atoms if present inside result_data
                 effective = _serialise_atoms_in_result(val) if k == "result_data" and isinstance(val, dict) else val
+                # Extract simulation_history from result_data into its own column
+                if k == "result_data" and isinstance(effective, dict):
+                    mq = cast("dict[str, Any]", effective).get("melt_quench")
+                    if isinstance(mq, dict) and "simulation_history" in mq:
+                        job.simulation_history = mq.pop("simulation_history")
                 setattr(job, k, effective)
             s.commit()
 

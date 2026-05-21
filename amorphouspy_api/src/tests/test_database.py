@@ -368,3 +368,71 @@ def test_list_glasses_uses_covering_index() -> None:
         assert "COVERING INDEX" in plan_text, f"Expected covering index usage, got: {plan_text}"
         assert "ix_jobs_glasses_listing" in plan_text
         conn.close()
+
+
+def test_simulation_history_separate_column() -> None:
+    """Test that simulation_history is extracted from result_data into its own column."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-hist",
+                request_hash="h-hist",
+                composition="SiO2 100",
+                potential="shik",
+                status="running",
+            )
+        )
+
+        history = [{"positions": [[0, 0, 0]], "temperature": [300.0]}]
+        store.update_job(
+            "j-hist",
+            status="completed",
+            result_data={
+                "melt_quench": {
+                    "final_structure": {},
+                    "simulation_history": history,
+                },
+                "structure_characterization": {"density": 2.2},
+            },
+        )
+
+        # get_job should not include simulation_history and result_data should be clean
+        job = store.get_job("j-hist")
+        assert job is not None
+        assert "simulation_history" not in job.result_data.get("melt_quench", {})
+        assert job.result_data["structure_characterization"]["density"] == 2.2
+
+        # get_job_with_history should include it
+        job_full = store.get_job_with_history("j-hist")
+        assert job_full is not None
+        assert job_full.simulation_history == history
+        store.close()
+
+
+def test_get_job_defers_simulation_history() -> None:
+    """Test that get_job does not load the simulation_history column."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        store = JobStore(db_path)
+        store.create_job(
+            Job(
+                job_id="j-defer",
+                request_hash="h-defer",
+                composition="SiO2 100",
+                potential="pmmcs",
+                status="completed",
+                result_data={"melt_quench": {"final_structure": {}}},
+                simulation_history=[{"positions": [[1, 2, 3]]}],
+            )
+        )
+
+        # get_job should work without loading history
+        job = store.get_job("j-defer")
+        assert job is not None
+        assert job.status == "completed"
+
+        # get_job_with_history should return the history
+        job_full = store.get_job_with_history("j-defer")
+        assert job_full.simulation_history == [{"positions": [[1, 2, 3]]}]
+        store.close()

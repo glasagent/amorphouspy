@@ -1235,3 +1235,52 @@ def test_submit_job_with_structure_seed():
 
     assert resp.status_code == 200
     assert resp.json()["status"] in ("pending", "completed")
+
+
+# ---------------------------------------------------------------------------
+# GET /jobs/{id}/trajectory
+# ---------------------------------------------------------------------------
+
+
+def test_get_trajectory() -> None:
+    store = get_job_store()
+    history = [{"positions": [[[0, 0, 0]]], "temperature": [300.0]}]
+    store.create_job(
+        Job(
+            job_id="j-traj-1",
+            request_hash="h-traj-1",
+            composition="SiO2 100",
+            potential="pmmcs",
+            status="completed",
+            result_data={"melt_quench": {"final_structure": {}}},
+            simulation_history=history,
+        )
+    )
+
+    resp = client.get("/jobs/j-traj-1/trajectory")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["job_id"] == "j-traj-1"
+    assert data["simulation_history"] == history
+
+
+def test_get_trajectory_not_found() -> None:
+    resp = client.get("/jobs/nonexistent/trajectory")
+    assert resp.status_code == 404
+
+
+def test_get_trajectory_no_history() -> None:
+    store = get_job_store()
+    store.create_job(
+        Job(
+            job_id="j-traj-empty",
+            request_hash="h-traj-empty",
+            composition="SiO2 100",
+            potential="pmmcs",
+            status="completed",
+            result_data={"melt_quench": {"final_structure": {}}},
+        )
+    )
+
+    resp = client.get("/jobs/j-traj-empty/trajectory")
+    assert resp.status_code == 404
