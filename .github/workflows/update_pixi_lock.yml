@@ -15,6 +15,7 @@ jobs:
         run: pixi update --json | pixi exec pixi-diff-to-markdown >> "$GITHUB_STEP_SUMMARY"
       - uses: peter-evans/create-pull-request@v7
         with:
+          token: ${{ secrets.PAT }}
           commit-message: "chore: update pixi.lock"
           title: "chore: weekly pixi.lock update"
           branch: chore/pixi-lock-update
