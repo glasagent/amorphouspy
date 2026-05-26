@@ -712,14 +712,20 @@ def _serialize_rdfs(
 
     rdfs_serializable: dict[str, list[float]] = {}
     cumcn_serializable: dict[str, list[float]] = {}
+    z_oxygen = 8
     for pair, rdf_data in rdfs.items():
         z1, z2 = pair
+        # For cross-type pairs involving O, put the non-O element first so
+        # labels read "Former-O" / "Modifier-O" and the coordination number
+        # counts O neighbours around each former/modifier (not vice-versa).
+        if z1 != z2 and z1 == z_oxygen:
+            z1, z2 = z2, z1
         elem1, elem2 = type_map[z1], type_map[z2]
-        rdfs_serializable[f"{elem1}-{elem2}"] = to_list(rdf_data)
-        for cn_pair in ((z1, z2), (z2, z1)):
-            if cn_pair in cumcn:
-                a, b = cn_pair
-                cumcn_serializable[f"{type_map[a]}-{type_map[b]}"] = to_list(cumcn[cn_pair])
+        key = f"{elem1}-{elem2}"
+        rdfs_serializable[key] = to_list(rdf_data)
+        cn_pair = (z1, z2)
+        if cn_pair in cumcn:
+            cumcn_serializable[key] = to_list(cumcn[cn_pair])
     return to_list(r), rdfs_serializable, cumcn_serializable
 
 
@@ -1106,25 +1112,21 @@ def _add_rdf_plots(fig: go.Figure, structure_data: StructureData, colors: list[s
                     col=col,
                 )
 
-                # Coordination number trace(s) — both directions in distinct colors
-                cumcn = structure_data.rdfs.cumulative_coordination
-                e1, _, e2 = pair.partition("-")
-                cn_pairs = [pair] if e1 == e2 else [pair, f"{e2}-{e1}"]
-                for j, cn_label in enumerate(cn_pairs):
-                    if cumcn and cn_label in cumcn:
-                        fig.add_trace(
-                            go.Scatter(
-                                x=structure_data.rdfs.r,
-                                y=cumcn[cn_label],
-                                mode="lines",
-                                name=f"CN(r) {cn_label}",
-                                line={"color": colors[(i + j) % len(colors)], "width": 2, "dash": "dash"},
-                                showlegend=True,
-                                yaxis="y",
-                            ),
-                            row=row,
-                            col=col,
-                        )
+                # Coordination number trace (if available)
+                if structure_data.rdfs.cumulative_coordination and pair in structure_data.rdfs.cumulative_coordination:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=structure_data.rdfs.r,
+                            y=structure_data.rdfs.cumulative_coordination[pair],
+                            mode="lines",
+                            name=f"CN(r) {pair}",
+                            line={"color": colors[i % len(colors)], "width": 2, "dash": "dash"},
+                            showlegend=True,
+                            yaxis="y",
+                        ),
+                        row=row,
+                        col=col,
+                    )
 
 
 def _add_structure_factor_plots(fig: go.Figure, structure_data: StructureData, colors: list[str]) -> None:
