@@ -10,7 +10,7 @@ const O_CLASS_COLORS = {
     BO: 0xff0d0d,  // standard red - bridging oxygen
     NBO: 0xff69b4,  // pink - non-bridging oxygen
     free: 0x20cc20,  // green - free oxygen (rare)
-    tri: 0xff8c00,  // orange - triclustered oxygen
+    tri: 0xff00ff,  // magenta - triclustered oxygen
 };
 const O_DEFAULT_COLOR = 0xff0d0d; // fallback for unlabelled O
 
@@ -198,8 +198,8 @@ function applyGlassStyles(networkOnly) {
 
         if (meta.role === 'oxygen') {
             var cls = meta.o_class || 'default';
-            key = 'o_' + cls;
-            color = O_CLASS_COLORS[cls] || O_DEFAULT_COLOR;
+            key = networkOnly ? 'o_' + cls : 'o_all';
+            color = networkOnly ? (O_CLASS_COLORS[cls] || O_DEFAULT_COLOR) : O_DEFAULT_COLOR;
             radius = RADII.oxygen;
             hasStick = true;
             hidden = false;
@@ -355,9 +355,9 @@ function buildLegend() {
         addSwatch(Jmol[elem] || 0x909090, elem);
     });
 
-    // Oxygen classes (only in network view)
+    // Oxygen classes
     if (currentStyle === 'network') {
-        var oClassLabels = { BO: 'O', NBO: 'O (NBO)', free: 'O (free)', tri: 'O (tricluster)' };
+        var oClassLabels = { BO: 'O (BO)', NBO: 'O (NBO)', free: 'O (free)', tri: 'O (tricluster)' };
         ['BO', 'NBO', 'free', 'tri'].forEach(function (cls) {
             if (oClasses.has(cls)) {
                 addSwatch(O_CLASS_COLORS[cls] || O_DEFAULT_COLOR, oClassLabels[cls] || cls);
