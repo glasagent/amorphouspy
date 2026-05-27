@@ -1149,6 +1149,37 @@ def test_generate_du_teter_with_boron(tmp_path):
     assert len(tbl_files) == 1
 
 
+def test_generate_du_teter_original_dbx_approach_default(tmp_path):
+    """original_dbx_approach defaults to True (Na2O-only R)."""
+    atoms = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}],
+        "mol_fraction": {"B2O3": 0.3, "Na2O": 0.2},
+    }
+    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "default"), melt=False)
+    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "explicit"), melt=False, original_dbx_approach=True)
+    # Both should produce a table file for B-O
+    assert list((tmp_path / "default").glob("table_B_O*"))
+    assert list((tmp_path / "explicit").glob("table_B_O*"))
+
+
+def test_generate_du_teter_original_vs_modified_dbx_approach_differ(tmp_path):
+    """original_dbx_approach=False (all modifiers) changes B-O parameters vs True (Na only)."""
+    # Na-B-O: original approach counts Na2O; modified approach also counts Na2O — same here
+    # Use CaO only so original (Na-only) gives R=0, modified gives R=cCaO/cB2O3 > 0 → different A
+    atoms = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Ca"}],
+        "mol_fraction": {"B2O3": 0.3, "CaO": 0.2},
+    }
+
+    result_orig = get_all_BO_params(atoms, original_dbx_approach=True)  # R = cNa2O / cB2O3 = 0
+    result_mod = get_all_BO_params(atoms, original_dbx_approach=False)  # R = cCaO / cB2O3 > 0
+    assert result_orig["A"] != result_mod["A"]
+
+    # generate_du_teter_potential should accept and pass through the flag
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False, original_dbx_approach=False)
+    assert "pair_coeff" in "".join(df["Config"].iloc[0])
+
+
 # yang_potential.supported_elements
 # ---------------------------------------------------------------------------
 

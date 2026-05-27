@@ -704,11 +704,16 @@ def _build_pair_params(elem: str) -> dict:
     }
 
 
-def _build_all_pair_params(species: list[str], structure_dict: dict) -> dict[str, dict]:
+def _build_all_pair_params(
+    species: list[str],
+    structure_dict: dict,
+    *,
+    original_dbx_approach: bool = True,
+) -> dict[str, dict]:
     """Build per-pair Du/Teter parameter dicts for all X-O interactions."""
     pair_params: dict[str, dict] = {}
     if "B" in species:
-        pair_params["B-O"] = get_all_BO_params(structure_dict)
+        pair_params["B-O"] = get_all_BO_params(structure_dict, original_dbx_approach=original_dbx_approach)
     for elem in species:
         pair_name = "O-O" if elem == "O" else f"{elem}-O"
         if pair_name not in pair_params:
@@ -735,6 +740,7 @@ def generate_du_teter_potential(
     *,
     melt: bool = True,
     use_three_body: bool = False,
+    original_dbx_approach: bool = True,
 ) -> pd.DataFrame:
     """Generate a LAMMPS potential file for the Du/Teter potential.
 
@@ -750,6 +756,11 @@ def generate_du_teter_potential(
         use_three_body: If True, write a Stillinger-Weber ``.sw`` file and add
             the ``sw`` pair style to the LAMMPS config for O-P-O / P-O-P
             three-body interactions. Requires P to be present in the structure.
+        original_dbx_approach: If True (default), use the original Dell-Bray-Xiao
+            model with R = cNa2O / cB2O3. If False, use a custom, generalized approach
+            (unpublished) with:
+            R = (sum of all alkaline and earth-alkaline oxides - Al2O3) / cB2O3
+            is used.
 
     Returns:
         A DataFrame containing the potential configuration.
@@ -762,7 +773,7 @@ def generate_du_teter_potential(
 
     _validate_du_teter_inputs(species, use_three_body=use_three_body)
 
-    pair_params = _build_all_pair_params(species, structure_dict)
+    pair_params = _build_all_pair_params(species, structure_dict, original_dbx_approach=original_dbx_approach)
 
     # ------------------------------------------------------------------
     # Write table files
