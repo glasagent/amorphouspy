@@ -601,16 +601,24 @@ def fit_BO_params(K: float, R: float, N4: float | None = None) -> dict:
     }
 
 
-def get_all_BO_params(structure_dict: dict) -> dict:
+def get_all_BO_params(structure_dict: dict, *, original_dbx_approach: bool = True) -> dict:
     """Compute all B-O interaction parameters for the given composition.
 
     Args:
         structure_dict: Dictionary containing the structure information,
+        original_dbx_approach: If True, use the original DBX approach with R = cNa2O / cB2O3.
+            If False, use the modified approach with R = (sum of all modifiers - Al2O3) / cB2O3.
 
     Returns:
         Dictionary with Du/Teter parameters for the B-O pair.
+
+    Note:
+        Original approach by:
+        Dell WJ, Bray PJ, Xiao SZ. 11B NMR studies and structural modeling of Na2O-B2O3-SiO2
+        glasses of high soda content.
+        J Non Cryst Solids. 1983;58(1):1-16.
+        https://doi.org/10.1016/0022-3093(83)90097-2
     """
-    # Handle composition-dependent B-O parameters
     mol_fraction = structure_dict.get("mol_fraction", {})
     cB2O3 = mol_fraction.get("B2O3", 0)
     cSiO2 = mol_fraction.get("SiO2", 0)
@@ -624,18 +632,12 @@ def get_all_BO_params(structure_dict: dict) -> dict:
     cBaO = mol_fraction.get("BaO", 0)
     cAl2O3 = mol_fraction.get("Al2O3", 0)
 
-    # -------------------------------------------------------------------------------------------
-    # Original approach by:
-    # Dell WJ, Bray PJ, Xiao SZ. 11B NMR studies and structural modeling of Na2O-B2O3-SiO2
-    # glasses of high soda content.
-    # J Non Cryst Solids. 1983;58(1):1-16.
-    # Note: They only considered R = cNa2O / cB2O3.
-    #
-    # But there is no publication that unifies this approach to other modifiers.
-    # Extending to all alkali makes sense. Probably also to earth-alkali?
-    modifier_sum = cLi2O + cNa2O + cK2O + cBeO + cMgO + cCaO + cSrO + cBaO - cAl2O3
+    if original_dbx_approach:
+        R = max(cNa2O / cB2O3, 0)
+    else:
+        modifier_sum = cLi2O + cNa2O + cK2O + cBeO + cMgO + cCaO + cSrO + cBaO - cAl2O3
+        R = max(modifier_sum / cB2O3, 0)
     K = cSiO2 / cB2O3
-    R = max(modifier_sum / cB2O3, 0)
 
     bo = fit_BO_params(K, R)
     return {
@@ -702,11 +704,16 @@ def _build_pair_params(elem: str) -> dict:
     }
 
 
-def _build_all_pair_params(species: list[str], structure_dict: dict) -> dict[str, dict]:
+def _build_all_pair_params(
+    species: list[str],
+    structure_dict: dict,
+    *,
+    original_dbx_approach: bool = True,
+) -> dict[str, dict]:
     """Build per-pair Du/Teter parameter dicts for all X-O interactions."""
     pair_params: dict[str, dict] = {}
     if "B" in species:
-        pair_params["B-O"] = get_all_BO_params(structure_dict)
+        pair_params["B-O"] = get_all_BO_params(structure_dict, original_dbx_approach=original_dbx_approach)
     for elem in species:
         pair_name = "O-O" if elem == "O" else f"{elem}-O"
         if pair_name not in pair_params:
@@ -733,6 +740,7 @@ def generate_du_teter_potential(
     *,
     melt: bool = True,
     use_three_body: bool = False,
+    original_dbx_approach: bool = True,
 ) -> pd.DataFrame:
     """Generate a LAMMPS potential file for the Du/Teter potential.
 
@@ -748,6 +756,11 @@ def generate_du_teter_potential(
         use_three_body: If True, write a Stillinger-Weber ``.sw`` file and add
             the ``sw`` pair style to the LAMMPS config for O-P-O / P-O-P
             three-body interactions. Requires P to be present in the structure.
+        original_dbx_approach: If True (default), use the original Dell-Bray-Xiao
+            model with R = cNa2O / cB2O3. If False, use a custom, generalized approach
+            (unpublished) with:
+            R = (sum of all alkaline and earth-alkaline oxides - Al2O3) / cB2O3
+            is used.
 
     Returns:
         A DataFrame containing the potential configuration.
@@ -760,7 +773,7 @@ def generate_du_teter_potential(
 
     _validate_du_teter_inputs(species, use_three_body=use_three_body)
 
-    pair_params = _build_all_pair_params(species, structure_dict)
+    pair_params = _build_all_pair_params(species, structure_dict, original_dbx_approach=original_dbx_approach)
 
     # ------------------------------------------------------------------
     # Write table files
