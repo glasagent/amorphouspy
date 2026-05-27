@@ -980,26 +980,76 @@ def test_fit_BO_params_with_explicit_N4():
 # get_all_BO_params
 # ---------------------------------------------------------------------------
 
+_NABS_STRUCTURE = {
+    "atoms": [{"element": "B"}, {"element": "O"}, {"element": "O"}, {"element": "Na"}, {"element": "Si"}],
+    "mol_fraction": {"B2O3": 0.2, "SiO2": 0.6, "Na2O": 0.2},
+}
+
 
 def test_get_all_BO_params_returns_dict():
-    """get_all_BO_params returns a dict with expected keys."""
-    structure_dict = {
-        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "O"}, {"element": "Na"}, {"element": "Si"}],
-        "mol_fraction": {"B2O3": 0.2, "SiO2": 0.6, "Na2O": 0.2},
-    }
-    result = get_all_BO_params(structure_dict)
-    assert "A" in result
-    assert "rc" in result
+    """get_all_BO_params returns a dict with all expected keys."""
+    result = get_all_BO_params(_NABS_STRUCTURE)
+    expected_keys = {"A", "rho", "C", "B", "n", "D", "rc"}
+    assert expected_keys == set(result.keys())
+
+
+def test_get_all_BO_params_rc_positive():
+    """get_all_BO_params returns a positive crossover distance."""
+    result = get_all_BO_params(_NABS_STRUCTURE)
+    assert result["rc"] > 0
 
 
 def test_get_all_BO_params_default_mol_fractions():
-    """get_all_BO_params works with missing mol_fraction (all zeros)."""
+    """get_all_BO_params works when only B2O3 is given (all other fractions default to 0)."""
     structure_dict = {
         "atoms": [{"element": "B"}, {"element": "O"}],
         "mol_fraction": {"B2O3": 1.0},
     }
     result = get_all_BO_params(structure_dict)
     assert result["rc"] > 0
+
+
+def test_get_all_BO_params_original_approach_uses_only_Na2O():
+    """original_dbx_approach=True uses R = cNa2O / cB2O3 (ignores other modifiers)."""
+    # Same composition but different modifier: Ca instead of Na
+    struct_na = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}],
+        "mol_fraction": {"B2O3": 0.3, "Na2O": 0.2, "CaO": 0.0},
+    }
+    struct_ca = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Ca"}],
+        "mol_fraction": {"B2O3": 0.3, "Na2O": 0.0, "CaO": 0.2},
+    }
+    result_na = get_all_BO_params(struct_na, original_dbx_approach=True)
+    result_ca = get_all_BO_params(struct_ca, original_dbx_approach=True)
+    # Ca contributes nothing to R in the original approach (only Na2O counted)
+    # → result_ca should have R=0, result_na has R=0.2/0.3 > 0, giving different A
+    assert result_na["A"] != result_ca["A"]
+
+
+def test_get_all_BO_params_modified_approach_includes_all_modifiers():
+    """original_dbx_approach=False sums all modifiers (Li2O, Na2O, K2O, MgO, CaO, SrO, BaO, BeO minus Al2O3)."""
+    struct_na = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}],
+        "mol_fraction": {"B2O3": 0.3, "Na2O": 0.2, "CaO": 0.0},
+    }
+    struct_ca = {
+        "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Ca"}],
+        "mol_fraction": {"B2O3": 0.3, "Na2O": 0.0, "CaO": 0.2},
+    }
+    result_na = get_all_BO_params(struct_na, original_dbx_approach=False)
+    result_ca = get_all_BO_params(struct_ca, original_dbx_approach=False)
+    # Both have the same total modifier / B2O3 ratio → identical parameters
+    assert result_na["A"] == pytest.approx(result_ca["A"], rel=1e-6)
+    assert result_na["rc"] == pytest.approx(result_ca["rc"], rel=1e-4)
+
+
+def test_get_all_BO_params_original_is_default():
+    """original_dbx_approach defaults to True."""
+    result_default = get_all_BO_params(_NABS_STRUCTURE)
+    result_explicit = get_all_BO_params(_NABS_STRUCTURE, original_dbx_approach=True)
+    assert result_default["A"] == pytest.approx(result_explicit["A"])
+    assert result_default["rc"] == pytest.approx(result_explicit["rc"])
 
 
 # ---------------------------------------------------------------------------
