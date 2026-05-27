@@ -434,6 +434,7 @@ def N4_dbx(R: float, K: float = 1) -> float:
     Dell WJ, Bray PJ, Xiao SZ,
     11B NMR studies and structural modeling of Na2O-B2O3-SiO2 glasses of high soda content.
     J Non Cryst Solids. 1983, 58(1), 1-16.
+    https://doi.org/10.1016/0022-3093(83)90097-2
 
     Args:
         R: Ratio of alkali oxide to B2O3 molar fractions.
