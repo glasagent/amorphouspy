@@ -448,14 +448,14 @@ def N4_dbx(R: float, K: float = 1) -> float:
                       .
                 N4    .
                 /\    .
-      N4=Rmax___|     ._________
+     N4=Rmax ...|......_________
                 |    /         .\__
-      N4=0.5 ___|   /          .     \__  0<K<8
+      N4=0.5 ...|.../          .     \__  0<K<8
                 |  /\ K=0      .         \__
                 | /  \         .             \__
                 |/    \        .                 \__
-                ------------------------------------------> R = modifier/B2O3
-                               |                    |
+                ---------------.--------------------.-----> R = modifier/B2O3
+                               .                    .
                               R_D1                 R_D3
     Initial slope is 1, then a plateau at R_MAX, followed by a decrease to 0 at (and beyond) R_D3.
     """
