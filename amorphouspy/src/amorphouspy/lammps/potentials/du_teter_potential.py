@@ -444,20 +444,19 @@ def N4_dbx(R: float, K: float = 1) -> float:
 
     Graphical representation of the function:
 
-                    R_MAX
-                      .
-                N4    .
-                /\    .
-     N4=Rmax ...|......_________
-                |    /         .\__
-      N4=0.5 ...|.../          .     \__  0<K<8
-                |  /\ K=0      .         \__
-                | /  \         .             \__
-                |/    \        .                 \__
-                ---------------.--------------------.-----> R = modifier/B2O3
-                               .                    .
-                              R_D1                 R_D3
-    Initial slope is 1, then a plateau at R_MAX, followed by a decrease to 0 at (and beyond) R_D3.
+                    N4
+                    /\
+        N4=R_MAX ...|......_________
+                    |    /.        .\__
+                    |   / .        .    \__  0<K<8
+                    |  /  .        .        \__
+                    | /   .        .            \__
+                    |/    .        .                \__
+                    ------.--------.-------------------.-----> R = modifier/B2O3
+                          .        .                   .
+                       R_MAX      R_D1                R_D3
+
+    Initial slope is 1. Once K>0 a plateau will start R_MAX, followed by a decrease to 0 at (and beyond) R_D3.
     """
     K_MODEL_LIMIT = 8
 
@@ -482,19 +481,13 @@ def N4_dbx(R: float, K: float = 1) -> float:
     elif R < R_D1:
         N4 = R_MAX
     elif R < R_D3:
-        if K == 0:
-            N4 = 1 - R
-        else:
-            m1 = ((2 - K / 4) / (K + K / 4)) / (1 + (2 - K / 4) / (K + K / 4)) * (R - R_D1)
-            m2 = R - R_D1 - m1
-            N4 = (0.5 - K / 16 - 1 / 3 * m1) + (K / 8 - 2 / 15 * m2)
+        N4 = R_MAX - (R - R_D1) * R_MAX / (R_D3 - R_D1)
     elif R >= R_D3:
         N4 = 0
-
     else:
         msg = f"N4 could not be calculated: R={R}, K={K}, R_MAX={R_MAX}"
         raise (ValueError(msg))
-    return min(N4, 1)
+    return N4
 
 
 def get_A_for_BO(K: float, R: float, N4: float) -> float:
