@@ -810,39 +810,100 @@ def test_dDu_long_range_branch():
 # ---------------------------------------------------------------------------
 
 
-def test_N4_dbx_low_R():
-    """N4 = R when R < R_CUT (0.5) for K=1."""
+def test_N4_dbx_negative_R_raises():
+    """Raises ValueError when R is negative."""
+    with pytest.raises(ValueError, match="R must be non-negative"):
+        N4_dbx(-0.1, K=1)
+
+
+def test_N4_dbx_negative_K_raises():
+    """Raises ValueError when K is negative."""
+    with pytest.raises(ValueError, match="K must be non-negative"):
+        N4_dbx(0.5, K=-1)
+
+
+def test_N4_dbx_K_above_model_limit_raises():
+    """Raises ValueError when K exceeds the model limit of 8."""
+    with pytest.raises(ValueError, match="only valid for K"):
+        N4_dbx(1.0, K=9)
+
+
+def test_N4_dbx_linear_ramp_below_R_CUT():
+    """N4 = R when R < 0.5 (R_CUT), regardless of K."""
     assert N4_dbx(0.3, K=1) == pytest.approx(0.3)
+    assert N4_dbx(0.0, K=2) == pytest.approx(0.0)
 
 
-def test_N4_dbx_R_between_RMAX_and_RD1():
-    """N4 = R_MAX when R_MAX <= R < R_D1."""
-    result = N4_dbx(0.6, K=1)
-    assert result == pytest.approx(min(0.5625, 1.0))
+def test_N4_dbx_linear_ramp_below_R_MAX():
+    """N4 = R when R < R_MAX (K/16 + 0.5) — initial slope-1 region."""
+    # K=4: R_MAX = 4/16 + 0.5 = 0.75, so R=0.6 is in the ramp region
+    assert N4_dbx(0.6, K=4) == pytest.approx(0.6)
 
 
-def test_N4_dbx_R_between_RD1_and_RD3_K_nonzero():
-    """N4 uses the m1/m2 formula when R_D1 <= R < R_D3 and K != 0."""
-    result = N4_dbx(1.5, K=1)
-    assert 0 <= result <= 1
+def test_N4_dbx_plateau_between_R_MAX_and_R_D1():
+    """N4 = R_MAX when R_MAX <= R < R_D1 (plateau region)."""
+    # K=1: R_MAX = 0.5625, R_D1 = 0.75 — R=0.65 is on the plateau
+    R_MAX = 1 / 16 + 0.5
+    assert N4_dbx(0.65, K=1) == pytest.approx(R_MAX)
 
 
-def test_N4_dbx_R_between_RD1_and_RD3_K_zero():
-    """N4 = 1 - R (clamped to [0,1]) when K=0 and R_D1 <= R < R_D3."""
-    result = N4_dbx(0.7, K=0)
-    assert result == pytest.approx(min(max(1 - 0.7, 0), 1))
+def test_N4_dbx_plateau_K_equals_zero():
+    """With K=0 all breakpoints coincide at 0.5; below 0.5 N4 = R."""
+    # K=0: R_MAX = R_D1 = 0.5, R_D3 = 2 — plateau has zero width
+    assert N4_dbx(0.3, K=0) == pytest.approx(0.3)
 
 
-def test_N4_dbx_K_zero_large_R():
-    """N4 = 0 when K=0 and R >= R_D3."""
-    result = N4_dbx(2.5, K=0)
-    assert result == 0
+def test_N4_dbx_linear_decrease_between_R_D1_and_R_D3():
+    """N4 decreases linearly from R_MAX to 0 between R_D1 and R_D3."""
+    K = 1
+    R_MAX = K / 16 + 0.5  # 0.5625
+    R_D1 = K / 4 + 0.5  # 0.75
+    R_D3 = 2 + K  # 3.0
+    R = 1.5
+    expected = R_MAX - (R - R_D1) * R_MAX / (R_D3 - R_D1)
+    assert N4_dbx(R, K=K) == pytest.approx(expected)
 
 
-def test_N4_dbx_raises_for_invalid():
-    """N4_dbx raises ValueError when R >= R_D3 and K != 0."""
-    with pytest.raises(ValueError, match="N4 could not be calculated"):
-        N4_dbx(3.5, K=1)
+def test_N4_dbx_linear_decrease_is_monotone():
+    """N4 is monotonically decreasing between R_D1 and R_D3."""
+    K = 2
+    R_D1 = K / 4 + 0.5
+    R_D3 = 2 + K
+    r_values = [R_D1 + i * (R_D3 - R_D1) / 10 for i in range(11)]
+    n4_values = [N4_dbx(r, K=K) for r in r_values]
+    assert all(n4_values[i] >= n4_values[i + 1] for i in range(len(n4_values) - 1))
+
+
+def test_N4_dbx_zero_at_R_D3():
+    """N4 = 0 exactly at R_D3."""
+    K = 1
+    R_D3 = 2 + K
+    assert N4_dbx(R_D3, K=K) == pytest.approx(0.0)
+
+
+def test_N4_dbx_zero_beyond_R_D3():
+    """N4 = 0 for R > R_D3 (K != 0)."""
+    assert N4_dbx(5.0, K=1) == pytest.approx(0.0)
+    assert N4_dbx(3.5, K=1) == pytest.approx(0.0)
+
+
+def test_N4_dbx_zero_beyond_R_D3_K_zero():
+    """N4 = 0 for R >= R_D3 when K=0 (R_D3 = 2)."""
+    assert N4_dbx(2.5, K=0) == pytest.approx(0.0)
+
+
+def test_N4_dbx_output_in_unit_interval():
+    """N4 is always in [0, 1] across the full valid parameter space."""
+    for K in [0, 0.5, 1, 2, 4, 8]:
+        for R in [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0]:
+            result = N4_dbx(R, K=K)
+            assert 0.0 <= result <= 1.0, f"N4={result} out of [0,1] for R={R}, K={K}"
+
+
+def test_N4_dbx_K_at_model_limit():
+    """K=8 is accepted (boundary of valid range)."""
+    result = N4_dbx(1.0, K=8)
+    assert 0.0 <= result <= 1.0
 
 
 # ---------------------------------------------------------------------------

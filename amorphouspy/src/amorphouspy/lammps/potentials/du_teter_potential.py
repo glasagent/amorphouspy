@@ -428,12 +428,13 @@ def dDu(r: float, A: float, rho: float, C: float, B: float, n: float, D: float, 
 
 
 def N4_dbx(R: float, K: float = 1) -> float:
-    """Calculate the N4 value for the B-O interaction in the Du/Teter potential based on the composition.
+    r"""Calculate the N4 value for the B-O interaction in the Du/Teter potential based on the composition.
 
     See:
     Dell WJ, Bray PJ, Xiao SZ,
     11B NMR studies and structural modeling of Na2O-B2O3-SiO2 glasses of high soda content.
     J Non Cryst Solids. 1983, 58(1), 1-16.
+    https://doi.org/10.1016/0022-3093(83)90097-2
 
     Args:
         R: Ratio of alkali oxide to B2O3 molar fractions.
@@ -441,7 +442,36 @@ def N4_dbx(R: float, K: float = 1) -> float:
 
     Returns:
         N4 value for the B-O interaction in the Du/Teter potential.
+
+    Graphical representation of the function:
+
+                    N4
+                    /\
+        N4=R_MAX ...|......_________
+                    |    /.        .\__
+                    |   / .        .    \__  0<K<8
+                    |  /  .        .        \__
+                    | /   .        .            \__
+                    |/    .        .                \__
+                    ------.--------.-------------------.-----> R = modifier/B2O3
+                          .        .                   .
+                       R_MAX      R_D1                R_D3
+
+    Initial slope is 1. Once K>0 a plateau will start R_MAX, followed by a decrease to 0 at (and beyond) R_D3.
     """
+    K_MODEL_LIMIT = 8
+
+    if R < 0:
+        msg = f"R must be non-negative. Received R={R:.6f}"
+        raise ValueError(msg)
+    if K < 0:
+        msg = f"K must be non-negative. Received K={K:.6f}"
+        raise ValueError(msg)
+    if K > K_MODEL_LIMIT:
+        msg = f"DBX model to calculate N4 value only valid for K = mol% SiO2 / mol% B2O3 <= {K_MODEL_LIMIT}. "
+        msg += f"However, current composition leads to K={K:.6f}."
+        raise ValueError(msg)
+
     R_MAX = K / 16 + 0.5
     R_D1 = K / 4 + 0.5
     R_D3 = 2 + K
@@ -452,21 +482,13 @@ def N4_dbx(R: float, K: float = 1) -> float:
     elif R < R_D1:
         N4 = R_MAX
     elif R < R_D3:
-        if K == 0:
-            N4 = 1 - R
-            N4 = max(N4, 0)
-            N4 = min(N4, 1)
-        else:
-            m1 = ((2 - K / 4) / (K + K / 4)) / (1 + (2 - K / 4) / (K + K / 4)) * (R - R_D1)
-            m2 = R - R_D1 - m1
-            N4 = (0.5 - K / 16 - 1 / 3 * m1) + (K / 8 - 2 / 15 * m2)
-    elif K == 0:
+        N4 = R_MAX - (R - R_D1) * R_MAX / (R_D3 - R_D1)
+    elif R >= R_D3:
         N4 = 0
-
     else:
         msg = f"N4 could not be calculated: R={R}, K={K}, R_MAX={R_MAX}"
         raise (ValueError(msg))
-    return min(N4, 1)
+    return N4
 
 
 def get_A_for_BO(K: float, R: float, N4: float) -> float:
