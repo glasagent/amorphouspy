@@ -14,12 +14,25 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 
+def _json_dumps_nan_safe(content: object, *, indent: int | None = None) -> bytes:
+    """Serialize to JSON, replacing NaN/Infinity with null via string ops.
+
+    Uses allow_nan=True for fast C-level serialization, then patches the
+    non-standard tokens in the resulting string.  This is O(n) on the output
+    size and avoids recursing through Python objects.
+    """
+    raw = json.dumps(content, ensure_ascii=False, indent=indent, allow_nan=True)
+    # json.dumps with allow_nan emits: NaN, Infinity, -Infinity (unquoted)
+    raw = raw.replace("NaN", "null").replace("Infinity", "null")
+    return raw.encode("utf-8")
+
+
 class PrettyJSONResponse(JSONResponse):
     """JSONResponse subclass that renders indented JSON for readability."""
 
-    def render(self, content) -> bytes:
+    def render(self, content: object) -> bytes:
         """Serialize *content* as indented JSON."""
-        return json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8")
+        return _json_dumps_nan_safe(content, indent=2)
 
 
 from .config import API_TOKEN, DB_PATH, PROJECTS_FOLDER

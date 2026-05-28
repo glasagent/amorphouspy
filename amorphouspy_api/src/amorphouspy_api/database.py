@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from sqlalchemy import JSON, DateTime, Index, String, create_engine, func
+from sqlalchemy import JSON, DateTime, Index, String, create_engine, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from sqlalchemy.orm import defer as _defer
 from sqlalchemy.pool import NullPool
@@ -135,6 +135,22 @@ class JobStore:
         """Fetch a job by ID including the heavy simulation_history column."""
         with self.session() as s:
             return s.get(Job, job_id)
+
+    def get_raw_simulation_history(self, job_id: str) -> str | None:
+        """Fetch the simulation_history column as raw JSON text.
+
+        This bypasses SQLAlchemy's JSON deserialization to avoid the
+        costly json.loads() → json.dumps() round-trip for large payloads.
+        Returns None if the job doesn't exist or has no trajectory.
+        """
+        with self.session() as s:
+            row = s.execute(
+                text("SELECT simulation_history FROM jobs WHERE job_id = :jid"),
+                {"jid": job_id},
+            ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return row[0]
 
     def update_job(self, job_id: str, **fields: object) -> None:
         """Update arbitrary columns on a job record."""
