@@ -29,7 +29,7 @@ from uuid import uuid4
 from amorphouspy.fabrication import extract_composition
 from ase.io import write as ase_write
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, Response
 
 from amorphouspy_api.auth import verify_token
 from amorphouspy_api.database import Job, get_job_store
@@ -459,21 +459,30 @@ def get_structure(
 
 
 @router.get("/{job_id}/trajectory")
-def get_trajectory(job_id: str) -> JSONResponse:
+def get_trajectory(job_id: str) -> Response:
     """Return the full simulation history (trajectory) for a job.
 
     This is a large payload (can be hundreds of MB) containing per-stage
     positions, forces, velocities, and thermodynamic data.
     """
     store = get_job_store()
-    job = store.get_job_with_history(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
 
-    if not job.simulation_history:
+    # Fetch the raw JSON text directly from SQLite, bypassing the expensive
+    # json.loads() → Python objects → json.dumps() round-trip.
+    raw_history = store.get_raw_simulation_history(job_id)
+
+    if raw_history is None:
+        # Distinguish "job not found" from "no trajectory"
+        job = store.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
         raise HTTPException(status_code=404, detail="No trajectory data available")
 
-    return JSONResponse(content={"job_id": job.job_id, "simulation_history": job.simulation_history})
+    # Fix NaN/Infinity tokens in the raw JSON string
+    raw_history = raw_history.replace("NaN", "null").replace("Infinity", "null")
+
+    raw = '{"job_id": "' + job_id + '", "simulation_history": ' + raw_history + "}"
+    return Response(content=raw.encode("utf-8"), media_type="application/json")
 
 
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
