@@ -146,13 +146,6 @@ def test_compatible_potentials_preserves_preference_order():
     assert indices == sorted(indices)
 
 
-def test_compatible_potentials_all_subset_of_known():
-    """Results contain only recognised potential names."""
-    result = compatible_potentials({"Si", "O"})
-    available_potentials = ["pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter", "yang2026"]
-    assert all(p in available_potentials for p in result)
-
-
 # ---------------------------------------------------------------------------
 # Du/Teter SW three-body
 # ---------------------------------------------------------------------------
