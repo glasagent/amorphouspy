@@ -50,6 +50,7 @@ from amorphouspy_api.models import (
     _job_urls,
     validate_atoms,
 )
+from amorphouspy_api.pipeline import ANALYSES
 from amorphouspy_api.routers.jobs_helpers import (
     _analyses_list,
     _initial_progress,
@@ -61,7 +62,6 @@ from amorphouspy_api.routers.jobs_helpers import (
     build_visualization_context,
     refresh_job_from_cache,
 )
-from amorphouspy_api.workflows import ANALYSES
 
 logger = logging.getLogger(__name__)
 

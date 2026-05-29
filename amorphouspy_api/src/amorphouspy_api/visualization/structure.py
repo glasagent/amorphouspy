@@ -1,4 +1,4 @@
-"""Structural analysis (RDF, coordination, bond angles) on quenched glass."""
+"""Structural analysis visualization helpers (Plotly JSON, 3D viewer XYZ)."""
 
 from __future__ import annotations
 
@@ -9,30 +9,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from ase import Atoms
 
-    from amorphouspy_api.models import JobSubmission, StructureAnalysis
-
 logger = logging.getLogger(__name__)
-
-
-def run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
-    """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
-    from amorphouspy.pipelines.structural import run_structural_analysis as _run_structural
-
-    mq = result["melt_quench"]
-
-    mean_data, _sem_data, n_frames = _run_structural(
-        final_structure=mq["final_structure"],
-        simulation_history=mq.get("simulation_history"),
-    )
-
-    result_dict = mean_data.model_dump()
-    result_dict["n_averaging_frames"] = n_frames
-    return result_dict
-
-
-# ---------------------------------------------------------------------------
-# Visualization helpers
-# ---------------------------------------------------------------------------
 
 
 def _atoms_to_xyz_string(atoms: Atoms | dict | str | None) -> str:

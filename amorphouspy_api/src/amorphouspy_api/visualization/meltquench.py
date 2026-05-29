@@ -122,12 +122,12 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     dt_ps = timestep_fs * fs_to_ps
 
     # Reconstruct protocol stages (PMMCS-like):
-    # Stage 1: Heat T_low → T_high
+    # Stage 1: Heat T_low -> T_high
     delta_t = t_high - t_low
     heating_steps = int((delta_t / (timestep_fs * heating_rate)) * seconds_to_fs)
     # Stage 2: Equilibration at T_high (10k steps)
     equil_high_steps = 10_000
-    # Stage 3: Cool T_high → T_low
+    # Stage 3: Cool T_high -> T_low
     cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
     # Stage 4: Pressure release at T_low (10k steps)
     pressure_release_steps = 10_000

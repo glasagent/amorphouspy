@@ -1231,7 +1231,7 @@ def test_job_hash_differs_with_structure_seed():
 def test_generate_structure_passes_structure_seed():
     """generate_structure forwards structure_seed as random_seed to get_structure_dict."""
     from amorphouspy_api.models import JobSubmission, MeltQuenchParams
-    from amorphouspy_api.workflows.meltquench import generate_structure
+    from amorphouspy_api.pipeline import _generate_structure as generate_structure
 
     sub = JobSubmission(
         composition={"SiO2": 100},

@@ -30,12 +30,12 @@ from amorphouspy_api.models import (
     GlassSummary,
     _job_urls,
 )
+from amorphouspy_api.pipeline import ANALYSES
 from amorphouspy_api.routers.jobs_helpers import (
     _analyses_list,
     find_close_matches,
     oxide_to_elemental_vector,
 )
-from amorphouspy_api.workflows import ANALYSES
 
 logger = logging.getLogger(__name__)
 

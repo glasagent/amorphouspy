@@ -1,45 +1,12 @@
-"""Viscosity workflow for glass simulation.
-
-Runs Green-Kubo viscosity calculations at multiple temperatures starting
-from an already-quenched glass structure.  The structure is sequentially
-cooled from the highest to the lowest requested temperature, and at each
-step a production MD run is performed followed by post-processing.
-"""
+"""Viscosity visualization helpers (VFT fitting, Arrhenius, convergence plots)."""
 
 from __future__ import annotations
 
-import logging
 import math
-from typing import TYPE_CHECKING, Any
-
-from amorphouspy.pipelines.viscosity import run_viscosity_workflow
-
-if TYPE_CHECKING:
-    from amorphouspy_api.models import JobSubmission, ViscosityAnalysis
-
-logger = logging.getLogger(__name__)
-
-
-def run_viscosity(submission: JobSubmission, config: ViscosityAnalysis, result: dict) -> dict:
-    """Multi-temperature viscosity analysis on the quenched glass."""
-    from amorphouspy_api.executor import get_lammps_server_kwargs
-
-    return run_viscosity_workflow(
-        structure=result["melt_quench"]["final_structure"],
-        potential=result["structure_generation"]["potential"],
-        temperatures=config.temperatures,
-        heating_rate=int(submission.simulation.quench_rate * 100),
-        cooling_rate=int(submission.simulation.quench_rate),
-        timestep=config.timestep,
-        n_timesteps=config.n_timesteps,
-        n_print=config.n_print,
-        max_lag=config.max_lag,
-        server_kwargs=get_lammps_server_kwargs(),
-    )
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
-# VFT fit: log10(η) = A + B / (T - T0)
+# VFT fit: log10(n) = A + B / (T - T0)
 # ---------------------------------------------------------------------------
 
 
@@ -98,7 +65,7 @@ def _vft_curve(
 
 
 def _t_at_log_viscosity(vft: dict[str, float], log_target: float) -> float | None:
-    """Solve VFT for the temperature (K) at which log10(η) = *log_target*.
+    """Solve VFT for the temperature (K) at which log10(n) = *log_target*.
 
     Returns None if the result is below T0 or non-physical.
     """
@@ -111,12 +78,12 @@ def _t_at_log_viscosity(vft: dict[str, float], log_target: float) -> float | Non
     return t
 
 
-# Reference viscosity points (log10 in dPa·s)
+# Reference viscosity points (log10 in dPa*s)
 _REFERENCE_POINTS = {"T4": 4.0, "T7.6": 7.6}
 
 
 # ---------------------------------------------------------------------------
-# Visualization helpers
+# Plotly figure builders
 # ---------------------------------------------------------------------------
 
 
@@ -125,7 +92,7 @@ def _build_viscosity_vs_temperature_plot(
     viscosities: list[float],
     vft: dict[str, float] | None = None,
 ) -> dict:
-    """Build Plotly figure dict for viscosity vs temperature in dPa·s and °C."""
+    """Build Plotly figure dict for viscosity vs temperature in dPa*s and degC."""
     temps_c = [t - 273.15 for t in temperatures]
     visc_dpas = [v * 10 for v in viscosities]
 
@@ -188,7 +155,7 @@ def _build_viscosity_vs_temperature_plot(
                 {
                     "x": t_ref_c,
                     "y": log_v,
-                    "text": f"{label} = {t_ref_c:.0f} °C",
+                    "text": f"{label} = {t_ref_c:.0f} \u00b0C",
                     "showarrow": True,
                     "arrowhead": 2,
                     "ax": 40,
@@ -199,9 +166,9 @@ def _build_viscosity_vs_temperature_plot(
 
     layout: dict = {
         "title": {"text": "Viscosity vs Temperature", "font": {"size": 16}},
-        "xaxis": {"title": {"text": "Temperature (°C)", "font": {"size": 14}}},
+        "xaxis": {"title": {"text": "Temperature (\u00b0C)", "font": {"size": 14}}},
         "yaxis": {
-            "title": {"text": "Viscosity (dPa·s)", "font": {"size": 14}},
+            "title": {"text": "Viscosity (dPa\u00b7s)", "font": {"size": 14}},
             "type": "log",
             "exponentformat": "e",
             "range": [log_min - 0.2, y_upper],
@@ -285,7 +252,7 @@ def _build_arrhenius_plot(
                 {
                     "x": inv_t_ref,
                     "y": log_v,
-                    "text": f"{label} = {t_ref_c:.0f} °C",
+                    "text": f"{label} = {t_ref_c:.0f} \u00b0C",
                     "showarrow": True,
                     "arrowhead": 2,
                     "ax": -40,
@@ -298,7 +265,7 @@ def _build_arrhenius_plot(
         "title": {"text": "Arrhenius Plot", "font": {"size": 16}},
         "xaxis": {"title": {"text": "1000 / T  (1/K)", "font": {"size": 14}}},
         "yaxis": {
-            "title": {"text": "Viscosity (dPa·s)", "font": {"size": 14}},
+            "title": {"text": "Viscosity (dPa\u00b7s)", "font": {"size": 14}},
             "type": "log",
             "exponentformat": "e",
             "range": [log_min - 0.2, y_upper],
@@ -352,7 +319,7 @@ def _build_running_viscosity_plot(
     }
 
 
-def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, str]:
+def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, Any]:
     """Build JSON-encoded Plotly plots from viscosity result data.
 
     Returns:
