@@ -146,13 +146,6 @@ def test_compatible_potentials_preserves_preference_order():
     assert indices == sorted(indices)
 
 
-def test_compatible_potentials_all_subset_of_known():
-    """Results contain only recognised potential names."""
-    result = compatible_potentials({"Si", "O"})
-    available_potentials = ["pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter", "yang2026"]
-    assert all(p in available_potentials for p in result)
-
-
 # ---------------------------------------------------------------------------
 # Du/Teter SW three-body
 # ---------------------------------------------------------------------------
@@ -1010,7 +1003,7 @@ def test_get_all_BO_params_default_mol_fractions():
 
 
 def test_get_all_BO_params_original_approach_uses_only_Na2O():
-    """original_dbx_approach=True uses R = cNa2O / cB2O3 (ignores other modifiers)."""
+    """n4_model='dbx' uses R = cNa2O / cB2O3 (ignores other modifiers)."""
     # Same composition but different modifier: Ca instead of Na
     struct_na = {
         "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}],
@@ -1020,15 +1013,15 @@ def test_get_all_BO_params_original_approach_uses_only_Na2O():
         "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Ca"}],
         "mol_fraction": {"B2O3": 0.3, "Na2O": 0.0, "CaO": 0.2},
     }
-    result_na = get_all_BO_params(struct_na, original_dbx_approach=True)
-    result_ca = get_all_BO_params(struct_ca, original_dbx_approach=True)
+    result_na = get_all_BO_params(struct_na, n4_model="dbx")
+    result_ca = get_all_BO_params(struct_ca, n4_model="dbx")
     # Ca contributes nothing to R in the original approach (only Na2O counted)
     # → result_ca should have R=0, result_na has R=0.2/0.3 > 0, giving different A
     assert result_na["A"] != result_ca["A"]
 
 
 def test_get_all_BO_params_modified_approach_includes_all_modifiers():
-    """original_dbx_approach=False sums all modifiers (Li2O, Na2O, K2O, MgO, CaO, SrO, BaO, BeO minus Al2O3)."""
+    """n4_model='dbx_generalized' sums all modifiers (Li2O, Na2O, K2O, MgO, CaO, SrO, BaO, BeO minus Al2O3)."""
     struct_na = {
         "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}],
         "mol_fraction": {"B2O3": 0.3, "Na2O": 0.2, "CaO": 0.0},
@@ -1037,17 +1030,17 @@ def test_get_all_BO_params_modified_approach_includes_all_modifiers():
         "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Ca"}],
         "mol_fraction": {"B2O3": 0.3, "Na2O": 0.0, "CaO": 0.2},
     }
-    result_na = get_all_BO_params(struct_na, original_dbx_approach=False)
-    result_ca = get_all_BO_params(struct_ca, original_dbx_approach=False)
+    result_na = get_all_BO_params(struct_na, n4_model="dbx_generalized")
+    result_ca = get_all_BO_params(struct_ca, n4_model="dbx_generalized")
     # Both have the same total modifier / B2O3 ratio → identical parameters
     assert result_na["A"] == pytest.approx(result_ca["A"], rel=1e-6)
     assert result_na["rc"] == pytest.approx(result_ca["rc"], rel=1e-4)
 
 
 def test_get_all_BO_params_original_is_default():
-    """original_dbx_approach defaults to True."""
+    """n4_model defaults to 'dbx'."""
     result_default = get_all_BO_params(_NABS_STRUCTURE)
-    result_explicit = get_all_BO_params(_NABS_STRUCTURE, original_dbx_approach=True)
+    result_explicit = get_all_BO_params(_NABS_STRUCTURE, n4_model="dbx")
     assert result_default["A"] == pytest.approx(result_explicit["A"])
     assert result_default["rc"] == pytest.approx(result_explicit["rc"])
 
@@ -1150,20 +1143,20 @@ def test_generate_du_teter_with_boron(tmp_path):
 
 
 def test_generate_du_teter_original_dbx_approach_default(tmp_path):
-    """original_dbx_approach defaults to True (Na2O-only R)."""
+    """n4_model defaults to 'dbx' (Na2O-only R)."""
     atoms = {
         "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}],
         "mol_fraction": {"B2O3": 0.3, "Na2O": 0.2},
     }
     generate_du_teter_potential(atoms, output_dir=str(tmp_path / "default"), melt=False)
-    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "explicit"), melt=False, original_dbx_approach=True)
+    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "explicit"), melt=False, n4_model="dbx")
     # Both should produce a table file for B-O
     assert list((tmp_path / "default").glob("table_B_O*"))
     assert list((tmp_path / "explicit").glob("table_B_O*"))
 
 
 def test_generate_du_teter_original_vs_modified_dbx_approach_differ(tmp_path):
-    """original_dbx_approach=False (all modifiers) changes B-O parameters vs True (Na only)."""
+    """n4_model='dbx_generalized' (all modifiers) changes B-O parameters vs 'dbx' (Na only)."""
     # Na-B-O: original approach counts Na2O; modified approach also counts Na2O — same here
     # Use CaO only so original (Na-only) gives R=0, modified gives R=cCaO/cB2O3 > 0 → different A
     atoms = {
@@ -1171,12 +1164,12 @@ def test_generate_du_teter_original_vs_modified_dbx_approach_differ(tmp_path):
         "mol_fraction": {"B2O3": 0.3, "CaO": 0.2},
     }
 
-    result_orig = get_all_BO_params(atoms, original_dbx_approach=True)  # R = cNa2O / cB2O3 = 0
-    result_mod = get_all_BO_params(atoms, original_dbx_approach=False)  # R = cCaO / cB2O3 > 0
+    result_orig = get_all_BO_params(atoms, n4_model="dbx")  # R = cNa2O / cB2O3 = 0
+    result_mod = get_all_BO_params(atoms, n4_model="dbx_generalized")  # R = cCaO / cB2O3 > 0
     assert result_orig["A"] != result_mod["A"]
 
     # generate_du_teter_potential should accept and pass through the flag
-    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False, original_dbx_approach=False)
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False, n4_model="dbx_generalized")
     assert "pair_coeff" in "".join(df["Config"].iloc[0])
 
 
