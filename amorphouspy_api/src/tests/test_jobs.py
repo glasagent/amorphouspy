@@ -310,6 +310,42 @@ def test_get_results_no_data() -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /jobs/{id}/settings
+# ---------------------------------------------------------------------------
+
+
+def test_get_settings_completed() -> None:
+    _insert_completed_job("j-settings-1")
+
+    resp = client.get("/jobs/j-settings-1/settings")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["job_id"] == "j-settings-1"
+    assert "composition" in data["settings"]
+    assert "potential" in data["settings"]
+
+
+def test_get_settings_not_found() -> None:
+    resp = client.get("/jobs/nonexistent/settings")
+    assert resp.status_code == 404
+
+
+def test_get_settings_no_request_data() -> None:
+    store = get_job_store()
+    store.create_job(
+        Job(
+            job_id="j-no-settings",
+            request_hash="nosettings",
+            composition="SiO2 100",
+            potential="pmmcs",
+            status="completed",
+        )
+    )
+    resp = client.get("/jobs/j-no-settings/settings")
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # GET /jobs/{id}/results/{analysis}
 # ---------------------------------------------------------------------------
 

@@ -12,6 +12,7 @@ Endpoints:
   POST /jobs:search   - search jobs across all statuses
   GET  /jobs/{id}     - poll job status
   POST /jobs/{id}:cancel - cancel a running job
+  GET  /jobs/{id}/settings          - original submission settings
   GET  /jobs/{id}/results            - all analysis results
   GET  /jobs/{id}/results/{analysis} - single analysis result
   GET  /jobs/{id}/structure          - export quenched structure
@@ -40,6 +41,7 @@ from amorphouspy_api.models import (
     JobSearchMatch,
     JobSearchRequest,
     JobSearchResponse,
+    JobSettingsResponse,
     JobStatus,
     JobStatusResponse,
     JobSubmission,
@@ -377,6 +379,23 @@ def update_tags(job_id: str, body: TagsUpdate) -> TagsResponse:
         raise HTTPException(status_code=404, detail="Job not found")
     store.update_job(job_id, tags=sorted(set(body.tags)))
     return TagsResponse(job_id=job_id, tags=sorted(set(body.tags)))
+
+
+@router.get("/{job_id}/settings", response_model=JobSettingsResponse)
+def get_job_settings(job_id: str) -> JobSettingsResponse:
+    """Return the original submission settings for a job."""
+    store = get_job_store()
+    job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job.request_data:
+        raise HTTPException(status_code=404, detail="No settings stored for this job")
+
+    return JobSettingsResponse(
+        job_id=job.job_id,
+        settings=job.request_data,
+    )
 
 
 @router.get("/{job_id}/results", response_model=JobResultsResponse)
