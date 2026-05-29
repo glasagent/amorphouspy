@@ -1,7 +1,7 @@
 """CTE workflow wrappers for the amorphouspy API.
 
-Thin wrappers around ``amorphouspy.workflows.cte`` that adapt the core
-simulation functions to the API pipeline calling convention.
+Thin wrappers around the core CTE simulation functions that adapt them
+to the API pipeline calling convention.
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 def run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperatureScan, result: dict) -> dict:
     """CTE analysis via fluctuations or temperature scan."""
+    from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
+
     from amorphouspy_api.executor import get_lammps_server_kwargs
     from amorphouspy_api.models import CTEFluctuations, CTETemperatureScan
 
@@ -25,7 +27,7 @@ def run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperatureS
     resource_dict = get_lammps_server_kwargs()
 
     if isinstance(config, CTEFluctuations):
-        cte_result = run_cte_fluctuations(
+        cte_result = cte_from_fluctuations_simulation(
             structure=structure,
             potential=potential,
             temperature=config.temperature,
@@ -35,8 +37,8 @@ def run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperatureS
             production_steps=config.production_steps,
             min_production_runs=config.min_production_runs,
             max_production_runs=config.max_production_runs,
-            cte_uncertainty_criterion=config.cte_uncertainty_criterion,
-            lammps_resource_dict=resource_dict,
+            CTE_uncertainty_criterion=config.cte_uncertainty_criterion,
+            server_kwargs=resource_dict,
         )
         cte_result["metadata"] = {
             "temperature": config.temperature,
@@ -46,15 +48,15 @@ def run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperatureS
         return cte_result
 
     assert isinstance(config, CTETemperatureScan)
-    cte_result = run_cte_temperature_scan(
+    cte_result = temperature_scan_simulation(
         structure=structure,
         potential=potential,
-        temperatures=config.temperatures,
+        temperature=config.temperatures,
         pressure=config.pressure,
         timestep=config.timestep,
         equilibration_steps=config.equilibration_steps,
         production_steps=config.production_steps,
-        lammps_resource_dict=resource_dict,
+        server_kwargs=resource_dict,
     )
     cte_result["metadata"] = {
         "temperatures": config.temperatures,
@@ -62,73 +64,6 @@ def run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperatureS
         "timestep": config.timestep,
     }
     return cte_result
-
-
-def run_cte_fluctuations(
-    structure,
-    potential,
-    *,
-    temperature: float = 300.0,
-    pressure: float = 1e-4,
-    timestep: float = 1.0,
-    equilibration_steps: int = 100_000,
-    production_steps: int = 200_000,
-    min_production_runs: int = 2,
-    max_production_runs: int = 25,
-    cte_uncertainty_criterion: float = 1e-6,
-    lammps_resource_dict: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Run the enthalpy-volume fluctuations CTE workflow."""
-    from amorphouspy import cte_from_fluctuations_simulation
-
-    logger.info(
-        "Running CTE fluctuations at %.1f K (max %d runs, criterion %.1e)",
-        temperature,
-        max_production_runs,
-        cte_uncertainty_criterion,
-    )
-
-    return cte_from_fluctuations_simulation(
-        structure=structure,
-        potential=potential,
-        temperature=temperature,
-        pressure=pressure,
-        timestep=timestep,
-        equilibration_steps=equilibration_steps,
-        production_steps=production_steps,
-        min_production_runs=min_production_runs,
-        max_production_runs=max_production_runs,
-        CTE_uncertainty_criterion=cte_uncertainty_criterion,
-        server_kwargs=lammps_resource_dict or {},
-    )
-
-
-def run_cte_temperature_scan(
-    structure,
-    potential,
-    *,
-    temperatures: list[float],
-    pressure: float = 1e-4,
-    timestep: float = 1.0,
-    equilibration_steps: int = 100_000,
-    production_steps: int = 200_000,
-    lammps_resource_dict: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Run the temperature-scan CTE workflow."""
-    from amorphouspy import temperature_scan_simulation
-
-    logger.info("Running CTE temperature scan at %s K", temperatures)
-
-    return temperature_scan_simulation(
-        structure=structure,
-        potential=potential,
-        temperature=temperatures,
-        pressure=pressure,
-        timestep=timestep,
-        equilibration_steps=equilibration_steps,
-        production_steps=production_steps,
-        server_kwargs=lammps_resource_dict or {},
-    )
 
 
 # ---------------------------------------------------------------------------

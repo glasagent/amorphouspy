@@ -16,56 +16,18 @@ logger = logging.getLogger(__name__)
 
 def run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
-    from amorphouspy.properties.structural.all import analyze_structure
+    from amorphouspy.pipelines.structural import run_structural_analysis as _run_structural
 
     mq = result["melt_quench"]
-    frames = _extract_equilibration_frames(mq)
 
-    n_frames = len(frames)
-    if n_frames > 1:
-        logger.info("Frame-averaging structural analysis over %d frames", n_frames)
-        mean_data, _sem_data = analyze_structure(atoms=frames, frame_averaging=True)
-    else:
-        mean_data, _sem_data = analyze_structure(atoms=frames[0])
+    mean_data, _sem_data, n_frames = _run_structural(
+        final_structure=mq["final_structure"],
+        simulation_history=mq.get("simulation_history"),
+    )
 
     result_dict = mean_data.model_dump()
     result_dict["n_averaging_frames"] = n_frames
     return result_dict
-
-
-def _extract_equilibration_frames(mq: dict) -> list[Atoms]:
-    """Reconstruct Atoms snapshots from the final equilibration stage.
-
-    Falls back to a single-element list with ``final_structure`` when no
-    simulation history is available.
-    """
-    final_structure = mq["final_structure"]
-    history = mq.get("simulation_history")
-    if not history:
-        return [final_structure]
-
-    last_stage = next((s for s in reversed(history) if s is not None), None)
-    if last_stage is None or "positions" not in last_stage:
-        return [final_structure]
-
-    positions = last_stage["positions"]
-    cells = last_stage["cells"]
-    n_frames = len(positions)
-
-    if n_frames <= 1:
-        return [final_structure]
-
-    # Use final_structure as a template for chemical symbols, masses, etc.
-    frames: list[Atoms] = []
-    for i in range(n_frames):
-        frame = final_structure.copy()
-        frame.set_positions(positions[i])
-        frame.set_cell(cells[i])
-        frame.set_pbc(True)
-        frame.wrap()
-        frames.append(frame)
-
-    return frames
 
 
 # ---------------------------------------------------------------------------

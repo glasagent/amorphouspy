@@ -14,14 +14,8 @@ completes, via additional step functions registered in ``workflows.analyses``.
 import logging
 from typing import TYPE_CHECKING
 
-import numpy as np
-
-from amorphouspy import (
-    generate_potential,
-    get_ase_structure,
-    get_structure_dict,
-    melt_quench_simulation,
-)
+from amorphouspy.pipelines.meltquench import generate_structure as _generate_structure
+from amorphouspy.pipelines.meltquench import run_melt_quench as _run_melt_quench
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -37,29 +31,14 @@ def generate_structure(submission: "JobSubmission", config: "BaseModel", result:
     Returns a dict with ``atoms_dict``, ``structure`` (ASE Atoms as dict),
     and ``potential``.
     """
-    composition = submission.composition.root
-    n_atoms = submission.simulation.n_atoms
-    potential_type = submission.potential
-    density = submission.simulation.target_density
-
-    structure_seed = submission.simulation.structure_seed
-
-    atoms_dict = get_structure_dict(
-        composition=composition, target_atoms=n_atoms, density=density, random_seed=structure_seed
+    return _generate_structure(
+        composition=submission.composition.root,
+        n_atoms=submission.simulation.n_atoms,
+        potential_type=submission.potential,
+        density=submission.simulation.target_density,
+        structure_seed=submission.simulation.structure_seed,
+        electrostatics_config=submission.electrostatics.to_electrostatics_config(),
     )
-    structure = get_ase_structure(atoms_dict=atoms_dict)
-    potential = generate_potential(
-        atoms_dict=atoms_dict,
-        potential_type=potential_type,
-        melt=True,
-        electrostatics=submission.electrostatics.to_electrostatics_config(),
-    )
-
-    return {
-        "atoms_dict": atoms_dict,
-        "structure": structure,
-        "potential": potential,
-    }
 
 
 def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: dict) -> dict:
@@ -73,52 +52,18 @@ def run_melt_quench(submission: "JobSubmission", config: "BaseModel", result: di
     """
     from amorphouspy_api.executor import get_lammps_server_kwargs
 
-    structure = result["structure_generation"]["structure"]
-    potential = result["structure_generation"]["potential"]
-
-    from amorphouspy.fabrication.meltquench_protocols import DEFAULT_MELT_TEMPERATURES
-
-    heating_rate = int(submission.simulation.quench_rate * 100)
-    cooling_rate = int(submission.simulation.quench_rate)
-
-    temperature_high = submission.simulation.melt_temperature
-    temperature_low = 300.0
-    timestep = submission.simulation.timestep
-
-    # Resolve protocol default so the stored result always has the actual value
-    if temperature_high is None:
-        temperature_high = DEFAULT_MELT_TEMPERATURES.get(submission.potential, 5000.0)
-
-    mq = melt_quench_simulation(
-        structure=structure,
-        potential=potential,
-        n_print=100000,
-        heating_rate=heating_rate,
-        cooling_rate=cooling_rate,
-        timestep=timestep,
-        temperature_high=temperature_high,
-        temperature_low=temperature_low,
+    mq_result = _run_melt_quench(
+        structure=result["structure_generation"]["structure"],
+        potential=result["structure_generation"]["potential"],
+        potential_type=submission.potential,
+        heating_rate=int(submission.simulation.quench_rate * 100),
+        cooling_rate=int(submission.simulation.quench_rate),
+        timestep=submission.simulation.timestep,
+        temperature_high=submission.simulation.melt_temperature,
+        temperature_low=300.0,
         equilibration_steps=submission.simulation.equilibration_steps,
-        langevin=False,
+        n_averaging_frames=getattr(submission.simulation, "n_averaging_frames", 100),
         server_kwargs=get_lammps_server_kwargs(),
     )
-
-    last_stage = next((s for s in reversed(mq["result"]) if s is not None), {})
-
-    return {
-        "composition": submission.composition.root,
-        "final_structure": mq["structure"],
-        "mean_temperature": float(np.mean(last_stage["temperature"])),
-        "simulation_steps": len(last_stage["steps"]),
-        "temperature_trajectory": [float(t) for t in last_stage["temperature"]],
-        "steps_trajectory": [int(s) for s in last_stage["steps"]],
-        "simulation_history": mq["result"],
-        "timestep": timestep,
-        "cooling_rate": cooling_rate,
-        "heating_rate": heating_rate,
-        "temperature_high": temperature_high,
-        "temperature_low": temperature_low,
-        "n_averaging_frames": submission.simulation.n_averaging_frames
-        if hasattr(submission.simulation, "n_averaging_frames")
-        else 100,
-    }
+    mq_result["composition"] = submission.composition.root
+    return mq_result

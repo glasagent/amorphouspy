@@ -1238,9 +1238,9 @@ def test_generate_structure_passes_structure_seed():
         simulation=MeltQuenchParams(structure_seed=777),
     )
     with (
-        patch("amorphouspy_api.workflows.meltquench.get_structure_dict") as mock_gsd,
-        patch("amorphouspy_api.workflows.meltquench.get_ase_structure"),
-        patch("amorphouspy_api.workflows.meltquench.generate_potential"),
+        patch("amorphouspy.pipelines.meltquench.get_structure_dict") as mock_gsd,
+        patch("amorphouspy.pipelines.meltquench.get_ase_structure"),
+        patch("amorphouspy.pipelines.meltquench.generate_potential"),
     ):
         mock_gsd.return_value = {}
         generate_structure(sub, MagicMock(), {})
