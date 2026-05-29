@@ -17,13 +17,23 @@ from . import yang_potential as yang2026
 __all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfConfig"]
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
-POTENTIAL_PREFERENCE = ("pmmcs", "bmp-harmonic", "bmp-screened-harmonic", "shik", "bjp", "du_teter", "yang2026")
+POTENTIAL_PREFERENCE = (
+    "pmmcs",
+    "bmp-harmonic",
+    "bmp-screened-harmonic",
+    "shik",
+    "bjp",
+    "du_teter",
+    "du_teter_dbx_generalized",
+    "yang2026",
+)
 
 _POTENTIAL_MODULES = {
     "pmmcs": pmmcs,
     "bjp": bjp,
     "shik": shik,
     "du_teter": du_teter,
+    "du_teter_dbx_generalized": du_teter,
     "bmp-harmonic": bmp,
     "bmp-screened-harmonic": bmp,
     "yang2026": yang2026,
@@ -122,8 +132,9 @@ def generate_potential(
         return bjp.generate_bjp_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
     if potential_type.lower() == "shik":
         return shik.generate_shik_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
-    if potential_type.lower() == "du_teter":
-        return du_teter.generate_du_teter_potential(atoms_dict, melt=melt)
+    if potential_type.lower() in ("du_teter", "du_teter_dbx_generalized"):
+        n4_model = "dbx_generalized" if potential_type.lower() == "du_teter_dbx_generalized" else "dbx"
+        return du_teter.generate_du_teter_potential(atoms_dict, melt=melt, n4_model=n4_model)
     if potential_type.lower() in ("bmp-harmonic", "bmp-screened-harmonic"):
         variant = "harmonic" if potential_type.lower() == "bmp-harmonic" else "screened-harmonic"
         return bmp.generate_bmp_potential(atoms_dict, variant=variant, melt=melt, electrostatics=electrostatics)
