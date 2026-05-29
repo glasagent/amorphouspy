@@ -487,6 +487,16 @@ class JobStatusResponse(BaseModel):
     )
 
 
+class JobSettingsResponse(BaseModel):
+    """Response for ``GET /jobs/{id}/settings``."""
+
+    job_id: str
+    settings: dict = Field(
+        ...,
+        description="Original submission parameters (composition, potential, simulation, analyses, electrostatics, tags).",
+    )
+
+
 class JobResultsResponse(BaseModel):
     """Response for ``GET /jobs/{id}/results``."""
 

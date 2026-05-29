@@ -28,8 +28,9 @@ Typical workflow:
 1. `submit_job` — submit a simulation (returns job ID + URLs).
 2. `get_job_status` — poll until status is "completed".
 3. `get_job_results` — retrieve analysis data.
-4. `search_jobs` — find existing results for similar compositions.
-5. `list_glasses` / `lookup_glass` — browse available compositions.
+4. `get_job_settings` — inspect the original submission parameters.
+5. `search_jobs` — find existing results for similar compositions.
+6. `list_glasses` / `lookup_glass` — browse available compositions.
 """
 
 mcp = FastMCP(
@@ -51,6 +52,7 @@ def register_tools() -> None:
     from amorphouspy_api.routers.jobs import (
         cancel_job,
         get_job_results,
+        get_job_settings,
         get_job_status,
         get_single_result,
         search_jobs,
@@ -62,6 +64,7 @@ def register_tools() -> None:
         search_jobs,
         get_job_status,
         cancel_job,
+        get_job_settings,
         get_job_results,
         get_single_result,
         list_glasses,
