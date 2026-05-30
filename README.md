@@ -95,7 +95,7 @@ If you use `amorphouspy` in your research, please cite it using the citation inf
   doi = {10.5281/ZENODO.19564118},
   url = {https://zenodo.org/doi/10.5281/zenodo.19564118},
   author = {Leopold Talirz, and Achraf Atila, and Jan Janssen, and Marcel Sadowski,  },
-  title = {glasagent/amorphouspy: v0.6.1},
+  title = {glasagent/amorphouspy: v0.6.0},
   publisher = {Zenodo},
   year = {2026},
   copyright = {Apache License 2.0}
