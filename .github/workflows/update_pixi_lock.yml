@@ -2,7 +2,7 @@ name: Update pixi.lock
 
 on:
   schedule:
-    - cron: "0 6 * * 1"  # Weekly on Monday at 06:00 UTC
+    - cron: "0 6 1 * *"  # Monthly on the 1st at 06:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -17,6 +17,6 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           commit-message: "chore: update pixi.lock"
-          title: "chore: weekly pixi.lock update"
+          title: "chore: monthly pixi.lock update"
           branch: chore/pixi-lock-update
           delete-branch: true
