@@ -176,6 +176,16 @@ class JobStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class RerunMode(StrEnum):
+    """Controls how executorlib cache is handled on submission."""
+
+    FAILED = "failed"
+    """Delete only failed step outputs and re-run them; preserve successful results."""
+
+    ALL = "all"
+    """Delete *all* cached outputs and re-run every step from scratch."""
+
+
 # ---------------------------------------------------------------------------
 # Analysis configurations (discriminated union)
 # ---------------------------------------------------------------------------
