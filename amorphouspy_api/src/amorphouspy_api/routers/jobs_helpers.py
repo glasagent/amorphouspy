@@ -331,15 +331,16 @@ def _probe_step_caches(
     partial_results: dict[str, object] = dict(job.result_data or {})
     has_failure = False
     errors: dict[str, str] = {}
-    # Track whether the base pipeline (structure_generation + melt_quench) is done.
-    # Analysis steps depend on it, so they should stay "pending" until it completes.
-    base_done = True
+    # Track whether all preceding base steps have completed.
+    # Later base steps and analysis steps should stay "pending" until their
+    # predecessors finish (executor creates futures early, so they look "running").
+    prev_base_done = True
     for step_name in all_steps:
         status, result, error = _probe_single_step(cache_dir, job.request_hash, step_name, job.job_id)
         is_analysis = step_name not in BASE_STEPS
-        # An analysis step reported as "running" while the base hasn't finished
+        # A step reported as "running" while its predecessor hasn't finished
         # is actually just waiting — show "pending" instead.
-        if status == "running" and is_analysis and not base_done:
+        if status == "running" and not prev_base_done:
             status = "pending"
         progress[step_name] = status
         if result is not None:
@@ -349,7 +350,7 @@ def _probe_step_caches(
             if error:
                 errors[step_name] = error
         if not is_analysis and status != "completed":
-            base_done = False
+            prev_base_done = False
     return progress, partial_results, has_failure, errors
 
 

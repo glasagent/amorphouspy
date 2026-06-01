@@ -19,7 +19,7 @@ STEPS: dict[str, AnalysisFn] = {
     "elastic": run_elastic,
 }
 
-BASE_STEPS = {"structure_generation", "melt_quench"}
+BASE_STEPS = ("structure_generation", "melt_quench")
 ANALYSES: dict[str, AnalysisFn] = {k: v for k, v in STEPS.items() if k not in BASE_STEPS}
 
 if TYPE_CHECKING:
