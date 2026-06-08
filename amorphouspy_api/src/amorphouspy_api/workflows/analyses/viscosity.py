@@ -253,7 +253,7 @@ def _t_at_log_viscosity(vft: dict[str, float], log_target: float) -> float | Non
 
 
 # Reference viscosity points (log10 in dPa·s)
-_REFERENCE_POINTS = {"T4": 4.0, "T7.6": 7.6}
+_REFERENCE_POINTS = {"T2": 2.0, "T4": 4.0, "T7.6": 7.6}
 
 
 # ---------------------------------------------------------------------------
@@ -359,103 +359,6 @@ def _build_viscosity_vs_temperature_plot(
     return {"data": traces, "layout": layout}
 
 
-def _build_arrhenius_plot(
-    temperatures: list[float],
-    viscosities: list[float],
-    vft: dict[str, float] | None = None,
-) -> dict:
-    """Build Plotly figure dict for an Arrhenius-style viscosity vs 1000/T plot."""
-    inv_t = [1000.0 / t for t in temperatures]
-    visc_dpas = [v * 10 for v in viscosities]
-
-    log_min = math.log10(min(visc_dpas))
-    log_max = math.log10(max(visc_dpas))
-    log_range = log_max - log_min
-    y_upper = log_max + 2 * log_range  # triple the log range towards higher viscosities
-
-    traces: list[dict] = [
-        {
-            "x": inv_t,
-            "y": visc_dpas,
-            "mode": "markers+lines",
-            "line": {"width": 2},
-            "marker": {"size": 8},
-            "name": "Green-Kubo",
-        }
-    ]
-
-    annotations: list[dict] = []
-    shapes: list[dict] = []
-
-    if vft is not None:
-        t_at_upper = _t_at_log_viscosity(vft, y_upper)
-        t_extrap_min = max(vft["T0"] + 10, t_at_upper or vft["T0"] + 10)
-        t_extrap_max = max(temperatures) + 100
-        curve_t, curve_eta = _vft_curve(vft, t_extrap_min, t_extrap_max)
-        if curve_t:
-            traces.append(
-                {
-                    "x": [1000.0 / t for t in curve_t],
-                    "y": curve_eta,
-                    "mode": "lines",
-                    "line": {"width": 2, "dash": "dash", "color": "rgba(100,100,100,0.6)"},
-                    "name": "VFT extrapolation",
-                }
-            )
-
-        for label, log_v in _REFERENCE_POINTS.items():
-            if log_v > y_upper:
-                continue
-            t_ref = _t_at_log_viscosity(vft, log_v)
-            if t_ref is None:
-                continue
-            inv_t_ref = 1000.0 / t_ref
-            x_hi = max([*inv_t, inv_t_ref]) + 0.1
-            shapes.append(
-                {
-                    "type": "line",
-                    "x0": inv_t_ref,
-                    "x1": x_hi,
-                    "y0": 10**log_v,
-                    "y1": 10**log_v,
-                    "line": {"color": "rgba(150,150,150,0.5)", "width": 1, "dash": "dot"},
-                }
-            )
-            t_ref_c = t_ref - 273.15
-            annotations.append(
-                {
-                    "x": inv_t_ref,
-                    "y": log_v,
-                    "text": f"{label} = {t_ref_c:.0f} °C",
-                    "showarrow": True,
-                    "arrowhead": 2,
-                    "ax": -40,
-                    "ay": -25,
-                    "font": {"size": 11},
-                }
-            )
-
-    layout: dict = {
-        "title": {"text": "Arrhenius Plot", "font": {"size": 16}},
-        "xaxis": {"title": {"text": "1000 / T  (1/K)", "font": {"size": 14}}},
-        "yaxis": {
-            "title": {"text": "Viscosity (dPa·s)", "font": {"size": 14}},
-            "type": "log",
-            "exponentformat": "e",
-            "range": [log_min - 0.2, y_upper],
-        },
-        "hovermode": "closest",
-        "height": 500,
-        "margin": {"l": 80, "r": 40, "t": 60, "b": 70},
-    }
-    if annotations:
-        layout["annotations"] = annotations
-    if shapes:
-        layout["shapes"] = shapes
-
-    return {"data": traces, "layout": layout}
-
-
 def _build_running_viscosity_plot(
     lag_times_ps: list[list[float]],
     viscosity_integral: list[list[float]],
@@ -512,7 +415,6 @@ def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, str]:
         visc_dpas = [v * 10 for v in viscosities]
         vft = _fit_vft(temps, visc_dpas)
         plots["visc_vs_t"] = json.dumps(_build_viscosity_vs_temperature_plot(temps, viscosities, vft))
-        plots["arrhenius"] = json.dumps(_build_arrhenius_plot(temps, viscosities, vft))
         if vft is not None:
             # Also compute reference temperatures
             ref_temps = {}
