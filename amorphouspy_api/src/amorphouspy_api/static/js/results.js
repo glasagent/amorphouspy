@@ -66,6 +66,34 @@ function init3DViewer() {
         hoverDuration: 250
     });
 
+    // Invert scroll-to-zoom direction to match Windows convention
+    // (scroll up = zoom in, scroll down = zoom out).
+    // 3Dmol reads the legacy `wheelDelta` property, so we intercept the
+    // real event, block 3Dmol's own handler, and call it with inverted values.
+    (function () {
+        var origScroll = viewer._handleMouseScroll;
+        var canvas = containerDiv.querySelector('canvas');
+        if (canvas && origScroll) {
+            canvas.addEventListener('wheel', function (e) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                var inverted = new Proxy(e, {
+                    get: function (target, prop) {
+                        if (!target.ctrlKey) {
+                            if (prop === 'wheelDelta') return -(target.wheelDelta || 0);
+                            if (prop === 'detail') return -(target.detail || 0);
+                            if (prop === 'deltaY') return -(target.deltaY || 0);
+                        }
+                        var val = target[prop];
+                        if (typeof val === 'function') return val.bind(target);
+                        return val;
+                    }
+                });
+                origScroll.call(viewer, inverted);
+            }, { capture: true, passive: false });
+        }
+    })();
+
     // Add model — 3Dmol will parse the basic xyz (element + xyz coords)
     viewer.addModel(structureData, 'xyz');
 
