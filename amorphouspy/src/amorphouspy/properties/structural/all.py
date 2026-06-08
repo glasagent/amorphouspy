@@ -1278,8 +1278,6 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
         showlegend=True,
         template="plotly_white",
         font={"family": "Arial, sans-serif", "size": 12},
-        title_text="Structural Analysis",
-        title_font_size=16,
         **legend_layout,
     )
 

@@ -69,6 +69,17 @@ body {
     min-height: 400px;
 }
 
+.plotly-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
+    width: 100%;
+}
+
+.plotly-cell {
+    min-width: 0;
+}
+
 .viscosity-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
