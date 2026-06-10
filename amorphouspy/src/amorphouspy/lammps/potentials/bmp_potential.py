@@ -143,6 +143,22 @@ def supported_elements() -> set[str]:
     return set(bmp_morse_potential_params)
 
 
+def is_compatible(elements: set[str]) -> bool:
+    """Check whether *elements* are jointly supported by the BMP potential.
+
+    Besides basic element support this enforces the boron restriction:
+    when B is present only alkali/alkaline-earth borosilicate compositions
+    are valid (no Al, transition metals, etc.).
+    """
+    if not elements <= supported_elements():
+        return False
+    if "B" in elements:
+        disallowed = elements - _BMP_BORON_ALLOWED_ELEMENTS
+        if disallowed:
+            return False
+    return True
+
+
 # ------------------------------------------------------------------ #
 # Dell-Bray model for composition-dependent Boron Dij                 #
 # R = ([A2O] + [AEO]) / [B2O3],  K = [SiO2] / [B2O3]               #
