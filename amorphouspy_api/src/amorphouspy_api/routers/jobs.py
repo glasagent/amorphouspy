@@ -543,6 +543,20 @@ def get_trajectory(job_id: str) -> Response:
     return Response(content=raw.encode("utf-8"), media_type="application/json")
 
 
+def _render_error_html(job_id: str, title: str, detail: str, status_code: int = 400) -> HTMLResponse:
+    """Render a user-facing HTML error page for the visualization endpoint."""
+    from fastapi.templating import Jinja2Templates
+
+    template_dir = Path(__file__).parent.parent / "templates"
+    templates = Jinja2Templates(directory=str(template_dir))
+    html = templates.get_template("error.html").render(
+        job_id=job_id,
+        title=title,
+        detail=detail,
+    )
+    return HTMLResponse(content=html, status_code=status_code)
+
+
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
 def visualize_job(job_id: str) -> HTMLResponse:
     """Interactive HTML visualization of completed results."""
@@ -550,35 +564,27 @@ def visualize_job(job_id: str) -> HTMLResponse:
 
     store = get_job_store()
     job = store.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
 
     # Refresh running jobs so we pick up newly-completed steps
-    if job.status == "running":
+    if job and job.status == "running":
         refresh_job_from_cache(job)
         job = store.get_job(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job:
+        return _render_error_html(job_id, "Job Not Found", "No job exists with this ID.", 404)
 
     if job.status == "pending":
-        raise HTTPException(
-            status_code=400,
-            detail="Job has not started yet.",
-        )
+        return _render_error_html(job_id, "Job Pending", "This job has not started yet. Please check back later.", 400)
 
     if job.status == "failed" and not job.result_data:
         errors = job.errors or {}
-        # Errors may be keyed by "pipeline" (fast path) or by step name (slow path)
         detail = "; ".join(f"{k}: {v}" for k, v in errors.items()) or "Unknown error"
-        raise HTTPException(
-            status_code=422,
-            detail=f"Job failed: {detail}",
-        )
+        return _render_error_html(job_id, "Job Failed", detail, 422)
 
     result_data = job.result_data or {}
 
     if not result_data:
-        raise HTTPException(status_code=404, detail="No results available yet")
+        return _render_error_html(job_id, "No Results Yet", "Results are not available yet for this job.", 404)
 
     try:
         context = build_visualization_context(
@@ -601,4 +607,4 @@ def visualize_job(job_id: str) -> HTMLResponse:
         raise
     except Exception as e:
         logger.exception("Error generating visualisation for job %s", job_id)
-        raise HTTPException(status_code=500, detail=f"Error generating visualisation: {e!s}") from e
+        return _render_error_html(job_id, "Visualisation Error", f"Error generating visualisation: {e!s}", 500)

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>{{ title }} - Job {{ job_id }}</title>
+    <link rel="stylesheet" href="/static/css/results.css">
+    <style>
+        .error-container {
+            max-width: 700px;
+            margin: 80px auto;
+            padding: 40px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            text-align: center;
+        }
+        .error-icon {
+            font-size: 3em;
+            margin-bottom: 16px;
+        }
+        .error-title {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 12px;
+        }
+        .error-detail {
+            color: #555;
+            font-size: 1.05em;
+            line-height: 1.6;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin: 20px 0;
+            text-align: left;
+            word-break: break-word;
+        }
+        .error-job-id {
+            color: #888;
+            font-size: 0.9em;
+            margin-top: 24px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="error-container">
+        <div class="error-icon">&#9888;</div>
+        <div class="error-title">{{ title }}</div>
+        <div class="error-detail">{{ detail }}</div>
+        <div class="error-job-id">Job ID: {{ job_id }}</div>
+    </div>
+</body>
+
+</html>
