@@ -48,17 +48,33 @@
 
     <div class="results-container">
         <div class="info-panel">
-            <div class="section-title">Composition</div>
-            <div class="property">
-                <span class="property-label">Requested (mol%):</span>
-                <span class="property-value">{{ composition }}</span>
-            </div>
-            {% if actual_composition %}
-            <div class="property">
-                <span class="property-label">Simulated (mol%):</span>
-                <span class="property-value">{{ actual_composition }} ({{ n_atoms }} atoms)</span>
-            </div>
+            <div class="section-title">Composition (mol%)</div>
+            <table class="composition-table">
+                <thead>
+                    <tr>
+                        <th>Oxide</th>
+                        <th>Requested</th>
+                        {% if actual_composition_items %}<th>Simulated</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in composition_items %}
+                    <tr>
+                        <td class="oxide-cell">{{ item.oxide }}</td>
+                        <td>{{ item.mol }}</td>
+                        {% if actual_composition_items %}
+                        {% set sim_mol = actual_composition_items[loop.index0].mol if loop.index0 < actual_composition_items|length else '–' %}
+                        <td{% if sim_mol != item.mol %} class="mol-diff"{% endif %}>{{ sim_mol }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if n_atoms and n_atoms != 'N/A' %}
+            <div class="composition-caption">{{ n_atoms }} atoms</div>
             {% endif %}
+
+            <div class="section-title" style="margin-top: 25px;">Structural Properties</div>
             {% if network_formers %}
             <div class="property">
                 <span class="property-label">Network Formers:</span>
@@ -79,8 +95,6 @@
                 </div>
             </div>
             {% endif %}
-
-            <div class="section-title" style="margin-top: 25px;">Structural Properties</div>
             <div class="property">
                 <span class="property-label">Density:</span>
                 <span class="property-value">{{ density }} g/cm³</span>

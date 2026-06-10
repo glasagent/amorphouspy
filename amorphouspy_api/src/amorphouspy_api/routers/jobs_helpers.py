@@ -567,9 +567,8 @@ def _format_actual_composition(mq: dict, result_data: dict) -> tuple[str, str]:
     if formula_units:
         total_fu = sum(formula_units.values())
         if total_fu > 0:
-            return n_atoms, " - ".join(
-                f"{oxide} {fu / total_fu * 100:.1f}" for oxide, fu in sorted(formula_units.items())
-            )
+            sorted_fu = sorted(formula_units.items(), key=lambda x: x[1], reverse=True)
+            return n_atoms, " - ".join(f"{oxide} {fu / total_fu * 100:.1f}" for oxide, fu in sorted_fu)
     if atomic_numbers is not None:
         counts = Counter(chemical_symbols[z] for z in atomic_numbers)
         return n_atoms, " ".join(f"{elem}{count}" for elem, count in sorted(counts.items()))
@@ -578,6 +577,29 @@ def _format_actual_composition(mq: dict, result_data: dict) -> tuple[str, str]:
     if element_counts:
         return n_atoms, " ".join(f"{elem}{count}" for elem, count in sorted(element_counts.items()))
     return n_atoms, ""
+
+
+def _format_actual_composition_items(
+    mq: dict, result_data: dict, oxide_order: list[str] | None = None
+) -> list[dict[str, str]]:
+    """Return list of {oxide, mol} dicts for template table rendering.
+
+    If *oxide_order* is given, results are returned in that order.
+    """
+    atoms_dict = result_data.get("structure_generation", {}).get("atoms_dict", {})
+    formula_units = atoms_dict.get("formula_units", {})
+
+    if formula_units:
+        total_fu = sum(formula_units.values())
+        if total_fu > 0:
+            mol_map = {oxide: fu / total_fu * 100 for oxide, fu in formula_units.items()}
+            if oxide_order:
+                return [{"oxide": ox, "mol": f"{mol_map.get(ox, 0.0):.1f}"} for ox in oxide_order]
+            return [
+                {"oxide": oxide, "mol": f"{mol:.1f}"}
+                for oxide, mol in sorted(mol_map.items(), key=lambda x: x[1], reverse=True)
+            ]
+    return []
 
 
 def build_visualization_context(
@@ -623,12 +645,18 @@ def build_visualization_context(
     if raw_comp is None and request_data:
         raw_comp = request_data.get("composition")
     if isinstance(raw_comp, dict):
-        composition_str = " - ".join(f"{oxide} {mol:g}" for oxide, mol in sorted(raw_comp.items()))
+        comp_floats: dict[str, float] = {str(k): float(v) for k, v in raw_comp.items()}  # type: ignore[arg-type]
+        sorted_comp = sorted(comp_floats.items(), key=lambda x: x[1], reverse=True)
+        composition_str = " - ".join(f"{oxide} {mol:.1f}" for oxide, mol in sorted_comp)
+        composition_items: list[dict[str, str]] = [{"oxide": oxide, "mol": f"{mol:.1f}"} for oxide, mol in sorted_comp]
     else:
         composition_str = str(raw_comp) if raw_comp is not None else "N/A"
+        composition_items = []
 
     # Atom count and actual composition from the final structure
     n_atoms, actual_composition = _format_actual_composition(mq, result_data)
+    oxide_order: list[str] | None = [item["oxide"] for item in composition_items] if composition_items else None
+    actual_composition_items = _format_actual_composition_items(mq, result_data, oxide_order)
 
     # Total MD steps from the T-t profile parameters
     total_md_steps = _compute_total_md_steps(mq)
@@ -666,7 +694,9 @@ def build_visualization_context(
     context.update(
         {
             "composition": composition_str,
+            "composition_items": composition_items,
             "actual_composition": actual_composition,
+            "actual_composition_items": actual_composition_items,
             "n_atoms": n_atoms,
             "total_md_steps": total_md_steps,
             "potential": potential_label,
