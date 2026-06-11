@@ -538,16 +538,18 @@ def _build_cutoff_map(
     for z in unique_z:
         symbol = type_map[z]
         if symbol == "O":
-            if former_types:
-                pair = _canonical(o_type[0], former_types[0])
-                if pair in rdfs:
-                    r_min = find_rdf_minimum(r, rdfs[pair])
-                    cutoff_map[symbol] = r_min if r_min is not None else 2.0
-        else:
-            pair = _canonical(z, o_type[0]) if o_type else None
-            if pair and pair in rdfs:
-                r_min = find_rdf_minimum(r, rdfs[pair])
-                cutoff_map[symbol] = r_min if r_min is not None else _ELEMENT_CUTOFF_FALLBACKS.get(symbol, 3.0)
+            continue
+        pair = _canonical(z, o_type[0]) if o_type else None
+        if pair and pair in rdfs:
+            r_min = find_rdf_minimum(r, rdfs[pair])
+            cutoff_map[symbol] = r_min if r_min is not None else _ELEMENT_CUTOFF_FALLBACKS.get(symbol, 3.0)
+
+    # O cutoff = max of all former cutoffs (used for oxygen coordination).
+    if former_types:
+        former_cutoffs = [cutoff_map.get(type_map[fz], 2.0) for fz in former_types]
+        cutoff_map["O"] = max(former_cutoffs) if former_cutoffs else 2.0
+    else:
+        cutoff_map["O"] = 2.0
     return cutoff_map
 
 
@@ -607,6 +609,7 @@ def _compute_network_data(
     former_types: list[int],
     o_type: list[int],
     cutoff_map: dict[str, float],
+    type_map: dict[int, str],
 ) -> tuple[dict, dict, float, dict[str, int], dict[str, list[int]]]:
     """Compute Q^n distribution, network connectivity, and oxygen classification.
 
@@ -616,6 +619,7 @@ def _compute_network_data(
         former_types: Atomic numbers of network formers.
         o_type: Atomic numbers of oxygen (empty list if no oxygen).
         cutoff_map: Element symbol → coordination cutoff (Å).
+        type_map: Mapping from atomic number to element symbol.
 
     Returns:
         Tuple of ``(qn_dist, qn_dist_partial, network_connectivity,
@@ -633,9 +637,16 @@ def _compute_network_data(
     oxygen_class_counts: dict[str, int] = {}
     oxygen_class_ids: dict[str, list[int]] = {}
     if network_formers and o_type:
-        qn_dist_raw, qn_dist_partial_raw, o_classes = compute_qn_and_classify(
-            atoms, cutoff_map["O"], former_types, o_type[0]
-        )
+        # Build per-pair cutoff dict so each former-O pair uses the
+        # correct cutoff rather than a single scalar derived from only
+        # the first former's RDF.
+        pair_cutoffs: dict[tuple[int, int], float] = {}
+        o_z = o_type[0]
+        for f_z in former_types:
+            f_sym = type_map[f_z]
+            pair_cutoffs[(f_z, o_z)] = cutoff_map.get(f_sym, 2.0)
+
+        qn_dist_raw, qn_dist_partial_raw, o_classes = compute_qn_and_classify(atoms, pair_cutoffs, former_types, o_z)
         for aid, cls in o_classes.items():
             oxygen_class_counts[cls] = oxygen_class_counts.get(cls, 0) + 1
             oxygen_class_ids.setdefault(cls, []).append(aid)
@@ -802,7 +813,7 @@ def analyze_structure(
         atoms, type_map, network_formers, modifiers, former_types, modifier_types, o_type, cutoff_map
     )
     qn_dist, qn_dist_partial, network_connectivity, oxygen_class_counts, oxygen_class_ids = _compute_network_data(
-        atoms, network_formers, former_types, o_type, cutoff_map
+        atoms, network_formers, former_types, o_type, cutoff_map, type_map
     )
     bond_angle_distributions, ring_statistics_data = _compute_distributions(
         atoms, type_map, network_formers, o_type, cutoff_map
