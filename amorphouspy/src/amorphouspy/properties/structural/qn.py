@@ -22,10 +22,13 @@ if TYPE_CHECKING:
 
 MIN_COORDINATION_FOR_BRIDGING = 2
 
+#: Cutoff type accepted by neighbour-search based functions.
+CutoffSpec = float | dict[tuple[int, int], float]
+
 
 def _classify_oxygens_raw(
     structure: Atoms,
-    cutoff: float,
+    cutoff: CutoffSpec,
     former_types: list[int],
     o_type: int,
     id_to_type: dict[int, int],
@@ -56,7 +59,7 @@ def _classify_oxygens_raw(
 
 def _count_bridging_per_former(
     structure: Atoms,
-    cutoff: float,
+    cutoff: CutoffSpec,
     former_types: list[int],
     o_type: int,
     id_to_type: dict[int, int],
@@ -83,7 +86,7 @@ def _count_bridging_per_former(
 
 def compute_qn(
     structure: Atoms | list[Atoms],
-    cutoff: float,
+    cutoff: CutoffSpec,
     former_types: list[int],
     o_type: int,
 ) -> tuple[dict[int, float], dict[int, dict[int, float]]]:
@@ -94,7 +97,8 @@ def compute_qn(
 
     Args:
         structure: The atomic structure as ASE object. Pass a list to use the first frame.
-        cutoff: Cutoff radius for former-O neighbor search.
+        cutoff: Cutoff radius for former-O neighbor search, either a scalar
+            or a per-pair dict ``{(z_i, z_j): r_cut}``.
         former_types: Atom types considered as formers.
         o_type: Atom type considered as oxygen.
 
@@ -116,7 +120,7 @@ def compute_qn(
 
 def compute_qn_and_classify(
     structure: Atoms | list[Atoms],
-    cutoff: float,
+    cutoff: CutoffSpec,
     former_types: list[int],
     o_type: int,
 ) -> tuple[dict[int, float], dict[int, dict[int, float]], dict[int, str]]:
@@ -127,7 +131,8 @@ def compute_qn_and_classify(
 
     Args:
         structure: The atomic structure as ASE object. Pass a list to use the first frame.
-        cutoff: Cutoff radius for former-O neighbor search (Å).
+        cutoff: Cutoff radius for former-O neighbor search (Å), either a
+            scalar or a per-pair dict ``{(z_i, z_j): r_cut}``.
         former_types: Atom types (atomic numbers) considered as formers.
         o_type: Atom type (atomic number) considered as oxygen.
 
@@ -164,7 +169,7 @@ def compute_qn_and_classify(
 
 def classify_oxygens(
     structure: Atoms,
-    cutoff: float,
+    cutoff: CutoffSpec,
     former_types: list[int],
     o_type: int,
 ) -> dict[int, str]:
@@ -175,7 +180,8 @@ def classify_oxygens(
 
     Args:
         structure: The atomic structure as ASE object.
-        cutoff: Cutoff radius for former-O neighbor search (Å).
+        cutoff: Cutoff radius for former-O neighbor search (Å), either a
+            scalar or a per-pair dict ``{(z_i, z_j): r_cut}``.
         former_types: Atom types (atomic numbers) considered as formers.
         o_type: Atom type (atomic number) considered as oxygen.
 
