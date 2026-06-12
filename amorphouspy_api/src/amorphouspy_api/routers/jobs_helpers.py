@@ -21,7 +21,7 @@ from amorphouspy_api.models import (
     JobSubmission,
     StepStatus,
 )
-from amorphouspy_api.workflows import ANALYSES, BASE_STEPS, submit_pipeline
+from amorphouspy_api.pipeline import ANALYSES, BASE_STEPS, submit_pipeline
 
 if TYPE_CHECKING:
     from amorphouspy_api.database import Job
@@ -430,9 +430,9 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
     """Populate context with viscosity / CTE / elastic plots if available."""
     import json
 
-    from amorphouspy_api.workflows.analyses.cte import prepare_cte_plots
-    from amorphouspy_api.workflows.analyses.elastic import prepare_elastic_plots
-    from amorphouspy_api.workflows.analyses.viscosity import prepare_viscosity_plots
+    from amorphouspy_api.visualization.cte import prepare_cte_plots
+    from amorphouspy_api.visualization.elastic import prepare_elastic_plots
+    from amorphouspy_api.visualization.viscosity import prepare_viscosity_plots
 
     visc_data = result_data.get("viscosity")
     if visc_data:
@@ -611,11 +611,11 @@ def build_visualization_context(
     available are simply omitted from the context so the template can
     conditionally skip them.
     """
-    from amorphouspy_api.workflows.analyses.meltquench_viz import (
+    from amorphouspy_api.visualization.meltquench import (
         build_temperature_time_plot,
         prepare_timing_context,
     )
-    from amorphouspy_api.workflows.analyses.structure import prepare_structure_context
+    from amorphouspy_api.visualization.structure import prepare_structure_context
 
     mq = result_data.get("melt_quench", {})
 

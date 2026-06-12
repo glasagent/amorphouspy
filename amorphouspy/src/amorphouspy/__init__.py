@@ -21,6 +21,9 @@ from amorphouspy.lammps.io import frames_from_melt_quench_result, load_lammps_du
 from amorphouspy.lammps.md import md_simulation
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 from amorphouspy.lammps.potentials.potential import generate_potential
+from amorphouspy.pipelines.meltquench import generate_structure, run_melt_quench
+from amorphouspy.pipelines.structural import extract_equilibration_frames, run_structural_analysis
+from amorphouspy.pipelines.viscosity import run_viscosity_workflow
 from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 from amorphouspy.properties.cte_analysis import (
     cte_from_npt_fluctuations,
@@ -74,12 +77,14 @@ __all__ = [
     "cte_from_volume_temperature_data",
     "elastic_simulation",
     "extract_composition",
+    "extract_equilibration_frames",
     "find_rdf_minimum",
     "fit_vft",
     "formula_mass_g_per_mol",
     "frames_from_melt_quench_result",
     "generate_bond_length_dict",
     "generate_potential",
+    "generate_structure",
     "get_ase_structure",
     "get_atomic_mass",
     "get_composition",
@@ -93,6 +98,9 @@ __all__ = [
     "parse_formula",
     "plan_system",
     "plot_analysis_results_plotly",
+    "run_melt_quench",
+    "run_structural_analysis",
+    "run_viscosity_workflow",
     "running_mean",
     "structure_from_parsed_output",
     "temperature_scan_simulation",

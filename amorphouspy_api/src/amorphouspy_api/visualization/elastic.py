@@ -1,60 +1,8 @@
-"""Elastic moduli workflow wrapper for the amorphouspy API.
-
-Thin wrapper around ``amorphouspy.workflows.elastic_mod.elastic_simulation``
-that adapts the core simulation function to the API pipeline calling convention.
-"""
+"""Elastic moduli visualization helpers (bar chart, Cij heatmap)."""
 
 from __future__ import annotations
 
-import logging
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from amorphouspy_api.models import ElasticAnalysis, JobSubmission
-
-logger = logging.getLogger(__name__)
-
-
-def run_elastic(submission: JobSubmission, config: ElasticAnalysis, result: dict) -> dict:
-    """Elastic moduli analysis on the quenched glass."""
-    from amorphouspy import elastic_simulation
-    from amorphouspy_api.executor import get_lammps_server_kwargs
-
-    logger.info(
-        "Running elastic simulation at %.1f K (strain=%.1e, eq=%d, prod=%d)",
-        config.temperature,
-        config.strain,
-        config.equilibration_steps,
-        config.production_steps,
-    )
-
-    raw = elastic_simulation(
-        structure=result["melt_quench"]["final_structure"],
-        potential=result["structure_generation"]["potential"],
-        temperature_sim=config.temperature,
-        pressure=config.pressure,
-        timestep=config.timestep,
-        equilibration_steps=config.equilibration_steps,
-        production_steps=config.production_steps,
-        n_print=config.n_print,
-        strain=config.strain,
-        server_kwargs=get_lammps_server_kwargs(),
-    )
-
-    # Convert Cij ndarray to nested list for JSON serialisation.
-    cij = raw.get("Cij")
-    if cij is not None and hasattr(cij, "tolist"):
-        cij = cij.tolist()
-
-    return {
-        "Cij": cij,
-        "moduli": raw.get("moduli", {}),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Visualization helpers
-# ---------------------------------------------------------------------------
+from typing import Any
 
 
 def _build_elastic_moduli_plot(moduli: dict[str, float]) -> dict:
