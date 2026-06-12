@@ -24,19 +24,77 @@ window.onload = function () {
     init3DViewer();
 };
 
-// Render the Plotly plot
+// Render individual Plotly plots in a responsive grid
 function initPlotlyPlot() {
-    // Use the height from the figure layout (set in Python) for the container
-    const figHeight = plotlyData.layout && plotlyData.layout.height ? plotlyData.layout.height : 1500;
-    const plotDiv = document.getElementById('plotly-div');
-    plotDiv.style.height = figHeight + 'px';
+    if (!plotlyData || !plotlyData.data || !plotlyData.layout) return;
 
-    Plotly.newPlot('plotly-div', plotlyData.data, plotlyData.layout, {
-        responsive: true,
-        displayModeBar: true,
-        modeBarButtonsToRemove: ['pan2d', 'lasso2d'],
-        displaylogo: false
-    });
+    var grid = document.getElementById('plotly-grid');
+    if (!grid) return;
+
+    // 4x3 subplot grid: axis index = (row-1)*3 + col, 1-based
+    var subplotTitles = [
+        "Oxygen Coordination", "Former Coordination", "Modifier Coordination",
+        "Q^n Distribution", "Bond Angles", "Ring Statistics",
+        "O-O RDF", "Former-O RDFs", "Modifier-O RDFs",
+        "Total S(q) — Neutron", "Total S(q) — X-ray", "Partial S(q)"
+    ];
+
+    var layout = plotlyData.layout;
+
+    for (var idx = 1; idx <= 12; idx++) {
+        var axSuffix = idx > 1 ? String(idx) : '';
+        var xKey = 'xaxis' + axSuffix;
+        var yKey = 'yaxis' + axSuffix;
+        var xSrc = 'x' + axSuffix;
+        var ySrc = 'y' + axSuffix;
+
+        // Collect traces belonging to this subplot
+        var traces = [];
+        plotlyData.data.forEach(function (t) {
+            var tx = t.xaxis || 'x';
+            var ty = t.yaxis || 'y';
+            if (tx === xSrc && ty === ySrc) {
+                var clone = JSON.parse(JSON.stringify(t));
+                clone.xaxis = 'x';
+                clone.yaxis = 'y';
+                delete clone.legend;
+                traces.push(clone);
+            }
+        });
+        if (traces.length === 0) continue;
+
+        // Build per-plot layout from the subplot's axis definitions
+        var xAxis = layout[xKey] ? JSON.parse(JSON.stringify(layout[xKey])) : {};
+        var yAxis = layout[yKey] ? JSON.parse(JSON.stringify(layout[yKey])) : {};
+        delete xAxis.domain; delete xAxis.anchor;
+        delete yAxis.domain; delete yAxis.anchor;
+
+        var cellDiv = document.createElement('div');
+        cellDiv.className = 'plotly-cell';
+        cellDiv.id = 'plotly-cell-' + idx;
+        grid.appendChild(cellDiv);
+
+        var cellLayout = {
+            title: { text: subplotTitles[idx - 1], font: { size: 13, family: 'Arial, sans-serif' } },
+            xaxis: xAxis,
+            yaxis: yAxis,
+            showlegend: true,
+            legend: {
+                x: 1, y: 1, xanchor: 'right', yanchor: 'top',
+                bgcolor: 'rgba(255,255,255,0.7)', font: { size: 10 }
+            },
+            template: 'plotly_white',
+            font: { family: 'Arial, sans-serif', size: 11 },
+            margin: { t: 40, b: 50, l: 55, r: 20 },
+            height: 320
+        };
+
+        Plotly.newPlot(cellDiv, traces, cellLayout, {
+            responsive: true,
+            displaylogo: false,
+            modeBarButtonsToRemove: ['pan2d', 'lasso2d']
+        });
+    }
 }
 
 // Initialize 3D structure viewer
@@ -65,6 +123,34 @@ function init3DViewer() {
     viewer = $3Dmol.createViewer(containerDiv, {
         hoverDuration: 250
     });
+
+    // Invert scroll-to-zoom direction to match Windows convention
+    // (scroll up = zoom in, scroll down = zoom out).
+    // 3Dmol reads the legacy `wheelDelta` property, so we intercept the
+    // real event, block 3Dmol's own handler, and call it with inverted values.
+    (function () {
+        var origScroll = viewer._handleMouseScroll;
+        var canvas = containerDiv.querySelector('canvas');
+        if (canvas && origScroll) {
+            canvas.addEventListener('wheel', function (e) {
+                e.stopImmediatePropagation();
+                e.preventDefault();
+                var inverted = new Proxy(e, {
+                    get: function (target, prop) {
+                        if (!target.ctrlKey) {
+                            if (prop === 'wheelDelta') return -(target.wheelDelta || 0);
+                            if (prop === 'detail') return -(target.detail || 0);
+                            if (prop === 'deltaY') return -(target.deltaY || 0);
+                        }
+                        var val = target[prop];
+                        if (typeof val === 'function') return val.bind(target);
+                        return val;
+                    }
+                });
+                origScroll.call(viewer, inverted);
+            }, { capture: true, passive: false });
+        }
+    })();
 
     // Add model — 3Dmol will parse the basic xyz (element + xyz coords)
     viewer.addModel(structureData, 'xyz');

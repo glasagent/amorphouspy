@@ -69,9 +69,20 @@ body {
     min-height: 400px;
 }
 
+.plotly-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
+    width: 100%;
+}
+
+.plotly-cell {
+    min-width: 0;
+}
+
 .viscosity-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
     gap: 20px;
 }
 
@@ -165,6 +176,48 @@ body {
     padding: 4px 8px;
     border-radius: 15px;
     font-size: 0.9em;
+}
+
+/* ---- Compact composition tables ---- */
+.composition-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6px 0 2px;
+    font-size: 0.88em;
+}
+
+.composition-table th {
+    background: #f0f2ff;
+    color: #3949ab;
+    font-weight: 600;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.composition-table td {
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    text-align: center;
+    font-family: 'Courier New', monospace;
+}
+
+.composition-table td.oxide-cell {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-weight: 600;
+    color: #3949ab;
+    text-align: left;
+}
+
+.composition-table td.mol-diff {
+    background: #fff8e1;
+}
+
+.composition-caption {
+    font-size: 0.8em;
+    color: #777;
+    margin-bottom: 10px;
 }
 
 /* ---- Tab navigation ---- */

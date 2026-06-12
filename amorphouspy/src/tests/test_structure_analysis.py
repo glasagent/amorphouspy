@@ -320,3 +320,42 @@ def test_compute_network_connectivity_zero_formers_raises():
     """compute_network_connectivity raises ValueError when all counts are zero."""
     with pytest.raises(ValueError, match="total_formers is zero"):
         compute_network_connectivity({0: 0, 1: 0, 2: 0})
+
+
+def test_per_pair_cutoff_eliminates_false_free_oxygens():
+    """Per-pair cutoffs avoid misclassifying oxygens as 'free' in multi-former glasses.
+
+    In 20Na2O-10B2O3-70SiO2, B-O bonds (~1.4 Å) are shorter than Si-O bonds
+    (~1.6 Å).  Using only the B-O cutoff (1.5 Å) for *all* former-O pairs would
+    miss many Si-O bonds and produce spurious "free" oxygens.  A per-pair cutoff
+    dict should produce zero (or near-zero) free oxygens.
+    """
+    filename = DATA_DIR / "20Na2O-10B2O3-70SiO2.dump"
+    atoms = read(filename, format="lammps-dump-text")
+    type_id = atoms.get_atomic_numbers().copy()
+    to_Z = np.array([0, 8, 14, 5, 11], dtype=int)
+    Z = to_Z[type_id]
+    atoms.set_atomic_numbers(Z)
+    atoms.arrays["type"] = Z
+
+    O_Z = 8
+    B_Z = 5
+    SI_Z = 14
+    former_types = [B_Z, SI_Z]
+
+    # Per-pair cutoff: each former uses its own appropriate cutoff
+    pair_cutoff = {(B_Z, O_Z): 1.5, (SI_Z, O_Z): 1.9}
+
+    _, _, o_classes_pair = compute_qn_and_classify(atoms, pair_cutoff, former_types, O_Z)
+    n_free_pair = sum(1 for c in o_classes_pair.values() if c == "free")
+
+    # A too-short scalar cutoff (B-O only) produces many false free oxygens
+    _, _, o_classes_short = compute_qn_and_classify(atoms, 1.5, former_types, O_Z)
+    n_free_short = sum(1 for c in o_classes_short.values() if c == "free")
+
+    # The short scalar cutoff should produce significantly more free oxygens
+    assert n_free_short > 10, f"Expected many false free oxygens with scalar B-O cutoff, got {n_free_short}"
+    # Per-pair cutoffs should produce very few or no free oxygens
+    assert n_free_pair < n_free_short, (
+        f"Per-pair cutoffs should reduce free oxygens: pair={n_free_pair}, short={n_free_short}"
+    )

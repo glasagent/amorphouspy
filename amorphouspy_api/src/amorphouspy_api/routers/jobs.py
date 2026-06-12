@@ -45,6 +45,7 @@ from amorphouspy_api.models import (
     JobStatus,
     JobStatusResponse,
     JobSubmission,
+    RerunMode,
     TagsResponse,
     TagsUpdate,
     _job_urls,
@@ -73,17 +74,44 @@ router = APIRouter(prefix="/jobs", tags=["tool"])
 # ---------------------------------------------------------------------------
 
 
-def _clear_executor_cache(request_hash: str) -> None:
-    """Delete executorlib HDF5 cache files for *request_hash* (all steps + merge)."""
+def _clear_executor_cache(request_hash: str, *, failed_only: bool = False) -> None:
+    """Delete executorlib HDF5 cache files for *request_hash*.
+
+    Args:
+        request_hash: The cache key prefix.
+        failed_only: When ``True``, only delete ``_o.h5`` files whose stored
+            result is an error (plus the corresponding ``_i.h5``).  Successful
+            outputs are preserved so executorlib can reuse them.
+    """
     from amorphouspy_api.config import MELTQUENCH_PROJECT_DIR
 
     cache_dir = Path(MELTQUENCH_PROJECT_DIR)
     if not cache_dir.is_dir():
         return
-    # Matches: {hash}_i.h5, {hash}_o.h5, {hash}_{step}_i.h5, {hash}_{step}_o.h5
-    for f in cache_dir.glob(f"{request_hash}*.h5"):
-        logger.info("Removing cached file %s (force re-run)", f.name)
+
+    if not failed_only:
+        for f in cache_dir.glob(f"{request_hash}*.h5"):
+            logger.info("Removing cached file %s (force re-run)", f.name)
+            f.unlink(missing_ok=True)
+        return
+
+    # Selective cleanup: only remove output files that contain errors.
+    import h5py
+
+    for f in sorted(cache_dir.glob(f"{request_hash}*_o.h5")):
+        try:
+            with h5py.File(f, "r") as hdf:
+                if "output" in hdf:
+                    continue  # successful — keep it
+        except Exception:
+            logger.debug("Could not read %s, treating as failed", f.name)
+        logger.info("Removing failed cache file %s (retry)", f.name)
         f.unlink(missing_ok=True)
+        # Also remove the matching _i.h5 so executorlib re-submits this step
+        i_file = f.with_name(f.name.replace("_o.h5", "_i.h5"))
+        if i_file.exists():
+            logger.info("Removing input file %s (retry)", i_file.name)
+            i_file.unlink(missing_ok=True)
 
 
 def _composition_elements(composition: dict[str, float]) -> set[str]:
@@ -140,6 +168,25 @@ def _validate_or_select_potential(
     )
 
 
+def _return_cached_job(cached: Job, submission: JobSubmission, store) -> JobCreatedResponse:
+    """Return an already-completed job, merging any new tags."""
+    logger.info("Returning cached job %s", cached.job_id)
+    if submission.tags:
+        existing = set(cached.tags or [])
+        merged = sorted(existing | set(submission.tags))
+        if merged != sorted(existing):
+            store.update_job(cached.job_id, tags=merged)
+    return JobCreatedResponse(
+        id=cached.job_id,
+        status=JobStatus(cached.status),
+        composition=Composition.from_canonical(cached.composition),
+        potential=cached.potential,
+        tags=sorted(set(cached.tags or []) | set(submission.tags)),
+        created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
+        urls=_job_urls(cached.job_id),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -148,13 +195,18 @@ def _validate_or_select_potential(
 @router.post("", response_model=JobCreatedResponse, dependencies=[Depends(verify_token)])
 def submit_job(
     submission: JobSubmission,
-    force: Annotated[bool, Query(description="Skip cache and force a fresh run")] = False,
+    rerun: Annotated[
+        RerunMode | None,
+        Query(
+            description=("Skip and delete cache for this job ('all' - all steps, 'failed' - failed steps only). "),
+        ),
+    ] = None,
 ) -> JobCreatedResponse:
     """Submit a new simulation job.
 
     The server resolves the dependency DAG internally.
     If an identical job already completed, the cached result is returned
-    unless ``force=true`` is set.
+    by default.
     """
     # Validate and normalise composition so downstream code always sees
     # fractions that sum to exactly 1.0 (the pipeline uses the default
@@ -192,30 +244,17 @@ def submit_job(
     norm_comp = submission.composition.canonical
     req_hash = _job_hash(submission, norm_comp)
 
-    # Check for cached result (skipped when force=True)
-    if not force:
+    # Check for cached result (skipped when rerun is set)
+    if rerun is None:
         cached = store.find_completed_by_hash(req_hash)
         if cached:
-            logger.info("Returning cached job %s", cached.job_id)
-            # Merge any new tags into the cached job
-            if submission.tags:
-                existing = set(cached.tags or [])
-                merged = sorted(existing | set(submission.tags))
-                if merged != sorted(existing):
-                    store.update_job(cached.job_id, tags=merged)
-            return JobCreatedResponse(
-                id=cached.job_id,
-                status=JobStatus(cached.status),
-                composition=Composition.from_canonical(cached.composition),
-                potential=cached.potential,
-                tags=sorted(set(cached.tags or []) | set(submission.tags)),
-                created_at=(cached.created_at.isoformat() if cached.created_at else _iso_now()),
-                urls=_job_urls(cached.job_id),
-            )
+            return _return_cached_job(cached, submission, store)
 
-    # When forcing, remove stale executor cache files so executorlib runs fresh
-    if force:
+    # Clear executor cache according to the requested rerun mode
+    if rerun is RerunMode.ALL:
         _clear_executor_cache(req_hash)
+    elif rerun is RerunMode.FAILED:
+        _clear_executor_cache(req_hash, failed_only=True)
 
     # Create new job record
     job_id = str(uuid4())
@@ -504,6 +543,20 @@ def get_trajectory(job_id: str) -> Response:
     return Response(content=raw.encode("utf-8"), media_type="application/json")
 
 
+def _render_error_html(job_id: str, title: str, detail: str, status_code: int = 400) -> HTMLResponse:
+    """Render a user-facing HTML error page for the visualization endpoint."""
+    from fastapi.templating import Jinja2Templates
+
+    template_dir = Path(__file__).parent.parent / "templates"
+    templates = Jinja2Templates(directory=str(template_dir))
+    html = templates.get_template("error.html").render(
+        job_id=job_id,
+        title=title,
+        detail=detail,
+    )
+    return HTMLResponse(content=html, status_code=status_code)
+
+
 @router.get("/{job_id}/visualize", response_class=HTMLResponse)
 def visualize_job(job_id: str) -> HTMLResponse:
     """Interactive HTML visualization of completed results."""
@@ -511,35 +564,27 @@ def visualize_job(job_id: str) -> HTMLResponse:
 
     store = get_job_store()
     job = store.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
 
     # Refresh running jobs so we pick up newly-completed steps
-    if job.status == "running":
+    if job and job.status == "running":
         refresh_job_from_cache(job)
         job = store.get_job(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job:
+        return _render_error_html(job_id, "Job Not Found", "No job exists with this ID.", 404)
 
     if job.status == "pending":
-        raise HTTPException(
-            status_code=400,
-            detail="Job has not started yet.",
-        )
+        return _render_error_html(job_id, "Job Pending", "This job has not started yet. Please check back later.", 400)
 
     if job.status == "failed" and not job.result_data:
         errors = job.errors or {}
-        # Errors may be keyed by "pipeline" (fast path) or by step name (slow path)
         detail = "; ".join(f"{k}: {v}" for k, v in errors.items()) or "Unknown error"
-        raise HTTPException(
-            status_code=422,
-            detail=f"Job failed: {detail}",
-        )
+        return _render_error_html(job_id, "Job Failed", detail, 422)
 
     result_data = job.result_data or {}
 
     if not result_data:
-        raise HTTPException(status_code=404, detail="No results available yet")
+        return _render_error_html(job_id, "No Results Yet", "Results are not available yet for this job.", 404)
 
     try:
         context = build_visualization_context(
@@ -562,4 +607,4 @@ def visualize_job(job_id: str) -> HTMLResponse:
         raise
     except Exception as e:
         logger.exception("Error generating visualisation for job %s", job_id)
-        raise HTTPException(status_code=500, detail=f"Error generating visualisation: {e!s}") from e
+        return _render_error_html(job_id, "Visualisation Error", f"Error generating visualisation: {e!s}", 500)

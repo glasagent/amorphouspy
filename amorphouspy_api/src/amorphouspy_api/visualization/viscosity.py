@@ -78,8 +78,8 @@ def _t_at_log_viscosity(vft: dict[str, float], log_target: float) -> float | Non
     return t
 
 
-# Reference viscosity points (log10 in dPa*s)
-_REFERENCE_POINTS = {"T4": 4.0, "T7.6": 7.6}
+# Reference viscosity points (log10 in dPa·s)
+_REFERENCE_POINTS = {"T2": 2.0, "T4": 4.0, "T7.6": 7.6}
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +185,7 @@ def _build_viscosity_vs_temperature_plot(
     return {"data": traces, "layout": layout}
 
 
+<<<<<<< HEAD:amorphouspy_api/src/amorphouspy_api/visualization/viscosity.py
 def _build_arrhenius_plot(
     temperatures: list[float],
     viscosities: list[float],
@@ -282,6 +283,8 @@ def _build_arrhenius_plot(
     return {"data": traces, "layout": layout}
 
 
+=======
+>>>>>>> main:amorphouspy_api/src/amorphouspy_api/workflows/analyses/viscosity.py
 def _build_running_viscosity_plot(
     lag_times_ps: list[list[float]],
     viscosity_integral: list[list[float]],
@@ -338,7 +341,6 @@ def prepare_viscosity_plots(visc_data: dict[str, Any]) -> dict[str, Any]:
         visc_dpas = [v * 10 for v in viscosities]
         vft = _fit_vft(temps, visc_dpas)
         plots["visc_vs_t"] = json.dumps(_build_viscosity_vs_temperature_plot(temps, viscosities, vft))
-        plots["arrhenius"] = json.dumps(_build_arrhenius_plot(temps, viscosities, vft))
         if vft is not None:
             # Also compute reference temperatures
             ref_temps = {}

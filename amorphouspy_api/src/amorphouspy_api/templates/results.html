@@ -48,17 +48,33 @@
 
     <div class="results-container">
         <div class="info-panel">
-            <div class="section-title">Composition</div>
-            <div class="property">
-                <span class="property-label">Requested (mol%):</span>
-                <span class="property-value">{{ composition }}</span>
-            </div>
-            {% if actual_composition %}
-            <div class="property">
-                <span class="property-label">Simulated (mol%):</span>
-                <span class="property-value">{{ actual_composition }} ({{ n_atoms }} atoms)</span>
-            </div>
+            <div class="section-title">Composition (mol%)</div>
+            <table class="composition-table">
+                <thead>
+                    <tr>
+                        <th>Oxide</th>
+                        <th>Requested</th>
+                        {% if actual_composition_items %}<th>Simulated</th>{% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in composition_items %}
+                    <tr>
+                        <td class="oxide-cell">{{ item.oxide }}</td>
+                        <td>{{ item.mol }}</td>
+                        {% if actual_composition_items %}
+                        {% set sim_mol = actual_composition_items[loop.index0].mol if loop.index0 < actual_composition_items|length else '–' %}
+                        <td{% if sim_mol != item.mol %} class="mol-diff"{% endif %}>{{ sim_mol }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if n_atoms and n_atoms != 'N/A' %}
+            <div class="composition-caption">{{ n_atoms }} atoms</div>
             {% endif %}
+
+            <div class="section-title" style="margin-top: 25px;">Structural Properties</div>
             {% if network_formers %}
             <div class="property">
                 <span class="property-label">Network Formers:</span>
@@ -79,8 +95,6 @@
                 </div>
             </div>
             {% endif %}
-
-            <div class="section-title" style="margin-top: 25px;">Structural Properties</div>
             <div class="property">
                 <span class="property-label">Density:</span>
                 <span class="property-value">{{ density }} g/cm³</span>
@@ -196,7 +210,7 @@
                 {% if has_analysis %}
                 <div class="tab-content{% if not has_structure %} active{% endif %}" id="tab-analysis">
                     <div class="section-title">Structural Analysis</div>
-                    <div id="plotly-div"></div>
+                    <div id="plotly-grid" class="plotly-grid"></div>
                     <p style="font-size: 0.9em; color: #666; margin-top: 15px;">
                         Pair distribution functions (RDF) computed up to r<sub>max</sub> = 10 &Aring; with 2000 bins.
                         Bond cutoffs are automatically determined from the first RDF minimum (Savitzky-Golay smoothed).
@@ -219,15 +233,11 @@
                     <div class="section-title">Viscosity Analysis</div>
                     <div class="viscosity-grid">
                         {% if viscosity_plots.visc_vs_t %}
-                        <div id="viscosity-vt-div" style="height: 500px;"></div>
-                        {% endif %}
-
-                        {% if viscosity_plots.arrhenius %}
-                        <div id="viscosity-arrhenius-div" style="height: 500px;"></div>
+                        <div id="viscosity-vt-div"></div>
                         {% endif %}
 
                         {% if viscosity_plots.convergence %}
-                        <div id="viscosity-convergence-div" style="height: 500px;"></div>
+                        <div id="viscosity-convergence-div"></div>
                         {% endif %}
                     </div>
 
@@ -379,11 +389,6 @@
         Plotly.newPlot('viscosity-vt-div', viscVsT.data, viscVsT.layout, plotOpts);
         {% endif %}
 
-        {% if viscosity_plots.arrhenius %}
-        const arrhenius = {{ viscosity_plots.arrhenius | safe }};
-        Plotly.newPlot('viscosity-arrhenius-div', arrhenius.data, arrhenius.layout, plotOpts);
-        {% endif %}
-
         {% if viscosity_plots.convergence %}
         const convergence = {{ viscosity_plots.convergence | safe }};
         Plotly.newPlot('viscosity-convergence-div', convergence.data, convergence.layout, plotOpts);
@@ -419,20 +424,37 @@
     {% endif %}
 
     <script>
-        // ---- Tab switching logic ----
+        // ---- Tab switching logic with persistence ----
+        function activateTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+            document.querySelectorAll('.tab-content').forEach(function (p) { p.classList.remove('active'); });
+            var btn = document.querySelector('.tab-btn[data-tab="' + tabId + '"]');
+            var panel = document.getElementById(tabId);
+            if (btn && panel) {
+                btn.classList.add('active');
+                panel.classList.add('active');
+                // Resize Plotly charts that were rendered while the tab was hidden
+                panel.querySelectorAll('.js-plotly-plot').forEach(function (el) {
+                    Plotly.Plots.resize(el);
+                });
+            }
+        }
+
         document.querySelectorAll('.tab-btn').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                // Deactivate all tabs and panels
-                document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
-                document.querySelectorAll('.tab-content').forEach(function (p) { p.classList.remove('active'); });
-                // Activate clicked tab and its panel
-                btn.classList.add('active');
-                var panel = document.getElementById(btn.getAttribute('data-tab'));
-                if (panel) {
-                    panel.classList.add('active');
-                }
+                var tabId = btn.getAttribute('data-tab');
+                activateTab(tabId);
+                try { localStorage.setItem('activeTab', tabId); } catch (e) {}
             });
         });
+
+        // Restore last active tab on page load
+        try {
+            var saved = localStorage.getItem('activeTab');
+            if (saved && document.getElementById(saved)) {
+                activateTab(saved);
+            }
+        } catch (e) {}
 
         // Resize all Plotly charts before printing so they fit the page
         window.addEventListener('beforeprint', function () {

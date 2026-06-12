@@ -60,6 +60,21 @@ def get_supported_elements(potential_type: str) -> set[str]:
     return mod.supported_elements()
 
 
+def _is_compatible(name: str, elements: set[str]) -> bool:
+    """Check whether *elements* are jointly supported by potential *name*.
+
+    If the module exposes an ``is_compatible`` function it is used (this
+    allows modules like BMP to enforce multi-element constraints such as
+    the boron restriction).  Otherwise falls back to a simple subset
+    check against ``supported_elements()``.
+    """
+    mod = _POTENTIAL_MODULES[name]
+    checker = getattr(mod, "is_compatible", None)
+    if checker is not None:
+        return checker(elements)
+    return elements <= mod.supported_elements()
+
+
 def select_potential(elements: set[str]) -> str | None:
     """Choose the best potential that supports all *elements*.
 
@@ -79,7 +94,7 @@ def select_potential(elements: set[str]) -> str | None:
         ("pmmcs", "bmp-screened-harmonic", "bmp-harmonic", "shik", "bjp") if "B" in elements else POTENTIAL_PREFERENCE
     )
     for name in preference:
-        if elements <= _POTENTIAL_MODULES[name].supported_elements():
+        if _is_compatible(name, elements):
             return name
     return None
 
@@ -94,7 +109,7 @@ def compatible_potentials(elements: set[str]) -> list[str]:
         List of potential names (may be empty).
 
     """
-    return [name for name in POTENTIAL_PREFERENCE if elements <= _POTENTIAL_MODULES[name].supported_elements()]
+    return [name for name in POTENTIAL_PREFERENCE if _is_compatible(name, elements)]
 
 
 def generate_potential(
