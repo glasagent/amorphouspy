@@ -5,8 +5,9 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 from __future__ import annotations
 
+import logging
 import warnings
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -19,6 +20,7 @@ from scipy.signal import savgol_filter
 if TYPE_CHECKING:
     from ase.atoms import Atoms
 
+from amorphouspy.fabrication.meltquench import extract_equilibration_frames
 from amorphouspy.properties.structural.bond_angles import compute_angles
 from amorphouspy.properties.structural.qn import (
     compute_network_connectivity,
@@ -27,6 +29,8 @@ from amorphouspy.properties.structural.qn import (
 from amorphouspy.properties.structural.rdf import compute_coordination, compute_rdf
 from amorphouspy.properties.structural.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.properties.structural.structure_factor import compute_structure_factor
+
+logger = logging.getLogger(__name__)
 
 # Network Formers: Elements that can form a glass network on their own.
 GLASS_FORMERS = {"Si", "B", "P", "Ge", "As", "Sb", "Te", "V"}
@@ -1326,3 +1330,29 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     fig.update_yaxes(showgrid=True, gridcolor="rgba(180,180,180,0.3)", zeroline=False, showline=True, mirror=False)
 
     return fig
+
+
+def run_structural_analysis(
+    final_structure: Atoms,
+    simulation_history: list[dict[str, Any]] | None = None,
+) -> tuple[StructureData, StructureData | None, int]:
+    """Run structural analysis, optionally averaging over trajectory frames.
+
+    Args:
+        final_structure: Quenched ASE Atoms object.
+        simulation_history: Full stage-by-stage MD history for frame averaging.
+
+    Returns:
+        Tuple of ``(mean_data, sem_data, n_frames)`` where *sem_data* is
+        ``None`` when only one frame is used.
+    """
+    frames = extract_equilibration_frames(final_structure, simulation_history)
+    n_frames = len(frames)
+
+    if n_frames > 1:
+        logger.info("Frame-averaging structural analysis over %d frames", n_frames)
+        mean_data, sem_data = analyze_structure(atoms=frames, frame_averaging=True)
+    else:
+        mean_data, sem_data = analyze_structure(atoms=frames[0])
+
+    return mean_data, sem_data, n_frames

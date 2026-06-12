@@ -1,5 +1,7 @@
 """Shared atom-level utilities for amorphouspy package."""
 
+import math
+
 import numpy as np
 from ase.data import chemical_symbols
 
@@ -93,3 +95,35 @@ def running_mean(data: list | np.ndarray, n: int) -> np.ndarray:
     pad_right = n - pad_left - 1
     ret_array[pad_left:-pad_right] = np.convolve(data, np.ones((n,)) / n, mode="valid")
     return ret_array
+
+
+# ---------------------------------------------------------------------------
+# Log-spaced downsampling
+# ---------------------------------------------------------------------------
+
+_MAX_PLOT_POINTS = 1000
+
+
+def downsample_log(arr: list[float], max_points: int = _MAX_PLOT_POINTS) -> list[float]:
+    """Downsample *arr* to *max_points* using log-spaced indices.
+
+    Useful for reducing large correlation-function arrays while
+    preserving the shape on a logarithmic x-axis.
+    """
+    n = len(arr)
+    if n <= max_points:
+        return arr
+    indices = sorted({round(v) for v in _logspace(0, n - 1, max_points)})
+    return [arr[i] for i in indices]
+
+
+def _logspace(start: float, stop: float, num: int) -> list[float]:
+    """Return *num* values log-spaced between *start* and *stop* (inclusive)."""
+    if num <= 0:
+        return []
+    if num == 1:
+        return [stop]
+    log_start = math.log10(start + 1)
+    log_stop = math.log10(stop + 1)
+    step = (log_stop - log_start) / (num - 1)
+    return [10 ** (log_start + i * step) - 1 for i in range(num)]

@@ -6,10 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from amorphouspy.pipelines.structural import (
-    extract_equilibration_frames,
-    run_structural_analysis,
-)
+from amorphouspy.fabrication.meltquench import extract_equilibration_frames
+from amorphouspy.properties.structural.all import run_structural_analysis
 from ase import Atoms
 
 # ---------------------------------------------------------------------------
@@ -99,7 +97,7 @@ class TestExtractEquilibrationFrames:
 class TestRunStructuralAnalysis:
     """Tests for run_structural_analysis."""
 
-    @patch("amorphouspy.pipelines.structural.analyze_structure")
+    @patch("amorphouspy.properties.structural.all.analyze_structure")
     def test_single_frame_path(self, mock_analyze: MagicMock, glass_atoms: Atoms) -> None:
         """Single-frame analysis skips frame averaging."""
         mock_mean = MagicMock()
@@ -115,7 +113,7 @@ class TestRunStructuralAnalysis:
         _, kwargs = mock_analyze.call_args
         assert kwargs.get("frame_averaging", False) is not True
 
-    @patch("amorphouspy.pipelines.structural.analyze_structure")
+    @patch("amorphouspy.properties.structural.all.analyze_structure")
     def test_multi_frame_path(self, mock_analyze: MagicMock, glass_atoms: Atoms) -> None:
         """Multi-frame analysis enables frame averaging."""
         mock_mean = MagicMock()

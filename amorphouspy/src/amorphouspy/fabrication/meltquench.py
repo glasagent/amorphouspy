@@ -225,3 +225,45 @@ def melt_quench_simulation(
         "structure": structure_final,
         "result": history,
     }
+
+
+def extract_equilibration_frames(
+    final_structure: Atoms,
+    simulation_history: list[dict[str, Any]] | None = None,
+) -> list[Atoms]:
+    """Reconstruct Atoms snapshots from the final equilibration stage.
+
+    Falls back to a single-element list with *final_structure* when no
+    simulation history is available or the history contains no position data.
+
+    Args:
+        final_structure: The quenched structure from the melt-quench pipeline.
+        simulation_history: Full stage-by-stage MD history (optional).
+
+    Returns:
+        List of ASE Atoms frames suitable for averaging.
+    """
+    if not simulation_history:
+        return [final_structure]
+
+    last_stage = next((s for s in reversed(simulation_history) if s is not None), None)
+    if last_stage is None or "positions" not in last_stage:
+        return [final_structure]
+
+    positions = last_stage["positions"]
+    cells = last_stage["cells"]
+    n_frames = len(positions)
+
+    if n_frames <= 1:
+        return [final_structure]
+
+    frames: list[Atoms] = []
+    for i in range(n_frames):
+        frame = final_structure.copy()
+        frame.set_positions(positions[i])
+        frame.set_cell(cells[i])
+        frame.set_pbc(True)
+        frame.wrap()
+        frames.append(frame)
+
+    return frames
