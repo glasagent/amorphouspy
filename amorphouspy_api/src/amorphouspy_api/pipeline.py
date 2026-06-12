@@ -74,7 +74,7 @@ def _run_melt_quench(submission: JobSubmission, config: BaseModel, result: dict)
 
 def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
-    from amorphouspy.pipelines.structural import run_structural_analysis
+    from amorphouspy.properties.structural.all import run_structural_analysis
 
     mq = result["melt_quench"]
     mean_data, _sem_data, n_frames = run_structural_analysis(

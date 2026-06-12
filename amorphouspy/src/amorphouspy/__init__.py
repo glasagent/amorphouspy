@@ -16,13 +16,12 @@ from amorphouspy.fabrication import (
     parse_formula,
     plan_system,
 )
-from amorphouspy.fabrication.meltquench import melt_quench_simulation
+from amorphouspy.fabrication.meltquench import extract_equilibration_frames, melt_quench_simulation
 from amorphouspy.lammps.io import frames_from_melt_quench_result, load_lammps_dump, structure_from_parsed_output
 from amorphouspy.lammps.md import md_simulation
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 from amorphouspy.lammps.potentials.potential import generate_potential
 from amorphouspy.pipelines.meltquench import generate_structure, run_melt_quench
-from amorphouspy.pipelines.structural import extract_equilibration_frames, run_structural_analysis
 from amorphouspy.pipelines.viscosity import run_viscosity_workflow
 from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 from amorphouspy.properties.cte_analysis import (
@@ -34,6 +33,7 @@ from amorphouspy.properties.structural.all import (
     analyze_structure,
     find_rdf_minimum,
     plot_analysis_results_plotly,
+    run_structural_analysis,
 )
 from amorphouspy.properties.structural.averaging import average_over_frames
 from amorphouspy.properties.structural.bond_angles import compute_angles

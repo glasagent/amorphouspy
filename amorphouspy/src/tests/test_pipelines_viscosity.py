@@ -5,7 +5,7 @@ from __future__ import annotations
 import itertools
 
 import pytest
-from amorphouspy.pipelines.viscosity import _logspace, downsample_log
+from amorphouspy.atoms.shared import _logspace, downsample_log
 
 # ---------------------------------------------------------------------------
 # _logspace
