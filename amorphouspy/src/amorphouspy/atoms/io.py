@@ -1,4 +1,4 @@
-"""Generic I/O utilities for amorphouspy: writing structural data files.
+"""I/O utilities for writing structural data files.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 """

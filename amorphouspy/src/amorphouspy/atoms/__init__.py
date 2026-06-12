@@ -4,6 +4,7 @@ Provides helper functions for atomic masses, element type mappings,
 coordination number histograms, and numerical utilities related to atoms.
 """
 
+from amorphouspy.atoms.io import write_angle_distribution, write_distribution_to_file, write_xyz
 from amorphouspy.atoms.mass import get_atomic_mass
 from amorphouspy.atoms.neighbors import cell_perpendicular_heights, get_neighbors
 from amorphouspy.atoms.shared import count_distribution, get_element_types_dict, running_mean, type_to_dict
@@ -16,4 +17,7 @@ __all__ = [
     "get_neighbors",
     "running_mean",
     "type_to_dict",
+    "write_angle_distribution",
+    "write_distribution_to_file",
+    "write_xyz",
 ]
