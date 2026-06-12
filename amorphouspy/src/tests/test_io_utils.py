@@ -4,7 +4,7 @@ import textwrap
 
 import numpy as np
 import pytest
-from amorphouspy.io import (
+from amorphouspy.atoms.io import (
     write_angle_distribution,
     write_distribution_to_file,
     write_xyz,

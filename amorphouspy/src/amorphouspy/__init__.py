@@ -1,5 +1,6 @@
 """amorphouspy - workflows for atomistic modeling of oxide glasses."""
 
+from amorphouspy.atoms.io import write_angle_distribution, write_distribution_to_file, write_xyz
 from amorphouspy.atoms.mass import get_atomic_mass
 from amorphouspy.atoms.neighbors import get_neighbors
 from amorphouspy.atoms.shared import count_distribution, running_mean, type_to_dict
@@ -16,7 +17,6 @@ from amorphouspy.fabrication import (
     plan_system,
 )
 from amorphouspy.fabrication.meltquench import melt_quench_simulation
-from amorphouspy.io import write_angle_distribution, write_distribution_to_file, write_xyz
 from amorphouspy.lammps.io import frames_from_melt_quench_result, load_lammps_dump, structure_from_parsed_output
 from amorphouspy.lammps.md import md_simulation
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
