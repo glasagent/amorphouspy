@@ -185,7 +185,6 @@ def _build_viscosity_vs_temperature_plot(
     return {"data": traces, "layout": layout}
 
 
-<<<<<<< HEAD:amorphouspy_api/src/amorphouspy_api/visualization/viscosity.py
 def _build_arrhenius_plot(
     temperatures: list[float],
     viscosities: list[float],
@@ -283,8 +282,6 @@ def _build_arrhenius_plot(
     return {"data": traces, "layout": layout}
 
 
-=======
->>>>>>> main:amorphouspy_api/src/amorphouspy_api/workflows/analyses/viscosity.py
 def _build_running_viscosity_plot(
     lag_times_ps: list[list[float]],
     viscosity_integral: list[list[float]],

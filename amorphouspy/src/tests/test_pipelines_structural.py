@@ -1,0 +1,135 @@
+"""Tests for amorphouspy.pipelines.structural."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
+from amorphouspy.pipelines.structural import (
+    extract_equilibration_frames,
+    run_structural_analysis,
+)
+from ase import Atoms
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def glass_atoms() -> Atoms:
+    """Minimal Si-O structure with PBC."""
+    positions = [[0, 0, 0], [1.6, 0, 0], [3.2, 0, 0]]
+    return Atoms("SiOO", positions=positions, cell=[6, 6, 6], pbc=True)
+
+
+# ---------------------------------------------------------------------------
+# extract_equilibration_frames
+# ---------------------------------------------------------------------------
+
+
+class TestExtractEquilibrationFrames:
+    """Tests for extract_equilibration_frames."""
+
+    def test_no_history_returns_single_frame(self, glass_atoms: Atoms) -> None:
+        """No history yields a single-frame list with the input structure."""
+        result = extract_equilibration_frames(glass_atoms, simulation_history=None)
+        assert len(result) == 1
+        assert result[0] is glass_atoms
+
+    def test_empty_history_returns_single_frame(self, glass_atoms: Atoms) -> None:
+        """Empty history list falls back to single frame."""
+        result = extract_equilibration_frames(glass_atoms, simulation_history=[])
+        assert len(result) == 1
+
+    def test_history_without_positions_returns_single_frame(self, glass_atoms: Atoms) -> None:
+        """History stage without position data falls back to single frame."""
+        history = [{"temperature": [300.0], "steps": [0]}]
+        result = extract_equilibration_frames(glass_atoms, simulation_history=history)
+        assert len(result) == 1
+
+    def test_history_all_none_returns_single_frame(self, glass_atoms: Atoms) -> None:
+        """All-None history falls back to single frame."""
+        result = extract_equilibration_frames(glass_atoms, simulation_history=[None, None])
+        assert len(result) == 1
+
+    def test_single_frame_in_history_returns_single(self, glass_atoms: Atoms) -> None:
+        """History with exactly one frame returns a single-element list."""
+        pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        history = [{"positions": [pos], "cells": [cell]}]
+        result = extract_equilibration_frames(glass_atoms, simulation_history=history)
+        assert len(result) == 1
+
+    def test_multiple_frames_extracted(self, glass_atoms: Atoms) -> None:
+        """Multiple frames in history produce matching Atoms objects."""
+        n_frames = 5
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        positions = [base_pos + i * 0.01 for i in range(n_frames)]
+        cells = [cell for _ in range(n_frames)]
+        history = [None, {"positions": positions, "cells": cells}]
+
+        result = extract_equilibration_frames(glass_atoms, simulation_history=history)
+
+        assert len(result) == n_frames
+        for frame in result:
+            assert isinstance(frame, Atoms)
+            assert len(frame) == len(glass_atoms)
+            assert all(frame.get_pbc())
+
+    def test_frames_have_distinct_positions(self, glass_atoms: Atoms) -> None:
+        """Extracted frames carry distinct atomic positions."""
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        positions = [base_pos, base_pos + 1.0]
+        cells = [cell, cell]
+        history = [{"positions": positions, "cells": cells}]
+
+        result = extract_equilibration_frames(glass_atoms, simulation_history=history)
+        assert not np.allclose(result[0].get_positions(), result[1].get_positions())
+
+
+# ---------------------------------------------------------------------------
+# run_structural_analysis
+# ---------------------------------------------------------------------------
+
+
+class TestRunStructuralAnalysis:
+    """Tests for run_structural_analysis."""
+
+    @patch("amorphouspy.pipelines.structural.analyze_structure")
+    def test_single_frame_path(self, mock_analyze: MagicMock, glass_atoms: Atoms) -> None:
+        """Single-frame analysis skips frame averaging."""
+        mock_mean = MagicMock()
+        mock_analyze.return_value = (mock_mean, None)
+
+        mean_data, sem_data, n_frames = run_structural_analysis(glass_atoms)
+
+        assert n_frames == 1
+        assert mean_data is mock_mean
+        assert sem_data is None
+        mock_analyze.assert_called_once()
+        # Single frame: frame_averaging should not be passed as True
+        _, kwargs = mock_analyze.call_args
+        assert kwargs.get("frame_averaging", False) is not True
+
+    @patch("amorphouspy.pipelines.structural.analyze_structure")
+    def test_multi_frame_path(self, mock_analyze: MagicMock, glass_atoms: Atoms) -> None:
+        """Multi-frame analysis enables frame averaging."""
+        mock_mean = MagicMock()
+        mock_sem = MagicMock()
+        mock_analyze.return_value = (mock_mean, mock_sem)
+
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        history = [{"positions": [base_pos, base_pos + 0.01, base_pos + 0.02], "cells": [cell] * 3}]
+
+        mean_data, sem_data, n_frames = run_structural_analysis(glass_atoms, simulation_history=history)
+
+        assert n_frames == 3
+        assert mean_data is mock_mean
+        assert sem_data is mock_sem
+        _, kwargs = mock_analyze.call_args
+        assert kwargs.get("frame_averaging") is True
