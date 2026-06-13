@@ -4,7 +4,12 @@
 
 When using the `pixi` environment, the API dependencies will already be installed.
 
-When using the pip/conda approach, install the API server and its dependencies via:
+When using the pip/conda approach, install the API server and its dependencies via `conda-forge`:
+```bash
+conda install -c conda-forge amorphouspy-api
+```
+
+Alternatively, you can install via pip:
 ```bash
 pip install amorphouspy[api]
 ```
