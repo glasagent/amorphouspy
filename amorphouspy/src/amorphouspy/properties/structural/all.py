@@ -337,12 +337,16 @@ def _build_rings_mean_sem(frames: list[StructureData]) -> tuple[dict, dict]:
 
     Returns:
         Tuple of ``(mean_rings, sem_rings)`` each with keys ``"distribution"``
-        (``dict[str, float]``) and ``"mean_size"`` (``float``).
+        (``dict[str, float]``) and ``"mean_size"`` (``float``). Frames without
+        ring data are ignored; returns ``({}, {})`` when no frame has rings.
 
     """
+    frames_with_rings = [f for f in frames if f.distributions.rings]
+    if not frames_with_rings:
+        return {}, {}
     rings_dist_per_frame = []
     mean_sizes = []
-    for frame_result in frames:
+    for frame_result in frames_with_rings:
         dist = frame_result.distributions.rings.get("distribution", {})
         rings_dist_per_frame.append({k: float(v) for k, v in dist.items()} if isinstance(dist, dict) else {})
         mean_size_value = frame_result.distributions.rings.get("mean_size", 0.0)
@@ -669,6 +673,8 @@ def _compute_distributions(
     network_formers: set[str],
     o_type: list[int],
     cutoff_map: dict[str, float],
+    *,
+    compute_rings: bool = True,
 ) -> tuple[dict, dict]:
     """Compute bond-angle distributions and ring statistics.
 
@@ -678,6 +684,7 @@ def _compute_distributions(
         network_formers: Set of network-former element symbols.
         o_type: Atomic numbers of oxygen (empty list if no oxygen).
         cutoff_map: Element symbol → coordination cutoff (Å).
+        compute_rings: Whether to run the ring statistics analysis.
 
     Returns:
         Tuple of ``(bond_angle_distributions, ring_statistics_data)`` where:
@@ -695,7 +702,7 @@ def _compute_distributions(
             bond_angle_distributions[former] = (_bins, _hist)
 
     ring_statistics_data: dict = {}
-    if network_formers and o_type:
+    if compute_rings and network_formers and o_type:
         specific_cutoffs = {(former, "O"): cutoff_map[former] for former in network_formers}
         bond_lengths = generate_bond_length_dict(atoms, specific_cutoffs=specific_cutoffs)
         rings_dist, mean_ring_size = compute_guttmann_rings(atoms, bond_lengths=bond_lengths, max_size=40, n_cpus=1)
@@ -776,6 +783,7 @@ def analyze_structure(
     atoms: Atoms | list[Atoms],
     *,
     frame_averaging: bool = False,
+    compute_rings: bool = True,
 ) -> tuple[StructureData, StructureData]:
     """Perform a comprehensive structural analysis of an atomic configuration.
 
@@ -783,6 +791,9 @@ def analyze_structure(
         atoms: Atomic configuration to analyze, or a list of frames when frame_averaging=True.
         frame_averaging: If True, average results over all frames in atoms (list[Atoms]).
             Returns a tuple (mean_data, sem_data) where both are StructureData instances.
+            Ring statistics are computed on the first frame only; all other properties
+            are averaged over all frames.
+        compute_rings: Whether to run the ring statistics analysis.
 
     Returns:
         StructureData: Object containing structured analysis results.
@@ -798,7 +809,10 @@ def analyze_structure(
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
         frames = cast("list[Atoms]", atoms if isinstance(atoms, list) else [atoms])
-        per_frame_results = [analyze_structure(frame_atoms)[0] for frame_atoms in frames]
+        per_frame_results = [
+            analyze_structure(frame_atoms, compute_rings=compute_rings and i == 0)[0]
+            for i, frame_atoms in enumerate(frames)
+        ]
         return _build_sem_structure_data(per_frame_results)
     if isinstance(atoms, list):
         atoms = cast("Atoms", atoms[0])
@@ -820,7 +834,7 @@ def analyze_structure(
         atoms, network_formers, former_types, o_type, cutoff_map, type_map
     )
     bond_angle_distributions, ring_statistics_data = _compute_distributions(
-        atoms, type_map, network_formers, o_type, cutoff_map
+        atoms, type_map, network_formers, o_type, cutoff_map, compute_rings=compute_rings
     )
 
     def to_list(data: np.ndarray | list[float]) -> list[float]:
