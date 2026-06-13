@@ -1,14 +1,28 @@
 # Installation guide
 
-## Using pixi (recommended)
+## From conda-forge (recommended for stable releases)
 
-This project uses [pixi](https://pixi.sh) for environment management.
-Pixi handles all dependencies — including LAMMPS with OpenMPI and API dependencies — in a single step.
+For users wanting to install a stable release of `amorphouspy`, we recommend using `conda-forge`. The package is available on `conda-forge` via a multi-output recipe, allowing you to install either the core simulation workflow package, or the web API server with its advanced process orchestrators. Installing via `conda` automatically handles all complex dependencies including LAMMPS.
+
+*(Note: Users are free to use whatever tool they prefer to manage their conda/mamba/pixi environments here).*
+
+### Core Package
+To install the core `amorphouspy` library with LAMMPS and all numerical/scientific dependencies:
+```bash
+conda install -c conda-forge amorphouspy
+```
+
+### Web API Server
+To install the web API & Model Context Protocol (MCP) server integration, which automatically pulls in the core `amorphouspy` library, `executorlib`, `fastapi`, and associated packages:
+```bash
+conda install -c conda-forge amorphouspy-api
+```
+
+## From git / source (for development)
+
+If you want to contribute to development or run the latest source code of this project from git, we recommend using [pixi](https://pixi.sh) for environment management as it handles all dependencies — including LAMMPS with OpenMPI and API dependencies — in a single step using the local clone of the repository.
 
 ```bash
-# Install pixi (if not already installed)
-curl -fsSL https://pixi.sh/install.sh | bash
-
 # Clone the repository
 git clone https://github.com/glasagent/amorphouspy.git
 cd amorphouspy
