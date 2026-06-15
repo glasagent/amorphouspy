@@ -30,7 +30,7 @@ dependencies = [
 
 [project.optional-dependencies]
 api = [
-  "executorlib",
+  "executorlib>=1.1",
   "pysqa",
   "uvicorn",
   "fastapi",
@@ -38,7 +38,7 @@ api = [
   "sqlalchemy",
   "jinja2",
 ]
-executorlib = ["executorlib"]
+executorlib = ["executorlib>=1.1"]
 
 [tool.hatch.build.targets.wheel]
 packages = [

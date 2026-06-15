@@ -2504,8 +2504,8 @@ packages:
   timestamp: 1758743294412
 - pypi: ./
   name: amorphouspy
-  version: 0.6.0
-  sha256: 623ad6940a7852c03cdf7cdcbef2afc404c05bbd82f1c77da1232335aef18d06
+  version: 0.7.0
+  sha256: 78c25284d7cb1b66820d304d4b573dd878f167149583812b96dd9ff4948208fa
   requires_dist:
   - ase
   - numba
@@ -2516,14 +2516,14 @@ packages:
   - pymatgen
   - pymcubes
   - scipy
-  - executorlib ; extra == 'api'
+  - executorlib>=1.1 ; extra == 'api'
   - pysqa ; extra == 'api'
   - uvicorn ; extra == 'api'
   - fastapi ; extra == 'api'
   - mcp>=1.6.0 ; extra == 'api'
   - sqlalchemy ; extra == 'api'
   - jinja2 ; extra == 'api'
-  - executorlib ; extra == 'executorlib'
+  - executorlib>=1.1 ; extra == 'executorlib'
   requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl
   name: annotated-doc
