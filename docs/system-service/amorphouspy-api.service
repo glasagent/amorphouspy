@@ -7,10 +7,13 @@ Wants=network-online.target
 Type=simple
 User=amorphouspy
 WorkingDirectory=/home/amorphouspy/amorphouspy/amorphouspy_api
-ExecStart=/home/amorphouspy/.pixi/bin/pixi run --frozen -- uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 443 --log-level info --backlog 1 --timeout-keep-alive 60
+ExecStart=/home/amorphouspy/.pixi/bin/pixi run --frozen -- uvicorn amorphouspy_api.app:app --host 0.0.0.0 --port 443 --log-level info --backlog 100 --timeout-keep-alive 60
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=on-failure
 RestartSec=5
+# Disable HDF5's file-locking: it uses flock/fcntl which can hang or deadlock
+# on networked filesystems, freezing executorlib cache reads.
+Environment=HDF5_USE_FILE_LOCKING=FALSE
 Environment=EXECUTOR_TYPE=slurm
 Environment=SLURM_PARTITION=main_queue
 #Environment=SLURM_RUN_TIME_MAX=7200
