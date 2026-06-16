@@ -42,7 +42,7 @@ pip-licenses = "*"
 ty = ">=0.0.29,<0.0.30"
 
 [feature.api.dependencies]
-executorlib = "*"
+executorlib = ">=1.10"
 h5py = "*"
 pysqa = "*"
 sqlalchemy = "*"
