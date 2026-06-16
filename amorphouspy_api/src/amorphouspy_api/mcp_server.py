@@ -1,7 +1,9 @@
 """MCP server — exposes amorphouspy API tools to LLM clients.
 
 Uses the ``mcp`` SDK's :class:`~mcp.server.fastmcp.FastMCP` to register the
-existing FastAPI endpoint functions directly as MCP tools (no wrappers needed).
+existing FastAPI endpoint functions as MCP tools. Synchronous endpoints are
+wrapped by :func:`_offload_sync` so their (potentially blocking) IO runs in a
+worker thread instead of on the event loop.
 
 The :class:`MCPRouteMiddleware` ASGI middleware routes ``/mcp`` requests to the
 MCP server while all other traffic passes through to the FastAPI application.
@@ -9,9 +11,17 @@ MCP server while all other traffic passes through to the FastAPI application.
 
 from __future__ import annotations
 
+import functools
+import inspect
+from typing import TYPE_CHECKING, Any
+
 from mcp.server.fastmcp import FastMCP
+from starlette.concurrency import run_in_threadpool
 
 from .config import MCP_HOST
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ---------------------------------------------------------------------------
 # MCP server instance
@@ -39,6 +49,30 @@ mcp = FastMCP(
     stateless_http=True,
     host=MCP_HOST,
 )
+
+
+def _offload_sync(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap a synchronous endpoint so MCP runs it in a worker thread.
+
+    FastMCP executes synchronous tool functions inline on the asyncio event
+    loop (``func_metadata.call_fn_with_arg_validation`` calls ``fn(...)``
+    directly when the function is not a coroutine). Any blocking IO inside such
+    a tool — e.g. reading executorlib HDF5 caches — would therefore freeze the
+    entire single-worker server.
+
+    Wrapping the function in an ``async`` shim that offloads to Starlette's
+    worker-thread pool keeps the event loop responsive. ``functools.wraps``
+    preserves ``__wrapped__`` so ``inspect.signature`` (used by FastMCP to build
+    the tool schema) still resolves the original signature and annotations.
+    """
+    if inspect.iscoroutinefunction(fn):
+        return fn
+
+    @functools.wraps(fn)
+    async def _async_tool(**kwargs: object) -> object:
+        return await run_in_threadpool(fn, **kwargs)
+
+    return _async_tool
 
 
 def register_tools() -> None:
@@ -70,7 +104,7 @@ def register_tools() -> None:
         list_glasses,
         lookup_glass,
     ]:
-        mcp.add_tool(fn)
+        mcp.add_tool(_offload_sync(fn))
 
     # Strip auto-generated 'title' fields from MCP tool schemas.
     # Pydantic titles duplicate the field/class name and waste LLM tokens.
