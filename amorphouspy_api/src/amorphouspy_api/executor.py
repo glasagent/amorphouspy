@@ -8,7 +8,11 @@ enabling the API to check job status without blocking.
 
 Configure via environment variables:
     EXECUTOR_TYPE: "test" (default), "slurm", "flux", or "single"
-    LAMMPS_CORES: Number of MPI cores for LAMMPS simulations (default: 4)
+    LAMMPS_MAX_CORES: Maximum number of MPI cores available for a single LAMMPS
+        simulation (e.g. the cores on a node or the per-job limit in the SLURM
+        queue). The actual core count is scaled down from this maximum when the
+        workload is too small to use it efficiently (see ``compute_lammps_cores``).
+        Defaults to 4.
     SLURM_PARTITION: SLURM partition name (optional, slurm only)
     SLURM_RUN_TIME_MAX: Max run time per job in seconds (optional, slurm only)
     SLURM_MEMORY_MAX: Max memory per job in GB (optional, slurm only)
@@ -30,6 +34,54 @@ from executorlib.api import TestClusterExecutor
 from amorphouspy_api.config import PROJECTS_FOLDER
 
 logger = logging.getLogger(__name__)
+
+
+def get_max_cores() -> int:
+    """Return the system-wide maximum number of cores for a LAMMPS simulation.
+
+    Read from ``LAMMPS_MAX_CORES``, defaulting to 4. Always at least 1.
+    """
+    return max(1, int(os.environ.get("LAMMPS_MAX_CORES", "4")))
+
+
+def compute_lammps_cores(potential: str, n_atoms: int, cores: int | None = None) -> int:
+    """Pick the number of MPI cores for a LAMMPS run.
+
+    When *cores* is given it is honoured directly (clamped to at least 1); a
+    warning is logged if it exceeds the system maximum. Otherwise the system
+    maximum (:func:`get_max_cores`) is used unless that would push the workload
+    below the potential's minimum atoms-per-core, in which case the core count
+    is scaled down to preserve scaling efficiency. The result is always at
+    least 1.
+
+    Args:
+        potential: Potential identifier (e.g. ``"pmmcs"``, ``"shik"``).
+        n_atoms: Number of atoms in the simulation cell.
+        cores: Explicit job-level core count override. ``None`` means
+            auto-select.
+
+    Returns:
+        The chosen core count.
+    """
+    if cores is not None:
+        chosen = max(1, cores)
+        max_cores = get_max_cores()
+        if chosen > max_cores:
+            logger.warning(
+                "Requested cores=%d exceeds LAMMPS_MAX_CORES=%d; using %d anyway.",
+                chosen,
+                max_cores,
+                chosen,
+            )
+        return chosen
+
+    from amorphouspy.lammps.potentials.potential import get_min_atoms_per_core
+
+    max_cores = get_max_cores()
+    min_atoms_per_core = get_min_atoms_per_core(potential)
+    # floor keeps the realised atoms/core at or above the minimum.
+    efficient_cores = max(1, n_atoms // min_atoms_per_core)
+    return min(max_cores, efficient_cores)
 
 
 def get_executor_class() -> type:
@@ -88,7 +140,7 @@ def get_base_resource_dict() -> dict[str, Any]:
     return resource_dict
 
 
-def get_lammps_resource_dict() -> dict[str, Any]:
+def get_lammps_resource_dict(potential: str, n_atoms: int, cores: int | None = None) -> dict[str, Any]:
     """Get resource dictionary for LAMMPS simulations.
 
     On SLURM, uses ``threads_per_core`` so that executorlib runs a **single**
@@ -96,22 +148,30 @@ def get_lammps_resource_dict() -> dict[str, Any]:
     internal ``mpiexec -n <cores>``.  On other executors the dict is empty
     (LAMMPS core count is handled via ``get_lammps_server_kwargs`` instead).
 
+    Args:
+        potential: Potential identifier used to pick the minimum atoms-per-core.
+        n_atoms: Number of atoms in the simulation cell.
+        cores: Explicit job-level core count override (``None`` = auto-select).
+
     Returns:
         Dictionary with LAMMPS-specific resource settings.
     """
     base = get_base_resource_dict()
     if _is_slurm():
-        base["threads_per_core"] = int(os.environ.get("LAMMPS_CORES", "4"))
+        base["threads_per_core"] = compute_lammps_cores(potential, n_atoms, cores)
     return base
 
 
-def get_lammps_server_kwargs() -> dict[str, int]:
+def get_lammps_server_kwargs(potential: str, n_atoms: int, cores: int | None = None) -> dict[str, int]:
     """Get the ``server_kwargs`` for amorphouspy LAMMPS functions.
 
     Returns ``{"cores": N}`` as expected by
-    :func:`amorphouspy.workflows.shared.get_lammps_command`.
+    :func:`amorphouspy.workflows.shared.get_lammps_command`, where ``N`` is
+    chosen by :func:`compute_lammps_cores` from the explicit *cores* override
+    or, when ``None``, the system maximum and the potential's minimum
+    atoms-per-core.
     """
-    return {"cores": int(os.environ.get("LAMMPS_CORES", "4"))}
+    return {"cores": compute_lammps_cores(potential, n_atoms, cores)}
 
 
 def get_executor(cache_directory: Path) -> executorlib.BaseExecutor:

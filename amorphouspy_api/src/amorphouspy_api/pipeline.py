@@ -66,7 +66,9 @@ def _run_melt_quench(submission: JobSubmission, config: BaseModel, result: dict)
         temperature_low=300.0,
         equilibration_steps=submission.simulation.equilibration_steps,
         n_averaging_frames=getattr(submission.simulation, "n_averaging_frames", 100),
-        server_kwargs=get_lammps_server_kwargs(),
+        server_kwargs=get_lammps_server_kwargs(
+            submission.potential, submission.simulation.n_atoms, submission.simulation.cores
+        ),
     )
     mq_result["composition"] = submission.composition.root
     return mq_result
@@ -102,7 +104,9 @@ def _run_viscosity(submission: JobSubmission, config: ViscosityAnalysis, result:
         n_timesteps=config.n_timesteps,
         n_print=config.n_print,
         max_lag=config.max_lag,
-        server_kwargs=get_lammps_server_kwargs(),
+        server_kwargs=get_lammps_server_kwargs(
+            submission.potential, submission.simulation.n_atoms, submission.simulation.cores
+        ),
     )
 
 
@@ -115,7 +119,9 @@ def _run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperature
 
     potential = result["structure_generation"]["potential"]
     structure = result["melt_quench"]["final_structure"]
-    resource_dict = get_lammps_server_kwargs()
+    resource_dict = get_lammps_server_kwargs(
+        submission.potential, submission.simulation.n_atoms, submission.simulation.cores
+    )
 
     if isinstance(config, CTEFluctuations):
         cte_result = cte_from_fluctuations_simulation(
@@ -173,7 +179,9 @@ def _run_elastic(submission: JobSubmission, config: ElasticAnalysis, result: dic
         production_steps=config.production_steps,
         n_print=config.n_print,
         strain=config.strain,
-        server_kwargs=get_lammps_server_kwargs(),
+        server_kwargs=get_lammps_server_kwargs(
+            submission.potential, submission.simulation.n_atoms, submission.simulation.cores
+        ),
     )
 
     cij = raw.get("Cij")
@@ -253,7 +261,9 @@ def submit_pipeline(
     from amorphouspy_api.executor import _is_slurm, get_base_resource_dict, get_lammps_resource_dict
 
     base_resource_dict = get_base_resource_dict()
-    lammps_resource_dict = get_lammps_resource_dict()
+    lammps_resource_dict = get_lammps_resource_dict(
+        submission.potential, submission.simulation.n_atoms, submission.simulation.cores
+    )
 
     # Steps that run LAMMPS simulations and need multi-core SBATCH allocation.
     LAMMPS_STEPS = {"melt_quench", "cte", "viscosity", "elastic"}

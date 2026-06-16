@@ -17,7 +17,12 @@ Environment=HDF5_USE_FILE_LOCKING=FALSE
 Environment=EXECUTOR_TYPE=slurm
 Environment=SLURM_PARTITION=main_queue
 #Environment=SLURM_RUN_TIME_MAX=7200
-Environment=LAMMPS_CORES=8
+# Maximum cores per LAMMPS simulation. Set this to the number of cores on a
+# node (good for clusters with a slow interconnect) or the per-job core limit
+# in your SLURM queue. The API scales down from this when a job is too small to
+# use it efficiently (each potential defines a minimum atoms-per-core). The
+# default of 4 is only meant for demos; production runs typically want 16-48.
+Environment=LAMMPS_MAX_CORES=8
 Environment=AMORPHOUSPY_PROJECTS=/net/fileserver1/data_raid/data/amorphouspy_data
 Environment=AMORPHOUSPY_VERSION_PROJECTS=0
 Environment=API_BASE_URL=https://amorphouspy.example.com

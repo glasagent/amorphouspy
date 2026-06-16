@@ -3,6 +3,8 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+import warnings
+
 import pandas as pd
 
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
@@ -58,6 +60,45 @@ def get_supported_elements(potential_type: str) -> set[str]:
         msg = f"Unsupported potential type: {potential_type}"
         raise ValueError(msg)
     return mod.supported_elements()
+
+
+# Fallback minimum atoms-per-core used for potentials that do not declare their
+# own ``MIN_ATOMS_PER_CORE`` (and for unknown potential names).
+DEFAULT_MIN_ATOMS_PER_CORE = 2000
+
+
+def get_min_atoms_per_core(potential_type: str) -> int:
+    """Return the minimum atoms-per-core for *potential_type*.
+
+    Each potential module may declare a ``MIN_ATOMS_PER_CORE`` constant
+    expressing the smallest number of atoms per MPI core that still keeps it at
+    good (~80-90%) scaling efficiency. Potentials without one (and unrecognised
+    names) emit a warning and fall back to :data:`DEFAULT_MIN_ATOMS_PER_CORE`.
+
+    Args:
+        potential_type: Potential identifier (e.g. ``"pmmcs"``, ``"shik"``).
+
+    Returns:
+        The minimum number of atoms per core.
+
+    """
+    mod = _POTENTIAL_MODULES.get(potential_type.lower())
+    if mod is None:
+        warnings.warn(
+            f"Unknown potential {potential_type!r}; using default minimum atoms-per-core "
+            f"of {DEFAULT_MIN_ATOMS_PER_CORE} for core selection.",
+            stacklevel=2,
+        )
+        return DEFAULT_MIN_ATOMS_PER_CORE
+    min_atoms_per_core = getattr(mod, "MIN_ATOMS_PER_CORE", None)
+    if min_atoms_per_core is None:
+        warnings.warn(
+            f"Potential {potential_type!r} does not define MIN_ATOMS_PER_CORE; "
+            f"using default of {DEFAULT_MIN_ATOMS_PER_CORE} for core selection.",
+            stacklevel=2,
+        )
+        return DEFAULT_MIN_ATOMS_PER_CORE
+    return min_atoms_per_core
 
 
 def _is_compatible(name: str, elements: set[str]) -> bool:

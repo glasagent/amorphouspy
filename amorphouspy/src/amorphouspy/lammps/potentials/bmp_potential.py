@@ -39,6 +39,9 @@ _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
 _DEFAULT_ALPHA = 0.25
 _MELT_TEMPERATURE = 4000
 
+# Minimum atoms-per-core for good (~80-90%) MPI scaling efficiency.
+MIN_ATOMS_PER_CORE = 2000
+
 # Elements active in each three-body style; all others get NULL in pair_coeff
 _HARMONIC_3BODY_ELEMENTS = {"Si", "O", "P"}
 _SCREENED_HARMONIC_3BODY_ELEMENTS = {"Si", "O", "P", "B", "V"}

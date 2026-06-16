@@ -240,6 +240,16 @@ def submit_job(
                 ),
             ) from exc
 
+    # Resolve the actual LAMMPS core count (honouring an explicit override or
+    # auto-selecting) so it is recorded in the stored job settings.
+    from amorphouspy_api.executor import compute_lammps_cores
+
+    submission.simulation.cores = compute_lammps_cores(
+        submission.potential,
+        submission.simulation.n_atoms,
+        submission.simulation.cores,
+    )
+
     store = get_job_store()
     norm_comp = submission.composition.canonical
     req_hash = _job_hash(submission, norm_comp)

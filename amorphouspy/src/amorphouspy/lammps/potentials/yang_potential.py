@@ -16,6 +16,9 @@ _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 11.0
 _DEFAULT_ALPHA = 0.182
 _MELT_TEMPERATURE = 4000
 
+# Minimum atoms-per-core for good (~80-90%) MPI scaling efficiency.
+MIN_ATOMS_PER_CORE = 2000
+
 # Potential parameters from Table II and III in Yang et al., J. Non-Cryst. Solids 684, 124104 (2026)
 # Charges
 yang2026_charges = {

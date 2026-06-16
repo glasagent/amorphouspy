@@ -354,6 +354,16 @@ class MeltQuenchParams(BaseModel):
     )
     quench_rate: float = Field(default=1e12, description="Quench rate in K/s")
     n_atoms: int = Field(default=6000, description="Number of atoms")
+    cores: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Number of MPI cores per LAMMPS simulation. If omitted, the server "
+            "auto-selects based on the potential's minimum atoms-per-core, "
+            "capped at LAMMPS_MAX_CORES. The resolved value is recorded in the "
+            "job settings."
+        ),
+    )
     timestep: float = Field(default=1.0, description="MD timestep in fs")
     equilibration_steps: int | None = Field(
         default=None,

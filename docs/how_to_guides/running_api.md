@@ -90,12 +90,28 @@ Set the following environment variables before running `pixi run serve`
 (see the [Web API Reference](../api_service.md#environment-variables) for the full list):
 
 - `EXECUTOR_TYPE=slurm`
-- `LAMMPS_CORES` — MPI cores for LAMMPS jobs (default: `4`)
+- `LAMMPS_MAX_CORES` — Maximum MPI cores per LAMMPS job (default: `4`). The API scales down from this when a job is too small to use it efficiently (each potential defines a minimum atoms-per-core).
 - `SLURM_PARTITION` — SLURM partition name
 - `SLURM_RUN_TIME_MAX` — Max run time per job in seconds (optional)
 - `SLURM_MEMORY_MAX` — Max memory per job in GB (optional)
 
-For most setups, `EXECUTOR_TYPE`, `LAMMPS_CORES`, and `SLURM_PARTITION` are sufficient.
+For most setups, `EXECUTOR_TYPE`, `LAMMPS_MAX_CORES`, and `SLURM_PARTITION` are sufficient.
+
+!!! tip "Choosing `LAMMPS_MAX_CORES`"
+    The default of `4` is fine for demos but too low for production. Set it to:
+
+    - **The number of cores on a node** if your cluster has a slow interconnect,
+      so a job stays within a single node and avoids cross-node MPI traffic.
+    - **The per-job core limit of your SLURM queue** otherwise, so large jobs can
+      span multiple nodes.
+
+    Typical values are `16`–`48` (a common node size). The API never uses more
+    cores than this, and scales *down* for small systems to keep each potential's
+    minimum atoms-per-core, so setting a high maximum is safe.
+
+    To override auto-selection for a single job, set `simulation.cores` in the
+    `POST /jobs` body. The resolved value (explicit or auto-selected) is recorded
+    in the job's settings (`GET /jobs/{id}/settings`).
 
 #### Custom submission template
 
@@ -131,7 +147,7 @@ Example:
 ```bash
 EXECUTOR_TYPE=slurm \
 SLURM_PARTITION=batch \
-LAMMPS_CORES=8 \
+LAMMPS_MAX_CORES=8 \
 SLURM_RUN_TIME_MAX=7200 \
 pixi run serve
 ```
@@ -165,7 +181,7 @@ Edit the `[Service]` section of the unit file to set environment variables
 ```ini
 Environment=EXECUTOR_TYPE=slurm
 Environment=SLURM_PARTITION=main_queue
-Environment=LAMMPS_CORES=8
+Environment=LAMMPS_MAX_CORES=16
 Environment=AMORPHOUSPY_PROJECTS=/path/to/data
 Environment=AMORPHOUSPY_VERSION_PROJECTS=0
 Environment=API_TOKEN=<your-secret-token>
