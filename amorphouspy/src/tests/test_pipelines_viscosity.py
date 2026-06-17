@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import itertools
+from unittest.mock import MagicMock, patch
 
 import pytest
 from amorphouspy.atoms.shared import _logspace, downsample_log
+from amorphouspy.pipelines.viscosity import run_viscosity_workflow
+from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # _logspace
@@ -92,3 +95,186 @@ class TestDownsampleLog:
         result = downsample_log(arr, max_points=50)
         for v in result:
             assert v in arr
+
+
+# ---------------------------------------------------------------------------
+# run_viscosity_workflow
+# ---------------------------------------------------------------------------
+
+
+@patch("amorphouspy.pipelines.viscosity.downsample_log", side_effect=lambda a: a)
+@patch("amorphouspy.pipelines.viscosity.get_viscosity")
+@patch("amorphouspy.pipelines.viscosity.viscosity_simulation")
+@patch("amorphouspy.pipelines.viscosity.melt_quench_simulation")
+def test_run_viscosity_workflow_sorts_temperatures_high_to_low(
+    mock_mq: MagicMock,
+    mock_visc_sim: MagicMock,
+    mock_get_visc: MagicMock,
+    mock_downsample: MagicMock,
+) -> None:
+    """Input temperatures are always processed from highest to lowest."""
+    structure = Atoms("SiO2", positions=[[0, 0, 0], [1, 0, 0], [2, 0, 0]], cell=[5, 5, 5], pbc=True)
+    potential = MagicMock()
+
+    mock_mq.side_effect = [
+        {"structure": structure},
+        {"structure": structure},
+        {"structure": structure},
+    ]
+    mock_visc_sim.return_value = {"result": {}}
+    mock_get_visc.side_effect = [
+        {"viscosity": 1.0, "max_lag": 10.0, "lag_time_ps": [0.0, 1.0], "viscosity_integral": [0.0, 1.0]},
+        {"viscosity": 2.0, "max_lag": 11.0, "lag_time_ps": [0.0, 1.0], "viscosity_integral": [0.0, 2.0]},
+        {"viscosity": 3.0, "max_lag": 12.0, "lag_time_ps": [0.0, 1.0], "viscosity_integral": [0.0, 3.0]},
+    ]
+
+    out = run_viscosity_workflow(
+        structure=structure,
+        potential=potential,
+        temperatures=[2000.0, 1500.0, 2500.0],
+        heating_rate=1e12,
+        cooling_rate=1e12,
+    )
+
+    assert mock_downsample is not None
+
+    assert out["temperatures"] == [2500.0, 2000.0, 1500.0]
+    assert out["viscosities"] == [1.0, 2.0, 3.0]
+
+
+@patch("amorphouspy.pipelines.viscosity.downsample_log", side_effect=lambda a: a)
+@patch(
+    "amorphouspy.pipelines.viscosity.get_viscosity",
+    return_value={"viscosity": 1.0, "max_lag": 10.0, "lag_time_ps": [], "viscosity_integral": []},
+)
+@patch("amorphouspy.pipelines.viscosity.viscosity_simulation", return_value={"result": {}})
+@patch("amorphouspy.pipelines.viscosity.melt_quench_simulation")
+def test_run_viscosity_workflow_uses_5000K_for_first_stage(
+    mock_mq: MagicMock,
+    mock_visc_sim: MagicMock,
+    mock_get_visc: MagicMock,
+    mock_downsample: MagicMock,
+) -> None:
+    """First cooling stage starts from 5000 K."""
+    structure = Atoms("Si", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+    mock_mq.return_value = {"structure": structure}
+
+    run_viscosity_workflow(
+        structure=structure,
+        potential=MagicMock(),
+        temperatures=[1800.0],
+        heating_rate=1e12,
+        cooling_rate=1e12,
+    )
+
+    assert mock_visc_sim is not None
+    assert mock_get_visc is not None
+    assert mock_downsample is not None
+
+    _, kwargs = mock_mq.call_args
+    assert kwargs["temperature_high"] == 5000.0
+    assert kwargs["temperature_low"] == 1800.0
+
+
+@patch("amorphouspy.pipelines.viscosity.downsample_log", side_effect=lambda a: a)
+@patch(
+    "amorphouspy.pipelines.viscosity.get_viscosity",
+    return_value={"viscosity": 1.0, "max_lag": 10.0, "lag_time_ps": [], "viscosity_integral": []},
+)
+@patch("amorphouspy.pipelines.viscosity.viscosity_simulation", return_value={"result": {}})
+@patch("amorphouspy.pipelines.viscosity.melt_quench_simulation")
+def test_run_viscosity_workflow_uses_previous_temperature_for_next_stage(
+    mock_mq: MagicMock,
+    mock_visc_sim: MagicMock,
+    mock_get_visc: MagicMock,
+    mock_downsample: MagicMock,
+) -> None:
+    """Subsequent cooling stage starts from the previous target temperature."""
+    structure = Atoms("Si", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+    mock_mq.side_effect = [{"structure": structure}, {"structure": structure}]
+
+    run_viscosity_workflow(
+        structure=structure,
+        potential=MagicMock(),
+        temperatures=[2500.0, 2000.0],
+        heating_rate=1e12,
+        cooling_rate=1e12,
+    )
+
+    assert mock_visc_sim is not None
+    assert mock_get_visc is not None
+    assert mock_downsample is not None
+
+    first_kwargs = mock_mq.call_args_list[0].kwargs
+    second_kwargs = mock_mq.call_args_list[1].kwargs
+    assert first_kwargs["temperature_high"] == 5000.0
+    assert first_kwargs["temperature_low"] == 2500.0
+    assert second_kwargs["temperature_high"] == 2500.0
+    assert second_kwargs["temperature_low"] == 2000.0
+
+
+@patch("amorphouspy.pipelines.viscosity.downsample_log", side_effect=lambda a: a)
+@patch(
+    "amorphouspy.pipelines.viscosity.get_viscosity",
+    return_value={"viscosity": 1.0, "max_lag": 10.0, "lag_time_ps": [], "viscosity_integral": []},
+)
+@patch("amorphouspy.pipelines.viscosity.viscosity_simulation", return_value={"result": {}})
+@patch("amorphouspy.pipelines.viscosity.melt_quench_simulation")
+def test_run_viscosity_workflow_defaults_server_kwargs_to_empty_dict(
+    mock_mq: MagicMock,
+    mock_visc_sim: MagicMock,
+    mock_get_visc: MagicMock,
+    mock_downsample: MagicMock,
+) -> None:
+    """When server_kwargs is omitted, both stages receive {}."""
+    structure = Atoms("Si", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+    mock_mq.return_value = {"structure": structure}
+
+    run_viscosity_workflow(
+        structure=structure,
+        potential=MagicMock(),
+        temperatures=[2000.0],
+        heating_rate=1e12,
+        cooling_rate=1e12,
+    )
+
+    assert mock_get_visc is not None
+    assert mock_downsample is not None
+
+    assert mock_mq.call_args.kwargs["server_kwargs"] == {}
+    assert mock_visc_sim.call_args.kwargs["server_kwargs"] == {}
+
+
+@patch("amorphouspy.pipelines.viscosity.downsample_log", side_effect=lambda a: a[::2])
+@patch("amorphouspy.pipelines.viscosity.get_viscosity")
+@patch("amorphouspy.pipelines.viscosity.viscosity_simulation", return_value={"result": {}})
+@patch("amorphouspy.pipelines.viscosity.melt_quench_simulation")
+def test_run_viscosity_workflow_downsamples_saved_series(
+    mock_mq: MagicMock,
+    mock_visc_sim: MagicMock,
+    mock_get_visc: MagicMock,
+    mock_downsample: MagicMock,
+) -> None:
+    """Lag-time and viscosity integral series are downsampled before return."""
+    structure = Atoms("Si", positions=[[0, 0, 0]], cell=[5, 5, 5], pbc=True)
+    mock_mq.return_value = {"structure": structure}
+    mock_get_visc.return_value = {
+        "viscosity": 1.2,
+        "max_lag": 20.0,
+        "lag_time_ps": [0.0, 1.0, 2.0, 3.0],
+        "viscosity_integral": [0.0, 0.5, 1.0, 1.5],
+    }
+
+    out = run_viscosity_workflow(
+        structure=structure,
+        potential=MagicMock(),
+        temperatures=[2000.0],
+        heating_rate=1e12,
+        cooling_rate=1e12,
+    )
+
+    assert mock_visc_sim is not None
+    assert mock_downsample is not None
+
+    assert out["lag_times_ps"] == [[0.0, 2.0]]
+    assert out["viscosity_integral"] == [[0.0, 1.0]]

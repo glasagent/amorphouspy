@@ -37,7 +37,8 @@ def _viscosity_simulation(
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     production_steps: int = 10_000_000,
-    n_print: int = 1,
+    n_dump: int | None = None,
+    n_print_thermo: int | None = 1,
     server_kwargs: dict[str, Any] | None = None,
     *,
     langevin: bool = False,
@@ -56,7 +57,8 @@ def _viscosity_simulation(
         temperature_sim: Simulation temperature in Kelvin.
         timestep: MD timestep in fs.
         production_steps: Number of MD steps for the production run.
-        n_print: Thermodynamic output frequency.
+        n_dump: Dump frequency.
+        n_print_thermo: Thermodynamic output frequency. If None, uses ``n_dump``.
         server_kwargs: Additional server arguments.
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization.
@@ -87,7 +89,7 @@ def _viscosity_simulation(
 
     # SHIK melts are equilibrated at 0.1 GPa, matching the melt-quench protocol
     # (compensates the DSF pressure deficit the potential was parameterized with).
-    equil_pressure = 0.1 if potential.loc[0, "Name"].lower() == "shik" else 0.0
+    equil_pressure = 0.1 if str(potential.loc[0, "Name"]).lower() == "shik" else 0.0
 
     # Stage 0: Langevin dynamics at T
     structure0, _ = _run_lammps_md(
@@ -97,11 +99,12 @@ def _viscosity_simulation(
         temperature=temperature_sim,
         n_ionic_steps=10_000,
         timestep=timestep,
-        n_print=1000,
         initial_temperature=temperature_sim,
         langevin=True,
         seed=seed,
         server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
     )
 
     # Stage 1: Equilibration in NPT at T
@@ -113,11 +116,12 @@ def _viscosity_simulation(
         n_ionic_steps=100_000,
         timestep=timestep,
         pressure=equil_pressure,
-        n_print=1000,
         initial_temperature=temperature_sim,
         langevin=langevin,
         seed=seed,
         server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
     )
 
     # Stage 2: Production simulation for viscosity at T
@@ -128,10 +132,11 @@ def _viscosity_simulation(
         temperature=temperature_sim,
         n_ionic_steps=production_steps,
         timestep=timestep,
-        n_print=n_print,
         initial_temperature=0,
         langevin=langevin,
         server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
     )
 
     result = parsed_output.get("generic", None)
@@ -721,7 +726,8 @@ def viscosity_simulation(
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     initial_production_steps: int = 10_000_000,
-    n_print: int = 1,
+    n_dump: int | None = None,
+    n_print_thermo: int | None = 1,
     max_total_time_ns: float = 50.0,
     max_iterations: int = 40,
     eta_rel_tol: float = 0.05,
@@ -756,8 +762,8 @@ def viscosity_simulation(
         timestep: MD timestep in fs.
         initial_production_steps: Steps for the first production run.
             Default 10,000,000 (= 10 ns at 1 fs timestep).
-        n_print: Thermodynamic output frequency (must equal ``output_frequency``
-            passed to analysis functions).
+        n_dump: Dump output frequency.
+        n_print_thermo: Thermodynamic output frequency.
         max_total_time_ns: Maximum total production time in nanoseconds.
             Default 50 ns.
         max_iterations: Maximum number of 100 ps extension iterations.
@@ -813,12 +819,17 @@ def viscosity_simulation(
         temperature_sim=temperature_sim,
         timestep=timestep,
         production_steps=initial_production_steps,
-        n_print=n_print,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
         server_kwargs=server_kwargs,
         langevin=langevin,
         seed=seed,
         tmp_working_directory=tmp_working_directory,
     )
+
+    output_frequency = n_print_thermo if n_print_thermo is not None else n_dump
+    if output_frequency is None:
+        output_frequency = 1
 
     acc: dict[str, Any] = {
         "pressures": sim_result["result"]["pressures"],
@@ -839,7 +850,7 @@ def viscosity_simulation(
         helfand_data = helfand_viscosity(
             {"result": acc},
             timestep=timestep,
-            output_frequency=n_print,
+            output_frequency=output_frequency,
         )
         eta_curr = float(helfand_data["viscosity"])
 
@@ -906,10 +917,11 @@ def viscosity_simulation(
             temperature=temperature_sim,
             n_ionic_steps=_ext,
             timestep=timestep,
-            n_print=n_print,
             initial_temperature=temperature_sim,
             langevin=langevin,
             server_kwargs=server_kwargs,
+            n_dump=n_dump,
+            n_print_thermo=n_print_thermo,
         )
 
         ext_result = ext_parsed.get("generic", None)
@@ -946,7 +958,8 @@ def viscosity_ensemble(  # noqa: C901
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     initial_production_steps: int = 10_000_000,
-    n_print: int = 1,
+    n_dump: int | None = None,
+    n_print_thermo: int | None = 1,
     max_total_time_ns: float = 50.0,
     max_iterations: int = 40,
     eta_rel_tol: float = 0.05,
@@ -991,7 +1004,8 @@ def viscosity_ensemble(  # noqa: C901
         temperature_sim: Simulation temperature in Kelvin.
         timestep: MD timestep in fs.
         initial_production_steps: Steps for the first production run per replica.
-        n_print: Thermodynamic output frequency.
+        n_dump: Dump output frequency.
+        n_print_thermo: Thermodynamic output frequency.
         max_total_time_ns: Maximum total production time per replica in nanoseconds.
         max_iterations: Maximum number of 100 ps extension iterations per replica.
         eta_rel_tol: Relative change threshold for eta-stability check.
@@ -1034,7 +1048,7 @@ def viscosity_ensemble(  # noqa: C901
         ...     potential=my_potential_df,
         ...     n_replicas=3,
         ...     temperature_sim=4000.0,
-        ...     n_print=10,
+        ...     n_print_thermo=10,
         ...     server_kwargs={"cores": 4},
         ... )
         >>> print(out["viscosity"], "±", out["viscosity_sem"], "Pa·s")
@@ -1075,7 +1089,8 @@ def viscosity_ensemble(  # noqa: C901
             temperature_sim=temperature_sim,
             timestep=timestep,
             initial_production_steps=initial_production_steps,
-            n_print=n_print,
+            n_dump=n_dump,
+            n_print_thermo=n_print_thermo,
             max_total_time_ns=max_total_time_ns,
             max_iterations=max_iterations,
             eta_rel_tol=eta_rel_tol,

@@ -281,6 +281,7 @@ def _update_from_resolved(
     if status == "completed":
         result = resolved["result"]
         progress = dict.fromkeys(all_steps, "completed")
+        persist_structures = bool(getattr(submission.simulation, "persist_structures", False)) if submission else False
 
         # Compute elemental atom-fraction vector from the result
         from amorphouspy_api.database import Job as _Job
@@ -291,6 +292,7 @@ def _update_from_resolved(
 
         store.update_job(
             job_id,
+            persist_structures=persist_structures,
             status="completed",
             progress=progress,
             result_data=result,
@@ -436,6 +438,7 @@ def refresh_job_from_cache(job: Job) -> None:
     )
 
     store = get_job_store()
+    persist_structures = bool(getattr(submission.simulation, "persist_structures", False)) if submission else False
     updates: dict[str, object] = {"progress": progress}
     if partial_results:
         updates["result_data"] = partial_results
@@ -445,7 +448,7 @@ def refresh_job_from_cache(job: Job) -> None:
             updates["errors"] = errors
     else:
         updates["status"] = "running"
-    store.update_job(job.job_id, **updates)
+    store.update_job(job.job_id, persist_structures=persist_structures, **updates)
 
 
 def _find_analysis_params(request_data: dict | None, analysis_type: str) -> dict:

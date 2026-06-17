@@ -259,30 +259,19 @@ def _warn_running_mean_points(
         msg = "\n  Running mean values are most likely based on insufficient data points."
         msg += f"\n  We recommend averaging over at least {min_points} data points, "
         msg += f"but currently only {N_for_averaging} are used."
-        msg += "\n  Consider decreasing n_log or change hard-coded AVERAGING_TIME_IN_PS variable."
+        msg += "\n  Consider decreasing n_print_thermo or change hard-coded AVERAGING_TIME_IN_PS variable."
         msg += "\n  Continuing regardless."
         logger.warning(msg)
-
-
-def _ensure_n_dump(n_dump: int, production_steps: int, logger: logging.Logger) -> int:
-    """Clamp n_dump to production_steps if it exceeds it."""
-    if n_dump > production_steps:
-        msg = "\n  Dump frequency n_dump is larger than the total number of production steps."
-        msg += f"\n  Currently, n_dump = {n_dump} and production_steps = {production_steps}."
-        msg += f"\n  Automatically setting n_dump to production_steps ({production_steps}) and continue."
-        logger.warning(msg)
-        n_dump = production_steps
-    return n_dump
 
 
 def _ensure_equilibration_steps(
     equilibration_steps: int,
     N_for_averaging: int,
-    n_log: int,
+    n_print_thermo: int,
     logger: logging.Logger,
 ) -> int:
     """Ensure equilibration produces at least one full window of data."""
-    min_equilibration_steps = N_for_averaging * n_log
+    min_equilibration_steps = N_for_averaging * n_print_thermo
     if equilibration_steps < min_equilibration_steps:
         msg = "\n  The equilibration must produce at least one window width of data for the tail carry-over."
         msg += f"\n  The current window size requires {min_equilibration_steps} equilibration steps,"
@@ -297,12 +286,11 @@ def _fluctuation_simulation_input_checker(
     production_steps: int,
     min_production_runs: int,
     max_production_runs: int,
-    n_log: int,
+    n_print_thermo: int,
     timestep: float,
-    n_dump: int,
     equilibration_steps: int,
     logger: logging.Logger,
-) -> tuple[int, int, int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
     """Check and adjust input parameters for cte_from_fluctuations_simulation workflow."""
     AVERAGING_TIME_IN_PS = 10
     MIN_RUNNING_MEAN_POINTS = 1000
@@ -310,13 +298,12 @@ def _fluctuation_simulation_input_checker(
     min_production_runs, max_production_runs = _check_min_max_runs(min_production_runs, max_production_runs, logger)
     production_steps = _ensure_prod_steps_minimum(production_steps, AVERAGING_TIME_IN_PS, timestep, logger)
 
-    N_for_averaging = int(AVERAGING_TIME_IN_PS * 1000 / n_log / timestep)
+    N_for_averaging = int(AVERAGING_TIME_IN_PS * 1000 / n_print_thermo / timestep)
     _warn_running_mean_points(N_for_averaging, MIN_RUNNING_MEAN_POINTS, logger)
 
-    n_dump = _ensure_n_dump(n_dump, production_steps, logger)
-    equilibration_steps = _ensure_equilibration_steps(equilibration_steps, N_for_averaging, n_log, logger)
+    equilibration_steps = _ensure_equilibration_steps(equilibration_steps, N_for_averaging, n_print_thermo, logger)
 
-    return production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump, equilibration_steps
+    return production_steps, min_production_runs, max_production_runs, N_for_averaging, equilibration_steps
 
 
 def _fluctuation_simulation_cte_calculation(
@@ -499,9 +486,7 @@ def _fluctuation_simulation_merge_results(
     return merged_data
 
 
-def _temperature_scan_input_checker(
-    temperature: list[int | float], production_steps: int, n_dump: int, logger: logging.Logger
-) -> int:
+def _temperature_scan_input_checker(temperature: list[int | float], logger: logging.Logger) -> None:
     """Check and adjust input parameters for cte_from_temperature_scan_simulation workflow."""
     MIN_TEMP_ENTRIES = 2
     if len(set(temperature)) < MIN_TEMP_ENTRIES:
@@ -514,15 +499,6 @@ def _temperature_scan_input_checker(
         msg = "\n  There are duplicates in the provided temperatures. This can influence the results. "
         msg += "\n  I hope you know what you are doing. Continuing with the provided temperatures."
         logger.warning(msg)
-
-    if n_dump > production_steps:
-        msg = "\n  Dump frequency n_dump is larger than the total number of production steps."
-        msg += f"\n  Currently, n_dump = {n_dump} and production_steps = {production_steps}."
-        msg += f"\n  Automatically setting n_dump to production_steps ({production_steps}) and continue."
-        logger.warning(msg)
-        n_dump = production_steps
-
-    return n_dump
 
 
 def _temperature_scan_merge_results(previous_data: dict, new_sim_data: dict) -> dict[str, Any]:

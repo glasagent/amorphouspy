@@ -384,7 +384,13 @@ def test_simulation_history_separate_column() -> None:
             )
         )
 
-        history = [{"positions": [[0, 0, 0]], "temperature": [300.0]}]
+        history = [
+            {
+                "positions": [[0, 0, 0], [0, 0, 1]],
+                "cells": [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "temperature": [300.0, 310.0],
+            }
+        ]
         store.update_job(
             "j-hist",
             status="completed",
@@ -403,8 +409,54 @@ def test_simulation_history_separate_column() -> None:
         assert "simulation_history" not in job.result_data.get("melt_quench", {})
         assert job.result_data["structure_characterization"]["density"] == 2.2
 
-        # get_job_with_history should include it
+        # get_job_with_history should keep only the last structure frame
         job_full = store.get_job_with_history("j-hist")
+        assert job_full is not None
+        stored = job_full.simulation_history
+        assert stored == [
+            {
+                "temperature": [300.0, 310.0],
+                "positions": [[0, 0, 1]],
+                "cells": [[[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+            }
+        ]
+        store.close()
+
+
+def test_simulation_history_persist_structures_opt_in() -> None:
+    """Test that full structure trajectories are stored when opt-in switch is enabled."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-hist-full",
+                request_hash="h-hist-full",
+                composition="SiO2 100",
+                potential="shik",
+                status="running",
+            )
+        )
+
+        history = [
+            {
+                "positions": [[0, 0, 0], [0, 0, 1]],
+                "cells": [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "temperature": [300.0, 310.0],
+            }
+        ]
+        store.update_job(
+            "j-hist-full",
+            persist_structures=True,
+            status="completed",
+            result_data={
+                "melt_quench": {
+                    "final_structure": {},
+                    "simulation_history": history,
+                },
+            },
+        )
+
+        job_full = store.get_job_with_history("j-hist-full")
         assert job_full is not None
         assert job_full.simulation_history == history
         store.close()
@@ -423,7 +475,7 @@ def test_get_job_defers_simulation_history() -> None:
                 potential="pmmcs",
                 status="completed",
                 result_data={"melt_quench": {"final_structure": {}}},
-                simulation_history=[{"positions": [[1, 2, 3]]}],
+                simulation_history=[{"temperature": [300.0]}],
             )
         )
 
@@ -432,7 +484,7 @@ def test_get_job_defers_simulation_history() -> None:
         assert job is not None
         assert job.status == "completed"
 
-        # get_job_with_history should return the history
+        # get_job_with_history should return the stored history
         job_full = store.get_job_with_history("j-defer")
-        assert job_full.simulation_history == [{"positions": [[1, 2, 3]]}]
+        assert job_full.simulation_history == [{"temperature": [300.0]}]
         store.close()

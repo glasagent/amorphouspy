@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from ase.atoms import Atoms
 
 from amorphouspy.fabrication.meltquench import extract_equilibration_frames
+from amorphouspy.lammps.runner import LammpsPotential, _run_lammps_md
 from amorphouspy.properties.structural.bond_angles import compute_angles
 from amorphouspy.properties.structural.qn import (
     compute_network_connectivity,
@@ -1348,19 +1349,74 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
 
 def run_structural_analysis(
     final_structure: Atoms,
+    potential: LammpsPotential | None = None,
+    timestep: float = 1.0,
+    n_averaging_frames: int = 1,
+    temperature: float = 300.0,
+    server_kwargs: dict[str, Any] | None = None,
     simulation_history: list[dict[str, Any]] | None = None,
 ) -> tuple[StructureData, StructureData | None, int]:
     """Run structural analysis, optionally averaging over trajectory frames.
 
     Args:
-        final_structure: Quenched ASE Atoms object.
-        simulation_history: Full stage-by-stage MD history for frame averaging.
+        final_structure: Structure to be analyzed or to use as starting structure for a NVT simulation.
+        potential: LAMMPS potential (str, pd.DataFrame, or dict). If None, uses simulation_history.
+        timestep: MD timestep in fs.
+        n_averaging_frames: Number of frames to collect for averaging. If set to 1, then no MD
+            simulation and only the provided structure is analyzed. If set to >1, then an additional NVT
+            simulation is run to collect frames for averaging.
+        temperature: Temperature (K) for NVT equilibration/production simulation.
+        server_kwargs: LAMMPS server configuration dict.
+        simulation_history: Legacy parameter for backward compatibility. Ignored if potential is provided.
 
     Returns:
         Tuple of ``(mean_data, sem_data, n_frames)`` where *sem_data* is
         ``None`` when only one frame is used.
     """
-    frames = extract_equilibration_frames(final_structure, simulation_history)
+    # If potential provided, run NVT simulation to collect frames
+    if potential is not None and n_averaging_frames > 1:
+        logger.info(
+            "Running NVT simulation at %.1f K to collect %d frames for averaging",
+            temperature,
+            n_averaging_frames,
+        )
+
+        # Frame collection timing: 1000 fs (1 ps) between frames for thermal decorrelation
+        SAMPLING_DUMP_INTERVAL_FS = 1000.0
+        dump_interval = int(SAMPLING_DUMP_INTERVAL_FS / timestep)
+        n_ionic_steps = n_averaging_frames * dump_interval
+
+        structure_final, parsed_output = _run_lammps_md(
+            structure=final_structure,
+            potential=potential,
+            temperature=temperature,
+            n_ionic_steps=n_ionic_steps,
+            timestep=timestep,
+            initial_temperature=temperature,  # Reset velocities for equilibration
+            pressure=None,  # NVT ensemble
+            n_dump=dump_interval,
+            n_print_thermo=dump_interval,
+            server_kwargs=server_kwargs or {},
+        )
+
+        # Extract frames from the collected trajectory
+        frames: list[Atoms] = []
+        if "positions" in parsed_output and "cells" in parsed_output:
+            positions = parsed_output["positions"]
+            cells = parsed_output["cells"]
+            for i in range(len(positions)):
+                frame = structure_final.copy()
+                frame.set_positions(positions[i])
+                frame.set_cell(cells[i])
+                frame.set_pbc(True)
+                frame.wrap()
+                frames.append(frame)
+        else:
+            frames = [structure_final]
+    else:
+        # Use simulation_history if available, otherwise just analyze final structure
+        frames = extract_equilibration_frames(final_structure, simulation_history)
+
     n_frames = len(frames)
 
     if n_frames > 1:

@@ -1,6 +1,7 @@
 """Tests for amorphouspy.io_utils."""
 
 import textwrap
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -10,6 +11,7 @@ from amorphouspy.atoms.io import (
     write_xyz,
 )
 from amorphouspy.lammps.io import (
+    frames_from_melt_quench_result,
     load_lammps_dump,
     structure_from_parsed_output,
 )
@@ -33,6 +35,22 @@ def _dump_frame(timestep: int, x: float) -> str:
         0.0 10.0
         ITEM: ATOMS id type x y z
         1 1 {x} 0.0 0.0
+        """)
+
+
+def _dump_frame_with_element(timestep: int, x: float) -> str:
+    """Return one frame including the `element` column."""
+    return textwrap.dedent(f"""\
+        ITEM: TIMESTEP
+        {timestep}
+        ITEM: NUMBER OF ATOMS
+        1
+        ITEM: BOX BOUNDS pp pp pp
+        0.0 10.0
+        0.0 10.0
+        0.0 10.0
+        ITEM: ATOMS id type element x y z
+        1 1 Si {x} 0.0 0.0
         """)
 
 
@@ -91,6 +109,25 @@ def test_load_frame_and_range_raises(dump_5frames):
     """Combining frame with start/stop/step raises ValueError."""
     with pytest.raises(ValueError, match="cannot be combined"):
         load_lammps_dump(dump_5frames, type_map={1: "Si"}, frame=0, start=1)
+
+
+@patch("amorphouspy.lammps.io.ase.io.read")
+def test_load_dump_uses_element_column_when_type_map_missing(mock_read):
+    """When type_map is None, symbols are assigned from an existing `element` array."""
+    atoms = Atoms(numbers=[14], positions=[[1.5, 0.0, 0.0]], cell=np.diag([10.0, 10.0, 10.0]), pbc=True)
+    atoms.set_array("type", np.array([1]))
+    atoms.set_array("element", np.array(["Si"], dtype="U2"))
+    mock_read.return_value = atoms
+
+    out = load_lammps_dump("dummy.lammpstrj", type_map=None, frame=0)
+    assert isinstance(out, Atoms)
+    assert out.get_chemical_symbols() == ["Si"]
+
+
+def test_load_dump_raises_without_type_map_and_without_element_column(dump_5frames):
+    """A dump without `element` requires explicit type_map."""
+    with pytest.raises(ValueError, match="type_map is required"):
+        load_lammps_dump(dump_5frames, type_map=None, frame=0)
 
 
 def test_load_full_trajectory_with_atoms_dict(dump_5frames):
@@ -250,6 +287,76 @@ def test_structure_from_parsed_output_wrap_true_wraps_positions():
     parsed["generic"]["positions"] = [out_pos]
     result = structure_from_parsed_output(atoms, parsed, wrap=True)
     assert (result.get_positions() >= 0.0).all()
+
+
+# ---------------------------------------------------------------------------
+# frames_from_melt_quench_result
+# ---------------------------------------------------------------------------
+
+
+def test_frames_from_melt_quench_result_populates_info_and_arrays():
+    """Trajectory conversion attaches thermo metadata and optional per-atom arrays."""
+    initial = _simple_atoms()
+    n_atoms = len(initial)
+    positions = [
+        np.array([[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]]),
+        np.array([[0.1, 0.0, 0.0], [2.6, 0.0, 0.0]]),
+    ]
+    cells = [np.diag([5.0, 5.0, 5.0]), np.diag([5.1, 5.1, 5.1])]
+    velocities = [np.zeros((n_atoms, 3)), np.ones((n_atoms, 3))]
+    indices = [np.array([0, 1]), np.array([0, 1])]
+    forces = [np.zeros((n_atoms, 3)), np.full((n_atoms, 3), 2.0)]
+    unwrapped = [np.array(positions[0]), np.array(positions[1]) + 5.0]
+
+    stage = {
+        "positions": positions,
+        "cells": cells,
+        "velocities": velocities,
+        "indices": indices,
+        "temperature": [300.0, 400.0],
+        "energy_pot": [-10.0, -9.0],
+        "energy_tot": [-9.0, -8.0],
+        "volume": [125.0, 132.0],
+        "pressures": [np.zeros((3, 3)), np.ones((3, 3))],
+        "steps": [0, 1],
+        "forces": forces,
+        "unwrapped_positions": unwrapped,
+    }
+    result = {"result": [stage]}
+
+    frames = frames_from_melt_quench_result(result, initial, stage=0, stride=1)
+    assert len(frames) == 2
+    assert frames[1].info["temperature"] == 400.0
+    assert frames[1].info["step"] == 1
+    assert "forces" in frames[1].arrays
+    assert "unwrapped_positions" in frames[1].arrays
+    assert "indices" in frames[1].arrays
+
+
+def test_frames_from_melt_quench_result_stride_and_optional_keys_absent():
+    """Stride sub-samples frames and missing optional arrays are handled gracefully."""
+    initial = _simple_atoms()
+    stage = {
+        "positions": [
+            np.array([[0.0, 0.0, 0.0], [2.5, 0.0, 0.0]]),
+            np.array([[0.1, 0.0, 0.0], [2.6, 0.0, 0.0]]),
+            np.array([[0.2, 0.0, 0.0], [2.7, 0.0, 0.0]]),
+        ],
+        "cells": [np.diag([5.0, 5.0, 5.0])] * 3,
+        "temperature": [300.0, 350.0, 400.0],
+        "energy_pot": [-10.0, -9.5, -9.0],
+        "energy_tot": [-9.0, -8.5, -8.0],
+        "volume": [125.0, 125.0, 125.0],
+        "pressures": [np.zeros((3, 3))] * 3,
+    }
+    result = {"result": [stage]}
+
+    frames = frames_from_melt_quench_result(result, initial, stage=0, stride=2)
+    assert len(frames) == 2
+    assert frames[0].info["temperature"] == 300.0
+    assert frames[1].info["temperature"] == 400.0
+    assert "forces" not in frames[0].arrays
+    assert "unwrapped_positions" not in frames[0].arrays
 
 
 # ---------------------------------------------------------------------------

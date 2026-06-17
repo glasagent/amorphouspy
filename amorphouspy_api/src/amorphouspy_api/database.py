@@ -1,6 +1,17 @@
 """Database models and store for the amorphouspy API.
 
 Single ``Job`` table backs both ``/jobs`` and ``/glasses`` endpoints.
+
+Trajectory dataflow overview:
+1. The simulation pipeline computes structural analyses from full in-memory
+    trajectories.
+2. On persistence, ``result_data['melt_quench']['simulation_history']`` is
+    extracted into the dedicated ``Job.simulation_history`` column.
+3. Storage policy is controlled by ``persist_structures``:
+    - ``False`` (default): keep only the last geometry frame
+      (``positions``/``cells``) to reduce DB size.
+    - ``True``: keep all geometry frames.
+4. ``result_data`` is kept lightweight and no longer carries the trajectory.
 """
 
 import logging
@@ -23,7 +34,12 @@ class Base(DeclarativeBase):
 
 
 class Job(Base):
-    """A simulation job."""
+    """A simulation job.
+
+    The row stores both request/analysis metadata and optional heavy trajectory
+    payload. Large trajectory data is isolated in ``simulation_history`` so
+    routine status/listing queries can avoid deserialising megabytes of JSON.
+    """
 
     __tablename__ = "jobs"
 
@@ -54,9 +70,9 @@ class Job(Base):
     # User-defined tags for labelling / grouping jobs (e.g. project names).
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
-    # Heavy trajectory data stored in a separate column so it is never loaded
-    # unless explicitly requested.  Kept out of result_data to avoid bloating
-    # routine queries (can be hundreds of MB).
+    # Heavy trajectory data is extracted from result_data and stored here.
+    # Depending on persistence settings this contains either full geometry
+    # history or only the final frame geometry; both keep thermo/step series.
     simulation_history: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -145,12 +161,19 @@ class JobStore:
             s.commit()
 
     def get_job(self, job_id: str) -> Job | None:
-        """Fetch a job by ID (excludes heavy simulation_history column)."""
+        """Fetch a job by ID without loading heavy trajectory data.
+
+        Use this for regular status/result endpoints where ``simulation_history``
+        is not needed.
+        """
         with self.session() as s:
             return s.query(Job).options(_defer(Job.simulation_history)).filter(Job.job_id == job_id).first()
 
     def get_job_with_history(self, job_id: str) -> Job | None:
-        """Fetch a job by ID including the heavy simulation_history column."""
+        """Fetch a job by ID including ``simulation_history``.
+
+        Use this only for trajectory-heavy endpoints.
+        """
         with self.session() as s:
             return s.get(Job, job_id)
 
@@ -158,7 +181,7 @@ class JobStore:
         """Fetch the simulation_history column as raw JSON text.
 
         This bypasses SQLAlchemy's JSON deserialization to avoid the
-        costly json.loads() → json.dumps() round-trip for large payloads.
+        costly json.loads() -> json.dumps() round-trip for large payloads.
         Returns None if the job doesn't exist or has no trajectory.
         """
         with self.session() as s:
@@ -170,8 +193,22 @@ class JobStore:
             return None
         return row[0]
 
-    def update_job(self, job_id: str, **fields: object) -> None:
-        """Update arbitrary columns on a job record."""
+    def update_job(self, job_id: str, *, persist_structures: bool = False, **fields: object) -> None:
+        """Update arbitrary columns on a job record.
+
+        For ``result_data`` updates, this method also applies the melt-quench
+        trajectory persistence dataflow:
+        1. Serialize non-JSON objects (e.g. ASE Atoms).
+        2. Extract ``melt_quench.simulation_history`` out of ``result_data`` and
+           persist it in ``Job.simulation_history``.
+        3. Apply trajectory storage policy controlled by ``persist_structures``.
+           - ``False``: strip geometry arrays from all stages, then reattach only
+             the final ``positions``/``cells`` frame.
+           - ``True``: keep all geometry arrays.
+
+        Structural analysis is already complete before this write path runs, so
+        trimming affects database footprint only, not computed analysis values.
+        """
         with self.session() as s:
             job = s.get(Job, job_id)
             if job is None:
@@ -179,11 +216,20 @@ class JobStore:
             for k, val in fields.items():
                 # Serialise ASE Atoms if present inside result_data
                 effective = _serialise_atoms_in_result(val) if k == "result_data" and isinstance(val, dict) else val
-                # Extract simulation_history from result_data into its own column
+                # Extract simulation_history from result_data into its own column.
+                # Unless explicitly requested, avoid storing full structure
+                # trajectories in the DB. Keep only the last frame so one
+                # representative structure is always available.
                 if k == "result_data" and isinstance(effective, dict):
                     mq = cast("dict[str, Any]", effective).get("melt_quench")
                     if isinstance(mq, dict) and "simulation_history" in mq:
-                        job.simulation_history = mq.pop("simulation_history")
+                        history = mq.pop("simulation_history")
+                        if isinstance(history, list):
+                            history = _prepare_simulation_history_for_storage(
+                                history,
+                                persist_structures=persist_structures,
+                            )
+                        job.simulation_history = history
                 setattr(job, k, effective)
             s.commit()
 
@@ -376,6 +422,62 @@ class JobStore:
 # ---------------------------------------------------------------------------
 # ASE Atoms serialisation inside result dicts
 # ---------------------------------------------------------------------------
+
+
+def _prepare_simulation_history_for_storage(
+    history: list[Any],
+    *,
+    persist_structures: bool,
+) -> list[Any]:
+    """Transform simulation history according to persistence mode.
+
+    Args:
+        history: Stage-wise melt-quench history.
+        persist_structures: Whether to retain full geometry trajectories.
+
+    Returns:
+        ``history`` unchanged when ``persist_structures=True``.
+        Otherwise returns a copy where:
+        - ``positions`` and ``cells`` are removed from all stages, and
+        - the final stage that had geometry keeps exactly one frame
+          (the last ``positions`` and ``cells`` entry).
+
+    Notes:
+        This preserves a representative final structure for downstream
+        trajectory export/debugging while avoiding storage of full frame series
+        by default.
+    """
+    if persist_structures:
+        return history
+
+    # Default mode: trim heavy geometry arrays while keeping one last frame.
+    trimmed: list[Any] = []
+    last_stage_with_geometry: tuple[int, Any, Any] | None = None
+
+    for idx, stage in enumerate(history):
+        if not isinstance(stage, dict):
+            trimmed.append(stage)
+            continue
+
+        positions = stage.get("positions")
+        cells = stage.get("cells")
+        stage_copy = {k: v for k, v in stage.items() if k not in {"positions", "cells"}}
+
+        if positions is not None or cells is not None:
+            last_stage_with_geometry = (idx, positions, cells)
+
+        trimmed.append(stage_copy)
+
+    if last_stage_with_geometry is not None:
+        stage_idx, last_positions, last_cells = last_stage_with_geometry
+        stage = trimmed[stage_idx]
+        if isinstance(stage, dict):
+            if isinstance(last_positions, list) and last_positions:
+                stage["positions"] = [last_positions[-1]]
+            if isinstance(last_cells, list) and last_cells:
+                stage["cells"] = [last_cells[-1]]
+
+    return trimmed
 
 
 def _serialise_atoms_in_result(result: dict) -> dict:

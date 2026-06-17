@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from amorphouspy_api.app import app
 from amorphouspy_api.database import Job, get_job_store
+from amorphouspy_api.models import Composition
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -225,7 +226,7 @@ def test_submit_job_returns_cached() -> None:
 
     # Build the same submission the client will send, mirroring the
     # normalisation and density resolution that submit_job performs.
-    sub = JobSubmission(composition={"SiO2": 60, "CaO": 25, "Al2O3": 15})
+    sub = JobSubmission(composition=Composition({"SiO2": 60, "CaO": 25, "Al2O3": 15}))
     normalised = extract_composition(sub.composition.root, tolerance=0.03)
     sub.composition = Composition({ox: frac * 100 for ox, frac in normalised.items()})
     sub.simulation.target_density = get_glass_density_from_model(sub.composition.root)
@@ -738,17 +739,17 @@ def test_viscosity_progress_tracking() -> None:
 
 def test_job_hash_differs_with_viscosity() -> None:
     """Test that the job hash changes when viscosity analysis is added."""
-    from amorphouspy_api.models import JobSubmission
+    from amorphouspy_api.models import JobSubmission, StructureAnalysis, ViscosityAnalysis
     from amorphouspy_api.routers.jobs_helpers import _job_hash
 
     sub_no_visc = JobSubmission(
-        composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},
+        composition=Composition({"SiO2": 60, "CaO": 25, "Al2O3": 15}),
     )
     sub_with_visc = JobSubmission(
-        composition={"SiO2": 60, "CaO": 25, "Al2O3": 15},
+        composition=Composition({"SiO2": 60, "CaO": 25, "Al2O3": 15}),
         analyses=[
-            {"type": "structure_characterization"},
-            {"type": "viscosity", "temperatures": [1500, 2000]},
+            StructureAnalysis(),
+            ViscosityAnalysis(temperatures=[1500, 2000]),
         ],
     )
 
@@ -1250,12 +1251,13 @@ def test_electrostatics_params_to_config_roundtrip():
     from amorphouspy import InteractionConfig
 
     params = ElectrostaticsParams(method=LongRangeMethod.pppm, long_range_cutoff=9.0, kspace_accuracy=1e-4)
-    config = params.to_electrostatics_config()
+    config_any: Any = params.to_electrostatics_config()
 
-    assert isinstance(config, InteractionConfig)
-    assert config.lammps_keyword == "pppm"
-    assert config.long_range_cutoff == 9.0
-    assert config.kspace_accuracy == 1e-4
+    assert isinstance(config_any, InteractionConfig)
+    config_any = cast("Any", config_any)
+    assert config_any.lammps_keyword == "pppm"
+    assert config_any.long_range_cutoff == 9.0
+    assert config_any.kspace_accuracy == 1e-4
 
 
 def test_job_submission_accepts_electrostatics():
@@ -1263,7 +1265,7 @@ def test_job_submission_accepts_electrostatics():
     from amorphouspy_api.models import ElectrostaticsParams, JobSubmission, LongRangeMethod
 
     submission = JobSubmission(
-        composition={"SiO2": 70, "Na2O": 30},
+        composition=Composition({"SiO2": 70, "Na2O": 30}),
         electrostatics=ElectrostaticsParams(method=LongRangeMethod.wolf, alpha=0.3, long_range_cutoff=10.0),
     )
     data = submission.model_dump()
@@ -1279,9 +1281,9 @@ def test_job_hash_differs_with_electrostatics():
     from amorphouspy_api.models import ElectrostaticsParams, JobSubmission, LongRangeMethod
     from amorphouspy_api.routers.jobs_helpers import _job_hash
 
-    sub_dsf = JobSubmission(composition={"SiO2": 70, "Na2O": 30})
+    sub_dsf = JobSubmission(composition=Composition({"SiO2": 70, "Na2O": 30}))
     sub_pppm = JobSubmission(
-        composition={"SiO2": 70, "Na2O": 30},
+        composition=Composition({"SiO2": 70, "Na2O": 30}),
         electrostatics=ElectrostaticsParams(method=LongRangeMethod.pppm),
     )
 
@@ -1327,9 +1329,9 @@ def test_job_hash_differs_with_structure_seed():
     from amorphouspy_api.models import JobSubmission, MeltQuenchParams
     from amorphouspy_api.routers.jobs_helpers import _job_hash
 
-    sub1 = JobSubmission(composition={"SiO2": 100})
+    sub1 = JobSubmission(composition=Composition({"SiO2": 100}))
     sub2 = JobSubmission(
-        composition={"SiO2": 100},
+        composition=Composition({"SiO2": 100}),
         simulation=MeltQuenchParams(structure_seed=99),
     )
 
@@ -1342,7 +1344,7 @@ def test_generate_structure_passes_structure_seed():
     from amorphouspy_api.pipeline import _generate_structure as generate_structure
 
     sub = JobSubmission(
-        composition={"SiO2": 100},
+        composition=Composition({"SiO2": 100}),
         simulation=MeltQuenchParams(structure_seed=777),
     )
     with (

@@ -34,10 +34,7 @@ DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
 #   Si-O / P-O stretch  ~28-33 fs  (1000-1200 cm^-1)
 #   Al-O stretch        ~42-48 fs  (700-800 cm^-1)
 #   O-X-O bending       ~67-83 fs  (400-500 cm^-1)
-#   Modifier-O modes    ~83-167 fs (200-400 cm^-1)
-# A 1 ps spacing (~6-35x the longest periods) ensures thermally
-# decorrelated snapshots suitable for averaging structural properties.
-SAMPLING_DUMP_INTERVAL_FS: float = 1000.0
+# analysis and removing trajectory frames from melt-quench completely.
 
 
 @dataclass
@@ -52,7 +49,9 @@ class MeltQuenchParams:
         heating_steps: Number of steps for heating phase.
         cooling_steps: Number of steps for cooling phase.
         timestep: MD timestep.
-        n_print: Print frequency.
+        n_dump: Dump frequency in MD steps.
+        n_print_thermo: Thermodynamic print frequency in MD steps. If None,
+            defaults to n_dump.
         langevin: Whether to use Langevin dynamics.
         seed: Random seed.
         server_kwargs: Server configuration.
@@ -71,23 +70,13 @@ class MeltQuenchParams:
     heating_steps: int
     cooling_steps: int
     timestep: float
-    n_print: int
     langevin: bool
     seed: int
+    n_dump: int | None = None
+    n_print_thermo: int | None = None
     server_kwargs: dict | None = None
     tmp_working_directory: str | Path | None = None
     equilibration_steps: int | None = None
-    n_averaging_frames: int = 100
-
-    @property
-    def sampling_dump_interval(self) -> int:
-        """Dump interval in MD steps, derived from SAMPLING_DUMP_INTERVAL_FS and timestep."""
-        return int(SAMPLING_DUMP_INTERVAL_FS / self.timestep)
-
-    @property
-    def sampling_steps(self) -> int:
-        """Total MD steps for the sampling stage (n_averaging_frames x sampling_dump_interval)."""
-        return self.n_averaging_frames * self.sampling_dump_interval
 
 
 def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
@@ -107,7 +96,8 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -121,7 +111,8 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -168,17 +159,7 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
-    structure_final, parsed = run2(
-        structure=structure,
-        temperature=params.temperature_low,
-        n_ionic_steps=params.sampling_steps,
-        initial_temperature=0,
-        n_print=params.sampling_dump_interval,
-    )
-    history.append(parsed.get("generic", None))
-
-    return structure_final, history
+    return structure, history
 
 
 def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
@@ -198,7 +179,8 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -212,7 +194,8 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -259,17 +242,7 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
-    structure_final, parsed = run2(
-        structure=structure,
-        temperature=params.temperature_low,
-        n_ionic_steps=params.sampling_steps,
-        initial_temperature=0,
-        n_print=params.sampling_dump_interval,
-    )
-    history.append(parsed.get("generic", None))
-
-    return structure_final, history
+    return structure, history
 
 
 def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
@@ -289,7 +262,8 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -303,7 +277,8 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -353,17 +328,7 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
-    structure_final, parsed = run2(
-        structure=structure,
-        temperature=params.temperature_low,
-        n_ionic_steps=params.sampling_steps,
-        initial_temperature=0,
-        n_print=params.sampling_dump_interval,
-    )
-    history.append(parsed.get("generic", None))
-
-    return structure_final, history
+    return structure, history
 
 
 def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
@@ -383,7 +348,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -397,7 +363,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -464,18 +431,7 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 6: NVT sampling at low T -- collect decorrelated frames for averaging
-    structure_final, parsed = run2(
-        structure=structure,
-        temperature=params.temperature_low,
-        n_ionic_steps=params.sampling_steps,
-        initial_temperature=0,
-        pressure=None,
-        n_print=params.sampling_dump_interval,
-    )
-    history.append(parsed.get("generic", None))
-
-    return structure_final, history
+    return structure, history
 
 
 def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
@@ -498,7 +454,8 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -510,7 +467,8 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         potential=potential_stripped,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -557,17 +515,7 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: NVT sampling at low T -- collect decorrelated frames for averaging
-    structure_final, parsed = run2(
-        structure=structure,
-        temperature=params.temperature_low,
-        n_ionic_steps=params.sampling_steps,
-        initial_temperature=0,
-        n_print=params.sampling_dump_interval,
-    )
-    history.append(parsed.get("generic", None))
-
-    return structure_final, history
+    return structure, history
 
 
 _YANG_MELT_PRESSURE_ATM = 20000  # atm
@@ -601,7 +549,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -615,7 +564,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         potential=potential2,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
-        n_print=params.n_print,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
         langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
@@ -699,18 +649,7 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 7: NVT sampling at low T -- collect decorrelated frames for averaging
-    structure_final, parsed = run2(
-        structure=structure,
-        temperature=params.temperature_low,
-        n_ionic_steps=params.sampling_steps,
-        initial_temperature=0,
-        pressure=None,
-        n_print=params.sampling_dump_interval,
-    )
-    history.append(parsed.get("generic", None))
-
-    return structure_final, history
+    return structure, history
 
 
 # Map potential names to protocol functions

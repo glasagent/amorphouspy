@@ -193,11 +193,21 @@ class RerunMode(StrEnum):
 
 
 class StructureAnalysis(BaseModel):
-    """Configuration for structural analysis (RDF, coordination, bond angles)."""
+    """Configuration for structural analysis (RDF, coordination, bond angles).
+
+    Structure analysis runs an NVT equilibration/production simulation at the
+    quench temperature to collect frames for averaging. The ``n_averaging_frames``
+    parameter controls how many frames to collect and average over.
+    """
 
     type: Literal["structure_characterization"] = "structure_characterization"
     rdf_cutoff: float = Field(default=8.0, description="RDF cutoff in Å")
     bin_width: float = Field(default=0.02, description="RDF bin width in Å")
+    n_averaging_frames: int = Field(
+        default=100,
+        ge=1,
+        description="Number of frames to collect during NVT simulation at quench temperature; 1 uses only the final structure without additional simulation",
+    )
 
 
 class ViscosityAnalysis(BaseModel):
@@ -216,7 +226,8 @@ class ViscosityAnalysis(BaseModel):
         default=10_000_000,
         description="MD steps per production run",
     )
-    n_print: int = Field(default=1, description="Output frequency in steps")
+    n_dump: int | None = Field(default=None, description="Dump output frequency in steps")
+    n_print_thermo: int | None = Field(default=1, description="Thermodynamic output frequency in steps")
     max_lag: int | None = Field(
         default=1_000_000,
         description="Maximum correlation lag (steps) for Green-Kubo post-processing; None uses full trajectory",
@@ -236,7 +247,8 @@ class ElasticAnalysis(BaseModel):
     timestep: float = Field(default=1.0, description="MD timestep in fs")
     equilibration_steps: int = Field(default=1_000_000, description="Equilibration MD steps")
     production_steps: int = Field(default=10_000, description="Production MD steps per strain direction")
-    n_print: int = Field(default=1, description="Thermodynamic output frequency")
+    n_dump: int | None = Field(default=None, description="Dump output frequency")
+    n_print_thermo: int | None = Field(default=1, description="Thermodynamic output frequency")
     strain: float = Field(default=1e-3, description="Strain magnitude for finite differences")
 
 
@@ -366,6 +378,21 @@ class MeltQuenchParams(BaseModel):
         ),
     )
     timestep: float = Field(default=1.0, description="MD timestep in fs")
+    n_dump: int | None = Field(
+        default=None,
+        description="Sampling interval for structure dumping expressed in MD steps; If None defaults to the final step only.",
+    )
+    n_print_thermo: int | None = Field(
+        default=100,
+        description="Output interval for thermodynamic data in MD steps; None uses trajectory dump frequency.",
+    )
+    persist_structures: bool = Field(
+        default=False,
+        description=(
+            "If true, store all trajectory structure frames (positions/cells) in the database. "
+            "If false, only the last frame is retained."
+        ),
+    )
     equilibration_steps: int | None = Field(
         default=None,
         description="Equilibration steps override; None = protocol default",

@@ -26,6 +26,8 @@ if TYPE_CHECKING:
         ViscosityAnalysis,
     )
 
+from amorphouspy_api.executor import get_lammps_server_kwargs
+
 logger = logging.getLogger(__name__)
 
 AnalysisFn = Callable[..., dict]
@@ -54,8 +56,6 @@ def _run_melt_quench(submission: JobSubmission, config: BaseModel, result: dict)
     """Run the LAMMPS melt-quench simulation."""
     from amorphouspy.pipelines.meltquench import run_melt_quench
 
-    from amorphouspy_api.executor import get_lammps_server_kwargs
-
     mq_result = run_melt_quench(
         structure=result["structure_generation"]["structure"],
         potential=result["structure_generation"]["potential"],
@@ -66,7 +66,8 @@ def _run_melt_quench(submission: JobSubmission, config: BaseModel, result: dict)
         temperature_high=submission.simulation.melt_temperature,
         temperature_low=300.0,
         equilibration_steps=submission.simulation.equilibration_steps,
-        n_averaging_frames=getattr(submission.simulation, "n_averaging_frames", 100),
+        n_dump=submission.simulation.n_dump,
+        n_print_thermo=submission.simulation.n_print_thermo,
         server_kwargs=get_lammps_server_kwargs(
             submission.potential, submission.simulation.n_atoms, submission.simulation.cores
         ),
@@ -76,13 +77,25 @@ def _run_melt_quench(submission: JobSubmission, config: BaseModel, result: dict)
 
 
 def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
-    """Structural analysis (RDF, coordination, bond angles) on the quenched glass."""
+    """Structural analysis (RDF, coordination, bond angles) on the quenched glass.
+
+    Runs an NVT simulation at the quench temperature to collect frames for
+    averaging according to the configuration.
+    """
     from amorphouspy.properties.structural.all import run_structural_analysis
 
     mq = result["melt_quench"]
+    potential = result["structure_generation"]["potential"]
+
     mean_data, _sem_data, n_frames = run_structural_analysis(
         final_structure=mq["final_structure"],
-        simulation_history=mq.get("simulation_history"),
+        potential=potential,
+        timestep=submission.simulation.timestep,
+        n_averaging_frames=config.n_averaging_frames,
+        temperature=300.0,
+        server_kwargs=get_lammps_server_kwargs(
+            submission.potential, submission.simulation.n_atoms, submission.simulation.cores
+        ),
     )
     result_dict = mean_data.model_dump()
     result_dict["n_averaging_frames"] = n_frames
@@ -115,7 +128,8 @@ def _submit_viscosity(
         cooling_rate=int(submission.simulation.quench_rate),
         timestep=config.timestep,
         n_timesteps=config.n_timesteps,
-        n_print=config.n_print,
+        n_dump=config.n_dump,
+        n_print_thermo=config.n_print_thermo,
         max_lag=config.max_lag,
         server_kwargs=get_lammps_server_kwargs(
             submission.potential, submission.simulation.n_atoms, submission.simulation.cores
@@ -136,7 +150,6 @@ def _run_cte(
     """CTE analysis via fluctuations or temperature scan."""
     from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 
-    from amorphouspy_api.executor import get_lammps_server_kwargs
     from amorphouspy_api.models import CTEFluctuations, CTETemperatureScan
 
     potential = result["structure_generation"]["potential"]
@@ -189,8 +202,6 @@ def _run_elastic(submission: JobSubmission, config: ElasticAnalysis, result: dic
     """Elastic moduli analysis on the quenched glass."""
     from amorphouspy.properties.elastic import elastic_simulation
 
-    from amorphouspy_api.executor import get_lammps_server_kwargs
-
     raw = elastic_simulation(
         structure=result["melt_quench"]["final_structure"],
         potential=result["structure_generation"]["potential"],
@@ -199,7 +210,8 @@ def _run_elastic(submission: JobSubmission, config: ElasticAnalysis, result: dic
         timestep=config.timestep,
         equilibration_steps=config.equilibration_steps,
         production_steps=config.production_steps,
-        n_print=config.n_print,
+        n_dump=config.n_dump,
+        n_print_thermo=config.n_print_thermo,
         strain=config.strain,
         server_kwargs=get_lammps_server_kwargs(
             submission.potential, submission.simulation.n_atoms, submission.simulation.cores

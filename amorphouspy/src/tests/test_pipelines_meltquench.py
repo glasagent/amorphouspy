@@ -116,7 +116,8 @@ class TestRunMeltQuench:
             "heating_rate",
             "temperature_high",
             "temperature_low",
-            "n_averaging_frames",
+            "n_dump",
+            "n_print_thermo",
         }
         assert set(result.keys()) == expected_keys
 
@@ -159,3 +160,32 @@ class TestRunMeltQuench:
 
         assert result["mean_temperature"] == pytest.approx(300.0)
         assert result["simulation_steps"] == n
+
+    @patch("amorphouspy.pipelines.meltquench.melt_quench_simulation")
+    def test_n_print_thermo_forwarded(self, mock_mq: MagicMock) -> None:
+        """Explicit n_print_thermo is forwarded to the simulation."""
+        mock_mq.return_value = self._mock_mq_result()
+
+        run_melt_quench(
+            structure=Atoms("Si"),
+            potential=MagicMock(),
+            n_dump=100_000,
+            n_print_thermo=1_000,
+        )
+
+        _, kwargs = mock_mq.call_args
+        assert kwargs["n_dump"] == 100_000
+        assert kwargs["n_print_thermo"] == 1_000
+
+    @patch("amorphouspy.pipelines.meltquench.melt_quench_simulation")
+    def test_n_print_thermo_defaults_to_n_dump_in_result(self, mock_mq: MagicMock) -> None:
+        """Returned n_print_thermo defaults to n_dump when omitted."""
+        mock_mq.return_value = self._mock_mq_result()
+
+        result = run_melt_quench(
+            structure=Atoms("Si"),
+            potential=MagicMock(),
+            n_dump=100_000,
+        )
+
+        assert result["n_print_thermo"] == 100_000

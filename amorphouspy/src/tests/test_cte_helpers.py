@@ -278,14 +278,13 @@ def test_input_checker_no_warnings_good_params(tmp_path, monkeypatch, caplog) ->
                 production_steps=100_000,
                 min_production_runs=3,
                 max_production_runs=10,
-                n_log=10,
+                n_print_thermo=10,
                 timestep=1.0,
-                n_dump=50_000,
                 equilibration_steps=100_000,
                 logger=logger,
             )
         assert not caplog.records
-        assert len(result) == 6
+        assert len(result) == 5
     finally:
         _clean_logger_handlers()
 
@@ -299,9 +298,8 @@ def test_input_checker_corrects_min_production_runs(tmp_path, monkeypatch, caplo
                 production_steps=100_000,
                 min_production_runs=1,
                 max_production_runs=5,
-                n_log=10,
+                n_print_thermo=10,
                 timestep=1.0,
-                n_dump=50_000,
                 equilibration_steps=100_000,
                 logger=logger,
             )
@@ -320,9 +318,8 @@ def test_input_checker_corrects_max_less_than_min(tmp_path, monkeypatch, caplog)
                 production_steps=100_000,
                 min_production_runs=5,
                 max_production_runs=3,
-                n_log=10,
+                n_print_thermo=10,
                 timestep=1.0,
-                n_dump=50_000,
                 equilibration_steps=100_000,
                 logger=logger,
             )
@@ -341,9 +338,8 @@ def test_input_checker_corrects_short_production_steps(tmp_path, monkeypatch, ca
                 production_steps=100,  # very short
                 min_production_runs=2,
                 max_production_runs=5,
-                n_log=10,
+                n_print_thermo=10,
                 timestep=1.0,
-                n_dump=50,
                 equilibration_steps=100_000,
                 logger=logger,
             )
@@ -356,7 +352,7 @@ def test_input_checker_corrects_short_production_steps(tmp_path, monkeypatch, ca
 
 
 def test_input_checker_warns_low_averaging_points(tmp_path, monkeypatch, caplog) -> None:
-    """Warning when N_for_averaging < 1000 (large n_log or large timestep)."""
+    """Warning when N_for_averaging < 1000 (large n_print_thermo or large timestep)."""
     logger = _make_dummy_input_checker_logger(tmp_path, monkeypatch)
     try:
         with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
@@ -364,9 +360,8 @@ def test_input_checker_warns_low_averaging_points(tmp_path, monkeypatch, caplog)
                 production_steps=500_000,
                 min_production_runs=2,
                 max_production_runs=5,
-                n_log=500,  # high n_log → few averaging points
+                n_print_thermo=500,  # high n_print_thermo -> few averaging points
                 timestep=1.0,
-                n_dump=100_000,
                 equilibration_steps=500_000,
                 logger=logger,
             )
@@ -376,23 +371,20 @@ def test_input_checker_warns_low_averaging_points(tmp_path, monkeypatch, caplog)
         _clean_logger_handlers()
 
 
-def test_input_checker_corrects_n_dump_too_large(tmp_path, monkeypatch, caplog) -> None:
-    """n_dump > production_steps is corrected to production_steps."""
+def test_input_checker_returns_expected_n_for_averaging(tmp_path, monkeypatch) -> None:
+    """N_for_averaging is computed from averaging window, n_print_thermo and timestep."""
     logger = _make_dummy_input_checker_logger(tmp_path, monkeypatch)
     try:
-        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            prod_steps, _, _, _, n_dump, _ = _fluctuation_simulation_input_checker(
-                production_steps=100_000,
-                min_production_runs=2,
-                max_production_runs=5,
-                n_log=10,
-                timestep=1.0,
-                n_dump=999_999,  # larger than production_steps
-                equilibration_steps=100_000,
-                logger=logger,
-            )
-        assert n_dump == prod_steps
-        assert any("n_dump" in r.message for r in caplog.records)
+        _, _, _, n_for_averaging, _ = _fluctuation_simulation_input_checker(
+            production_steps=100_000,
+            min_production_runs=2,
+            max_production_runs=5,
+            n_print_thermo=10,
+            timestep=1.0,
+            equilibration_steps=100_000,
+            logger=logger,
+        )
+        assert n_for_averaging == 1000
     finally:
         _clean_logger_handlers()
 
@@ -562,12 +554,7 @@ def test_temperature_scan_raises_for_single_temperature(tmp_path, monkeypatch) -
     try:
         logger = _create_logger()
         with pytest.raises(ValueError, match="two different temperatures"):
-            _temperature_scan_input_checker(
-                temperature=[300.0],
-                production_steps=10_000,
-                n_dump=5_000,
-                logger=logger,
-            )
+            _temperature_scan_input_checker(temperature=[300.0], logger=logger)
     finally:
         _clean_logger_handlers()
 
@@ -579,12 +566,7 @@ def test_temperature_scan_raises_for_all_duplicates(tmp_path, monkeypatch) -> No
     try:
         logger = _create_logger()
         with pytest.raises(ValueError, match="two different temperatures"):
-            _temperature_scan_input_checker(
-                temperature=[300.0, 300.0, 300.0],
-                production_steps=10_000,
-                n_dump=5_000,
-                logger=logger,
-            )
+            _temperature_scan_input_checker(temperature=[300.0, 300.0, 300.0], logger=logger)
     finally:
         _clean_logger_handlers()
 
@@ -596,50 +578,21 @@ def test_temperature_scan_warns_on_duplicates(tmp_path, monkeypatch, caplog) -> 
     try:
         logger = _create_logger()
         with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            _temperature_scan_input_checker(
-                temperature=[300.0, 300.0, 400.0],
-                production_steps=10_000,
-                n_dump=5_000,
-                logger=logger,
-            )
+            _temperature_scan_input_checker(temperature=[300.0, 300.0, 400.0], logger=logger)
         assert any("duplicates" in r.message.lower() or "duplicate" in r.message.lower() for r in caplog.records)
     finally:
         _clean_logger_handlers()
 
 
-def test_temperature_scan_corrects_n_dump(tmp_path, monkeypatch, caplog) -> None:
-    """n_dump > production_steps is corrected to production_steps."""
+def test_temperature_scan_returns_none_for_valid_input(tmp_path, monkeypatch, caplog) -> None:
+    """No warning when temperatures are unique and helper returns None."""
     monkeypatch.chdir(tmp_path)
     _clean_logger_handlers()
     try:
         logger = _create_logger()
         with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            n_dump = _temperature_scan_input_checker(
-                temperature=[300.0, 400.0],
-                production_steps=1000,
-                n_dump=9999,
-                logger=logger,
-            )
-        assert n_dump == 1000
-        assert any("n_dump" in r.message for r in caplog.records)
-    finally:
-        _clean_logger_handlers()
-
-
-def test_temperature_scan_no_warning_good_params(tmp_path, monkeypatch, caplog) -> None:
-    """No warning when two unique temps and n_dump <= production_steps."""
-    monkeypatch.chdir(tmp_path)
-    _clean_logger_handlers()
-    try:
-        logger = _create_logger()
-        with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            n_dump = _temperature_scan_input_checker(
-                temperature=[300.0, 400.0],
-                production_steps=10_000,
-                n_dump=5_000,
-                logger=logger,
-            )
-        assert n_dump == 5_000
+            result = _temperature_scan_input_checker(temperature=[300.0, 400.0], logger=logger)
+        assert result is None
         assert not caplog.records
     finally:
         _clean_logger_handlers()
@@ -751,12 +704,12 @@ def test_ensure_equilibration_steps_increases_when_too_small(tmp_path, monkeypat
     _clean_logger_handlers()
     try:
         logger = _create_logger()
-        # N_for_averaging=1000, n_log=10 → min = 10_000
+        # N_for_averaging=1000, n_print_thermo=10 -> min = 10_000
         with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
             result = _ensure_equilibration_steps(
                 equilibration_steps=5_000,
                 N_for_averaging=1000,
-                n_log=10,
+                n_print_thermo=10,
                 logger=logger,
             )
         assert result == 10_000
@@ -775,7 +728,7 @@ def test_ensure_equilibration_steps_unchanged_when_sufficient(tmp_path, monkeypa
             result = _ensure_equilibration_steps(
                 equilibration_steps=50_000,
                 N_for_averaging=1000,
-                n_log=10,
+                n_print_thermo=10,
                 logger=logger,
             )
         assert result == 50_000
@@ -789,13 +742,12 @@ def test_input_checker_corrects_equilibration_steps(tmp_path, monkeypatch, caplo
     logger = _make_dummy_input_checker_logger(tmp_path, monkeypatch)
     try:
         with caplog.at_level(logging.WARNING, logger=LOGGER_NAME):
-            _, _, _, _, _, eq_steps = _fluctuation_simulation_input_checker(
+            _, _, _, _, eq_steps = _fluctuation_simulation_input_checker(
                 production_steps=100_000,
                 min_production_runs=3,
                 max_production_runs=10,
-                n_log=10,
+                n_print_thermo=10,
                 timestep=1.0,
-                n_dump=50_000,
                 equilibration_steps=100,  # way too small
                 logger=logger,
             )

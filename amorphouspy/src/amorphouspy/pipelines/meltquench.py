@@ -78,8 +78,8 @@ def run_melt_quench(
     temperature_high: float | None = None,
     temperature_low: float = 300.0,
     equilibration_steps: int | None = None,
-    n_print: int = 100_000,
-    n_averaging_frames: int = 100,
+    n_dump: int | None = 100_000,
+    n_print_thermo: int | None = None,
     server_kwargs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run a LAMMPS melt-quench simulation.
@@ -94,8 +94,9 @@ def run_melt_quench(
         temperature_high: Melt temperature in K; ``None`` uses the protocol default.
         temperature_low: Final quench temperature in K.
         equilibration_steps: Override for equilibration step count; ``None`` = protocol default.
-        n_print: Thermodynamic output frequency (steps).
-        n_averaging_frames: Number of trajectory frames to keep for structural averaging.
+        n_dump: Trajectory dump frequency (steps). ``None`` uses the final step only.
+        n_print_thermo: Thermodynamic output frequency (steps). ``None`` uses ``n_dump``.
+
         server_kwargs: LAMMPS server/resource configuration.
 
     Returns:
@@ -111,7 +112,8 @@ def run_melt_quench(
     mq = melt_quench_simulation(
         structure=structure,
         potential=potential,
-        n_print=n_print,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
         heating_rate=int(heating_rate),
         cooling_rate=int(cooling_rate),
         timestep=timestep,
@@ -136,5 +138,6 @@ def run_melt_quench(
         "heating_rate": int(heating_rate),
         "temperature_high": temperature_high,
         "temperature_low": temperature_low,
-        "n_averaging_frames": n_averaging_frames,
+        "n_dump": n_dump,
+        "n_print_thermo": (n_dump if n_print_thermo is None else n_print_thermo),
     }

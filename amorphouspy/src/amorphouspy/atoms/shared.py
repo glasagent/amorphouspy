@@ -1,6 +1,7 @@
 """Shared atom-level utilities for amorphouspy package."""
 
 import math
+from collections.abc import Sequence
 
 import numpy as np
 from ase.data import chemical_symbols
@@ -104,7 +105,7 @@ def running_mean(data: list | np.ndarray, n: int) -> np.ndarray:
 _MAX_PLOT_POINTS = 1000
 
 
-def downsample_log(arr: list[float], max_points: int = _MAX_PLOT_POINTS) -> list[float]:
+def downsample_log(arr: Sequence[float], max_points: int = _MAX_PLOT_POINTS) -> list[float]:
     """Downsample *arr* to *max_points* using log-spaced indices.
 
     Useful for reducing large correlation-function arrays while
@@ -112,7 +113,7 @@ def downsample_log(arr: list[float], max_points: int = _MAX_PLOT_POINTS) -> list
     """
     n = len(arr)
     if n <= max_points:
-        return arr
+        return list(arr)
     indices = sorted({round(v) for v in _logspace(0, n - 1, max_points)})
     return [arr[i] for i in indices]
 
