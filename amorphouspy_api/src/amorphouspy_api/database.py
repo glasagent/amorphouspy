@@ -65,6 +65,10 @@ class Job(Base):
     __table_args__ = (
         Index("ix_jobs_composition_status", "composition", "status"),
         Index("ix_jobs_hash_status", "request_hash", "status"),
+        # Supports date-range filtering / ordering in search_jobs without a
+        # full table scan (created_at is stored after the heavy JSON columns,
+        # so scanning the table itself is very expensive).
+        Index("ix_jobs_created_at", "created_at"),
         # Covering index for GET /glasses - avoids reading huge result_data
         # overflow pages on every row scan.
         Index(
@@ -106,7 +110,21 @@ class JobStore:
         )
         self.SessionLocal = sessionmaker(bind=self.engine)
         Base.metadata.create_all(bind=self.engine)
+        self._ensure_indexes()
         logger.info("Initialised job store: %s", db_path)
+
+    def _ensure_indexes(self) -> None:
+        """Create indexes that may be missing on a pre-existing database.
+
+        ``Base.metadata.create_all`` only creates indexes when it first
+        creates the table, so indexes added to the model later never appear
+        on an already-populated database.  Creating them explicitly and
+        idempotently keeps date-range searches fast on large databases.
+        The first run on a big database can take a while to build the index;
+        subsequent runs are no-ops thanks to ``IF NOT EXISTS``.
+        """
+        with self.engine.begin() as conn:
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_created_at ON jobs (created_at)"))
 
     def close(self) -> None:
         """Dispose of the SQLAlchemy engine."""
