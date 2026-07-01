@@ -109,7 +109,7 @@ def _submit_viscosity(
         executor=executor,
         base_future=base_future,
         temperatures=config.temperatures,
-        temp_high=float(melt_temp) if melt_temp is not None else 5000.0,
+        temp_high=float(melt_temp) if melt_temp is not None else None,
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),
         timestep=config.timestep,
@@ -119,6 +119,7 @@ def _submit_viscosity(
         server_kwargs=get_lammps_server_kwargs(
             submission.potential, submission.simulation.n_atoms, submission.simulation.cores
         ),
+        equilibration_steps=submission.simulation.equilibration_steps,
         lammps_resource_dict=lammps_resource_dict,
         base_resource_dict=base_resource_dict,
         is_slurm=is_slurm,

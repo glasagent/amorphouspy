@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 def _run_single_viscosity(
     base_result: dict,
-    temp_high: float,
+    temp_high: float | None,
     temp_low: float,
     heating_rate: float,
     cooling_rate: float,
@@ -43,6 +43,7 @@ def _run_single_viscosity(
     n_print: int,
     max_lag: int | None,
     server_kwargs: dict[str, Any],
+    equilibration_steps: int | None = None,
 ) -> dict[str, Any]:
     """Cool the initial structure to *temp_low*, then run a viscosity simulation.
 
@@ -50,6 +51,9 @@ def _run_single_viscosity(
     the production run share the same worker.  Starts from the freshly
     generated (random) structure rather than the quenched glass, so viscosity
     tasks can run in parallel with the main melt-quench.
+
+    When *temp_high* is ``None`` the melt-quench uses the potential-dependent
+    default melt temperature.
     """
     structure = base_result["structure_generation"]["structure"]
     potential = base_result["structure_generation"]["potential"]
@@ -57,12 +61,13 @@ def _run_single_viscosity(
     mq_result = melt_quench_simulation(
         structure=structure,
         potential=potential,
-        temperature_high=float(temp_high),
+        temperature_high=float(temp_high) if temp_high is not None else None,
         temperature_low=float(temp_low),
         timestep=1.0,
         heating_rate=float(heating_rate),
         cooling_rate=float(cooling_rate),
         n_print=1000,
+        equilibration_steps=equilibration_steps,
         langevin=False,
         server_kwargs=server_kwargs,
     )
@@ -119,7 +124,7 @@ def submit_viscosity_workflow(
     executor: DagExecutor,
     base_future: Future,
     temperatures: list[float],
-    temp_high: float,
+    temp_high: float | None,
     heating_rate: float,
     cooling_rate: float,
     timestep: float,
@@ -127,6 +132,7 @@ def submit_viscosity_workflow(
     n_print: int,
     max_lag: int | None,
     server_kwargs: dict[str, Any],
+    equilibration_steps: int | None = None,
     lammps_resource_dict: dict[str, Any] | None = None,
     base_resource_dict: dict[str, Any] | None = None,
     *,
@@ -147,6 +153,7 @@ def submit_viscosity_workflow(
             so they run in parallel with the main melt-quench.
         temperatures: Target temperatures (K).
         temp_high: Starting melt temperature (K) for the cooling step.
+            ``None`` uses the potential-dependent default melt temperature.
         heating_rate: Heating rate in K/ps.
         cooling_rate: Cooling rate in K/ps.
         timestep: MD timestep in fs.
@@ -154,6 +161,8 @@ def submit_viscosity_workflow(
         n_print: Thermodynamic output frequency.
         max_lag: Maximum correlation lag (steps) for Green-Kubo.
         server_kwargs: LAMMPS server configuration.
+        equilibration_steps: Override for the melt-quench equilibration stages;
+            ``None`` uses each protocol's default.
         lammps_resource_dict: executorlib resource dict for LAMMPS tasks.
         base_resource_dict: executorlib resource dict for lightweight tasks.
         is_slurm: Whether to set ``job_name`` in resource dicts.
@@ -190,6 +199,7 @@ def submit_viscosity_workflow(
             n_print=n_print,
             max_lag=max_lag,
             server_kwargs=server_kwargs,
+            equilibration_steps=equilibration_steps,
         )
 
     collect_rd: dict[str, Any] = dict(base_resource_dict)
