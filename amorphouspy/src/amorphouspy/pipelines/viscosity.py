@@ -1,6 +1,6 @@
 """Multi-temperature viscosity pipeline.
 
-Cools a quenched glass to each target temperature via melt-quench, then
+Cools the initial structure to each target temperature via melt-quench, then
 runs Green-Kubo viscosity production simulations in parallel using an
 executor.  The public entry-point ``submit_viscosity_workflow`` builds an
 executorlib-style DAG (one task per temperature + a collect step) and
@@ -16,14 +16,11 @@ from amorphouspy.atoms.shared import downsample_log
 from amorphouspy.fabrication.meltquench import melt_quench_simulation
 
 if TYPE_CHECKING:
-    from concurrent.futures import Executor, Future
+    from concurrent.futures import Future
 
     # executorlib extends Executor.submit() with resource_dict and
     # future-as-argument DAG resolution.  We type the DAG-building function
     # with Any to avoid false positives from the stdlib stubs.
-    import pandas as pd
-    from ase import Atoms
-
     type DagExecutor = Any
 from amorphouspy.properties.viscosity import get_viscosity, viscosity_simulation
 
@@ -35,9 +32,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _cool_and_run_viscosity(
-    structure: Atoms,
-    potential: pd.DataFrame,
+def _run_single_viscosity(
+    base_result: dict,
     temp_high: float,
     temp_low: float,
     heating_rate: float,
@@ -48,11 +44,16 @@ def _cool_and_run_viscosity(
     max_lag: int | None,
     server_kwargs: dict[str, Any],
 ) -> dict[str, Any]:
-    """Cool to *temp_low* via melt-quench, then run a viscosity simulation.
+    """Cool the initial structure to *temp_low*, then run a viscosity simulation.
 
-    This function is submitted to the executor as a single unit of work
-    so that the melt-quench and the production run share the same worker.
+    Submitted to the executor as a single unit of work so the melt-quench and
+    the production run share the same worker.  Starts from the freshly
+    generated (random) structure rather than the quenched glass, so viscosity
+    tasks can run in parallel with the main melt-quench.
     """
+    structure = base_result["structure_generation"]["structure"]
+    potential = base_result["structure_generation"]["potential"]
+
     mq_result = melt_quench_simulation(
         structure=structure,
         potential=potential,
@@ -92,34 +93,6 @@ def _cool_and_run_viscosity(
         "lag_times_ps": downsample_log(raw_lag),
         "viscosity_integral": downsample_log(raw_visc),
     }
-
-
-def _run_single_viscosity(
-    base_result: dict,
-    temp_high: float,
-    temperature: float,
-    heating_rate: float,
-    cooling_rate: float,
-    timestep: float,
-    n_timesteps: int,
-    n_print: int,
-    max_lag: int | None,
-    server_kwargs: dict[str, Any],
-) -> dict[str, Any]:
-    """Extract structure from *base_result*, cool, and run viscosity."""
-    return _cool_and_run_viscosity(
-        structure=base_result["melt_quench"]["final_structure"],
-        potential=base_result["structure_generation"]["potential"],
-        temp_high=temp_high,
-        temp_low=temperature,
-        heating_rate=heating_rate,
-        cooling_rate=cooling_rate,
-        timestep=timestep,
-        n_timesteps=n_timesteps,
-        n_print=n_print,
-        max_lag=max_lag,
-        server_kwargs=server_kwargs,
-    )
 
 
 def _collect_viscosity_results(temperatures: list[float], **temp_results: dict) -> dict:
@@ -168,8 +141,10 @@ def submit_viscosity_workflow(
 
     Args:
         executor: Executor (concurrent.futures or executorlib) to submit to.
-        base_future: Future resolving to the base pipeline result dict
-            (must contain ``melt_quench`` and ``structure_generation`` keys).
+        base_future: Future resolving to the structure-generation result dict
+            (must contain a ``structure_generation`` key with the initial
+            structure and potential).  Viscosity tasks depend only on this,
+            so they run in parallel with the main melt-quench.
         temperatures: Target temperatures (K).
         temp_high: Starting melt temperature (K) for the cooling step.
         heating_rate: Heating rate in K/ps.
@@ -207,7 +182,7 @@ def submit_viscosity_workflow(
             resource_dict=rd,
             base_result=base_future,
             temp_high=temp_high,
-            temperature=temp,
+            temp_low=temp,
             heating_rate=heating_rate,
             cooling_rate=cooling_rate,
             timestep=timestep,
@@ -229,100 +204,3 @@ def submit_viscosity_workflow(
         temperatures=sorted_temps,
         **temp_futures,
     )
-
-
-def run_viscosity_workflow(
-    executor: Executor,
-    structure: Atoms,
-    potential: pd.DataFrame,
-    temperatures: list[float],
-    heating_rate: float,
-    cooling_rate: float,
-    timestep: float = 1.0,
-    n_timesteps: int = 10_000_000,
-    n_print: int = 1,
-    max_lag: int | None = 1_000_000,
-    server_kwargs: dict[str, Any] | None = None,
-    resource_dict: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Run viscosity analysis at multiple temperatures using an executor.
-
-    Each temperature is submitted as an independent task to *executor*.
-    Every task first cools the starting structure to the target temperature
-    via a melt-quench, then performs a Green-Kubo viscosity production run.
-    Because each task starts from the same *structure* and cools
-    independently, the tasks can run in parallel.
-
-    Args:
-        executor: A ``concurrent.futures.Executor`` or executorlib executor
-            used to submit per-temperature tasks.
-        structure: Quenched ASE Atoms from the melt-quench pipeline.
-        potential: LAMMPS potential object.
-        temperatures: Target temperatures (K) for viscosity runs.
-        heating_rate: Heating rate in K/ps.
-        cooling_rate: Cooling rate in K/ps.
-        timestep: MD timestep in fs.
-        n_timesteps: Number of MD steps per viscosity production run.
-        n_print: Thermodynamic output frequency.
-        max_lag: Maximum correlation lag (steps) for Green-Kubo.
-        server_kwargs: LAMMPS server/resource configuration.
-        resource_dict: Optional resource dict forwarded to executorlib
-            executors (e.g. ``{"cores": 8}``).  Ignored for stdlib executors.
-
-    Returns:
-        Result dict with ``temperatures``, ``viscosities``, ``max_lag``,
-        ``simulation_steps``, ``lag_times_ps``, and ``viscosity_integral``.
-    """
-    if server_kwargs is None:
-        server_kwargs = {}
-    if resource_dict is None:
-        resource_dict = {}
-
-    sorted_temps = sorted(temperatures, reverse=True)
-    logger.info("Submitting viscosity tasks for temperatures: %s", sorted_temps)
-
-    # Submit all temperatures in parallel — each cools independently
-    # from the starting structure down to its target temperature.
-    futures = {}
-    for temp in sorted_temps:
-        submit_kwargs: dict[str, Any] = {
-            "structure": structure,
-            "potential": potential,
-            "temp_high": 5000.0,
-            "temp_low": temp,
-            "heating_rate": heating_rate,
-            "cooling_rate": cooling_rate,
-            "timestep": timestep,
-            "n_timesteps": n_timesteps,
-            "n_print": n_print,
-            "max_lag": max_lag,
-            "server_kwargs": server_kwargs,
-        }
-        if resource_dict:
-            submit_kwargs["resource_dict"] = resource_dict
-        futures[temp] = executor.submit(_cool_and_run_viscosity, **submit_kwargs)
-
-    # Collect results in temperature order
-    viscosities: list[float] = []
-    all_max_lags: list[float] = []
-    sim_steps: list[int] = []
-    lag_times_ps: list[list[float]] = []
-    viscosity_integral: list[list[float]] = []
-
-    for temp in sorted_temps:
-        result = futures[temp].result()
-        logger.info("Viscosity at %.1f K: %.3e Pa·s", temp, result["viscosity"])
-        viscosities.append(result["viscosity"])
-        all_max_lags.append(result["max_lag"])
-        sim_steps.append(result["simulation_steps"])
-        lag_times_ps.append(result["lag_times_ps"])
-        viscosity_integral.append(result["viscosity_integral"])
-
-    return {
-        "temperatures": sorted_temps,
-        "viscosities": viscosities,
-        "max_lag": all_max_lags,
-        "simulation_steps": sim_steps,
-        "lag_times_ps": lag_times_ps,
-        "viscosity_integral": viscosity_integral,
-    }

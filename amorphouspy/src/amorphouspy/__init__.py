@@ -22,7 +22,6 @@ from amorphouspy.lammps.md import md_simulation
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
 from amorphouspy.lammps.potentials.potential import generate_potential
 from amorphouspy.pipelines.meltquench import generate_structure, run_melt_quench
-from amorphouspy.pipelines.viscosity import run_viscosity_workflow
 from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 from amorphouspy.properties.cte_analysis import (
     cte_from_npt_fluctuations,
@@ -100,7 +99,6 @@ __all__ = [
     "plot_analysis_results_plotly",
     "run_melt_quench",
     "run_structural_analysis",
-    "run_viscosity_workflow",
     "running_mean",
     "structure_from_parsed_output",
     "temperature_scan_simulation",

@@ -313,6 +313,7 @@ def submit_pipeline(
 
     # --- Base steps: sequential chain ---
     future = None
+    structure_future = None
     for name in ("structure_generation", "melt_quench"):
         rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
         resource_dict = _build_resource_dict(rd, name, is_slurm=slurm, cache_key=cache_key)
@@ -325,18 +326,24 @@ def submit_pipeline(
             config=None,
             accumulated=future if future is not None else {},
         )
+        if name == "structure_generation":
+            structure_future = future
 
     base_future = future  # contains structure_generation + melt_quench
     assert base_future is not None
+    assert structure_future is not None
 
     # --- Analysis steps: fan-out in parallel from base_future ---
     analysis_configs = {a.type: a for a in submission.analyses}
     analysis_futures: dict[str, Future] = {}
     for name, config in analysis_configs.items():
         if name in _SUBMITTERS:
+            # Submitters build their own melt-quench sub-DAG, so they depend
+            # only on structure_generation and run in parallel with the main
+            # melt-quench.
             analysis_futures[name] = _SUBMITTERS[name](
                 executor=executor,
-                base_future=base_future,
+                base_future=structure_future,
                 submission=submission,
                 config=config,
                 lammps_resource_dict=lammps_resource_dict,
