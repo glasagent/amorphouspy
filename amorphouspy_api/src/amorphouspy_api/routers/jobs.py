@@ -51,7 +51,7 @@ from amorphouspy_api.models import (
     _job_urls,
     validate_atoms,
 )
-from amorphouspy_api.pipeline import ANALYSES
+from amorphouspy_api.pipeline import ANALYSIS_NAMES
 from amorphouspy_api.routers.jobs_helpers import (
     _analyses_list,
     _initial_progress,
@@ -468,7 +468,7 @@ def get_job_results(job_id: str) -> JobResultsResponse:
         raise HTTPException(status_code=404, detail="No results available yet")
 
     # Collect results for all analysis types
-    analyses = {key: result[key] for key in ANALYSES if key in result}
+    analyses = {key: result[key] for key in ANALYSIS_NAMES if key in result}
 
     return JobResultsResponse(
         job_id=job.job_id,

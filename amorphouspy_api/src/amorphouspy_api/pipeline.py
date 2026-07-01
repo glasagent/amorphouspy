@@ -88,16 +88,28 @@ def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysi
     return result_dict
 
 
-def _run_viscosity(submission: JobSubmission, config: ViscosityAnalysis, result: dict) -> dict:
-    """Multi-temperature viscosity analysis on the quenched glass."""
-    from amorphouspy.pipelines.viscosity import run_viscosity_workflow
+def _submit_viscosity(
+    executor: BaseExecutor,
+    base_future: Future,
+    submission: JobSubmission,
+    config: ViscosityAnalysis,
+    lammps_resource_dict: dict[str, Any],
+    base_resource_dict: dict[str, Any],
+    *,
+    is_slurm: bool,
+    cache_key: str | None,
+) -> Future:
+    """Thin adapter: extract plain args and delegate to the core pipeline."""
+    from amorphouspy.pipelines.viscosity import submit_viscosity_workflow
 
     from amorphouspy_api.executor import get_lammps_server_kwargs
 
-    return run_viscosity_workflow(
-        structure=result["melt_quench"]["final_structure"],
-        potential=result["structure_generation"]["potential"],
+    melt_temp = submission.simulation.melt_temperature
+    return submit_viscosity_workflow(
+        executor=executor,
+        base_future=base_future,
         temperatures=config.temperatures,
+        temp_high=float(melt_temp) if melt_temp is not None else 5000.0,
         heating_rate=int(submission.simulation.quench_rate * 100),
         cooling_rate=int(submission.simulation.quench_rate),
         timestep=config.timestep,
@@ -107,10 +119,18 @@ def _run_viscosity(submission: JobSubmission, config: ViscosityAnalysis, result:
         server_kwargs=get_lammps_server_kwargs(
             submission.potential, submission.simulation.n_atoms, submission.simulation.cores
         ),
+        lammps_resource_dict=lammps_resource_dict,
+        base_resource_dict=base_resource_dict,
+        is_slurm=is_slurm,
+        cache_key=cache_key,
     )
 
 
-def _run_cte(submission: JobSubmission, config: CTEFluctuations | CTETemperatureScan, result: dict) -> dict:
+def _run_cte(
+    submission: JobSubmission,
+    config: CTEFluctuations | CTETemperatureScan,
+    result: dict,
+) -> dict:
     """CTE analysis via fluctuations or temperature scan."""
     from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 
@@ -199,7 +219,6 @@ STEPS: dict[str, AnalysisFn] = {
     "structure_generation": _generate_structure,
     "melt_quench": _run_melt_quench,
     "structure_characterization": _run_structural_analysis,
-    "viscosity": _run_viscosity,
     "cte": _run_cte,
     "elastic": _run_elastic,
 }
@@ -207,7 +226,14 @@ STEPS: dict[str, AnalysisFn] = {
 BASE_STEPS = {"structure_generation", "melt_quench"}
 ANALYSES: dict[str, AnalysisFn] = {k: v for k, v in STEPS.items() if k not in BASE_STEPS}
 
-__all__ = ["ANALYSES", "BASE_STEPS", "STEPS", "submit_pipeline"]
+# Analyses that build their own sub-DAG instead of going through _run_analysis.
+_SUBMITTERS: dict[str, Callable[..., Future]] = {"viscosity": _submit_viscosity}
+
+# All known analysis names (simple + DAG-based), used for result lookups and
+# progress tracking.
+ANALYSIS_NAMES: frozenset[str] = frozenset(ANALYSES) | frozenset(_SUBMITTERS)
+
+__all__ = ["ANALYSES", "ANALYSIS_NAMES", "BASE_STEPS", "STEPS", "submit_pipeline"]
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +273,22 @@ def _merge_results(base_result: dict, **analysis_results: dict) -> dict:
     return merged
 
 
+def _build_resource_dict(
+    base_rd: dict[str, Any],
+    step_name: str,
+    *,
+    is_slurm: bool,
+    cache_key: str | None,
+) -> dict[str, Any]:
+    """Build a resource dict with optional job-name and cache-key."""
+    rd = dict(base_rd)
+    if is_slurm:
+        rd["job_name"] = step_name
+    if cache_key is not None:
+        rd["cache_key"] = f"{cache_key}_{step_name}"
+    return rd
+
+
 def submit_pipeline(
     executor: BaseExecutor,
     submission: JobSubmission,
@@ -264,6 +306,7 @@ def submit_pipeline(
     lammps_resource_dict = get_lammps_resource_dict(
         submission.potential, submission.simulation.n_atoms, submission.simulation.cores
     )
+    slurm = _is_slurm()
 
     # Steps that run LAMMPS simulations and need multi-core SBATCH allocation.
     LAMMPS_STEPS = {"melt_quench", "cte", "viscosity", "elastic"}
@@ -272,11 +315,7 @@ def submit_pipeline(
     future = None
     for name in ("structure_generation", "melt_quench"):
         rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-        resource_dict = dict(rd)
-        if _is_slurm():
-            resource_dict["job_name"] = name
-        if cache_key is not None:
-            resource_dict["cache_key"] = f"{cache_key}_{name}"
+        resource_dict = _build_resource_dict(rd, name, is_slurm=slurm, cache_key=cache_key)
         future = executor.submit(
             _accumulate_step,
             resource_dict=resource_dict,
@@ -288,18 +327,26 @@ def submit_pipeline(
         )
 
     base_future = future  # contains structure_generation + melt_quench
+    assert base_future is not None
 
     # --- Analysis steps: fan-out in parallel from base_future ---
     analysis_configs = {a.type: a for a in submission.analyses}
     analysis_futures: dict[str, Future] = {}
     for name, config in analysis_configs.items():
-        if name in ANALYSES:
+        if name in _SUBMITTERS:
+            analysis_futures[name] = _SUBMITTERS[name](
+                executor=executor,
+                base_future=base_future,
+                submission=submission,
+                config=config,
+                lammps_resource_dict=lammps_resource_dict,
+                base_resource_dict=base_resource_dict,
+                is_slurm=slurm,
+                cache_key=cache_key,
+            )
+        elif name in ANALYSES:
             rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-            resource_dict = dict(rd)
-            if _is_slurm():
-                resource_dict["job_name"] = name
-            if cache_key is not None:
-                resource_dict["cache_key"] = f"{cache_key}_{name}"
+            resource_dict = _build_resource_dict(rd, name, is_slurm=slurm, cache_key=cache_key)
             analysis_futures[name] = executor.submit(
                 _run_analysis,
                 resource_dict=resource_dict,
@@ -312,7 +359,7 @@ def submit_pipeline(
 
     # --- Merge step: collects base + all analysis results ---
     merge_resource: dict[str, Any] = dict(base_resource_dict)
-    if _is_slurm():
+    if slurm:
         merge_resource["job_name"] = "merge_results"
     if cache_key is not None:
         merge_resource["cache_key"] = cache_key

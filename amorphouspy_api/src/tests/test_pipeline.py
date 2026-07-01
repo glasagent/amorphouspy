@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from amorphouspy_api.pipeline import (
+    _SUBMITTERS,
     ANALYSES,
+    ANALYSIS_NAMES,
     BASE_STEPS,
     STEPS,
     _accumulate_step,
@@ -122,8 +124,18 @@ class TestStepRegistry:
 
     def test_expected_analysis_keys(self) -> None:
         """Known analysis types are registered."""
-        for name in ("structure_characterization", "viscosity", "cte", "elastic"):
+        for name in ("structure_characterization", "cte", "elastic"):
             assert name in ANALYSES
+
+    def test_submitters_contain_viscosity(self) -> None:
+        """Viscosity manages its own sub-DAG via _SUBMITTERS."""
+        assert "viscosity" in _SUBMITTERS
+        assert callable(_SUBMITTERS["viscosity"])
+
+    def test_analysis_names_includes_all(self) -> None:
+        """ANALYSIS_NAMES is the union of ANALYSES and _SUBMITTERS."""
+        assert frozenset(ANALYSES) | frozenset(_SUBMITTERS) == ANALYSIS_NAMES
+        assert "viscosity" in ANALYSIS_NAMES
 
     def test_all_steps_are_callable(self) -> None:
         """Every registered step function is callable."""

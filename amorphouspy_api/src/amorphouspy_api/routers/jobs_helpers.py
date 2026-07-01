@@ -21,7 +21,7 @@ from amorphouspy_api.models import (
     JobSubmission,
     StepStatus,
 )
-from amorphouspy_api.pipeline import ANALYSES, BASE_STEPS, submit_pipeline
+from amorphouspy_api.pipeline import ANALYSIS_NAMES, BASE_STEPS, submit_pipeline
 
 if TYPE_CHECKING:
     from amorphouspy_api.database import Job
@@ -271,7 +271,7 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
     # Build the expected step list
     all_steps = list(BASE_STEPS)
     if submission:
-        all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
+        all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSIS_NAMES)
 
     if status == "completed":
         result = resolved["result"]
@@ -403,7 +403,7 @@ def refresh_job_from_cache(job: Job) -> None:
     submission = _parse_submission(job)
     all_steps = list(BASE_STEPS)
     if submission:
-        all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSES)
+        all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSIS_NAMES)
 
     progress, partial_results, has_failure, errors = _probe_step_caches(job, all_steps)
 
