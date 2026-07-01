@@ -3,6 +3,7 @@
 Defines request/response schemas for the ``/jobs`` and ``/glasses`` endpoints.
 """
 
+from datetime import datetime
 from enum import StrEnum
 from io import StringIO
 from typing import Annotated, Any, Literal, cast
@@ -552,6 +553,20 @@ class JobSearchRequest(BaseModel):
     statuses: list[JobStatus] | None = Field(
         default=None,
         description=("Filter to jobs with these statuses. If not provided, all statuses are included."),
+    )
+    created_after: datetime | None = Field(
+        default=None,
+        description=(
+            "Only return jobs created at or after this time (inclusive). "
+            "Accepts an ISO 8601 datetime, e.g. '2026-01-01T00:00:00Z'."
+        ),
+    )
+    created_before: datetime | None = Field(
+        default=None,
+        description=(
+            "Only return jobs created at or before this time (inclusive). "
+            "Accepts an ISO 8601 datetime, e.g. '2026-06-30T23:59:59Z'."
+        ),
     )
 
 
