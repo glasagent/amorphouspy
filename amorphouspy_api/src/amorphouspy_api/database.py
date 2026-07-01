@@ -195,10 +195,34 @@ class JobStore:
         composition: str,
         potential: str | None = None,
         statuses: list[str] | None = None,
+        *,
+        light: bool = False,
     ) -> list[Job]:
-        """Find jobs matching a normalised composition, optionally filtered by status."""
+        """Find jobs matching a normalised composition, optionally filtered by status.
+
+        The heavy ``simulation_history`` (trajectory) column is never loaded.
+        When *light* is True, only the lightweight columns needed to build
+        search results are loaded (``result_data`` is skipped too), keeping
+        the query fast on very large databases.
+        """
         with self.session() as s:
-            q = s.query(Job).filter(Job.composition == composition)
+            q = s.query(Job)
+            if light:
+                q = q.options(
+                    load_only(
+                        Job.job_id,
+                        Job.composition,
+                        Job.potential,
+                        Job.status,
+                        Job.tags,
+                        Job.request_data,
+                        Job.created_at,
+                        Job.completed_at,
+                    )
+                )
+            else:
+                q = q.options(_defer(Job.simulation_history))
+            q = q.filter(Job.composition == composition)
             if statuses:
                 q = q.filter(Job.status.in_(statuses))
             if potential:

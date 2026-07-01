@@ -158,7 +158,7 @@ def search_glasses(body: GlassSearchRequest) -> GlassSearchResponse:
     query_vec = oxide_to_elemental_vector(body.composition.root)
 
     # --- exact matches ---
-    exact_jobs = store.search_by_composition(norm_comp, body.potential, statuses=["completed"])
+    exact_jobs = store.search_by_composition(norm_comp, body.potential, statuses=["completed"], light=True)
     exact_ids = {j.job_id for j in exact_jobs}
     matches: list[GlassSearchMatch] = [
         GlassSearchMatch(
