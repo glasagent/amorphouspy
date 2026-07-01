@@ -7,15 +7,10 @@ Each pipeline module accepts plain Python arguments (ASE Atoms, dicts, floats)
 and returns plain dicts — no web-framework or pydantic dependency.
 """
 
-from amorphouspy.fabrication.meltquench import extract_equilibration_frames
-from amorphouspy.pipelines.meltquench import generate_structure, run_melt_quench
-from amorphouspy.pipelines.viscosity import run_viscosity_workflow
-from amorphouspy.properties.structural.all import run_structural_analysis
+from amorphouspy.pipelines.viscosity import submit_viscosity_workflow
 
-__all__ = [
-    "extract_equilibration_frames",
-    "generate_structure",
-    "run_melt_quench",
-    "run_structural_analysis",
-    "run_viscosity_workflow",
-]
+# Analyses that build their own executor sub-DAG rather than running as a
+# single submitted function.  Maps analysis name → DAG-building callable.
+PIPELINE_ANALYSES: dict[str, object] = {
+    "viscosity": submit_viscosity_workflow,
+}
