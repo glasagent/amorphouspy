@@ -38,6 +38,9 @@ from amorphouspy.atoms.shared import get_element_types_dict
 
 _MELT_TEMPERATURE = 5000
 
+# Minimum atoms-per-core for good (~80-90%) MPI scaling efficiency.
+MIN_ATOMS_PER_CORE = 2000
+
 
 du_teter_potential_params = {
     "B": {"q": 1.8, "A": 0.0, "rho": 0.171271, "C": 28.500, "B": 0.0, "D": 0.0, "n": 0.0, "r0": 0.0},  # [2]

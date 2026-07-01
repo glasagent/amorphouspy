@@ -153,6 +153,69 @@ def test_submit_job_new() -> None:
     assert data["composition"] == {"Al2O3": 15.0, "CaO": 25.0, "SiO2": 60.0}
 
 
+def test_submit_job_records_resolved_cores_in_settings() -> None:
+    """An explicit cores override is resolved and stored in the job settings."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+                "simulation": {"cores": 2},
+            },
+        )
+
+    assert resp.status_code == 200
+    job_id = resp.json()["id"]
+
+    settings = client.get(f"/jobs/{job_id}/settings").json()["settings"]
+    assert settings["simulation"]["cores"] == 2
+
+
+def test_submit_job_auto_selects_cores_in_settings() -> None:
+    """When cores is omitted, the auto-selected value is stored in the settings."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch(
+            "amorphouspy_api.routers.jobs_helpers.submit_pipeline",
+            return_value=mock_future,
+        ),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"SiO2": 60, "CaO": 25, "Al2O3": 15},
+            },
+        )
+
+    assert resp.status_code == 200
+    job_id = resp.json()["id"]
+
+    settings = client.get(f"/jobs/{job_id}/settings").json()["settings"]
+    # Auto-selection always resolves to a concrete positive integer.
+    assert isinstance(settings["simulation"]["cores"], int)
+    assert settings["simulation"]["cores"] >= 1
+
+
 def test_submit_job_returns_cached() -> None:
     """Test that submitting a duplicate request returns the cached job."""
     from amorphouspy.fabrication.composition import extract_composition

@@ -7,6 +7,7 @@ The `amorphouspy-api` is a FastAPI-based service that provides a Model Context P
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EXECUTOR_TYPE` | Executor backend: `test`, `slurm`, `flux`, or `single` | `test` |
+| `LAMMPS_MAX_CORES` | Maximum MPI cores per LAMMPS job. Set to a node's core count (slow interconnect) or your SLURM queue's per-job limit; typical values are `16`–`48`. The default `4` suits demos only. The API scales down for small systems to keep each potential's minimum atoms-per-core. | `4` |
 | `SLURM_PARTITION` | SLURM partition name (slurm only) | - |
 | `SLURM_RUN_TIME_MAX` | Max run time per job in seconds (slurm only) | - |
 | `SLURM_MEMORY_MAX` | Max memory per job in GB (slurm only) | - |

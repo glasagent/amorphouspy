@@ -38,11 +38,15 @@ def _job_hash(submission: JobSubmission, normalized_comp: str) -> str:
     """Deterministic hash from (normalised composition + potential + sim params + analyses)."""
     analyses_dump = [a.model_dump() for a in submission.analyses]
     electrostatics_dump = submission.electrostatics.model_dump() if submission.electrostatics else None
+    # ``cores`` is a performance setting that does not affect the physical
+    # result, so it is excluded to keep the cache key stable across core counts.
+    simulation_dump = submission.simulation.model_dump()
+    simulation_dump.pop("cores", None)
     payload = json.dumps(
         {
             "composition": normalized_comp,
             "potential": submission.potential,
-            "simulation": submission.simulation.model_dump(),
+            "simulation": simulation_dump,
             "analyses": analyses_dump,
             "electrostatics": electrostatics_dump,
         },
