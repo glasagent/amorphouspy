@@ -285,7 +285,7 @@ def submit_job(
     # Submit to executor
     try:
         resolved = _submit_to_executor(submission, job_id, req_hash)
-        _update_from_resolved(job_id, resolved, submission)
+        _update_from_resolved(job_id, resolved, submission, req_hash)
     except Exception as exc:
         logger.exception("Failed to submit job %s", job_id)
         error_msg = f"Failed to start executor: {exc}"

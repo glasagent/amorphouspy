@@ -21,7 +21,7 @@ from amorphouspy_api.models import (
     JobSubmission,
     StepStatus,
 )
-from amorphouspy_api.pipeline import ANALYSIS_NAMES, BASE_STEPS, submit_pipeline
+from amorphouspy_api.pipeline import ANALYSIS_NAMES, BASE_STEPS, REGISTRY, submit_pipeline
 
 if TYPE_CHECKING:
     from amorphouspy_api.database import Job
@@ -263,7 +263,12 @@ def _submit_to_executor(
     return resolved
 
 
-def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission | None = None) -> None:
+def _update_from_resolved(
+    job_id: str,
+    resolved: dict,
+    submission: JobSubmission | None = None,
+    request_hash: str | None = None,
+) -> None:
     """Persist pipeline outcome into the job store."""
     store = get_job_store()
     status = resolved["status"]
@@ -293,12 +298,12 @@ def _update_from_resolved(job_id: str, resolved: dict, submission: JobSubmission
             completed_at=datetime.now(UTC),
         )
     elif status == "failed":
-        progress = dict.fromkeys(all_steps, "failed")
+        progress, errors = _attribute_failure(job_id, request_hash, all_steps, resolved.get("error", "unknown error"))
         store.update_job(
             job_id,
             status="failed",
             progress=progress,
-            errors={"pipeline": resolved.get("error", "unknown error")},
+            errors=errors,
         )
     else:
         progress = dict.fromkeys(all_steps, "pending")
@@ -326,25 +331,28 @@ def _probe_single_step(
 
 
 def _probe_step_caches(
-    job: Job,
+    job_id: str,
+    request_hash: str,
     all_steps: list[str],
+    existing_results: dict[str, object] | None = None,
 ) -> tuple[dict[str, str], dict[str, object], bool, dict[str, str]]:
     """Probe per-step caches and return (progress, partial_results, has_failure, errors)."""
     cache_dir = str(MELTQUENCH_PROJECT_DIR)
     progress: dict[str, str] = {}
-    partial_results: dict[str, object] = dict(job.result_data or {})
+    partial_results: dict[str, object] = dict(existing_results or {})
     has_failure = False
     errors: dict[str, str] = {}
-    # Track whether all preceding base steps have completed.
-    # Later base steps and analysis steps should stay "pending" until their
-    # predecessors finish (executor creates futures early, so they look "running").
-    prev_base_done = True
+    # executorlib creates every future up front, so a step can report "running"
+    # before its dependency has finished. Mask that as "pending": a step is only
+    # really running once the step it depends on (``StepSpec.depends_on``) has
+    # completed. ``all_steps`` is in execution order, so each dependency has
+    # already been probed by the time we reach the step that needs it.
     for step_name in all_steps:
-        status, result, error = _probe_single_step(cache_dir, job.request_hash, step_name, job.job_id)
-        is_analysis = step_name not in BASE_STEPS
-        # A step reported as "running" while its predecessor hasn't finished
-        # is actually just waiting — show "pending" instead.
-        if status == "running" and not prev_base_done:
+        status, result, error = _probe_single_step(cache_dir, request_hash, step_name, job_id)
+        spec = REGISTRY.get(step_name)
+        dependency = spec.depends_on if spec else None
+        predecessor_done = dependency is None or progress.get(dependency) == "completed"
+        if status == "running" and not predecessor_done:
             status = "pending"
         progress[step_name] = status
         if result is not None:
@@ -353,9 +361,27 @@ def _probe_step_caches(
             has_failure = True
             if error:
                 errors[step_name] = error
-        if not is_analysis and status != "completed":
-            prev_base_done = False
     return progress, partial_results, has_failure, errors
+
+
+def _attribute_failure(
+    job_id: str,
+    request_hash: str | None,
+    all_steps: list[str],
+    fallback_error: str,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Determine per-step progress and errors for a failed pipeline.
+
+    Probes each step's individual cache so the failure is attributed to the step
+    that actually raised, instead of blanket-marking every step ``failed`` under a
+    generic ``"pipeline"`` key. Falls back to that generic behaviour when the
+    failing step cannot be localised (e.g. caches cleared or a merge-level error).
+    """
+    if request_hash:
+        progress, _partial, has_failure, errors = _probe_step_caches(job_id, request_hash, all_steps)
+        if has_failure:
+            return progress, errors
+    return dict.fromkeys(all_steps, "failed"), {"pipeline": fallback_error}
 
 
 def _parse_submission(job: Job) -> JobSubmission | None:
@@ -387,7 +413,7 @@ def refresh_job_from_cache(job: Job) -> None:
         resolved = _resolve_future(future, job.job_id)
         if resolved["status"] in ("completed", "failed"):
             submission = _parse_submission(job)
-            _update_from_resolved(job.job_id, resolved, submission)
+            _update_from_resolved(job.job_id, resolved, submission, job.request_hash)
             return
     except FileNotFoundError:
         pass
@@ -396,7 +422,7 @@ def refresh_job_from_cache(job: Job) -> None:
         logger.exception("Job %s failed (cached error)", job.job_id)
         submission = _parse_submission(job)
         resolved = {"status": "failed", "error": str(exc)}
-        _update_from_resolved(job.job_id, resolved, submission)
+        _update_from_resolved(job.job_id, resolved, submission, job.request_hash)
         return
 
     # Slow path — probe per-step cache keys
@@ -405,7 +431,9 @@ def refresh_job_from_cache(job: Job) -> None:
     if submission:
         all_steps.extend(a.type for a in submission.analyses if a.type in ANALYSIS_NAMES)
 
-    progress, partial_results, has_failure, errors = _probe_step_caches(job, all_steps)
+    progress, partial_results, has_failure, errors = _probe_step_caches(
+        job.job_id, job.request_hash, all_steps, job.result_data
+    )
 
     store = get_job_store()
     updates: dict[str, object] = {"progress": progress}

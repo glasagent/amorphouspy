@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -216,25 +217,60 @@ def _run_elastic(submission: JobSubmission, config: ElasticAnalysis, result: dic
 # Step registry
 # ---------------------------------------------------------------------------
 
-STEPS: dict[str, AnalysisFn] = {
-    "structure_generation": _generate_structure,
-    "melt_quench": _run_melt_quench,
-    "structure_characterization": _run_structural_analysis,
-    "cte": _run_cte,
-    "elastic": _run_elastic,
+
+@dataclass(frozen=True)
+class StepSpec:
+    """Metadata describing how a single pipeline step is scheduled.
+
+    Attributes:
+        fn: The step function. For ``submits=False`` steps this is an
+            ``AnalysisFn`` run inside an executor task; for ``submits=True``
+            steps it is a self-submitting function returning a ``Future``.
+        is_base: Part of the sequential base chain (structure_generation ->
+            melt_quench) that every analysis builds on.
+        submits: Calls ``executor.submit`` itself and returns a ``Future``,
+            rather than being wrapped in ``_run_analysis``.
+        lammps: Runs a LAMMPS simulation and needs the multi-core resource dict.
+        depends_on: Name of the step whose future this step consumes. ``None``
+            marks the start of the base chain (structure_generation). Analyses
+            default to ``"melt_quench"`` (the full base); viscosity depends only
+            on ``"structure_generation"`` so it runs in parallel with the main
+            melt-quench.
+    """
+
+    fn: Callable[..., Any]
+    is_base: bool = False
+    submits: bool = False
+    lammps: bool = False
+    depends_on: str | None = None
+
+
+# Single source of truth for every pipeline step, in execution order.
+REGISTRY: dict[str, StepSpec] = {
+    "structure_generation": StepSpec(_generate_structure, is_base=True),
+    "melt_quench": StepSpec(_run_melt_quench, is_base=True, lammps=True, depends_on="structure_generation"),
+    "structure_characterization": StepSpec(_run_structural_analysis, depends_on="melt_quench"),
+    "cte": StepSpec(_run_cte, lammps=True, depends_on="melt_quench"),
+    "elastic": StepSpec(_run_elastic, lammps=True, depends_on="melt_quench"),
+    "viscosity": StepSpec(_submit_viscosity, submits=True, lammps=True, depends_on="structure_generation"),
 }
 
-BASE_STEPS = {"structure_generation", "melt_quench"}
-ANALYSES: dict[str, AnalysisFn] = {k: v for k, v in STEPS.items() if k not in BASE_STEPS}
-
+# Derived views over REGISTRY, kept for external importers and tests.
+# ``STEPS`` holds the base steps plus the simple (non-self-submitting) analyses.
+STEPS: dict[str, AnalysisFn] = {name: spec.fn for name, spec in REGISTRY.items() if not spec.submits}
+# Ordered so callers can rely on the base chain sequence (structure_generation
+# before melt_quench); still supports ``in`` membership tests.
+BASE_STEPS: tuple[str, ...] = tuple(name for name, spec in REGISTRY.items() if spec.is_base)
+ANALYSES: dict[str, AnalysisFn] = {
+    name: spec.fn for name, spec in REGISTRY.items() if not spec.is_base and not spec.submits
+}
 # Analyses that build their own sub-DAG instead of going through _run_analysis.
-_SUBMITTERS: dict[str, Callable[..., Future]] = {"viscosity": _submit_viscosity}
-
+_SUBMITTERS: dict[str, Callable[..., Future]] = {name: spec.fn for name, spec in REGISTRY.items() if spec.submits}
 # All known analysis names (simple + DAG-based), used for result lookups and
 # progress tracking.
-ANALYSIS_NAMES: frozenset[str] = frozenset(ANALYSES) | frozenset(_SUBMITTERS)
+ANALYSIS_NAMES: frozenset[str] = frozenset(name for name, spec in REGISTRY.items() if not spec.is_base)
 
-__all__ = ["ANALYSES", "ANALYSIS_NAMES", "BASE_STEPS", "STEPS", "submit_pipeline"]
+__all__ = ["ANALYSES", "ANALYSIS_NAMES", "BASE_STEPS", "REGISTRY", "STEPS", "StepSpec", "submit_pipeline"]
 
 
 # ---------------------------------------------------------------------------
@@ -309,42 +345,48 @@ def submit_pipeline(
     )
     slurm = _is_slurm()
 
-    # Steps that run LAMMPS simulations and need multi-core SBATCH allocation.
-    LAMMPS_STEPS = {"melt_quench", "cte", "viscosity", "elastic"}
+    def _resource_for(spec: StepSpec) -> dict[str, Any]:
+        return lammps_resource_dict if spec.lammps else base_resource_dict
 
-    # --- Base steps: sequential chain ---
-    future = None
-    structure_future = None
-    for name in ("structure_generation", "melt_quench"):
-        rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-        resource_dict = _build_resource_dict(rd, name, is_slurm=slurm, cache_key=cache_key)
-        future = executor.submit(
+    # Futures keyed by step name, so any step can look up its dependency's
+    # future by name (see ``StepSpec.depends_on``).
+    futures: dict[str, Future] = {}
+
+    def _submit_base_step(name: str) -> Future:
+        """Submit one base step, chaining on its ``depends_on`` predecessor."""
+        spec = REGISTRY[name]
+        accumulated = futures[spec.depends_on] if spec.depends_on else {}
+        resource_dict = _build_resource_dict(_resource_for(spec), name, is_slurm=slurm, cache_key=cache_key)
+        return executor.submit(
             _accumulate_step,
             resource_dict=resource_dict,
             step_name=name,
-            step_fn=STEPS[name],
+            step_fn=spec.fn,
             submission=submission,
             config=None,
-            accumulated=future if future is not None else {},
+            accumulated=accumulated,
         )
-        if name == "structure_generation":
-            structure_future = future
 
-    base_future = future  # contains structure_generation + melt_quench
-    assert base_future is not None
-    assert structure_future is not None
+    # --- Base steps: explicit sequential chain ---
+    futures["structure_generation"] = _submit_base_step("structure_generation")
+    futures["melt_quench"] = _submit_base_step("melt_quench")
+    base_future = futures["melt_quench"]  # base = structure_gen + melt_quench
 
-    # --- Analysis steps: fan-out in parallel from base_future ---
+    # --- Analysis steps: fan-out in parallel ---
     analysis_configs = {a.type: a for a in submission.analyses}
     analysis_futures: dict[str, Future] = {}
     for name, config in analysis_configs.items():
-        if name in _SUBMITTERS:
-            # Submitters build their own melt-quench sub-DAG, so they depend
-            # only on structure_generation and run in parallel with the main
-            # melt-quench.
-            analysis_futures[name] = _SUBMITTERS[name](
+        spec = REGISTRY.get(name)
+        if spec is None or spec.is_base:
+            continue
+        # Each analysis consumes the future of the step named by ``depends_on``.
+        # Steps that depend on structure_generation run in parallel with the
+        # main melt-quench; the rest wait for the full base chain.
+        dep_future = futures[spec.depends_on] if spec.depends_on else base_future
+        if spec.submits:
+            analysis_futures[name] = spec.fn(
                 executor=executor,
-                base_future=structure_future,
+                base_future=dep_future,
                 submission=submission,
                 config=config,
                 lammps_resource_dict=lammps_resource_dict,
@@ -352,17 +394,16 @@ def submit_pipeline(
                 is_slurm=slurm,
                 cache_key=cache_key,
             )
-        elif name in ANALYSES:
-            rd = lammps_resource_dict if name in LAMMPS_STEPS else base_resource_dict
-            resource_dict = _build_resource_dict(rd, name, is_slurm=slurm, cache_key=cache_key)
+        else:
+            resource_dict = _build_resource_dict(_resource_for(spec), name, is_slurm=slurm, cache_key=cache_key)
             analysis_futures[name] = executor.submit(
                 _run_analysis,
                 resource_dict=resource_dict,
                 step_name=name,
-                step_fn=ANALYSES[name],
+                step_fn=spec.fn,
                 submission=submission,
                 config=config,
-                base_result=base_future,
+                base_result=dep_future,
             )
 
     # --- Merge step: collects base + all analysis results ---
