@@ -322,6 +322,8 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
     completed, or failed jobs.  All filters are optional.  When
     *composition* is provided, only jobs with that exact composition
     are returned.  Use *statuses* to restrict to specific stages.
+    Use *created_after* / *created_before* to constrain results to a
+    creation-time window (inclusive ISO 8601 datetimes).
 
     To search completed results by composition similarity, use
     ``POST /glasses:search`` instead.
@@ -330,7 +332,13 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
     norm_comp = body.composition.canonical if body.composition else None
 
     statuses = [s.value for s in body.statuses] if body.statuses else None
-    jobs = store.search_jobs(composition=norm_comp, potential=body.potential, statuses=statuses)
+    jobs = store.search_jobs(
+        composition=norm_comp,
+        potential=body.potential,
+        statuses=statuses,
+        created_after=body.created_after,
+        created_before=body.created_before,
+    )
     matches = [
         JobSearchMatch(
             job_id=j.job_id,

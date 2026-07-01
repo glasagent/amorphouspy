@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from sqlalchemy import JSON, DateTime, Index, String, create_engine, func, text
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, load_only, mapped_column, sessionmaker
 from sqlalchemy.orm import defer as _defer
 from sqlalchemy.pool import NullPool
 
@@ -210,16 +210,39 @@ class JobStore:
         composition: str | None = None,
         potential: str | None = None,
         statuses: list[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> list[Job]:
-        """Search jobs with optional filters."""
+        """Search jobs with optional filters.
+
+        Only loads the lightweight columns needed to build search results.
+        The heavy ``simulation_history`` and ``result_data`` columns (which
+        can be hundreds of MB per row) are never touched, keeping the query
+        fast even on very large databases.
+        """
         with self.session() as s:
-            q = s.query(Job)
+            q = s.query(Job).options(
+                load_only(
+                    Job.job_id,
+                    Job.composition,
+                    Job.potential,
+                    Job.status,
+                    Job.tags,
+                    Job.request_data,
+                    Job.created_at,
+                    Job.completed_at,
+                )
+            )
             if composition:
                 q = q.filter(Job.composition == composition)
             if statuses:
                 q = q.filter(Job.status.in_(statuses))
             if potential:
                 q = q.filter(Job.potential == potential)
+            if created_after is not None:
+                q = q.filter(Job.created_at >= created_after)
+            if created_before is not None:
+                q = q.filter(Job.created_at <= created_before)
             return list(q.order_by(Job.created_at.desc()).all())
 
     def list_compositions(self) -> list[dict[str, Any]]:

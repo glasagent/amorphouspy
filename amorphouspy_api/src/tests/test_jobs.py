@@ -478,6 +478,51 @@ def test_search_jobs_no_match() -> None:
     assert len(resp.json()["matches"]) == 0
 
 
+def test_search_jobs_date_range() -> None:
+    """created_after / created_before constrain results by creation time."""
+    store = get_job_store()
+
+    _insert_completed_job("j-date-old", request_hash="datehash-old")
+    _insert_completed_job("j-date-new", request_hash="datehash-new")
+    store.update_job("j-date-old", created_at=datetime(2020, 1, 1, tzinfo=UTC))
+    store.update_job("j-date-new", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+
+    comp = {"SiO2": 60, "CaO": 25, "Al2O3": 15}
+
+    # created_after excludes the old job
+    resp = client.post(
+        "/jobs:search",
+        json={"composition": comp, "created_after": "2023-01-01T00:00:00Z"},
+    )
+    assert resp.status_code == 200
+    ids = {m["job_id"] for m in resp.json()["matches"]}
+    assert "j-date-new" in ids
+    assert "j-date-old" not in ids
+
+    # created_before excludes the new job
+    resp = client.post(
+        "/jobs:search",
+        json={"composition": comp, "created_before": "2023-01-01T00:00:00Z"},
+    )
+    assert resp.status_code == 200
+    ids = {m["job_id"] for m in resp.json()["matches"]}
+    assert "j-date-old" in ids
+    assert "j-date-new" not in ids
+
+    # bounded window includes only the new job
+    resp = client.post(
+        "/jobs:search",
+        json={
+            "composition": comp,
+            "created_after": "2025-06-01T00:00:00Z",
+            "created_before": "2026-06-01T00:00:00Z",
+        },
+    )
+    assert resp.status_code == 200
+    ids = {m["job_id"] for m in resp.json()["matches"]}
+    assert ids == {"j-date-new"}
+
+
 def test_search_glasses_close_match() -> None:
     """A nearby composition should appear as a close match via glasses:search."""
     _insert_completed_job("j-close-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
