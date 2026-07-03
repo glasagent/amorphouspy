@@ -8,6 +8,7 @@ requiring a LAMMPS installation.
 import logging
 
 import numpy as np
+import pandas as pd
 import pytest
 from amorphouspy.properties import cte as cte_module
 from amorphouspy.properties.cte import (
@@ -35,6 +36,11 @@ def _make_structure() -> Atoms:
     return Atoms(
         "Si2O4", positions=[[0, 0, 0], [2, 2, 2], [1, 0, 0], [0, 1, 0], [0, 0, 1], [2, 2, 3]], cell=[5, 5, 5], pbc=True
     )
+
+
+def _make_potential() -> pd.DataFrame:
+    """Create a mock potential dataframe."""
+    return pd.DataFrame({"Name": ["mock_potential"], "Config": [[]]})
 
 
 def _make_parsed_output(n: int = 100, seed: int = 42) -> dict:
@@ -92,7 +98,7 @@ def test_fluctuations_simulation_returns_summary_and_data(tmp_path, monkeypatch)
     try:
         result = cte_from_fluctuations_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=300.0,
             pressure=1e-4,
             timestep=1.0,
@@ -119,7 +125,7 @@ def test_fluctuations_simulation_converges_with_loose_criterion(tmp_path, monkey
     try:
         result = cte_from_fluctuations_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=300.0,
             production_steps=100_000,
             min_production_runs=2,
@@ -140,7 +146,7 @@ def test_fluctuations_simulation_not_converged_with_tight_criterion(tmp_path, mo
     try:
         result = cte_from_fluctuations_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=300.0,
             production_steps=100_000,
             min_production_runs=2,
@@ -161,7 +167,7 @@ def test_fluctuations_simulation_data_has_cte_keys(tmp_path, monkeypatch) -> Non
     try:
         result = cte_from_fluctuations_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=300.0,
             production_steps=100_000,
             min_production_runs=2,
@@ -185,7 +191,7 @@ def test_fluctuations_simulation_aniso_flag(tmp_path, monkeypatch) -> None:
     try:
         result = cte_from_fluctuations_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=300.0,
             production_steps=100_000,
             min_production_runs=2,
@@ -212,7 +218,7 @@ def test_temperature_scan_returns_data(tmp_path, monkeypatch) -> None:
     try:
         result = temperature_scan_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=[300, 400, 500],
             production_steps=100_000,
             n_dump=100_000,
@@ -231,7 +237,7 @@ def test_temperature_scan_correct_number_of_runs(tmp_path, monkeypatch) -> None:
         temps = [300, 400, 500.0]
         result = temperature_scan_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=temps,
             production_steps=100_000,
             n_dump=100_000,
@@ -251,7 +257,7 @@ def test_temperature_scan_default_temperatures(tmp_path, monkeypatch) -> None:
     try:
         result = temperature_scan_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=None,
             production_steps=100_000,
             n_dump=100_000,
@@ -269,7 +275,7 @@ def test_temperature_scan_aniso_flag(tmp_path, monkeypatch) -> None:
     try:
         result = temperature_scan_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=[300, 400],
             production_steps=100_000,
             n_dump=100_000,

@@ -12,7 +12,10 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+from amorphouspy.lammps.potentials.pmmcs_potential import generate_pmmcs_potential
+from amorphouspy.lammps.potentials.shik_potential import generate_shik_potential
 from amorphouspy.properties.viscosity import (
+    _viscosity_simulation,
     helfand_viscosity,
     viscosity_ensemble,
     viscosity_simulation,
@@ -297,3 +300,91 @@ def test_viscosity_ensemble_saves_seed_file(mock_sim: MagicMock, tmp_path) -> No
     data = json.loads(seed_file.read_text())
     assert "seeds" in data
     assert len(data["seeds"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# _viscosity_simulation — melt-block stripping and equilibration pressure
+# ---------------------------------------------------------------------------
+
+
+def _sio2_atoms_dict() -> dict:
+    """Minimal SiO2 atoms_dict for potential generation."""
+    return {"atoms": [{"element": "Si"}, {"element": "O"}, {"element": "O"}]}
+
+
+@patch("amorphouspy.properties.viscosity._run_lammps_md")
+def test_viscosity_stages_never_see_melt_block(mock_lammps: MagicMock, tmp_path) -> None:
+    """No MD stage (including Stage 0) receives the melt pre-equilibration block."""
+    mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+
+    assert mock_lammps.call_count == 3
+    for call in mock_lammps.call_args_list:
+        config = "".join(call.kwargs["potential"].loc[0, "Config"])
+        for marker in ("langevinnve", "nve/limit", "run 10000"):
+            assert marker not in config
+
+
+@patch("amorphouspy.properties.viscosity._run_lammps_md")
+def test_viscosity_simulation_does_not_mutate_potential(mock_lammps: MagicMock, tmp_path) -> None:
+    """The caller's potential DataFrame keeps its melt block after the run."""
+    mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+    before = list(potential.loc[0, "Config"])
+
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+
+    assert potential.loc[0, "Config"] == before
+
+
+@patch("amorphouspy.properties.viscosity._run_lammps_md")
+def test_viscosity_equilibration_pressure_shik(mock_lammps: MagicMock, tmp_path) -> None:
+    """SHIK equilibrates at 0.1 GPa (100 MPa); Langevin and production stages stay NVT."""
+    mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+
+    stage0, stage1, stage2 = mock_lammps.call_args_list
+    assert "pressure" not in stage0.kwargs
+    assert stage1.kwargs["pressure"] == 0.1
+    assert "pressure" not in stage2.kwargs
+
+
+@patch("amorphouspy.properties.viscosity._run_lammps_md")
+def test_viscosity_equilibration_pressure_non_shik(mock_lammps: MagicMock) -> None:
+    """Non-SHIK potentials keep the 0 GPa equilibration."""
+    mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
+    potential = generate_pmmcs_potential(_sio2_atoms_dict(), melt=True)
+
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+
+    stage1 = mock_lammps.call_args_list[1]
+    assert stage1.kwargs["pressure"] == 0.0
+
+
+@patch("amorphouspy.properties.viscosity._run_lammps_md")
+@patch("amorphouspy.properties.viscosity._viscosity_simulation")
+def test_viscosity_extension_uses_stripped_potential(mock_sim: MagicMock, mock_lammps: MagicMock, tmp_path) -> None:
+    """Extension runs in viscosity_simulation use the stripped potential."""
+    mock_sim.return_value = {"result": _make_pressure_block(500), "structure": MagicMock()}
+    mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+
+    viscosity_simulation(
+        structure=MagicMock(),
+        potential=potential,
+        temperature_sim=1000.0,
+        timestep=1.0,
+        initial_production_steps=500,
+        max_total_time_ns=600 * 1e-6,
+        max_iterations=3,
+        eta_stable_iters=10,  # never converge via stability
+        eta_rel_tol=0.0,
+    )
+
+    assert mock_lammps.call_count >= 1
+    config = "".join(mock_lammps.call_args_list[0].kwargs["potential"].loc[0, "Config"])
+    assert "langevinnve" not in config

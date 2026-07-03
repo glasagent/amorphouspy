@@ -16,6 +16,8 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
+from amorphouspy.lammps.potentials._melt_block import strip_melt_block
+
 # Default melt temperatures per protocol (K)
 DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
     "pmmcs": 5000.0,
@@ -110,20 +112,9 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         server_kwargs=params.server_kwargs,
     )
 
-    exclude_patterns = [
-        "fix langevinnve all langevin 4000 4000 0.01 48279",
-        "fix ensemblenve all nve/limit 0.5",
-        "run 10000",
-        "unfix langevinnve",
-        "unfix ensemblenve",
-    ]
-
-    # Copy the potential before stripping the init block, so run1 keeps the
-    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
-    potential2 = params.potential.copy()
-    potential2["Config"] = potential2["Config"].apply(
-        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
+    # run1 keeps the original Config (with the melt block) while run2 uses the
+    # stripped version.
+    potential2 = strip_melt_block(params.potential)
 
     run2 = partial(
         runner,
@@ -212,20 +203,9 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         server_kwargs=params.server_kwargs,
     )
 
-    exclude_patterns = [
-        "fix langevinnve all langevin 4000 4000 0.01 48279",
-        "fix ensemblenve all nve/limit 0.5",
-        "run 10000",
-        "unfix langevinnve",
-        "unfix ensemblenve",
-    ]
-
-    # Copy the potential before stripping the init block, so run1 keeps the
-    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
-    potential2 = params.potential.copy()
-    potential2["Config"] = potential2["Config"].apply(
-        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
+    # run1 keeps the original Config (with the melt block) while run2 uses the
+    # stripped version.
+    potential2 = strip_melt_block(params.potential)
 
     run2 = partial(
         runner,
@@ -314,20 +294,9 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         server_kwargs=params.server_kwargs,
     )
 
-    exclude_patterns = [
-        "fix langevinnve all langevin 4000 4000 0.01 48279",
-        "fix ensemblenve all nve/limit 0.5",
-        "run 10000",
-        "unfix langevinnve",
-        "unfix ensemblenve",
-    ]
-
-    # Copy the potential before stripping the init block, so run1 keeps the
-    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
-    potential2 = params.potential.copy()
-    potential2["Config"] = potential2["Config"].apply(
-        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
+    # run1 keeps the original Config (with the melt block) while run2 uses the
+    # stripped version.
+    potential2 = strip_melt_block(params.potential)
 
     run2 = partial(
         runner,
@@ -419,20 +388,9 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         server_kwargs=params.server_kwargs,
     )
 
-    exclude_patterns = [
-        "fix langevinnve all langevin 4000 4000 0.01 48279",
-        "fix ensemblenve all nve/limit 0.5",
-        "run 10000",
-        "unfix langevinnve",
-        "unfix ensemblenve",
-    ]
-
-    # Copy the potential before stripping the init block, so run1 keeps the
-    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
-    potential2 = params.potential.copy()
-    potential2["Config"] = potential2["Config"].apply(
-        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
+    # run1 keeps the original Config (with the melt block) while run2 uses the
+    # stripped version.
+    potential2 = strip_melt_block(params.potential)
 
     run2 = partial(
         runner,
@@ -546,17 +504,7 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     )
 
     # Stages 2+ use a stripped config without the melt preamble.
-    exclude_patterns = [
-        "fix langevinnve all langevin 5000 5000 0.01 48279",
-        "fix ensemblenve all nve/limit 0.5",
-        "run 10000",
-        "unfix langevinnve",
-        "unfix ensemblenve",
-    ]
-    potential_stripped = params.potential.copy()
-    potential_stripped["Config"] = potential_stripped["Config"].apply(
-        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
+    potential_stripped = strip_melt_block(params.potential)
     run2 = partial(
         runner,
         potential=potential_stripped,
@@ -658,20 +606,9 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         server_kwargs=params.server_kwargs,
     )
 
-    exclude_patterns = [
-        "fix langevinnve all langevin 4000 4000 0.01 48279",
-        "fix ensemblenve all nve/limit 0.5",
-        "run 10000",
-        "unfix langevinnve",
-        "unfix ensemblenve",
-    ]
-
-    # Copy the potential before stripping the init block, so run1 keeps the
-    # original Config (with langevin + nve/limit) while run2 uses the stripped version.
-    potential2 = params.potential.copy()
-    potential2["Config"] = potential2["Config"].apply(
-        lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-    )
+    # run1 keeps the original Config (with the melt block) while run2 uses the
+    # stripped version.
+    potential2 = strip_melt_block(params.potential)
 
     run2 = partial(
         runner,

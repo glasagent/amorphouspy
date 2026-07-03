@@ -526,6 +526,20 @@ def test_melt_quench_simulation_heating_cooling_step_counts(mock_structure):
     assert captured["cooling_steps"] == 4_000_000
 
 
+def test_melt_quench_simulation_rejects_equal_temperatures(mock_structure):
+    """temperature_high == temperature_low raises before any protocol stage runs (0 heating/cooling steps)."""
+    potential = pd.DataFrame({"Name": ["pmmcs"], "Config": [["line"]]})
+    with pytest.raises(ValueError, match="must differ"):
+        melt_quench_simulation(mock_structure, potential, temperature_high=3000.0, temperature_low=3000.0)
+
+
+def test_melt_quench_simulation_rejects_default_high_equal_to_low(mock_structure):
+    """temperature_high=None resolving to the potential default still triggers the guard if equal to temperature_low."""
+    potential = pd.DataFrame({"Name": ["shik"], "Config": [["line"]]})
+    with pytest.raises(ValueError, match="must differ"):
+        melt_quench_simulation(mock_structure, potential, temperature_high=None, temperature_low=4000.0)
+
+
 @pytest.mark.parametrize("variant", ["bmp-screened-harmonic", "bmp-harmonic"])
 def test_melt_quench_simulation_bmp_variant_routing(mock_structure, variant):
     """bmp-screened-harmonic and bmp-harmonic are both routed to the 'bmp' protocol."""

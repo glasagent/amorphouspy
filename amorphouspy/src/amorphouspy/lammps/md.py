@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 from ase.atoms import Atoms
 
+from amorphouspy.lammps.potentials._melt_block import strip_melt_block
 from amorphouspy.lammps.runner import _run_lammps_md
 
 
@@ -57,20 +58,9 @@ def md_simulation(
     if potential.empty:
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
-    potential_name = potential.loc[0, "Name"]
-
-    if potential_name.lower() == "shik":
-        exclude_patterns = [
-            "fix langevin all langevin 5000 5000 0.01 48279",
-            "fix ensemble all nve/limit 0.5",
-            "run 10000",
-            "unfix langevin",
-            "unfix ensemble",
-        ]
-
-        potential["Config"] = potential["Config"].apply(
-            lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-        )
+    # Plain MD starts from an already-prepared structure -- the melt
+    # pre-equilibration block must not run here.
+    potential = strip_melt_block(potential)
 
     structure_final, parsed_output = _run_lammps_md(
         structure=structure,

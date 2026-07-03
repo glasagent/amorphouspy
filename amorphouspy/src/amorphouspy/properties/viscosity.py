@@ -21,6 +21,7 @@ from ase.atoms import Atoms
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
 
+from amorphouspy.lammps.potentials._melt_block import strip_melt_block
 from amorphouspy.lammps.runner import _run_lammps_md
 
 NPOINTS = 2
@@ -79,20 +80,14 @@ def _viscosity_simulation(
     if potential.empty:
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
-    potential_name = potential.loc[0, "Name"]
 
-    if potential_name.lower() == "shik":
-        exclude_patterns = [
-            "fix langevin all langevin 5000 5000 0.01 48279",
-            "fix ensemble all nve/limit 0.5",
-            "run 10000",
-            "unfix langevin",
-            "unfix ensemble",
-        ]
+    # The input structure is already equilibrated -- the melt pre-equilibration
+    # block must never run again in any viscosity stage.
+    potential = strip_melt_block(potential)
 
-        potential["Config"] = potential["Config"].apply(
-            lambda lines: [line for line in lines if not any(p in line for p in exclude_patterns)]
-        )
+    # SHIK melts are equilibrated at 0.1 GPa, matching the melt-quench protocol
+    # (compensates the DSF pressure deficit the potential was parameterized with).
+    equil_pressure = 0.1 if potential.loc[0, "Name"].lower() == "shik" else 0.0
 
     # Stage 0: Langevin dynamics at T
     structure0, _ = _run_lammps_md(
@@ -109,7 +104,7 @@ def _viscosity_simulation(
         server_kwargs=server_kwargs,
     )
 
-    # Stage 1: Equilibration in NVT at T
+    # Stage 1: Equilibration in NPT at T
     structure1, _ = _run_lammps_md(
         structure=structure0,
         potential=potential,
@@ -117,7 +112,7 @@ def _viscosity_simulation(
         temperature=temperature_sim,
         n_ionic_steps=100_000,
         timestep=timestep,
-        pressure=0.0,
+        pressure=equil_pressure,
         n_print=1000,
         initial_temperature=temperature_sim,
         langevin=langevin,
@@ -798,6 +793,10 @@ def viscosity_simulation(
         >>> print(converged)
 
     """
+    # Extension runs below reuse this potential directly -- they must not
+    # re-run the melt pre-equilibration block either.
+    potential = strip_melt_block(potential)
+
     max_steps = int(max_total_time_ns * 1e6 / timestep)
     ext_steps = int(100_000.0 / timestep)  # 100 ps per extension
 
