@@ -18,6 +18,7 @@ from amorphouspy.fabrication.meltquench_protocols import (
     MeltQuenchParams,
 )
 from amorphouspy.lammps.io import structure_from_parsed_output
+from amorphouspy.lammps.potentials._melt_block import set_melt_block_temperature
 from amorphouspy.lammps.runner import LammpsPotential, get_lammps_command, run_lammps_with_error_capture
 
 
@@ -171,6 +172,10 @@ def melt_quench_simulation(
     Returns:
         A dictionary containing the simulation steps and temperature data.
 
+    Raises:
+        ValueError: If the resolved `temperature_high` equals `temperature_low`
+            (zero heating/cooling steps would otherwise be sent to LAMMPS).
+
     Example:
         >>> result = melt_quench_simulation(
         ...     structure=my_atoms,
@@ -186,6 +191,17 @@ def melt_quench_simulation(
 
     if temperature_high is None:
         temperature_high = DEFAULT_MELT_TEMPERATURES.get(potential_name, 5000.0)
+
+    if temperature_high == temperature_low:
+        msg = (
+            f"temperature_high must differ from temperature_low (both are {temperature_high} K): "
+            "heating/cooling requires a nonzero temperature range."
+        )
+        raise ValueError(msg)
+
+    # The melt pre-equilibration block is generated at the potential's default
+    # melt temperature; retune it to the requested melt temperature.
+    potential = set_melt_block_temperature(potential, temperature_high)
 
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)

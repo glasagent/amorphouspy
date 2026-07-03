@@ -13,6 +13,7 @@ import pandas as pd
 
 from amorphouspy.atoms.shared import get_element_types_dict
 from amorphouspy.lammps.potentials._config import DsfConfig, InteractionConfig
+from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _DEFAULT_LONG_RANGE_CUTOFF = 10.0
 _DEFAULT_SHORT_RANGE_CUTOFF = 8.0
@@ -283,11 +284,7 @@ def generate_shik_potential(
     lines.append("\nthermo_modify flush yes\n")
     lines.append("\nthermo 100\n")
     if melt:
-        lines.append(f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n")
-        lines.append("\nfix ensemblenve all nve/limit 0.5\n")
-        lines.append("\nrun 10000\n")
-        lines.append("\nunfix langevinnve\n")
-        lines.append("\nunfix ensemblenve\n")
+        lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     return pd.DataFrame(
         {

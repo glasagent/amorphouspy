@@ -35,6 +35,7 @@ import pandas as pd
 from scipy.optimize import fsolve
 
 from amorphouspy.atoms.shared import get_element_types_dict
+from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _MELT_TEMPERATURE = 5000
 
@@ -841,11 +842,7 @@ def generate_du_teter_potential(
     lines.append("thermo 100\n")
 
     if melt:
-        lines.append(f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n")
-        lines.append("\nfix ensemblenve all nve/limit 0.5\n")
-        lines.append("\nrun 10000\n")
-        lines.append("\nunfix langevinnve\n")
-        lines.append("\nunfix ensemblenve\n")
+        lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     return pd.DataFrame(
         {

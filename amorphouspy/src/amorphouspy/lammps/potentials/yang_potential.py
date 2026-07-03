@@ -9,6 +9,7 @@ import pandas as pd
 
 from amorphouspy.atoms.shared import get_element_types_dict
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
+from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 11.0
 _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF = 11.0
@@ -147,15 +148,7 @@ def generate_yang2026_potential(
     config_lines.append("\npair_modify shift yes\n")
 
     if melt:
-        config_lines.extend(
-            [
-                f"\nfix langevinnve all langevin {_MELT_TEMPERATURE} {_MELT_TEMPERATURE} 0.01 48279\n",
-                "\nfix ensemblenve all nve/limit 0.5\n",
-                "\nrun 10000\n",
-                "\nunfix langevinnve\n",
-                "\nunfix ensemblenve\n",
-            ]
-        )
+        config_lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     coulomb_label = electrostatics_cfg.lammps_keyword.upper()
     return pd.DataFrame(
