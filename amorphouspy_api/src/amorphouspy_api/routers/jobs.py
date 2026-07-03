@@ -99,12 +99,15 @@ def _clear_executor_cache(request_hash: str, *, failed_only: bool = False) -> No
     import h5py
 
     for f in sorted(cache_dir.glob(f"{request_hash}*_o.h5")):
+        successful = False
         try:
             with h5py.File(f, "r") as hdf:
-                if "output" in hdf:
-                    continue  # successful — keep it
+                successful = "output" in hdf
         except Exception:
             logger.debug("Could not read %s, treating as failed", f.name)
+        if successful:
+            _strip_stale_queue_id(f)  # keep the result, drop its dead queue id
+            continue
         logger.info("Removing failed cache file %s (retry)", f.name)
         f.unlink(missing_ok=True)
         # Also remove the matching _i.h5 so executorlib re-submits this step
@@ -112,6 +115,29 @@ def _clear_executor_cache(request_hash: str, *, failed_only: bool = False) -> No
         if i_file.exists():
             logger.info("Removing input file %s (retry)", i_file.name)
             i_file.unlink(missing_ok=True)
+
+
+def _strip_stale_queue_id(cache_file: Path) -> None:
+    """Delete the stored SLURM ``queue_id`` from a kept cache output file.
+
+    executorlib records the queue-system job id that produced each cached step.
+    On a partial re-run (``failed_only``), a resubmitted child step reads its
+    already-cached parents' ids back out of these files and injects them as an
+    ``afterok`` dependency.  By the time a re-run happens those ids are long
+    purged from the scheduler, so ``sbatch`` rejects the submission with a
+    "Job dependency problem".  Removing the id makes executorlib treat the
+    cached parent as having no pending dependency (its result is already on
+    disk), which is the correct behaviour.
+    """
+    import h5py
+
+    try:
+        with h5py.File(cache_file, "a") as hdf:
+            if "queue_id" in hdf:
+                del hdf["queue_id"]
+                logger.info("Stripped stale queue_id from %s (retry)", cache_file.name)
+    except Exception:
+        logger.debug("Could not strip queue_id from %s", cache_file.name)
 
 
 def _composition_elements(composition: dict[str, float]) -> set[str]:
