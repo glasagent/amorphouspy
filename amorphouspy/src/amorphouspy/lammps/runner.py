@@ -5,6 +5,8 @@ This module contains shared functionality which is reused in the individual work
 
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
@@ -15,6 +17,37 @@ from lammpsparser.compatibility.file import lammps_file_interface_function
 from amorphouspy.lammps.io import structure_from_parsed_output
 
 LammpsPotential = str | pd.DataFrame | dict[str, Any]
+
+
+@contextmanager
+def simulation_working_directory(tmp_working_directory: str | Path | None) -> Iterator[str]:
+    """Yield a working directory for a single LAMMPS run.
+
+    Ownership semantics depend on whether the caller supplies a location:
+
+    * ``tmp_working_directory is None`` -- a directory is created in the
+      operating system's temporary location and **removed automatically** when
+      the context exits. This is the default, self-cleaning behaviour.
+    * ``tmp_working_directory`` given -- a uniquely-named sub-directory is
+      created inside it and **left in place** on exit. The caller owns it and is
+      responsible for removing it. Run artefacts (``log.lammps``, ``lammps.data``,
+      dumps) therefore remain available for inspection afterwards.
+
+    Args:
+        tmp_working_directory: Parent location for the run directory, or None to
+            use an auto-cleaned system temporary directory. When given, it must
+            already exist.
+
+    Yields:
+        The path to the working directory to run the simulation in.
+    """
+    if tmp_working_directory is None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield tmpdir
+    else:
+        # Caller-owned: unique sub-directory (avoids collisions across the many
+        # runs of a multi-stage workflow) that is deliberately not deleted.
+        yield tempfile.mkdtemp(dir=tmp_working_directory)
 
 
 def run_lammps_with_error_capture(working_directory: str, **kwargs: Any) -> dict:  # noqa: ANN401
@@ -103,9 +136,11 @@ def _run_lammps_md(
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
-            Per default (None), the directory is located in the operating systems location for temporary files.
-            With the specification of tmp_working_directory, the temporary directory is created in the specified
-            location. Therefore, tmp_working_directory needs to exist beforehand.
+            Per default (None), the directory is located in the operating systems location for temporary files
+            and is removed automatically once the run finishes.
+            With the specification of tmp_working_directory, a uniquely-named sub-directory is created inside
+            it and left in place afterwards (the caller owns it and is responsible for removing it), so the run
+            artefacts such as ``log.lammps`` remain available. tmp_working_directory needs to exist beforehand.
 
     Returns:
         A tuple containing:
@@ -117,8 +152,9 @@ def _run_lammps_md(
         msg = "pressure must be set when pressure_end is specified."
         raise ValueError(msg)
 
-    # Creates a temporary directory for the simulation in the specified working directory.
-    with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
+    # Creates a working directory for the simulation (auto-cleaned when
+    # tmp_working_directory is None; caller-owned otherwise).
+    with simulation_working_directory(tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
 
         temp_setting: float | list[float] = (
