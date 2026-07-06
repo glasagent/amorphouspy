@@ -5,7 +5,6 @@ Implementations of melt-quench simulation workflows for glass systems using LAMM
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
-import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -19,7 +18,12 @@ from amorphouspy.fabrication.meltquench_protocols import (
 )
 from amorphouspy.lammps.io import structure_from_parsed_output
 from amorphouspy.lammps.potentials._melt_block import set_melt_block_temperature
-from amorphouspy.lammps.runner import LammpsPotential, get_lammps_command, run_lammps_with_error_capture
+from amorphouspy.lammps.runner import (
+    LammpsPotential,
+    get_lammps_command,
+    run_lammps_with_error_capture,
+    simulation_working_directory,
+)
 
 
 def _run_lammps_md(  # pragma: no cover
@@ -59,6 +63,9 @@ def _run_lammps_md(  # pragma: no cover
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
+            Per default (None), an auto-cleaned system temporary directory is used. When given, a
+            uniquely-named sub-directory is created inside it and left in place afterwards; the caller
+            owns it and is responsible for removing it. tmp_working_directory needs to exist beforehand.
 
     Returns:
         A tuple containing the final structure and the simulation output dictionary.
@@ -68,8 +75,9 @@ def _run_lammps_md(  # pragma: no cover
         msg = "pressure must be set when pressure_end is specified."
         raise ValueError(msg)
 
-    # Creates a temporary directory for the simulation in the specified working directory.
-    with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
+    # Creates a working directory for the simulation (auto-cleaned when
+    # tmp_working_directory is None; caller-owned otherwise).
+    with simulation_working_directory(tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
 
         temp_setting: float | list[float] = (

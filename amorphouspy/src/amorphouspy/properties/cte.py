@@ -6,7 +6,6 @@ CTE calculations based on H-V fluctuations with NPT simulations.
 Author: Marcel Sadowski (github.com/Gitdowski)
 """
 
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +16,8 @@ from amorphouspy.lammps.io import structure_from_parsed_output
 from amorphouspy.lammps.potentials._melt_block import strip_melt_block
 from amorphouspy.lammps.runner import (
     get_lammps_command,
-    run_lammps_with_error_capture
+    run_lammps_with_error_capture,
+    simulation_working_directory,
 )
 from amorphouspy.properties._cte_helpers import (
     _collect_sim_data,
@@ -71,9 +71,11 @@ def _run_lammps_md(  # pragma: no cover
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
-            Per default (None), the directory is located in the operating systems location for temperary files.
-            With the specification of tmp_working_directory, the temporary directory is created in the specified
-            location. Therefore, tmp_working_directory needs to exist beforehand.
+            Per default (None), the directory is located in the operating systems location for temperary files
+            and is removed automatically once the run finishes.
+            With the specification of tmp_working_directory, a uniquely-named sub-directory is created inside
+            it and left in place afterwards (the caller owns it and is responsible for removing it), so the run
+            artefacts such as ``log.lammps`` remain available. tmp_working_directory needs to exist beforehand.
 
     Returns:
         A tuple containing:
@@ -81,13 +83,15 @@ def _run_lammps_md(  # pragma: no cover
             - parsed_output: Parsed output dictionary returned by `lammps_function`.
 
     Notes:
-        - Automatically manages a temporary working directory and cleans it after execution.
+        - Manages a working directory for the run: auto-cleaned when tmp_working_directory is None,
+          otherwise caller-owned (left in place for inspection/cleanup).
         - Uses `lammpsparser.compatibility.file.lammps_file_interface_function` as the backend.
         - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
 
     """
-    # Creates a temporary directory for the simulation in the specified working directory.
-    with tempfile.TemporaryDirectory(dir=tmp_working_directory) as tmpdir:
+    # Creates a working directory for the simulation (auto-cleaned when
+    # tmp_working_directory is None; caller-owned otherwise).
+    with simulation_working_directory(tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
 
         # Sets up the LAMMPS simulations
