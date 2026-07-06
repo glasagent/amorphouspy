@@ -64,7 +64,7 @@ def get_supported_elements(potential_type: str) -> set[str]:
 
 # Fallback minimum atoms-per-core used for potentials that do not declare their
 # own ``MIN_ATOMS_PER_CORE`` (and for unknown potential names).
-DEFAULT_MIN_ATOMS_PER_CORE = 2000
+DEFAULT_MIN_ATOMS_PER_CORE = 500
 
 
 def get_min_atoms_per_core(potential_type: str) -> int:

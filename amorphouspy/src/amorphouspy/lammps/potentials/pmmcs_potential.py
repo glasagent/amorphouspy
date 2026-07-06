@@ -19,11 +19,13 @@ _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
 _DEFAULT_ALPHA = 0.25
 _MELT_TEMPERATURE = 4000
 
-# Minimum atoms-per-core for good (~80-90%) MPI scaling efficiency. A LAMMPS run
+# Minimum atoms-per-core for good (~90%) MPI scaling efficiency. A LAMMPS run
 # is given at most one core per ``MIN_ATOMS_PER_CORE`` atoms; a larger value means
 # fewer cores (each core handles more atoms), a smaller value means more cores.
-# Tune as scaling benchmarks for this potential become available.
-MIN_ATOMS_PER_CORE = 2000
+# Value from strong-scaling benchmarks (soda-lime silicate, 3k/10k atoms): the
+# per-step efficiency holds >=~90% down to ~500 atoms/core and then falls off
+# sharply, and the knee is essentially the same across all supported potentials.
+MIN_ATOMS_PER_CORE = 500
 
 # Complete dictionary of Pmmcs parameters
 pmmcs_potential_params: dict[str, Any] = {

@@ -20,8 +20,8 @@ _DEFAULT_SHORT_RANGE_CUTOFF = 8.0
 _DEFAULT_ALPHA = 0.2
 _MELT_TEMPERATURE = 4000
 
-# Minimum atoms-per-core for good (~80-90%) MPI scaling efficiency.
-MIN_ATOMS_PER_CORE = 2000
+# Minimum atoms-per-core for good (~90%) MPI scaling efficiency.
+MIN_ATOMS_PER_CORE = 500
 
 # ================================================================
 # SHIK Parameters (Buckingham + r^-24)
