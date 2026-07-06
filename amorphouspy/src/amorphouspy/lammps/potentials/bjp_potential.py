@@ -16,8 +16,8 @@ _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
 _DEFAULT_ALPHA = 0.25
 _MELT_TEMPERATURE = 4000
 
-# Minimum atoms-per-core for good (~80-90%) MPI scaling efficiency.
-MIN_ATOMS_PER_CORE = 2000
+# Minimum atoms-per-core for good (~90%) MPI scaling efficiency.
+MIN_ATOMS_PER_CORE = 500
 
 # Born-Mayer-Huggins parameters from Table I in Bouhadja et al., J. Chem. Phys. 138, 224510 (2013)
 # Charges

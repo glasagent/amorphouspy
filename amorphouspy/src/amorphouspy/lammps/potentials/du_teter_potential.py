@@ -39,8 +39,8 @@ from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _MELT_TEMPERATURE = 5000
 
-# Minimum atoms-per-core for good (~80-90%) MPI scaling efficiency.
-MIN_ATOMS_PER_CORE = 2000
+# Minimum atoms-per-core for good (~90%) MPI scaling efficiency.
+MIN_ATOMS_PER_CORE = 500
 
 
 du_teter_potential_params = {

@@ -16,7 +16,7 @@ class TestGetMinAtomsPerCore:
 
     def test_known_potential(self) -> None:
         """A potential declaring MIN_ATOMS_PER_CORE returns its value."""
-        assert get_min_atoms_per_core("pmmcs") == 2000
+        assert get_min_atoms_per_core("pmmcs") == 500
 
     def test_case_insensitive(self) -> None:
         """Lookup is case-insensitive."""
@@ -57,20 +57,20 @@ class TestComputeLammpsCores:
     def test_uses_max_when_workload_is_large(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Large workloads use the full system maximum."""
         monkeypatch.setenv("LAMMPS_MAX_CORES", "8")
-        # 8 cores * 2000 atoms/core = 16000; 100000 atoms easily saturates them.
+        # 8 cores * 500 atoms/core = 4000; 100000 atoms easily saturates them.
         assert compute_lammps_cores("pmmcs", 100_000) == 8
 
     def test_scales_down_for_small_workload(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Small workloads scale down below the system maximum."""
         monkeypatch.setenv("LAMMPS_MAX_CORES", "16")
-        # 6000 atoms / 2000 min-atoms-per-core = 3 efficient cores, below the max.
-        assert compute_lammps_cores("pmmcs", 6000) == 3
+        # 6000 atoms / 500 min-atoms-per-core = 12 efficient cores, below the max.
+        assert compute_lammps_cores("pmmcs", 6000) == 12
 
     def test_floor_keeps_efficiency_above_target(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Flooring keeps the realised atoms/core at or above the minimum."""
         monkeypatch.setenv("LAMMPS_MAX_CORES", "16")
-        # 5000 / 2000 floors to 2 cores -> 2500 atoms/core (>= minimum).
-        assert compute_lammps_cores("pmmcs", 5000) == 2
+        # 5750 / 500 floors to 11 cores -> ~523 atoms/core (>= minimum).
+        assert compute_lammps_cores("pmmcs", 5750) == 11
 
     def test_minimum_one_core_for_tiny_workload(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """At least one core is used even for tiny systems."""
@@ -108,7 +108,7 @@ class TestGetLammpsServerKwargs:
     def test_returns_cores_dict(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """server_kwargs carries the computed core count."""
         monkeypatch.setenv("LAMMPS_MAX_CORES", "16")
-        assert get_lammps_server_kwargs("pmmcs", 6000) == {"cores": 3}
+        assert get_lammps_server_kwargs("pmmcs", 6000) == {"cores": 12}
 
     def test_explicit_override_passes_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An explicit cores override is reflected in server_kwargs."""
