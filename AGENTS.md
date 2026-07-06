@@ -21,3 +21,22 @@ pixi run pytest amorphouspy_api/src/tests/test_database.py -v
 pixi run pytest amorphouspy_api/src/tests/test_jobs.py -v
 pixi run pytest amorphouspy/src/tests/ -v
 ```
+
+## Commits
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) for every commit message,
+matching the style already used on the branch. The subject line is
+`<type>(<optional scope>): <description>` with a lowercase description, e.g.:
+
+```
+feat: parallelize viscosity calculation
+fix(api): attribute pipeline failures to the failing step
+refactor(lammps): caller owns provided tmp_working_directory
+perf: lower MIN_ATOMS_PER_CORE to 500
+chore: update pixi.lock
+```
+
+Use the same prefixes as the branch names documented in
+`docs/developers/contributing.md` (these drive PR labels and release notes):
+`feat`, `perf`, `fix`, `docs`, `refactor`, `style`, `ci`, `chore`, `test`,
+`dep`/`deps`.
