@@ -294,7 +294,7 @@ def test_temperature_scan_allows_none_n_dump(tmp_path, monkeypatch) -> None:
     try:
         result = temperature_scan_simulation(
             structure=_make_structure(),
-            potential="dummy.pot",
+            potential=_make_potential(),
             temperature=[300, 400],
             production_steps=100_000,
             n_dump=None,

@@ -147,11 +147,11 @@ def test_elastic_simulation_filters_shik_patterns_before_run(
     potential = _potential(
         "shik",
         [
-            "fix langevin all langevin 5000 5000 0.01 48279",
-            "fix ensemble all nve/limit 0.5",
+            "fix langevinnve all langevin 5000 5000 0.01 48279",
+            "fix ensemblenve all nve/limit 0.5",
             "run 10000",
-            "unfix langevin",
-            "unfix ensemble",
+            "unfix langevinnve",
+            "unfix ensemblenve",
             keep_line,
         ],
     )

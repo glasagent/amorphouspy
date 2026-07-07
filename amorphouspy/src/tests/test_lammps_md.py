@@ -36,11 +36,11 @@ def test_md_simulation_filters_shik_excluded_patterns(mock_run_md: MagicMock) ->
     potential = _potential(
         name="shik",
         config=[
-            "fix langevin all langevin 5000 5000 0.01 48279",
-            "fix ensemble all nve/limit 0.5",
+            "fix langevinnve all langevin 5000 5000 0.01 48279",
+            "fix ensemblenve all nve/limit 0.5",
             "run 10000",
-            "unfix langevin",
-            "unfix ensemble",
+            "unfix langevinnve",
+            "unfix ensemblenve",
             keep_line,
         ],
     )
@@ -50,8 +50,8 @@ def test_md_simulation_filters_shik_excluded_patterns(mock_run_md: MagicMock) ->
     _, kwargs = mock_run_md.call_args
     filtered = kwargs["potential"].loc[0, "Config"]
     assert keep_line in filtered
-    assert all("langevin" not in line for line in filtered)
-    assert all("nve/limit" not in line for line in filtered)
+    assert all("langevinnve" not in line for line in filtered)
+    assert all("ensemblenve" not in line for line in filtered)
     assert "run 10000" not in filtered
 
 
