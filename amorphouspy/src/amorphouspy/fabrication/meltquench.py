@@ -20,7 +20,6 @@ from amorphouspy.lammps.potentials._melt_block import set_melt_block_temperature
 from amorphouspy.lammps.runner import _run_lammps_md
 
 
-
 def melt_quench_simulation(
     structure: Atoms,
     potential: pd.DataFrame,

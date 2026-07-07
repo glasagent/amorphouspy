@@ -40,8 +40,8 @@ def _run_single_viscosity(
     cooling_rate: float,
     timestep: float,
     n_timesteps: int,
-    n_dump: int |None,
-    n_print_thermo: int | None = 1,
+    n_dump: int | None,
+    n_print_thermo: int | None,
     max_lag: int | None,
     server_kwargs: dict[str, Any],
     equilibration_steps: int | None = None,
@@ -67,26 +67,26 @@ def _run_single_viscosity(
         timestep=1.0,
         heating_rate=float(heating_rate),
         cooling_rate=float(cooling_rate),
-        n_print=1000,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
         equilibration_steps=equilibration_steps,
         langevin=False,
         server_kwargs=server_kwargs,
     )
     cooled_structure = mq_result["structure"]
 
-        logger.info("Running viscosity simulation at %.1f K", temp)
-        visc_result = viscosity_simulation(
-            structure=structure_current,
-            potential=potential,
-            temperature_sim=float(temp),
-            timestep=float(timestep),
-            initial_production_steps=int(n_timesteps),
-            n_dump=int(n_dump) if n_dump is not None else None,
-            n_print_thermo=int(n_print_thermo) if n_print_thermo is not None else 1,
-            langevin=False,
-            seed=12345,
-            server_kwargs=server_kwargs,
-        )
+    visc_result = viscosity_simulation(
+        structure=cooled_structure,
+        potential=potential,
+        temperature_sim=float(temp_low),
+        timestep=float(timestep),
+        initial_production_steps=int(n_timesteps),
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
+        langevin=False,
+        seed=12345,
+        server_kwargs=server_kwargs,
+    )
 
     visc_data = get_viscosity(visc_result, timestep=float(timestep), max_lag=max_lag)
 
@@ -132,7 +132,8 @@ def submit_viscosity_workflow(
     cooling_rate: float,
     timestep: float,
     n_timesteps: int,
-    n_print: int,
+    n_dump: int | None,
+    n_print_thermo: int | None,
     max_lag: int | None,
     server_kwargs: dict[str, Any],
     equilibration_steps: int | None = None,
@@ -161,7 +162,8 @@ def submit_viscosity_workflow(
         cooling_rate: Cooling rate in K/ps.
         timestep: MD timestep in fs.
         n_timesteps: Production run length (steps).
-        n_print: Thermodynamic output frequency.
+        n_dump: Dump intervall in MD steps.
+        n_print_thermo: Intervall of outputting thermodynamic data.
         max_lag: Maximum correlation lag (steps) for Green-Kubo.
         server_kwargs: LAMMPS server configuration.
         equilibration_steps: Override for the melt-quench equilibration stages;
@@ -199,7 +201,8 @@ def submit_viscosity_workflow(
             cooling_rate=cooling_rate,
             timestep=timestep,
             n_timesteps=n_timesteps,
-            n_print=n_print,
+            n_dump=n_dump,
+            n_print_thermo=n_print_thermo,
             max_lag=max_lag,
             server_kwargs=server_kwargs,
             equilibration_steps=equilibration_steps,

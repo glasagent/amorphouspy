@@ -12,8 +12,8 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.lammps.runner import _run_lammps_md
 from amorphouspy.lammps.potentials._melt_block import strip_melt_block
+from amorphouspy.lammps.runner import _run_lammps_md
 from amorphouspy.properties._cte_helpers import (
     _collect_sim_data,
     _create_logger,
@@ -28,7 +28,6 @@ from amorphouspy.properties._cte_helpers import (
     _temperature_scan_input_checker,
     _temperature_scan_merge_results,
 )
-
 
 CTE_INPUT_CONTROL_FILE = {
     "thermo_style": "custom step temp pe etotal pxx pxy pxz pyy pyz pzz lx ly lz vol",
