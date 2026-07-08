@@ -79,8 +79,9 @@ def _run_melt_quench(submission: JobSubmission, config: BaseModel, result: dict)
 def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysis, result: dict) -> dict:
     """Structural analysis (RDF, coordination, bond angles) on the quenched glass.
 
-    Runs an NVT simulation at the quench temperature to collect frames for
-    averaging according to the configuration.
+    This is a separate post-melt-quench step. When ``n_averaging_frames > 1``,
+    it runs an additional NVT sampling simulation on the final quenched
+    structure before computing averaged structural observables.
     """
     from amorphouspy.properties.structural.all import run_structural_analysis
 

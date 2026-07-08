@@ -101,8 +101,9 @@ def prepare_timing_context(request_hash: str) -> dict[str, Any]:
 def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     """Build a Plotly temperature-vs-time JSON dict from melt-quench data.
 
-    Uses the protocol stage parameters to reconstruct the full T-t profile
-    (the stored trajectory is only from the final equilibration stage).
+    Uses the melt-quench protocol parameters to reconstruct the melt-quench
+    temperature profile only. Post-quench structural-analysis sampling is a
+    separate workflow step and is intentionally not shown here.
     """
     timestep_fs = mq_data.get("timestep", 1.0)
     cooling_rate = mq_data.get("cooling_rate")
@@ -131,10 +132,6 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
     # Stage 4: Pressure release at T_low (10k steps)
     pressure_release_steps = 10_000
-    # Stage 5: NVT sampling at T_low
-    n_averaging_frames = mq_data.get("n_averaging_frames", 100)
-    sampling_dump_interval = int(1000.0 / timestep_fs)  # 1 ps in steps
-    sampling_steps = n_averaging_frames * sampling_dump_interval
 
     # Build time and temperature arrays
     ps_to_ns = 1e-3
@@ -162,8 +159,6 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     _add_segment(cooling_steps, t_high, t_low)
     # Stage 4: Pressure release
     _add_segment(pressure_release_steps, t_low, t_low)
-    # Stage 5: NVT sampling
-    _add_segment(sampling_steps, t_low, t_low)
 
     # Cooling rate annotation
     cooling_mid_time = (times_ns[4] + times_ns[5]) / 2  # midpoint of cooling stage
