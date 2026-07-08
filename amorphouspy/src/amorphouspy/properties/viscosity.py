@@ -549,8 +549,8 @@ def _extract_md_data(result: dict[str, Any]) -> dict[str, Any]:
     """Normalise result dicts from both ``_viscosity_simulation`` and ``viscosity_simulation``.
 
     ``_viscosity_simulation`` returns ``{"result": {...}, "structure": ...}``.
-    ``viscosity_simulation`` returns ``{"result": acc, "viscosity_data": ..., ...}``
-    where ``acc`` already contains ``pressures``, ``volume``, ``temperature`` directly.
+    ``viscosity_simulation`` returns ``{"result": accumulated_md_data, "viscosity_data": ..., ...}``
+    where ``accumulated_md_data`` already contains ``pressures``, ``volume``, ``temperature`` directly.
     Both are handled by checking for the ``pressures`` key one level down.
     """
     inner = result.get("result", result)
@@ -720,6 +720,44 @@ def _viscosity_plateaued(
     return abs(slope) / mean_val < rel_slope_tol
 
 
+def _extend_viscosity_production_and_accumulate(
+    current_structure: Atoms,
+    potential: pd.DataFrame,
+    accumulated_md_data: dict[str, Any],
+    extension_steps: int,
+    temperature_sim: float,
+    timestep: float,
+    server_kwargs: dict[str, Any] | None,
+    n_dump: int | None,
+    n_print_thermo: int | None,
+    tmp_working_directory: str | Path | None,
+    *,
+    langevin: bool,
+) -> Atoms:
+    """Run one production extension segment and append parsed arrays to accumulators."""
+    current_structure, ext_parsed = _run_lammps_md(
+        structure=current_structure,
+        potential=potential,
+        tmp_working_directory=tmp_working_directory,
+        temperature=temperature_sim,
+        n_ionic_steps=extension_steps,
+        timestep=timestep,
+        initial_temperature=temperature_sim,
+        langevin=langevin,
+        server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
+    )
+
+    ext_result = ext_parsed.get("generic", None)
+    assert ext_result is not None
+    accumulated_md_data["pressures"] = np.concatenate([accumulated_md_data["pressures"], ext_result["pressures"]])
+    accumulated_md_data["volume"] = np.concatenate([accumulated_md_data["volume"], ext_result["volume"]])
+    accumulated_md_data["temperature"] = np.concatenate([accumulated_md_data["temperature"], ext_result["temperature"]])
+
+    return current_structure
+
+
 def viscosity_simulation(
     structure: Atoms,
     potential: pd.DataFrame,
@@ -831,7 +869,7 @@ def viscosity_simulation(
     if output_frequency is None:
         output_frequency = 1
 
-    acc: dict[str, Any] = {
+    accumulated_md_data: dict[str, Any] = {
         "pressures": sim_result["result"]["pressures"],
         "volume": sim_result["result"]["volume"],
         "temperature": sim_result["result"]["temperature"],
@@ -848,7 +886,7 @@ def viscosity_simulation(
         t_total_ps = total_production_steps * timestep / 1000.0
 
         helfand_data = helfand_viscosity(
-            {"result": acc},
+            {"result": accumulated_md_data},
             timestep=timestep,
             output_frequency=output_frequency,
         )
@@ -910,25 +948,19 @@ def viscosity_simulation(
             stacklevel=2,
         )
 
-        current_structure, ext_parsed = _run_lammps_md(
-            structure=current_structure,
+        current_structure = _extend_viscosity_production_and_accumulate(
+            current_structure=current_structure,
             potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_sim,
-            n_ionic_steps=_ext,
+            accumulated_md_data=accumulated_md_data,
+            extension_steps=_ext,
+            temperature_sim=temperature_sim,
             timestep=timestep,
-            initial_temperature=temperature_sim,
             langevin=langevin,
             server_kwargs=server_kwargs,
             n_dump=n_dump,
             n_print_thermo=n_print_thermo,
+            tmp_working_directory=tmp_working_directory,
         )
-
-        ext_result = ext_parsed.get("generic", None)
-        assert ext_result is not None
-        acc["pressures"] = np.concatenate([acc["pressures"], ext_result["pressures"]])
-        acc["volume"] = np.concatenate([acc["volume"], ext_result["volume"]])
-        acc["temperature"] = np.concatenate([acc["temperature"], ext_result["temperature"]])
 
         total_production_steps += _ext
         iterations += 1
@@ -941,7 +973,7 @@ def viscosity_simulation(
 
     return {
         "viscosity_data": helfand_data,
-        "result": acc,
+        "result": accumulated_md_data,
         "structure": current_structure,
         "total_production_steps": total_production_steps,
         "iterations": iterations,
