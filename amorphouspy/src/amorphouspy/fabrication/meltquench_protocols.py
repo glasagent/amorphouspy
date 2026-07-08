@@ -58,8 +58,6 @@ class MeltQuenchParams:
         tmp_working_directory: Temporary directory path.
         equilibration_steps: Override for all fixed equilibration stages inside a protocol.
             If None, each protocol uses its own hardcoded defaults.
-        n_averaging_frames: Number of equally-spaced frames to dump during the
-            final NVT sampling stage for trajectory-averaged structural analysis.
 
     """
 

@@ -195,9 +195,10 @@ class RerunMode(StrEnum):
 class StructureAnalysis(BaseModel):
     """Configuration for structural analysis (RDF, coordination, bond angles).
 
-    Structure analysis runs an NVT equilibration/production simulation at the
-    quench temperature to collect frames for averaging. The ``n_averaging_frames``
-    parameter controls how many frames to collect and average over.
+    Structural analysis is a separate step after melt-quench. When
+    ``n_averaging_frames > 1``, an additional NVT sampling run is launched on
+    the final quenched structure and the requested observables are averaged
+    over those frames.
     """
 
     type: Literal["structure_characterization"] = "structure_characterization"
@@ -206,7 +207,7 @@ class StructureAnalysis(BaseModel):
     n_averaging_frames: int = Field(
         default=100,
         ge=1,
-        description="Number of frames to collect during NVT simulation at quench temperature; 1 uses only the final structure without additional simulation",
+        description="Number of frames to collect in the separate post-quench NVT sampling run; 1 analyzes only the final quenched structure without extra MD",
     )
 
 
@@ -386,11 +387,19 @@ class MeltQuenchParams(BaseModel):
         default=100,
         description="Output interval for thermodynamic data in MD steps; None uses trajectory dump frequency.",
     )
-    persist_structures: bool = Field(
-        default=False,
+    trajectory_storage_mode: Literal[
+        "all_frames_all_data",
+        "all_frames_geometry_only",
+        "last_frame_all_data",
+        "last_frame_geometry_only",
+    ] = Field(
+        default="last_frame_all_data",
         description=(
-            "If true, store all trajectory structure frames (positions/cells) in the database. "
-            "If false, only the last frame is retained."
+            "Controls how simulation_history is persisted: "
+            "'all_frames_all_data' keeps full trajectories; "
+            "'all_frames_geometry_only' keeps positions/cells only; "
+            "'last_frame_all_data' keeps only the final frame for dumped list-based data; "
+            "'last_frame_geometry_only' keeps only final positions/cells."
         ),
     )
     equilibration_steps: int | None = Field(

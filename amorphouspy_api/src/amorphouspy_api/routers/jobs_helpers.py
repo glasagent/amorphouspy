@@ -7,7 +7,7 @@ import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from amorphouspy.fabrication import element_counts_from_formula_units, normalize
@@ -281,7 +281,7 @@ def _update_from_resolved(
     if status == "completed":
         result = resolved["result"]
         progress = dict.fromkeys(all_steps, "completed")
-        persist_structures = bool(getattr(submission.simulation, "persist_structures", False)) if submission else False
+        trajectory_storage_mode = _resolve_trajectory_storage_mode(submission)
 
         # Compute elemental atom-fraction vector from the result
         from amorphouspy_api.database import Job as _Job
@@ -292,7 +292,7 @@ def _update_from_resolved(
 
         store.update_job(
             job_id,
-            persist_structures=persist_structures,
+            trajectory_storage_mode=trajectory_storage_mode,
             status="completed",
             progress=progress,
             result_data=result,
@@ -438,7 +438,7 @@ def refresh_job_from_cache(job: Job) -> None:
     )
 
     store = get_job_store()
-    persist_structures = bool(getattr(submission.simulation, "persist_structures", False)) if submission else False
+    trajectory_storage_mode = _resolve_trajectory_storage_mode(submission)
     updates: dict[str, object] = {"progress": progress}
     if partial_results:
         updates["result_data"] = partial_results
@@ -448,7 +448,21 @@ def refresh_job_from_cache(job: Job) -> None:
             updates["errors"] = errors
     else:
         updates["status"] = "running"
-    store.update_job(job.job_id, persist_structures=persist_structures, **updates)
+    store.update_job(job.job_id, trajectory_storage_mode=trajectory_storage_mode, **updates)
+
+
+def _resolve_trajectory_storage_mode(
+    submission: JobSubmission | None,
+) -> Literal[
+    "all_frames_all_data",
+    "all_frames_geometry_only",
+    "last_frame_all_data",
+    "last_frame_geometry_only",
+]:
+    """Resolve trajectory storage mode from submission with a safe default."""
+    if submission is None:
+        return "last_frame_all_data"
+    return submission.simulation.trajectory_storage_mode
 
 
 def _find_analysis_params(request_data: dict | None, analysis_type: str) -> dict:

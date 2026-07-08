@@ -7,17 +7,18 @@ Trajectory dataflow overview:
     trajectories.
 2. On persistence, ``result_data['melt_quench']['simulation_history']`` is
     extracted into the dedicated ``Job.simulation_history`` column.
-3. Storage policy is controlled by ``persist_structures``:
-    - ``False`` (default): keep only the last geometry frame
-      (``positions``/``cells``) to reduce DB size.
-    - ``True``: keep all geometry frames.
+3. Storage policy is controlled by ``trajectory_storage_mode``:
+    - ``"all_frames_all_data"``
+    - ``"all_frames_geometry_only"``
+    - ``"last_frame_all_data"``
+    - ``"last_frame_geometry_only"``
 4. ``result_data`` is kept lightweight and no longer carries the trajectory.
 """
 
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from sqlalchemy import JSON, DateTime, Index, String, create_engine, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, load_only, mapped_column, sessionmaker
@@ -193,7 +194,18 @@ class JobStore:
             return None
         return row[0]
 
-    def update_job(self, job_id: str, *, persist_structures: bool = False, **fields: object) -> None:
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        trajectory_storage_mode: Literal[
+            "all_frames_all_data",
+            "all_frames_geometry_only",
+            "last_frame_all_data",
+            "last_frame_geometry_only",
+        ] = "last_frame_all_data",
+        **fields: object,
+    ) -> None:
         """Update arbitrary columns on a job record.
 
         For ``result_data`` updates, this method also applies the melt-quench
@@ -201,13 +213,8 @@ class JobStore:
         1. Serialize non-JSON objects (e.g. ASE Atoms).
         2. Extract ``melt_quench.simulation_history`` out of ``result_data`` and
            persist it in ``Job.simulation_history``.
-        3. Apply trajectory storage policy controlled by ``persist_structures``.
-           - ``False``: strip geometry arrays from all stages, then reattach only
-             the final ``positions``/``cells`` frame.
-           - ``True``: keep all geometry arrays.
-
-        Structural analysis is already complete before this write path runs, so
-        trimming affects database footprint only, not computed analysis values.
+          3. Apply trajectory storage policy controlled by
+              ``trajectory_storage_mode``.
         """
         with self.session() as s:
             job = s.get(Job, job_id)
@@ -225,9 +232,9 @@ class JobStore:
                     if isinstance(mq, dict) and "simulation_history" in mq:
                         history = mq.pop("simulation_history")
                         if isinstance(history, list):
-                            history = _prepare_simulation_history_for_storage(
+                            history = _apply_trajectory_storage_mode(
                                 history,
-                                persist_structures=persist_structures,
+                                trajectory_storage_mode=trajectory_storage_mode,
                             )
                         job.simulation_history = history
                 setattr(job, k, effective)
@@ -424,59 +431,146 @@ class JobStore:
 # ---------------------------------------------------------------------------
 
 
-def _prepare_simulation_history_for_storage(
+def _apply_trajectory_storage_mode(
     history: list[Any],
     *,
-    persist_structures: bool,
+    trajectory_storage_mode: Literal[
+        "all_frames_all_data",
+        "all_frames_geometry_only",
+        "last_frame_all_data",
+        "last_frame_geometry_only",
+    ],
 ) -> list[Any]:
     """Transform simulation history according to persistence mode.
 
     Args:
         history: Stage-wise melt-quench history.
-        persist_structures: Whether to retain full geometry trajectories.
+        trajectory_storage_mode: Explicit storage mode for simulation history.
 
     Returns:
-        ``history`` unchanged when ``persist_structures=True``.
-        Otherwise returns a copy where:
-        - ``positions`` and ``cells`` are removed from all stages, and
-        - the final stage that had geometry keeps exactly one frame
-          (the last ``positions`` and ``cells`` entry).
+                A transformed history according to selected modes.
 
     Notes:
-        This preserves a representative final structure for downstream
-        trajectory export/debugging while avoiding storage of full frame series
-        by default.
+        Default behaviour (``trajectory_storage_mode="last_frame_all_data"``)
+        preserves one final snapshot of dumped list-based data.
     """
-    if persist_structures:
+    _validate_trajectory_storage_mode(trajectory_storage_mode)
+
+    if trajectory_storage_mode == "all_frames_all_data":
         return history
 
-    # Default mode: trim heavy geometry arrays while keeping one last frame.
-    trimmed: list[Any] = []
+    if trajectory_storage_mode == "all_frames_geometry_only":
+        return _keep_geometry_only(history)
+
+    if trajectory_storage_mode == "last_frame_geometry_only":
+        geometry_only, last_stage_with_geometry = _keep_geometry_only_with_last_stage(history)
+        return _reduce_geometry_to_last_frame(geometry_only, last_stage_with_geometry)
+
+    return _reduce_all_list_data_to_last_frame(history)
+
+
+def _validate_trajectory_storage_mode(
+    trajectory_storage_mode: Literal[
+        "all_frames_all_data",
+        "all_frames_geometry_only",
+        "last_frame_all_data",
+        "last_frame_geometry_only",
+    ],
+) -> None:
+    allowed = {
+        "all_frames_all_data",
+        "all_frames_geometry_only",
+        "last_frame_all_data",
+        "last_frame_geometry_only",
+    }
+    if trajectory_storage_mode not in allowed:
+        msg = f"Invalid trajectory_storage_mode={trajectory_storage_mode!r}; expected one of {sorted(allowed)}"
+        raise ValueError(msg)
+
+
+def _keep_geometry_only(history: list[Any]) -> list[Any]:
+    geometry_only, _ = _keep_geometry_only_with_last_stage(history)
+    return geometry_only
+
+
+def _keep_geometry_only_with_last_stage(
+    history: list[Any],
+) -> tuple[list[Any], tuple[int, Any, Any] | None]:
+    geometry_keys = {"positions", "cells"}
+    filtered_geometry: list[Any] = []
     last_stage_with_geometry: tuple[int, Any, Any] | None = None
+
+    for idx, stage in enumerate(history):
+        if not isinstance(stage, dict):
+            filtered_geometry.append(stage)
+            continue
+
+        positions = stage.get("positions")
+        cells = stage.get("cells")
+        stage_copy = {k: v for k, v in stage.items() if k in geometry_keys}
+
+        if positions is not None or cells is not None:
+            last_stage_with_geometry = (idx, positions, cells)
+        filtered_geometry.append(stage_copy)
+
+    return filtered_geometry, last_stage_with_geometry
+
+
+def _reduce_geometry_to_last_frame(
+    geometry_only: list[Any],
+    last_stage_with_geometry: tuple[int, Any, Any] | None,
+) -> list[Any]:
+    geometry_keys = {"positions", "cells"}
+    trimmed: list[Any] = []
+    for stage in geometry_only:
+        if not isinstance(stage, dict):
+            trimmed.append(stage)
+            continue
+        stage_copy = {k: v for k, v in stage.items() if k not in geometry_keys}
+        trimmed.append(stage_copy)
+
+    if last_stage_with_geometry is None:
+        return trimmed
+
+    stage_idx, last_positions, last_cells = last_stage_with_geometry
+    stage = trimmed[stage_idx]
+    if not isinstance(stage, dict):
+        return trimmed
+    if isinstance(last_positions, list) and last_positions:
+        stage["positions"] = [last_positions[-1]]
+    if isinstance(last_cells, list) and last_cells:
+        stage["cells"] = [last_cells[-1]]
+    return trimmed
+
+
+def _reduce_all_list_data_to_last_frame(history: list[Any]) -> list[Any]:
+    """Keep only the final dumped list value on the last stage with list-based data."""
+    trimmed: list[Any] = []
+    last_stage_with_series: tuple[int, dict[str, Any]] | None = None
 
     for idx, stage in enumerate(history):
         if not isinstance(stage, dict):
             trimmed.append(stage)
             continue
 
-        positions = stage.get("positions")
-        cells = stage.get("cells")
-        stage_copy = {k: v for k, v in stage.items() if k not in {"positions", "cells"}}
+        last_values = {k: v[-1] for k, v in stage.items() if isinstance(v, list) and v}
+        if last_values:
+            last_stage_with_series = (idx, last_values)
 
-        if positions is not None or cells is not None:
-            last_stage_with_geometry = (idx, positions, cells)
-
+        # Drop list-based frame series from all stages by default.
+        stage_copy = {k: v for k, v in stage.items() if not isinstance(v, list)}
         trimmed.append(stage_copy)
 
-    if last_stage_with_geometry is not None:
-        stage_idx, last_positions, last_cells = last_stage_with_geometry
-        stage = trimmed[stage_idx]
-        if isinstance(stage, dict):
-            if isinstance(last_positions, list) and last_positions:
-                stage["positions"] = [last_positions[-1]]
-            if isinstance(last_cells, list) and last_cells:
-                stage["cells"] = [last_cells[-1]]
+    if last_stage_with_series is None:
+        return trimmed
 
+    stage_idx, last_values = last_stage_with_series
+    stage = trimmed[stage_idx]
+    if not isinstance(stage, dict):
+        return trimmed
+
+    for key, value in last_values.items():
+        stage[key] = [value]
     return trimmed
 
 
