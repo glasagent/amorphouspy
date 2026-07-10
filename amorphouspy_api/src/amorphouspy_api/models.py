@@ -401,7 +401,7 @@ class MeltQuenchParams(BaseModel):
             "'all_frames_all_data' keeps full trajectories; "
             "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
             "'last_frame_all_data' reduces these keys to their final entry per stage when present: "
-            "steps, natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
+            "natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
             "'last_frame_drop_velocities_and_forces' first removes per-frame 'forces' and 'velocities', then applies the same per-stage key reduction."
         ),
     )
@@ -417,7 +417,7 @@ class MeltQuenchParams(BaseModel):
             "'all_frames_all_data' keeps full trajectories; "
             "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
             "'last_frame_all_data' reduces these keys to their final entry per stage when present: "
-            "steps, natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
+            "natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
             "'last_frame_drop_velocities_and_forces' first removes per-frame 'forces' and 'velocities', then applies the same per-stage key reduction."
         ),
     )

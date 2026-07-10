@@ -567,7 +567,7 @@ def test_simulation_history_last_frame_drop_velocities_and_forces() -> None:
             {
                 "positions": [[0, 0, 1]],
                 "cells": [[[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
-                "steps": [10],
+                "steps": [0, 10],
                 "natoms": [2],
                 "indices": [[0, 1]],
                 "unwrapped_positions": [[0, 0, 1]],
@@ -576,7 +576,7 @@ def test_simulation_history_last_frame_drop_velocities_and_forces() -> None:
             {
                 "positions": [[1, 0, 1]],
                 "cells": [[[4, 0, 0], [0, 4, 0], [0, 0, 4]]],
-                "steps": [20],
+                "steps": [11, 20],
                 "natoms": [2],
                 "indices": [[0, 1]],
                 "unwrapped_positions": [[1, 0, 1]],
