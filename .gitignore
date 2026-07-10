@@ -15,5 +15,6 @@ docs/openapi.json
 coverage.xml
 *.egg-info
 notebooks/tutorial_ensemble_cache/viscosity_ensemble_seeds.json
+notebooks/tutorial_ensemble_cache/replica_*/
 notebooks/BMP.nb3b.harmonic
 notebooks/BMP.nb3b.shrm
