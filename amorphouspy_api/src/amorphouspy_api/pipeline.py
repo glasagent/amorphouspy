@@ -88,7 +88,9 @@ def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysi
     mq = result["melt_quench"]
     potential = result["structure_generation"]["potential"]
 
-    mean_data, _sem_data, n_frames = run_structural_analysis(
+    from amorphouspy_api.database import _apply_trajectory_storage_mode
+
+    mean_data, _sem_data, n_frames, sampling_history = run_structural_analysis(
         final_structure=mq["final_structure"],
         potential=potential,
         timestep=submission.simulation.timestep,
@@ -100,6 +102,11 @@ def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysi
     )
     result_dict = mean_data.model_dump()
     result_dict["n_averaging_frames"] = n_frames
+    if sampling_history is not None:
+        result_dict["sampling_history"] = _apply_trajectory_storage_mode(
+            sampling_history,
+            trajectory_storage_mode=submission.simulation.structural_analysis_trajectory_storage_mode,
+        )
     return result_dict
 
 

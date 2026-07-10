@@ -7,11 +7,11 @@ Trajectory dataflow overview:
     trajectories.
 2. On persistence, ``result_data['melt_quench']['simulation_history']`` is
     extracted into the dedicated ``Job.simulation_history`` column.
-3. Storage policy is controlled by ``trajectory_storage_mode``:
+3. Storage policy of trajectory (dump) data is controlled by ``trajectory_storage_mode``:
     - ``"all_frames_all_data"``
-    - ``"all_frames_geometry_only"``
+    - ``"all_frames_drop_velocities_and_forces"``
     - ``"last_frame_all_data"``
-    - ``"last_frame_geometry_only"``
+    - ``"last_frame_drop_velocities_and_forces"``
 4. ``result_data`` is kept lightweight and no longer carries the trajectory.
 """
 
@@ -200,9 +200,9 @@ class JobStore:
         *,
         trajectory_storage_mode: Literal[
             "all_frames_all_data",
-            "all_frames_geometry_only",
+            "all_frames_drop_velocities_and_forces",
             "last_frame_all_data",
-            "last_frame_geometry_only",
+            "last_frame_drop_velocities_and_forces",
         ] = "last_frame_all_data",
         **fields: object,
     ) -> None:
@@ -213,8 +213,8 @@ class JobStore:
         1. Serialize non-JSON objects (e.g. ASE Atoms).
         2. Extract ``melt_quench.simulation_history`` out of ``result_data`` and
            persist it in ``Job.simulation_history``.
-          3. Apply trajectory storage policy controlled by
-              ``trajectory_storage_mode``.
+        3. Apply trajectory storage policy controlled by
+            ``trajectory_storage_mode``.
         """
         with self.session() as s:
             job = s.get(Job, job_id)
@@ -436,9 +436,9 @@ def _apply_trajectory_storage_mode(
     *,
     trajectory_storage_mode: Literal[
         "all_frames_all_data",
-        "all_frames_geometry_only",
+        "all_frames_drop_velocities_and_forces",
         "last_frame_all_data",
-        "last_frame_geometry_only",
+        "last_frame_drop_velocities_and_forces",
     ],
 ) -> list[Any]:
     """Transform simulation history according to persistence mode.
@@ -448,130 +448,86 @@ def _apply_trajectory_storage_mode(
         trajectory_storage_mode: Explicit storage mode for simulation history.
 
     Returns:
-                A transformed history according to selected modes.
+        A transformed history according to selected modes.
 
     Notes:
         Default behaviour (``trajectory_storage_mode="last_frame_all_data"``)
-        preserves one final snapshot of dumped list-based data.
+        reduces configured frame-series keys to their final entry per stage.
     """
     _validate_trajectory_storage_mode(trajectory_storage_mode)
 
     if trajectory_storage_mode == "all_frames_all_data":
         return history
 
-    if trajectory_storage_mode == "all_frames_geometry_only":
-        return _keep_geometry_only(history)
+    if trajectory_storage_mode == "all_frames_drop_velocities_and_forces":
+        return _drop_velocities_and_forces(history)
 
-    if trajectory_storage_mode == "last_frame_geometry_only":
-        geometry_only, last_stage_with_geometry = _keep_geometry_only_with_last_stage(history)
-        return _reduce_geometry_to_last_frame(geometry_only, last_stage_with_geometry)
+    if trajectory_storage_mode == "last_frame_drop_velocities_and_forces":
+        without_force_velocity = _drop_velocities_and_forces(history)
+        return _reduce_selected_keys_to_last_frame_per_stage(without_force_velocity)
 
-    return _reduce_all_list_data_to_last_frame(history)
+    return _reduce_selected_keys_to_last_frame_per_stage(history)
 
 
 def _validate_trajectory_storage_mode(
     trajectory_storage_mode: Literal[
         "all_frames_all_data",
-        "all_frames_geometry_only",
+        "all_frames_drop_velocities_and_forces",
         "last_frame_all_data",
-        "last_frame_geometry_only",
+        "last_frame_drop_velocities_and_forces",
     ],
 ) -> None:
     allowed = {
         "all_frames_all_data",
-        "all_frames_geometry_only",
+        "all_frames_drop_velocities_and_forces",
         "last_frame_all_data",
-        "last_frame_geometry_only",
+        "last_frame_drop_velocities_and_forces",
     }
     if trajectory_storage_mode not in allowed:
         msg = f"Invalid trajectory_storage_mode={trajectory_storage_mode!r}; expected one of {sorted(allowed)}"
         raise ValueError(msg)
 
 
-def _keep_geometry_only(history: list[Any]) -> list[Any]:
-    geometry_only, _ = _keep_geometry_only_with_last_stage(history)
-    return geometry_only
-
-
-def _keep_geometry_only_with_last_stage(
-    history: list[Any],
-) -> tuple[list[Any], tuple[int, Any, Any] | None]:
-    geometry_keys = {"positions", "cells"}
-    filtered_geometry: list[Any] = []
-    last_stage_with_geometry: tuple[int, Any, Any] | None = None
-
-    for idx, stage in enumerate(history):
+def _drop_velocities_and_forces(history: list[Any]) -> list[Any]:
+    """Drop per-stage ``velocities`` and ``forces`` while preserving all other data."""
+    filtered: list[Any] = []
+    for stage in history:
         if not isinstance(stage, dict):
-            filtered_geometry.append(stage)
+            filtered.append(stage)
+            continue
+        filtered.append({k: v for k, v in stage.items() if k not in {"forces", "velocities"}})
+    return filtered
+
+
+def _reduce_selected_keys_to_last_frame_per_stage(history: list[Any]) -> list[Any]:
+    """Reduce dump-related frame-series to their last entry on every stage.
+
+    Keys are reduced only when present and list-like with at least one value.
+    Non-stage entries and all other keys are preserved unchanged.
+    """
+    keys_to_reduce = {
+        "natoms",
+        "cells",
+        "indices",
+        "forces",
+        "velocities",
+        "unwrapped_positions",
+        "positions",
+    }
+
+    reduced: list[Any] = []
+    for stage in history:
+        if not isinstance(stage, dict):
+            reduced.append(stage)
             continue
 
-        positions = stage.get("positions")
-        cells = stage.get("cells")
-        stage_copy = {k: v for k, v in stage.items() if k in geometry_keys}
-
-        if positions is not None or cells is not None:
-            last_stage_with_geometry = (idx, positions, cells)
-        filtered_geometry.append(stage_copy)
-
-    return filtered_geometry, last_stage_with_geometry
-
-
-def _reduce_geometry_to_last_frame(
-    geometry_only: list[Any],
-    last_stage_with_geometry: tuple[int, Any, Any] | None,
-) -> list[Any]:
-    geometry_keys = {"positions", "cells"}
-    trimmed: list[Any] = []
-    for stage in geometry_only:
-        if not isinstance(stage, dict):
-            trimmed.append(stage)
-            continue
-        stage_copy = {k: v for k, v in stage.items() if k not in geometry_keys}
-        trimmed.append(stage_copy)
-
-    if last_stage_with_geometry is None:
-        return trimmed
-
-    stage_idx, last_positions, last_cells = last_stage_with_geometry
-    stage = trimmed[stage_idx]
-    if not isinstance(stage, dict):
-        return trimmed
-    if isinstance(last_positions, list) and last_positions:
-        stage["positions"] = [last_positions[-1]]
-    if isinstance(last_cells, list) and last_cells:
-        stage["cells"] = [last_cells[-1]]
-    return trimmed
-
-
-def _reduce_all_list_data_to_last_frame(history: list[Any]) -> list[Any]:
-    """Keep only the final dumped list value on the last stage with list-based data."""
-    trimmed: list[Any] = []
-    last_stage_with_series: tuple[int, dict[str, Any]] | None = None
-
-    for idx, stage in enumerate(history):
-        if not isinstance(stage, dict):
-            trimmed.append(stage)
-            continue
-
-        last_values = {k: v[-1] for k, v in stage.items() if isinstance(v, list) and v}
-        if last_values:
-            last_stage_with_series = (idx, last_values)
-
-        # Drop list-based frame series from all stages by default.
-        stage_copy = {k: v for k, v in stage.items() if not isinstance(v, list)}
-        trimmed.append(stage_copy)
-
-    if last_stage_with_series is None:
-        return trimmed
-
-    stage_idx, last_values = last_stage_with_series
-    stage = trimmed[stage_idx]
-    if not isinstance(stage, dict):
-        return trimmed
-
-    for key, value in last_values.items():
-        stage[key] = [value]
-    return trimmed
+        stage_copy = dict(stage)
+        for key in keys_to_reduce:
+            value = stage_copy.get(key)
+            if isinstance(value, list) and value:
+                stage_copy[key] = [value[-1]]
+        reduced.append(stage_copy)
+    return reduced
 
 
 def _serialise_atoms_in_result(result: dict) -> dict:

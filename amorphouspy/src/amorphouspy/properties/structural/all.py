@@ -20,7 +20,6 @@ from scipy.signal import savgol_filter
 if TYPE_CHECKING:
     from ase.atoms import Atoms
 
-from amorphouspy.fabrication.meltquench import extract_equilibration_frames
 from amorphouspy.lammps.runner import LammpsPotential, _run_lammps_md
 from amorphouspy.properties.structural.bond_angles import compute_angles
 from amorphouspy.properties.structural.qn import (
@@ -1347,6 +1346,35 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
     return fig
 
 
+def _frames_from_nvt_output(structure_final: Atoms, parsed_output: dict[str, Any]) -> list[Atoms]:
+    """Build frame list from NVT output and validate required geometry arrays."""
+    if not all(["positions" in parsed_output, "cells" in parsed_output]):
+        msg = "NVT sampling output missing required 'positions'/'cells' for frame averaging"
+        raise ValueError(msg)
+
+    positions = parsed_output["positions"]
+    cells = parsed_output["cells"]
+    if not isinstance(positions, list) or not isinstance(cells, list):
+        msg = "NVT sampling output 'positions' and 'cells' must be list-like"
+        raise TypeError(msg)
+    if len(positions) == 0 or len(cells) == 0:
+        msg = "NVT sampling output 'positions' and 'cells' must be non-empty"
+        raise ValueError(msg)
+    if len(positions) != len(cells):
+        msg = "NVT sampling output 'positions' and 'cells' must have the same length"
+        raise ValueError(msg)
+
+    frames: list[Atoms] = []
+    for i in range(len(positions)):
+        frame = structure_final.copy()
+        frame.set_positions(positions[i])
+        frame.set_cell(cells[i])
+        frame.set_pbc(True)
+        frame.wrap()
+        frames.append(frame)
+    return frames
+
+
 def run_structural_analysis(
     final_structure: Atoms,
     potential: LammpsPotential | None = None,
@@ -1354,27 +1382,39 @@ def run_structural_analysis(
     n_averaging_frames: int = 1,
     temperature: float = 300.0,
     server_kwargs: dict[str, Any] | None = None,
-    simulation_history: list[dict[str, Any]] | None = None,
-) -> tuple[StructureData, StructureData | None, int]:
+) -> tuple[StructureData, StructureData | None, int, list[dict[str, Any]] | None]:
     """Run structural analysis, optionally averaging over trajectory frames.
 
     Args:
         final_structure: Structure to be analyzed or to use as starting structure for a NVT simulation.
-        potential: LAMMPS potential (str, pd.DataFrame, or dict). If None, uses simulation_history.
+        potential: LAMMPS potential (str, pd.DataFrame, or dict). Required when ``n_averaging_frames > 1``.
         timestep: MD timestep in fs.
         n_averaging_frames: Number of frames to collect for averaging. If set to 1, then no MD
             simulation and only the provided structure is analyzed. If set to >1, then an additional NVT
             simulation is run to collect frames for averaging.
         temperature: Temperature (K) for NVT equilibration/production simulation.
         server_kwargs: LAMMPS server configuration dict.
-        simulation_history: Legacy parameter for backward compatibility. Ignored if potential is provided.
 
     Returns:
-        Tuple of ``(mean_data, sem_data, n_frames)`` where *sem_data* is
-        ``None`` when only one frame is used.
+        Tuple of ``(mean_data, sem_data, n_frames, sampling_history)`` where
+        *sem_data* is ``None`` when only one frame is used and
+        *sampling_history* is the raw NVT parsed output wrapped as a single
+        stage list when ``n_averaging_frames > 1``.
     """
-    # If potential provided, run NVT simulation to collect frames
-    if potential is not None and n_averaging_frames > 1:
+    sampling_history: list[dict[str, Any]] | None = None
+
+    if final_structure is None:
+        msg = "final_structure must be provided"
+        raise ValueError(msg)
+    if n_averaging_frames < 1:
+        msg = "n_averaging_frames must be >= 1"
+        raise ValueError(msg)
+
+    if n_averaging_frames > 1:
+        if potential is None:
+            msg = "potential must be provided when n_averaging_frames > 1"
+            raise ValueError(msg)
+
         logger.info(
             "Running NVT simulation at %.1f K to collect %d frames for averaging",
             temperature,
@@ -1399,23 +1439,12 @@ def run_structural_analysis(
             server_kwargs=server_kwargs or {},
         )
 
-        # Extract frames from the collected trajectory
-        frames: list[Atoms] = []
-        if "positions" in parsed_output and "cells" in parsed_output:
-            positions = parsed_output["positions"]
-            cells = parsed_output["cells"]
-            for i in range(len(positions)):
-                frame = structure_final.copy()
-                frame.set_positions(positions[i])
-                frame.set_cell(cells[i])
-                frame.set_pbc(True)
-                frame.wrap()
-                frames.append(frame)
-        else:
-            frames = [structure_final]
+        frames = _frames_from_nvt_output(structure_final, parsed_output)
+        sampling_history = [parsed_output]
+
+    # This is for n_averaging_frames == 1 -> only analyze final_structure
     else:
-        # Use simulation_history if available, otherwise just analyze final structure
-        frames = extract_equilibration_frames(final_structure, simulation_history)
+        frames = [final_structure]
 
     n_frames = len(frames)
 
@@ -1425,4 +1454,4 @@ def run_structural_analysis(
     else:
         mean_data, sem_data = analyze_structure(atoms=frames[0])
 
-    return mean_data, sem_data, n_frames
+    return mean_data, sem_data, n_frames, sampling_history

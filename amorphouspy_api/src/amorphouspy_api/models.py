@@ -274,10 +274,12 @@ class CTEFluctuations(_CTEBase):
     temperature: float = Field(default=300.0, description="Simulation temperature in K")
     min_production_runs: int = Field(
         default=2,
+        ge=2,
         description="Minimum production runs before convergence check",
     )
     max_production_runs: int = Field(
         default=25,
+        ge=3,
         description="Maximum production runs",
     )
     cte_uncertainty_criterion: float = Field(
@@ -387,19 +389,36 @@ class MeltQuenchParams(BaseModel):
         default=100,
         description="Output interval for thermodynamic data in MD steps; None uses trajectory dump frequency.",
     )
-    trajectory_storage_mode: Literal[
+    melt_quench_trajectory_storage_mode: Literal[
         "all_frames_all_data",
-        "all_frames_geometry_only",
+        "all_frames_drop_velocities_and_forces",
         "last_frame_all_data",
-        "last_frame_geometry_only",
+        "last_frame_drop_velocities_and_forces",
     ] = Field(
         default="last_frame_all_data",
         description=(
-            "Controls how simulation_history is persisted: "
+            "Controls how melt-quench simulation_history is persisted: "
             "'all_frames_all_data' keeps full trajectories; "
-            "'all_frames_geometry_only' keeps positions/cells only; "
-            "'last_frame_all_data' keeps only the final frame for dumped list-based data; "
-            "'last_frame_geometry_only' keeps only final positions/cells."
+            "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
+            "'last_frame_all_data' reduces these keys to their final entry per stage when present: "
+            "steps, natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
+            "'last_frame_drop_velocities_and_forces' first removes per-frame 'forces' and 'velocities', then applies the same per-stage key reduction."
+        ),
+    )
+    structural_analysis_trajectory_storage_mode: Literal[
+        "all_frames_all_data",
+        "all_frames_drop_velocities_and_forces",
+        "last_frame_all_data",
+        "last_frame_drop_velocities_and_forces",
+    ] = Field(
+        default="last_frame_all_data",
+        description=(
+            "Controls how structural-analysis NVT sampling_history is persisted when n_averaging_frames > 1: "
+            "'all_frames_all_data' keeps full trajectories; "
+            "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
+            "'last_frame_all_data' reduces these keys to their final entry per stage when present: "
+            "steps, natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
+            "'last_frame_drop_velocities_and_forces' first removes per-frame 'forces' and 'velocities', then applies the same per-stage key reduction."
         ),
     )
     equilibration_steps: int | None = Field(

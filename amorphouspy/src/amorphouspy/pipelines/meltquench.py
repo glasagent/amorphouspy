@@ -124,6 +124,9 @@ def run_melt_quench(
         server_kwargs=server_kwargs,
     )
 
+    # Extract only the data of the last stage of the melt-quench simulation to
+    # compute selected summaries for the final output. "simulation_history" will
+    # still contain the full trajectory of all stages at this point.
     last_stage = next((s for s in reversed(mq["result"]) if s is not None), {})
 
     return {
