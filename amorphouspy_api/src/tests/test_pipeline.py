@@ -158,6 +158,45 @@ class TestRunStructuralAnalysis:
         assert out["n_averaging_frames"] == 1
         assert "sampling_history" not in out
 
+    @patch("amorphouspy.properties.structural.all.run_structural_analysis")
+    def test_no_dump_data_omits_sampling_history(self, mock_run_structural_analysis: MagicMock) -> None:
+        """The structural-analysis-only no_dump_data mode should store no dump payload."""
+        mean_data = MagicMock()
+        mean_data.model_dump.return_value = {"density": 2.5}
+        mock_run_structural_analysis.return_value = (
+            mean_data,
+            None,
+            3,
+            [
+                {
+                    "positions": [[1.0], [2.0], [3.0]],
+                    "cells": [[[1.0]], [[2.0]], [[3.0]]],
+                    "temperature": [300.0, 301.0, 302.0],
+                }
+            ],
+        )
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(
+                timestep=1.0,
+                n_atoms=100,
+                cores=1,
+                structural_analysis_trajectory_storage_mode="no_dump_data",
+            ),
+        )
+        config = SimpleNamespace(n_averaging_frames=3)
+        result = {
+            "melt_quench": {"final_structure": object()},
+            "structure_generation": {"potential": object()},
+        }
+
+        out = _run_structural_analysis(submission, config, result)
+
+        assert out["density"] == 2.5
+        assert out["n_averaging_frames"] == 3
+        assert "sampling_history" not in out
+
 
 # ---------------------------------------------------------------------------
 # _merge_results

@@ -406,6 +406,7 @@ class MeltQuenchParams(BaseModel):
         ),
     )
     structural_analysis_trajectory_storage_mode: Literal[
+        "no_dump_data",
         "all_frames_all_data",
         "all_frames_drop_velocities_and_forces",
         "last_frame_all_data",
@@ -414,6 +415,7 @@ class MeltQuenchParams(BaseModel):
         default="last_frame_all_data",
         description=(
             "Controls how structural-analysis NVT sampling_history is persisted when n_averaging_frames > 1: "
+            "'no_dump_data' stores no dump-related sampling_history at all; "
             "'all_frames_all_data' keeps full trajectories; "
             "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
             "'last_frame_all_data' reduces these keys to their final entry per stage when present: "

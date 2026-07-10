@@ -102,7 +102,10 @@ def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysi
     )
     result_dict = mean_data.model_dump()
     result_dict["n_averaging_frames"] = n_frames
-    if sampling_history is not None:
+    if (
+        sampling_history is not None
+        and submission.simulation.structural_analysis_trajectory_storage_mode != "no_dump_data"
+    ):
         result_dict["sampling_history"] = _apply_trajectory_storage_mode(
             sampling_history,
             trajectory_storage_mode=submission.simulation.structural_analysis_trajectory_storage_mode,
