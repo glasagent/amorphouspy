@@ -126,7 +126,7 @@ class TestRunStructuralAnalysis:
         cell = glass_atoms.get_cell().array
         mock_run_md.return_value = (
             glass_atoms,
-            {"positions": [base_pos, base_pos + 0.01, base_pos + 0.02], "cells": [cell] * 3},
+            {"generic": {"positions": [base_pos, base_pos + 0.01, base_pos + 0.02], "cells": [cell] * 3}},
         )
 
         mean_data, sem_data, n_frames, sampling_history = run_structural_analysis(
@@ -140,8 +140,8 @@ class TestRunStructuralAnalysis:
         assert sem_data is mock_sem
         assert sampling_history is not None
         assert len(sampling_history) == 1
-        assert sampling_history[0]["positions"] == mock_run_md.return_value[1]["positions"]
-        assert sampling_history[0]["cells"] == mock_run_md.return_value[1]["cells"]
+        assert sampling_history[0]["positions"] == mock_run_md.return_value[1]["generic"]["positions"]
+        assert sampling_history[0]["cells"] == mock_run_md.return_value[1]["generic"]["cells"]
         _, kwargs = mock_analyze.call_args
         assert kwargs.get("frame_averaging") is True
 
@@ -153,7 +153,7 @@ class TestRunStructuralAnalysis:
     @patch("amorphouspy.properties.structural.all._run_lammps_md")
     def test_multi_frame_path_requires_positions_and_cells(self, mock_run_md: MagicMock, glass_atoms: Atoms) -> None:
         """Missing geometry arrays in NVT output should raise a clear error."""
-        mock_run_md.return_value = (glass_atoms, {"temperature": [300.0]})
+        mock_run_md.return_value = (glass_atoms, {"generic": {"temperature": [300.0]}})
 
         with pytest.raises(ValueError, match="missing required 'positions'/'cells'"):
             run_structural_analysis(
@@ -167,7 +167,10 @@ class TestRunStructuralAnalysis:
         self, mock_run_md: MagicMock, glass_atoms: Atoms
     ) -> None:
         """Empty or mismatched geometry arrays in NVT output should raise a clear error."""
-        mock_run_md.return_value = (glass_atoms, {"positions": [], "cells": [glass_atoms.get_cell().array]})
+        mock_run_md.return_value = (
+            glass_atoms,
+            {"generic": {"positions": [], "cells": [glass_atoms.get_cell().array]}},
+        )
 
         with pytest.raises(ValueError, match="non-empty"):
             run_structural_analysis(

@@ -1348,12 +1348,16 @@ def plot_analysis_results_plotly(structure_data: StructureData) -> go.Figure:
 
 def _frames_from_nvt_output(structure_final: Atoms, parsed_output: dict[str, Any]) -> list[Atoms]:
     """Build frame list from NVT output and validate required geometry arrays."""
-    if not all(["positions" in parsed_output, "cells" in parsed_output]):
+    trajectory_output = parsed_output.get("generic", parsed_output)
+
+    if not isinstance(trajectory_output, dict) or not all(
+        ["positions" in trajectory_output, "cells" in trajectory_output]
+    ):
         msg = "NVT sampling output missing required 'positions'/'cells' for frame averaging"
         raise ValueError(msg)
 
-    positions = parsed_output["positions"]
-    cells = parsed_output["cells"]
+    positions = trajectory_output["positions"]
+    cells = trajectory_output["cells"]
     if not isinstance(positions, list) or not isinstance(cells, list):
         msg = "NVT sampling output 'positions' and 'cells' must be list-like"
         raise TypeError(msg)
@@ -1439,8 +1443,13 @@ def run_structural_analysis(
             server_kwargs=server_kwargs or {},
         )
 
+        trajectory_output = parsed_output.get("generic", parsed_output)
+        if not isinstance(trajectory_output, dict):
+            msg = "NVT sampling output missing required 'positions'/'cells' for frame averaging"
+            raise ValueError(msg)
+
         frames = _frames_from_nvt_output(structure_final, parsed_output)
-        sampling_history = [parsed_output]
+        sampling_history = [trajectory_output]
 
     # This is for n_averaging_frames == 1 -> only analyze final_structure
     else:
