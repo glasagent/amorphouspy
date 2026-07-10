@@ -112,7 +112,7 @@ def _run_lammps_md(
     temperature: float,
     n_ionic_steps: int,
     timestep: float,
-    initial_temperature: float,
+    initial_temperature: float | None = None,
     temperature_end: float | None = None,
     pressure: LammpsPressure = None,
     pressure_end: float | None = None,
@@ -219,6 +219,9 @@ def _run_lammps_md(
 
         if input_control_file is not None:
             input_control.update(input_control_file)
+
+        if initial_temperature is None:
+            initial_temperature = 2 * temperature
 
         # Sets up the LAMMPS simulations
         parsed_output = run_lammps_with_error_capture(
