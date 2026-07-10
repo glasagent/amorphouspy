@@ -1358,7 +1358,7 @@ def _frames_from_nvt_output(structure_final: Atoms, parsed_output: dict[str, Any
 
     positions = trajectory_output["positions"]
     cells = trajectory_output["cells"]
-    if not isinstance(positions, list) or not isinstance(cells, list):
+    if not isinstance(positions, list | np.ndarray) or not isinstance(cells, list | np.ndarray):
         msg = "NVT sampling output 'positions' and 'cells' must be list-like"
         raise TypeError(msg)
     if len(positions) == 0 or len(cells) == 0:

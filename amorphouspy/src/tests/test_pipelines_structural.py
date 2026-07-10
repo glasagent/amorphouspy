@@ -145,6 +145,41 @@ class TestRunStructuralAnalysis:
         _, kwargs = mock_analyze.call_args
         assert kwargs.get("frame_averaging") is True
 
+    @patch("amorphouspy.properties.structural.all._run_lammps_md")
+    @patch("amorphouspy.properties.structural.all.analyze_structure")
+    def test_multi_frame_path_accepts_numpy_geometry_arrays(
+        self, mock_analyze: MagicMock, mock_run_md: MagicMock, glass_atoms: Atoms
+    ) -> None:
+        """Real parsed NVT output may provide geometry series as NumPy arrays."""
+        mock_mean = MagicMock()
+        mock_sem = MagicMock()
+        mock_analyze.return_value = (mock_mean, mock_sem)
+
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        mock_run_md.return_value = (
+            glass_atoms,
+            {
+                "generic": {
+                    "positions": np.array([base_pos, base_pos + 0.01, base_pos + 0.02]),
+                    "cells": np.array([cell, cell, cell]),
+                }
+            },
+        )
+
+        mean_data, sem_data, n_frames, sampling_history = run_structural_analysis(
+            glass_atoms,
+            potential=MagicMock(),
+            n_averaging_frames=3,
+        )
+
+        assert n_frames == 3
+        assert mean_data is mock_mean
+        assert sem_data is mock_sem
+        assert sampling_history is not None
+        assert np.allclose(sampling_history[0]["positions"], mock_run_md.return_value[1]["generic"]["positions"])
+        assert np.allclose(sampling_history[0]["cells"], mock_run_md.return_value[1]["generic"]["cells"])
+
     def test_n_averaging_frames_gt_one_requires_potential(self, glass_atoms: Atoms) -> None:
         """Requesting multi-frame averaging without potential raises a clear error."""
         with pytest.raises(ValueError, match="potential must be provided"):
