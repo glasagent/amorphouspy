@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 from amorphouspy_api.pipeline import (
     _SUBMITTERS,
     ANALYSES,
@@ -11,6 +14,7 @@ from amorphouspy_api.pipeline import (
     _accumulate_step,
     _merge_results,
     _run_analysis,
+    _run_structural_analysis,
 )
 
 # ---------------------------------------------------------------------------
@@ -74,6 +78,85 @@ class TestRunAnalysis:
             base_result={"melt_quench": {}},
         )
         assert result == {"viscosity": {"viscosity": 1.5}}
+
+
+class TestRunStructuralAnalysis:
+    """Tests for _run_structural_analysis."""
+
+    @patch("amorphouspy.properties.structural.all.run_structural_analysis")
+    def test_applies_trajectory_storage_mode_to_sampling_history(self, mock_run_structural_analysis: MagicMock) -> None:
+        """When NVT averaging is used, sampling_history follows trajectory_storage_mode."""
+        mean_data = MagicMock()
+        mean_data.model_dump.return_value = {"density": 2.5}
+        mock_run_structural_analysis.return_value = (
+            mean_data,
+            None,
+            3,
+            [
+                {
+                    "positions": [[1.0], [2.0], [3.0]],
+                    "cells": [[[1.0]], [[2.0]], [[3.0]]],
+                    "velocities": [[0.1], [0.2], [0.3]],
+                    "forces": [[0.4], [0.5], [0.6]],
+                    "temperature": [300.0, 301.0, 302.0],
+                }
+            ],
+        )
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(
+                timestep=1.0,
+                n_atoms=100,
+                cores=1,
+                structural_analysis_trajectory_storage_mode="last_frame_drop_velocities_and_forces",
+            ),
+        )
+        config = SimpleNamespace(n_averaging_frames=3)
+        result = {
+            "melt_quench": {"final_structure": object()},
+            "structure_generation": {"potential": object()},
+        }
+
+        out = _run_structural_analysis(submission, config, result)
+
+        assert out["density"] == 2.5
+        assert out["n_averaging_frames"] == 3
+        assert out["sampling_history"] == [
+            {
+                "positions": [[3.0]],
+                "cells": [[[3.0]]],
+                "temperature": [300.0, 301.0, 302.0],
+            }
+        ]
+
+    @patch("amorphouspy.properties.structural.all.run_structural_analysis")
+    def test_omits_sampling_history_when_not_present(self, mock_run_structural_analysis: MagicMock) -> None:
+        """Single-frame path should not add sampling_history to output."""
+        mean_data = MagicMock()
+        mean_data.model_dump.return_value = {"density": 2.5}
+        mock_run_structural_analysis.return_value = (mean_data, None, 1, None)
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(
+                timestep=1.0,
+                n_atoms=100,
+                cores=1,
+                structural_analysis_trajectory_storage_mode="last_frame_all_data",
+            ),
+        )
+        config = SimpleNamespace(n_averaging_frames=1)
+        result = {
+            "melt_quench": {"final_structure": object()},
+            "structure_generation": {"potential": object()},
+        }
+
+        out = _run_structural_analysis(submission, config, result)
+
+        assert out["density"] == 2.5
+        assert out["n_averaging_frames"] == 1
+        assert "sampling_history" not in out
 
 
 # ---------------------------------------------------------------------------
