@@ -7,8 +7,9 @@ front-end.
 
 from amorphouspy_api.visualization.cte import prepare_cte_plots
 from amorphouspy_api.visualization.elastic import prepare_elastic_plots
-from amorphouspy_api.visualization.meltquench import build_temperature_time_plot, prepare_timing_context
+from amorphouspy_api.visualization.meltquench import build_temperature_time_plot
 from amorphouspy_api.visualization.structure import prepare_structure_context
+from amorphouspy_api.visualization.timing import prepare_timing_context
 from amorphouspy_api.visualization.viscosity import prepare_viscosity_plots
 
 __all__ = [

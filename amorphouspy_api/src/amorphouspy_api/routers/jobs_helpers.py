@@ -658,9 +658,9 @@ def build_visualization_context(
     """
     from amorphouspy_api.visualization.meltquench import (
         build_temperature_time_plot,
-        prepare_timing_context,
     )
     from amorphouspy_api.visualization.structure import prepare_structure_context
+    from amorphouspy_api.visualization.timing import prepare_timing_context
 
     mq = result_data.get("melt_quench", {})
 
