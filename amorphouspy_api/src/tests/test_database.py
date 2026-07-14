@@ -384,7 +384,14 @@ def test_simulation_history_separate_column() -> None:
             )
         )
 
-        history = [{"positions": [[0, 0, 0]], "temperature": [300.0]}]
+        history = [
+            {
+                "positions": [[0, 0, 0], [0, 0, 1]],
+                "cells": [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "temperature": [300.0, 310.0],
+                "forces": [[[0, 0, 0]], [[0, 0, 1]]],
+            }
+        ]
         store.update_job(
             "j-hist",
             status="completed",
@@ -403,10 +410,179 @@ def test_simulation_history_separate_column() -> None:
         assert "simulation_history" not in job.result_data.get("melt_quench", {})
         assert job.result_data["structure_characterization"]["density"] == 2.2
 
-        # get_job_with_history should include it
+        # Default mode (last_frame_all_data) reduces selected keys per stage.
         job_full = store.get_job_with_history("j-hist")
         assert job_full is not None
+        stored = job_full.simulation_history
+        assert stored == [
+            {
+                "temperature": [300.0, 310.0],
+                "forces": [[[0, 0, 1]]],
+                "positions": [[0, 0, 1]],
+                "cells": [[[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+            }
+        ]
+        store.close()
+
+
+def test_simulation_history_all_frames_all_data() -> None:
+    """Test that full trajectory payload is stored for all_frames_all_data."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-hist-full",
+                request_hash="h-hist-full",
+                composition="SiO2 100",
+                potential="shik",
+                status="running",
+            )
+        )
+
+        history = [
+            {
+                "positions": [[0, 0, 0], [0, 0, 1]],
+                "cells": [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "temperature": [300.0, 310.0],
+            }
+        ]
+        store.update_job(
+            "j-hist-full",
+            trajectory_storage_mode="all_frames_all_data",
+            status="completed",
+            result_data={
+                "melt_quench": {
+                    "final_structure": {},
+                    "simulation_history": history,
+                },
+            },
+        )
+
+        job_full = store.get_job_with_history("j-hist-full")
+        assert job_full is not None
         assert job_full.simulation_history == history
+        store.close()
+
+
+def test_simulation_history_all_frames_drop_velocities_and_forces() -> None:
+    """Test that all_frames_drop_velocities_and_forces drops forces/velocities only."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-hist-geom-only",
+                request_hash="h-hist-geom-only",
+                composition="SiO2 100",
+                potential="shik",
+                status="running",
+            )
+        )
+
+        history = [
+            {
+                "positions": [[0, 0, 0], [0, 0, 1]],
+                "cells": [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "temperature": [300.0, 310.0],
+                "forces": [[[0, 0, 0]], [[0, 0, 1]]],
+                "velocities": [[[1, 0, 0]], [[1, 1, 0]]],
+            }
+        ]
+        store.update_job(
+            "j-hist-geom-only",
+            trajectory_storage_mode="all_frames_drop_velocities_and_forces",
+            status="completed",
+            result_data={
+                "melt_quench": {
+                    "final_structure": {},
+                    "simulation_history": history,
+                },
+            },
+        )
+
+        job_full = store.get_job_with_history("j-hist-geom-only")
+        assert job_full is not None
+        assert job_full.simulation_history == [
+            {
+                "positions": [[0, 0, 0], [0, 0, 1]],
+                "cells": [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "temperature": [300.0, 310.0],
+            }
+        ]
+        store.close()
+
+
+def test_simulation_history_last_frame_drop_velocities_and_forces() -> None:
+    """Test that last_frame_drop_velocities_and_forces applies per-stage selected-key reduction."""
+    with tempfile.TemporaryDirectory() as tmp:
+        store = JobStore(Path(tmp) / "test.db")
+        store.create_job(
+            Job(
+                job_id="j-hist-last-geom",
+                request_hash="h-hist-last-geom",
+                composition="SiO2 100",
+                potential="shik",
+                status="running",
+            )
+        )
+
+        history = [
+            {
+                "positions": [[0, 0, 0], [0, 0, 1]],
+                "cells": [[[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "steps": [0, 10],
+                "natoms": [2, 2],
+                "indices": [[0, 1], [0, 1]],
+                "unwrapped_positions": [[0, 0, 0], [0, 0, 1]],
+                "temperature": [300.0, 310.0],
+                "forces": [[[0, 0, 0]], [[0, 0, 1]]],
+                "velocities": [[[1, 0, 0]], [[1, 1, 0]]],
+            },
+            {
+                "positions": [[1, 0, 0], [1, 0, 1]],
+                "cells": [[[3, 0, 0], [0, 3, 0], [0, 0, 3]], [[4, 0, 0], [0, 4, 0], [0, 0, 4]]],
+                "steps": [11, 20],
+                "natoms": [2, 2],
+                "indices": [[0, 1], [0, 1]],
+                "unwrapped_positions": [[1, 0, 0], [1, 0, 1]],
+                "temperature": [311.0, 320.0],
+                "forces": [[[0, 0, 2]], [[0, 0, 3]]],
+                "velocities": [[[2, 0, 0]], [[2, 2, 0]]],
+            },
+        ]
+        store.update_job(
+            "j-hist-last-geom",
+            trajectory_storage_mode="last_frame_drop_velocities_and_forces",
+            status="completed",
+            result_data={
+                "melt_quench": {
+                    "final_structure": {},
+                    "simulation_history": history,
+                },
+            },
+        )
+
+        job_full = store.get_job_with_history("j-hist-last-geom")
+        assert job_full is not None
+        assert job_full.simulation_history == [
+            {
+                "positions": [[0, 0, 1]],
+                "cells": [[[2, 0, 0], [0, 2, 0], [0, 0, 2]]],
+                "steps": [0, 10],
+                "natoms": [2],
+                "indices": [[0, 1]],
+                "unwrapped_positions": [[0, 0, 1]],
+                "temperature": [300.0, 310.0],
+            },
+            {
+                "positions": [[1, 0, 1]],
+                "cells": [[[4, 0, 0], [0, 4, 0], [0, 0, 4]]],
+                "steps": [11, 20],
+                "natoms": [2],
+                "indices": [[0, 1]],
+                "unwrapped_positions": [[1, 0, 1]],
+                "temperature": [311.0, 320.0],
+            },
+        ]
         store.close()
 
 
@@ -423,7 +599,7 @@ def test_get_job_defers_simulation_history() -> None:
                 potential="pmmcs",
                 status="completed",
                 result_data={"melt_quench": {"final_structure": {}}},
-                simulation_history=[{"positions": [[1, 2, 3]]}],
+                simulation_history=[{"temperature": [300.0]}],
             )
         )
 
@@ -432,7 +608,7 @@ def test_get_job_defers_simulation_history() -> None:
         assert job is not None
         assert job.status == "completed"
 
-        # get_job_with_history should return the history
+        # get_job_with_history should return the stored history
         job_full = store.get_job_with_history("j-defer")
-        assert job_full.simulation_history == [{"positions": [[1, 2, 3]]}]
+        assert job_full.simulation_history == [{"temperature": [300.0]}]
         store.close()

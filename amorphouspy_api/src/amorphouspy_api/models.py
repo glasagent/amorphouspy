@@ -27,6 +27,26 @@ from pydantic import (
 from amorphouspy import DsfConfig, EwaldConfig, PppmConfig, WolfConfig
 from amorphouspy_api.config import API_BASE_URL
 
+
+class MeltQuenchTrajectoryStorageMode(StrEnum):
+    """Storage modes for persisted simulation history of the melt-quench workflow, applied per stage."""
+
+    ALL_FRAMES_ALL_DATA = "all_frames_all_data"
+    ALL_FRAMES_DROP_VELOCITIES_AND_FORCES = "all_frames_drop_velocities_and_forces"
+    LAST_FRAME_ALL_DATA = "last_frame_all_data"
+    LAST_FRAME_DROP_VELOCITIES_AND_FORCES = "last_frame_drop_velocities_and_forces"
+
+
+class StructuralAnalysisTrajectoryStorageMode(StrEnum):
+    """Storage modes for persisted sampling history of the structural-analysis workflow."""
+
+    NO_DUMP_DATA = "no_dump_data"
+    ALL_FRAMES_ALL_DATA = "all_frames_all_data"
+    ALL_FRAMES_DROP_VELOCITIES_AND_FORCES = "all_frames_drop_velocities_and_forces"
+    LAST_FRAME_ALL_DATA = "last_frame_all_data"
+    LAST_FRAME_DROP_VELOCITIES_AND_FORCES = "last_frame_drop_velocities_and_forces"
+
+
 # ---------------------------------------------------------------------------
 # Composition
 # ---------------------------------------------------------------------------
@@ -193,11 +213,22 @@ class RerunMode(StrEnum):
 
 
 class StructureAnalysis(BaseModel):
-    """Configuration for structural analysis (RDF, coordination, bond angles)."""
+    """Configuration for structural analysis (RDF, coordination, bond angles).
+
+    Structural analysis is a separate step after melt-quench. When
+    ``n_averaging_frames > 1``, an additional NVT sampling run is launched on
+    the final quenched structure and the requested observables are averaged
+    over those frames.
+    """
 
     type: Literal["structure_characterization"] = "structure_characterization"
     rdf_cutoff: float = Field(default=8.0, description="RDF cutoff in Å")
     bin_width: float = Field(default=0.02, description="RDF bin width in Å")
+    n_averaging_frames: int = Field(
+        default=100,
+        ge=1,
+        description="Number of frames to collect in the separate post-quench NVT sampling run; 1 analyzes only the final quenched structure without extra MD",
+    )
 
 
 class ViscosityAnalysis(BaseModel):
@@ -216,7 +247,8 @@ class ViscosityAnalysis(BaseModel):
         default=10_000_000,
         description="MD steps per production run",
     )
-    n_print: int = Field(default=1, description="Output frequency in steps")
+    n_dump: int | None = Field(default=None, description="Dump output frequency in steps")
+    n_print_thermo: int | None = Field(default=1, description="Thermodynamic output frequency in steps")
     max_lag: int | None = Field(
         default=1_000_000,
         description="Maximum correlation lag (steps) for Green-Kubo post-processing; None uses full trajectory",
@@ -236,7 +268,8 @@ class ElasticAnalysis(BaseModel):
     timestep: float = Field(default=1.0, description="MD timestep in fs")
     equilibration_steps: int = Field(default=1_000_000, description="Equilibration MD steps")
     production_steps: int = Field(default=10_000, description="Production MD steps per strain direction")
-    n_print: int = Field(default=1, description="Thermodynamic output frequency")
+    n_dump: int | None = Field(default=None, description="Dump output frequency")
+    n_print_thermo: int | None = Field(default=1, description="Thermodynamic output frequency")
     strain: float = Field(default=1e-3, description="Strain magnitude for finite differences")
 
 
@@ -261,10 +294,12 @@ class CTEFluctuations(_CTEBase):
     temperature: float = Field(default=300.0, description="Simulation temperature in K")
     min_production_runs: int = Field(
         default=2,
+        ge=2,
         description="Minimum production runs before convergence check",
     )
     max_production_runs: int = Field(
         default=25,
+        ge=3,
         description="Maximum production runs",
     )
     cte_uncertainty_criterion: float = Field(
@@ -366,6 +401,39 @@ class MeltQuenchParams(BaseModel):
         ),
     )
     timestep: float = Field(default=1.0, description="MD timestep in fs")
+    n_dump: int | None = Field(
+        default=None,
+        description="Sampling interval for structure dumping expressed in MD steps; If None defaults to the final step only.",
+    )
+    n_print_thermo: int | None = Field(
+        default=100,
+        description="Output interval for thermodynamic data in MD steps; None uses trajectory dump frequency.",
+    )
+    melt_quench_trajectory_storage_mode: MeltQuenchTrajectoryStorageMode = Field(
+        default=MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA,
+        description=(
+            "Controls how melt-quench simulation_history is persisted: "
+            "for the melt-quench workflow, the selected mode is applied independently to each "
+            "stage entry in the stage-wise simulation_history list; "
+            "'all_frames_all_data' keeps full trajectories; "
+            "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
+            "'last_frame_all_data' reduces these keys to their final entry per stage when present: "
+            "natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
+            "'last_frame_drop_velocities_and_forces' first removes per-frame 'forces' and 'velocities', then applies the same per-stage key reduction."
+        ),
+    )
+    structural_analysis_trajectory_storage_mode: StructuralAnalysisTrajectoryStorageMode = Field(
+        default=StructuralAnalysisTrajectoryStorageMode.LAST_FRAME_ALL_DATA,
+        description=(
+            "Controls how structural-analysis NVT sampling_history is persisted when n_averaging_frames > 1: "
+            "'no_dump_data' stores no dump-related sampling_history at all; "
+            "'all_frames_all_data' keeps full trajectories; "
+            "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
+            "'last_frame_all_data' reduces these keys to their final entry per stage when present: "
+            "natoms, cells, indices, forces, velocities, unwrapped_positions, positions; "
+            "'last_frame_drop_velocities_and_forces' first removes per-frame 'forces' and 'velocities', then applies the same per-stage key reduction."
+        ),
+    )
     equilibration_steps: int | None = Field(
         default=None,
         description="Equilibration steps override; None = protocol default",

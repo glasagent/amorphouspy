@@ -40,7 +40,8 @@ def _run_single_viscosity(
     cooling_rate: float,
     timestep: float,
     n_timesteps: int,
-    n_print: int,
+    n_dump: int | None,
+    n_print_thermo: int | None,
     max_lag: int | None,
     server_kwargs: dict[str, Any],
     equilibration_steps: int | None = None,
@@ -66,7 +67,8 @@ def _run_single_viscosity(
         timestep=1.0,
         heating_rate=float(heating_rate),
         cooling_rate=float(cooling_rate),
-        n_print=1000,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
         equilibration_steps=equilibration_steps,
         langevin=False,
         server_kwargs=server_kwargs,
@@ -79,7 +81,8 @@ def _run_single_viscosity(
         temperature_sim=float(temp_low),
         timestep=float(timestep),
         initial_production_steps=int(n_timesteps),
-        n_print=int(n_print),
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
         langevin=False,
         seed=12345,
         server_kwargs=server_kwargs,
@@ -129,7 +132,8 @@ def submit_viscosity_workflow(
     cooling_rate: float,
     timestep: float,
     n_timesteps: int,
-    n_print: int,
+    n_dump: int | None,
+    n_print_thermo: int | None,
     max_lag: int | None,
     server_kwargs: dict[str, Any],
     equilibration_steps: int | None = None,
@@ -158,7 +162,8 @@ def submit_viscosity_workflow(
         cooling_rate: Cooling rate in K/ps.
         timestep: MD timestep in fs.
         n_timesteps: Production run length (steps).
-        n_print: Thermodynamic output frequency.
+        n_dump: Dump intervall in MD steps.
+        n_print_thermo: Intervall of outputting thermodynamic data.
         max_lag: Maximum correlation lag (steps) for Green-Kubo.
         server_kwargs: LAMMPS server configuration.
         equilibration_steps: Override for the melt-quench equilibration stages;
@@ -196,7 +201,8 @@ def submit_viscosity_workflow(
             cooling_rate=cooling_rate,
             timestep=timestep,
             n_timesteps=n_timesteps,
-            n_print=n_print,
+            n_dump=n_dump,
+            n_print_thermo=n_print_thermo,
             max_lag=max_lag,
             server_kwargs=server_kwargs,
             equilibration_steps=equilibration_steps,

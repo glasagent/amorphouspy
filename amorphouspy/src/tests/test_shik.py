@@ -43,7 +43,8 @@ def test_glass_simulation() -> None:
             temperature_sim=300.0,
             timestep=1.0,
             production_steps=1_000,
-            n_print=100,
+            n_dump=None,
+            n_print_thermo=100,
             server_kwargs=server_kwargs,
             pressure=0,
         )

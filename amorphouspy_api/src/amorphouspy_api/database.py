@@ -1,6 +1,20 @@
 """Database models and store for the amorphouspy API.
 
 Single ``Job`` table backs both ``/jobs`` and ``/glasses`` endpoints.
+
+Trajectory dataflow overview:
+1. The simulation pipeline computes structural analyses from full in-memory
+    trajectories.
+2. On persistence, ``result_data['melt_quench']['simulation_history']`` is
+    extracted into the dedicated ``Job.simulation_history`` column.
+3. Storage policy of trajectory (dump) data is controlled by ``trajectory_storage_mode``:
+    - ``"all_frames_all_data"``
+    - ``"all_frames_drop_velocities_and_forces"``
+    - ``"last_frame_all_data"``
+    - ``"last_frame_drop_velocities_and_forces"``
+    For the melt-quench workflow, the selected mode is applied independently to
+    every stage entry in ``simulation_history``.
+4. ``result_data`` is kept lightweight and no longer carries the trajectory.
 """
 
 import logging
@@ -13,7 +27,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, load_only, mapped_c
 from sqlalchemy.orm import defer as _defer
 from sqlalchemy.pool import NullPool
 
-from .models import serialize_atoms
+from .models import (
+    MeltQuenchTrajectoryStorageMode,
+    StructuralAnalysisTrajectoryStorageMode,
+    serialize_atoms,
+)
+
+TrajectoryStorageMode = MeltQuenchTrajectoryStorageMode | StructuralAnalysisTrajectoryStorageMode | str
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +43,12 @@ class Base(DeclarativeBase):
 
 
 class Job(Base):
-    """A simulation job."""
+    """A simulation job.
+
+    The row stores both request/analysis metadata and optional heavy trajectory
+    payload. Large trajectory data is isolated in ``simulation_history`` so
+    routine status/listing queries can avoid deserialising megabytes of JSON.
+    """
 
     __tablename__ = "jobs"
 
@@ -54,9 +79,9 @@ class Job(Base):
     # User-defined tags for labelling / grouping jobs (e.g. project names).
     tags: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
-    # Heavy trajectory data stored in a separate column so it is never loaded
-    # unless explicitly requested.  Kept out of result_data to avoid bloating
-    # routine queries (can be hundreds of MB).
+    # Heavy trajectory data is extracted from result_data and stored here.
+    # Depending on persistence settings this contains either full geometry
+    # history or only the final frame geometry; both keep thermo/step series.
     simulation_history: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
@@ -145,12 +170,19 @@ class JobStore:
             s.commit()
 
     def get_job(self, job_id: str) -> Job | None:
-        """Fetch a job by ID (excludes heavy simulation_history column)."""
+        """Fetch a job by ID without loading heavy trajectory data.
+
+        Use this for regular status/result endpoints where ``simulation_history``
+        is not needed.
+        """
         with self.session() as s:
             return s.query(Job).options(_defer(Job.simulation_history)).filter(Job.job_id == job_id).first()
 
     def get_job_with_history(self, job_id: str) -> Job | None:
-        """Fetch a job by ID including the heavy simulation_history column."""
+        """Fetch a job by ID including ``simulation_history``.
+
+        Use this only for trajectory-heavy endpoints.
+        """
         with self.session() as s:
             return s.get(Job, job_id)
 
@@ -158,7 +190,7 @@ class JobStore:
         """Fetch the simulation_history column as raw JSON text.
 
         This bypasses SQLAlchemy's JSON deserialization to avoid the
-        costly json.loads() → json.dumps() round-trip for large payloads.
+        costly json.loads() -> json.dumps() round-trip for large payloads.
         Returns None if the job doesn't exist or has no trajectory.
         """
         with self.session() as s:
@@ -170,8 +202,24 @@ class JobStore:
             return None
         return row[0]
 
-    def update_job(self, job_id: str, **fields: object) -> None:
-        """Update arbitrary columns on a job record."""
+    def update_job(
+        self,
+        job_id: str,
+        *,
+        trajectory_storage_mode: MeltQuenchTrajectoryStorageMode = MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA,
+        **fields: object,
+    ) -> None:
+        """Update arbitrary columns on a job record.
+
+        For ``result_data`` updates, this method also applies the melt-quench
+        trajectory persistence dataflow:
+        1. Serialize non-JSON objects (e.g. ASE Atoms).
+        2. Extract ``melt_quench.simulation_history`` out of ``result_data`` and
+           persist it in ``Job.simulation_history``.
+        3. Apply trajectory storage policy controlled by
+            ``trajectory_storage_mode`` for the melt-quench workflow,
+            independently to each stage in ``simulation_history``.
+        """
         with self.session() as s:
             job = s.get(Job, job_id)
             if job is None:
@@ -179,11 +227,20 @@ class JobStore:
             for k, val in fields.items():
                 # Serialise ASE Atoms if present inside result_data
                 effective = _serialise_atoms_in_result(val) if k == "result_data" and isinstance(val, dict) else val
-                # Extract simulation_history from result_data into its own column
+                # Extract simulation_history from result_data into its own column.
+                # Unless explicitly requested, avoid storing full structure
+                # trajectories in the DB. Keep only the last frame so one
+                # representative structure is always available.
                 if k == "result_data" and isinstance(effective, dict):
                     mq = cast("dict[str, Any]", effective).get("melt_quench")
                     if isinstance(mq, dict) and "simulation_history" in mq:
-                        job.simulation_history = mq.pop("simulation_history")
+                        history = mq.pop("simulation_history")
+                        if isinstance(history, list):
+                            history = _apply_trajectory_storage_mode(
+                                history,
+                                trajectory_storage_mode=trajectory_storage_mode,
+                            )
+                        job.simulation_history = history
                 setattr(job, k, effective)
             s.commit()
 
@@ -376,6 +433,99 @@ class JobStore:
 # ---------------------------------------------------------------------------
 # ASE Atoms serialisation inside result dicts
 # ---------------------------------------------------------------------------
+
+
+def _apply_trajectory_storage_mode(
+    history: list[Any],
+    *,
+    trajectory_storage_mode: TrajectoryStorageMode,
+) -> list[Any]:
+    """Transform simulation history according to persistence mode.
+
+    Args:
+        history: Stage-wise melt-quench history.
+        trajectory_storage_mode: Explicit storage mode for simulation history,
+            applied independently to each stage entry for the melt-quench
+            workflow.
+
+    Returns:
+        A transformed history according to selected modes.
+
+    Notes:
+        Default behaviour (``trajectory_storage_mode="last_frame_all_data"``)
+        reduces configured frame-series keys to their final entry per stage.
+    """
+    _validate_trajectory_storage_mode(trajectory_storage_mode)
+
+    trajectory_storage_mode_value = str(trajectory_storage_mode)
+
+    if trajectory_storage_mode_value == MeltQuenchTrajectoryStorageMode.ALL_FRAMES_ALL_DATA.value:
+        return history
+
+    if trajectory_storage_mode_value == MeltQuenchTrajectoryStorageMode.ALL_FRAMES_DROP_VELOCITIES_AND_FORCES.value:
+        return _drop_velocities_and_forces(history)
+
+    if trajectory_storage_mode_value == MeltQuenchTrajectoryStorageMode.LAST_FRAME_DROP_VELOCITIES_AND_FORCES.value:
+        without_force_velocity = _drop_velocities_and_forces(history)
+        return _reduce_selected_keys_to_last_frame_per_stage(without_force_velocity)
+
+    return _reduce_selected_keys_to_last_frame_per_stage(history)
+
+
+def _validate_trajectory_storage_mode(
+    trajectory_storage_mode: TrajectoryStorageMode,
+) -> None:
+    allowed_values = {
+        MeltQuenchTrajectoryStorageMode.ALL_FRAMES_ALL_DATA.value,
+        MeltQuenchTrajectoryStorageMode.ALL_FRAMES_DROP_VELOCITIES_AND_FORCES.value,
+        MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA.value,
+        MeltQuenchTrajectoryStorageMode.LAST_FRAME_DROP_VELOCITIES_AND_FORCES.value,
+    }
+    if str(trajectory_storage_mode) not in allowed_values:
+        msg = f"Invalid trajectory_storage_mode={trajectory_storage_mode!r}; expected one of {sorted(allowed_values)}"
+        raise ValueError(msg)
+
+
+def _drop_velocities_and_forces(history: list[Any]) -> list[Any]:
+    """Drop per-stage ``velocities`` and ``forces`` while preserving all other data."""
+    filtered: list[Any] = []
+    for stage in history:
+        if not isinstance(stage, dict):
+            filtered.append(stage)
+            continue
+        filtered.append({k: v for k, v in stage.items() if k not in {"forces", "velocities"}})
+    return filtered
+
+
+def _reduce_selected_keys_to_last_frame_per_stage(history: list[Any]) -> list[Any]:
+    """Reduce dump-related frame-series to their last entry on every stage.
+
+    Keys are reduced only when present and list-like with at least one value.
+    Non-stage entries and all other keys are preserved unchanged.
+    """
+    keys_to_reduce = {
+        "natoms",
+        "cells",
+        "indices",
+        "forces",
+        "velocities",
+        "unwrapped_positions",
+        "positions",
+    }
+
+    reduced: list[Any] = []
+    for stage in history:
+        if not isinstance(stage, dict):
+            reduced.append(stage)
+            continue
+
+        stage_copy = dict(stage)
+        for key in keys_to_reduce:
+            value = stage_copy.get(key)
+            if isinstance(value, list) and value:
+                stage_copy[key] = [value[-1]]
+        reduced.append(stage_copy)
+    return reduced
 
 
 def _serialise_atoms_in_result(result: dict) -> dict:

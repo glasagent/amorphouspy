@@ -45,7 +45,7 @@ def melt_block_lines(melt_temperature: float) -> list[str]:
 
 def has_melt_block(potential: pd.DataFrame) -> bool:
     """Return True if the potential Config contains a melt pre-equilibration block."""
-    return any(_MELT_BLOCK_MARKERS[0] in line for line in potential.loc[0, "Config"])
+    return any(any(marker in line for marker in _MELT_BLOCK_MARKERS) for line in potential.loc[0, "Config"])
 
 
 def strip_melt_block(potential: pd.DataFrame) -> pd.DataFrame:
@@ -71,7 +71,7 @@ def set_melt_block_temperature(potential: pd.DataFrame, melt_temperature: float)
 
     The block sits at the end of the Config, so stripping and re-appending
     preserves the line order. Potentials without a melt block are returned
-    unchanged — no block is injected.
+    unchanged -- no block is injected.
 
     Args:
         potential: Single-row potential DataFrame with a ``Config`` column.

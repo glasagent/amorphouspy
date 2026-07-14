@@ -108,7 +108,7 @@ def test_fluctuations_simulation_returns_summary_and_data(tmp_path, monkeypatch)
             max_production_runs=3,
             CTE_uncertainty_criterion=1.0,
             n_dump=100_000,
-            n_log=100,
+            n_print_thermo=100,
         )
         assert "summary" in result
         assert "data" in result
@@ -131,7 +131,7 @@ def test_fluctuations_simulation_converges_with_loose_criterion(tmp_path, monkey
             min_production_runs=2,
             max_production_runs=5,
             CTE_uncertainty_criterion=1.0,
-            n_log=100,
+            n_print_thermo=100,
             equilibration_steps=100_000,
         )
         assert result["summary"]["is_converged"] == "True"
@@ -152,7 +152,7 @@ def test_fluctuations_simulation_not_converged_with_tight_criterion(tmp_path, mo
             min_production_runs=2,
             max_production_runs=2,
             CTE_uncertainty_criterion=1e-30,
-            n_log=100,
+            n_print_thermo=100,
             equilibration_steps=100_000,
         )
         assert result["summary"]["is_converged"] == "False"
@@ -173,7 +173,7 @@ def test_fluctuations_simulation_data_has_cte_keys(tmp_path, monkeypatch) -> Non
             min_production_runs=2,
             max_production_runs=2,
             CTE_uncertainty_criterion=1.0,
-            n_log=100,
+            n_print_thermo=100,
             equilibration_steps=100_000,
         )
         data = result["data"]
@@ -197,7 +197,7 @@ def test_fluctuations_simulation_aniso_flag(tmp_path, monkeypatch) -> None:
             min_production_runs=2,
             max_production_runs=2,
             CTE_uncertainty_criterion=1.0,
-            n_log=100,
+            n_print_thermo=100,
             equilibration_steps=100_000,
             aniso=True,
         )
@@ -222,7 +222,7 @@ def test_temperature_scan_returns_data(tmp_path, monkeypatch) -> None:
             temperature=[300, 400, 500],
             production_steps=100_000,
             n_dump=100_000,
-            n_log=100,
+            n_print_thermo=100,
         )
         assert "data" in result
     finally:
@@ -241,7 +241,7 @@ def test_temperature_scan_correct_number_of_runs(tmp_path, monkeypatch) -> None:
             temperature=temps,
             production_steps=100_000,
             n_dump=100_000,
-            n_log=100,
+            n_print_thermo=100,
         )
         data = result["data"]
         assert len(data["T"]) == len(temps)
@@ -261,7 +261,7 @@ def test_temperature_scan_default_temperatures(tmp_path, monkeypatch) -> None:
             temperature=None,
             production_steps=100_000,
             n_dump=100_000,
-            n_log=100,
+            n_print_thermo=100,
         )
         assert len(result["data"]["T"]) == 4
     finally:
@@ -279,8 +279,26 @@ def test_temperature_scan_aniso_flag(tmp_path, monkeypatch) -> None:
             temperature=[300, 400],
             production_steps=100_000,
             n_dump=100_000,
-            n_log=100,
+            n_print_thermo=100,
             aniso=True,
+        )
+        assert "data" in result
+    finally:
+        _clean_logger_handlers()
+
+
+def test_temperature_scan_allows_none_n_dump(tmp_path, monkeypatch) -> None:
+    """n_dump=None does not break temperature_scan_simulation."""
+    monkeypatch.chdir(tmp_path)
+    _clean_logger_handlers()
+    try:
+        result = temperature_scan_simulation(
+            structure=_make_structure(),
+            potential=_make_potential(),
+            temperature=[300, 400],
+            production_steps=100_000,
+            n_dump=None,
+            n_print_thermo=100,
         )
         assert "data" in result
     finally:

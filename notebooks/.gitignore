@@ -2,6 +2,7 @@ test/
 viscosity/
 glass/
 lmp_tmp_directory/
+tutorial_ensemble_cache/
 tmp_cte*/
 *.dat
 *.log

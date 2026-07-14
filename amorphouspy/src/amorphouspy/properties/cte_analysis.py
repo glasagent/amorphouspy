@@ -9,7 +9,6 @@ Author: Marcel Sadowski (github.com/Gitdowski)
 """
 
 import numpy as np
-from scipy.stats import linregress
 
 from amorphouspy.atoms.shared import running_mean
 
@@ -168,14 +167,37 @@ def cte_from_volume_temperature_data(
         ... )
 
     """
+    MIN_POINTS = 2
+
+    temperature_arr = np.asarray(temperature, dtype=np.float64)
+    volume_arr = np.asarray(volume, dtype=np.float64)
+
+    # input checks
+    if temperature_arr.ndim != 1 or volume_arr.ndim != 1:
+        msg = "temperature and volume must be one-dimensional arrays."
+        raise ValueError(msg)
+    if temperature_arr.size != volume_arr.size:
+        msg = "temperature and volume must have the same length."
+        raise ValueError(msg)
+    if temperature_arr.size < MIN_POINTS:
+        msg = f"At least {MIN_POINTS} temperature-volume points are required."
+        raise ValueError(msg)
+
     # Set reference volume corresponding to the lowest temperature if not provided.
     if reference_volume is None:
-        index_lowest_T = np.argmin(temperature)
-        reference_volume = volume[index_lowest_T]
+        index_lowest_T = int(np.argmin(temperature_arr))
+        ref_volume = float(volume_arr[index_lowest_T])
+    else:
+        ref_volume = float(reference_volume)
 
-    # fit and calculate CTE
-    slope, _intercept, r_value, _p_value, _std_err = linregress(temperature, volume)
-    CTE = slope / reference_volume
-    R2 = r_value**2
+    if np.isclose(ref_volume, 0.0):
+        msg = "reference_volume must be non-zero."
+        raise ValueError(msg)
 
-    return float(CTE), float(R2)
+    # Fit and calculate CTE
+    slope = float(np.polyfit(temperature_arr, volume_arr, 1)[0])
+    r_value = float(np.corrcoef(temperature_arr, volume_arr)[0, 1])
+    cte = slope / ref_volume
+    r2 = r_value**2
+
+    return float(cte), float(r2)

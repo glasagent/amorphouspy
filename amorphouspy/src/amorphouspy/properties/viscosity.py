@@ -37,7 +37,8 @@ def _viscosity_simulation(
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     production_steps: int = 10_000_000,
-    n_print: int = 1,
+    n_dump: int | None = None,
+    n_print_thermo: int | None = 1,
     server_kwargs: dict[str, Any] | None = None,
     *,
     langevin: bool = False,
@@ -56,7 +57,8 @@ def _viscosity_simulation(
         temperature_sim: Simulation temperature in Kelvin.
         timestep: MD timestep in fs.
         production_steps: Number of MD steps for the production run.
-        n_print: Thermodynamic output frequency.
+        n_dump: Dump frequency.
+        n_print_thermo: Thermodynamic output frequency. If None, uses ``n_dump``.
         server_kwargs: Additional server arguments.
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization.
@@ -87,7 +89,7 @@ def _viscosity_simulation(
 
     # SHIK melts are equilibrated at 0.1 GPa, matching the melt-quench protocol
     # (compensates the DSF pressure deficit the potential was parameterized with).
-    equil_pressure = 0.1 if potential.loc[0, "Name"].lower() == "shik" else 0.0
+    equil_pressure = 0.1 if str(potential.loc[0, "Name"]).lower() == "shik" else 0.0
 
     # Stage 0: Langevin dynamics at T
     structure0, _ = _run_lammps_md(
@@ -97,11 +99,12 @@ def _viscosity_simulation(
         temperature=temperature_sim,
         n_ionic_steps=10_000,
         timestep=timestep,
-        n_print=1000,
         initial_temperature=temperature_sim,
         langevin=True,
         seed=seed,
         server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
     )
 
     # Stage 1: Equilibration in NPT at T
@@ -113,11 +116,12 @@ def _viscosity_simulation(
         n_ionic_steps=100_000,
         timestep=timestep,
         pressure=equil_pressure,
-        n_print=1000,
         initial_temperature=temperature_sim,
         langevin=langevin,
         seed=seed,
         server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
     )
 
     # Stage 2: Production simulation for viscosity at T
@@ -128,10 +132,11 @@ def _viscosity_simulation(
         temperature=temperature_sim,
         n_ionic_steps=production_steps,
         timestep=timestep,
-        n_print=n_print,
         initial_temperature=0,
         langevin=langevin,
         server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
     )
 
     result = parsed_output.get("generic", None)
@@ -544,8 +549,8 @@ def _extract_md_data(result: dict[str, Any]) -> dict[str, Any]:
     """Normalise result dicts from both ``_viscosity_simulation`` and ``viscosity_simulation``.
 
     ``_viscosity_simulation`` returns ``{"result": {...}, "structure": ...}``.
-    ``viscosity_simulation`` returns ``{"result": acc, "viscosity_data": ..., ...}``
-    where ``acc`` already contains ``pressures``, ``volume``, ``temperature`` directly.
+    ``viscosity_simulation`` returns ``{"result": accumulated_md_data, "viscosity_data": ..., ...}``
+    where ``accumulated_md_data`` already contains ``pressures``, ``volume``, ``temperature`` directly.
     Both are handled by checking for the ``pressures`` key one level down.
     """
     inner = result.get("result", result)
@@ -715,13 +720,52 @@ def _viscosity_plateaued(
     return abs(slope) / mean_val < rel_slope_tol
 
 
+def _extend_viscosity_production_and_accumulate(
+    current_structure: Atoms,
+    potential: pd.DataFrame,
+    accumulated_md_data: dict[str, Any],
+    extension_steps: int,
+    temperature_sim: float,
+    timestep: float,
+    server_kwargs: dict[str, Any] | None,
+    n_dump: int | None,
+    n_print_thermo: int | None,
+    tmp_working_directory: str | Path | None,
+    *,
+    langevin: bool,
+) -> Atoms:
+    """Run one production extension segment and append parsed arrays to accumulators."""
+    current_structure, ext_parsed = _run_lammps_md(
+        structure=current_structure,
+        potential=potential,
+        tmp_working_directory=tmp_working_directory,
+        temperature=temperature_sim,
+        n_ionic_steps=extension_steps,
+        timestep=timestep,
+        initial_temperature=temperature_sim,
+        langevin=langevin,
+        server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
+    )
+
+    ext_result = ext_parsed.get("generic", None)
+    assert ext_result is not None
+    accumulated_md_data["pressures"] = np.concatenate([accumulated_md_data["pressures"], ext_result["pressures"]])
+    accumulated_md_data["volume"] = np.concatenate([accumulated_md_data["volume"], ext_result["volume"]])
+    accumulated_md_data["temperature"] = np.concatenate([accumulated_md_data["temperature"], ext_result["temperature"]])
+
+    return current_structure
+
+
 def viscosity_simulation(
     structure: Atoms,
     potential: pd.DataFrame,
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     initial_production_steps: int = 10_000_000,
-    n_print: int = 1,
+    n_dump: int | None = None,
+    n_print_thermo: int | None = 1,
     max_total_time_ns: float = 50.0,
     max_iterations: int = 40,
     eta_rel_tol: float = 0.05,
@@ -756,8 +800,8 @@ def viscosity_simulation(
         timestep: MD timestep in fs.
         initial_production_steps: Steps for the first production run.
             Default 10,000,000 (= 10 ns at 1 fs timestep).
-        n_print: Thermodynamic output frequency (must equal ``output_frequency``
-            passed to analysis functions).
+        n_dump: Dump output frequency.
+        n_print_thermo: Thermodynamic output frequency.
         max_total_time_ns: Maximum total production time in nanoseconds.
             Default 50 ns.
         max_iterations: Maximum number of 100 ps extension iterations.
@@ -813,14 +857,19 @@ def viscosity_simulation(
         temperature_sim=temperature_sim,
         timestep=timestep,
         production_steps=initial_production_steps,
-        n_print=n_print,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
         server_kwargs=server_kwargs,
         langevin=langevin,
         seed=seed,
         tmp_working_directory=tmp_working_directory,
     )
 
-    acc: dict[str, Any] = {
+    output_frequency = n_print_thermo if n_print_thermo is not None else n_dump
+    if output_frequency is None:
+        output_frequency = 1
+
+    accumulated_md_data: dict[str, Any] = {
         "pressures": sim_result["result"]["pressures"],
         "volume": sim_result["result"]["volume"],
         "temperature": sim_result["result"]["temperature"],
@@ -837,9 +886,9 @@ def viscosity_simulation(
         t_total_ps = total_production_steps * timestep / 1000.0
 
         helfand_data = helfand_viscosity(
-            {"result": acc},
+            {"result": accumulated_md_data},
             timestep=timestep,
-            output_frequency=n_print,
+            output_frequency=output_frequency,
         )
         eta_curr = float(helfand_data["viscosity"])
 
@@ -899,24 +948,19 @@ def viscosity_simulation(
             stacklevel=2,
         )
 
-        current_structure, ext_parsed = _run_lammps_md(
-            structure=current_structure,
+        current_structure = _extend_viscosity_production_and_accumulate(
+            current_structure=current_structure,
             potential=potential,
-            tmp_working_directory=tmp_working_directory,
-            temperature=temperature_sim,
-            n_ionic_steps=_ext,
+            accumulated_md_data=accumulated_md_data,
+            extension_steps=_ext,
+            temperature_sim=temperature_sim,
             timestep=timestep,
-            n_print=n_print,
-            initial_temperature=temperature_sim,
             langevin=langevin,
             server_kwargs=server_kwargs,
+            n_dump=n_dump,
+            n_print_thermo=n_print_thermo,
+            tmp_working_directory=tmp_working_directory,
         )
-
-        ext_result = ext_parsed.get("generic", None)
-        assert ext_result is not None
-        acc["pressures"] = np.concatenate([acc["pressures"], ext_result["pressures"]])
-        acc["volume"] = np.concatenate([acc["volume"], ext_result["volume"]])
-        acc["temperature"] = np.concatenate([acc["temperature"], ext_result["temperature"]])
 
         total_production_steps += _ext
         iterations += 1
@@ -929,7 +973,7 @@ def viscosity_simulation(
 
     return {
         "viscosity_data": helfand_data,
-        "result": acc,
+        "result": accumulated_md_data,
         "structure": current_structure,
         "total_production_steps": total_production_steps,
         "iterations": iterations,
@@ -946,7 +990,8 @@ def viscosity_ensemble(  # noqa: C901
     temperature_sim: float = 5000.0,
     timestep: float = 1.0,
     initial_production_steps: int = 10_000_000,
-    n_print: int = 1,
+    n_dump: int | None = None,
+    n_print_thermo: int | None = 1,
     max_total_time_ns: float = 50.0,
     max_iterations: int = 40,
     eta_rel_tol: float = 0.05,
@@ -991,7 +1036,8 @@ def viscosity_ensemble(  # noqa: C901
         temperature_sim: Simulation temperature in Kelvin.
         timestep: MD timestep in fs.
         initial_production_steps: Steps for the first production run per replica.
-        n_print: Thermodynamic output frequency.
+        n_dump: Dump output frequency.
+        n_print_thermo: Thermodynamic output frequency.
         max_total_time_ns: Maximum total production time per replica in nanoseconds.
         max_iterations: Maximum number of 100 ps extension iterations per replica.
         eta_rel_tol: Relative change threshold for eta-stability check.
@@ -1034,7 +1080,7 @@ def viscosity_ensemble(  # noqa: C901
         ...     potential=my_potential_df,
         ...     n_replicas=3,
         ...     temperature_sim=4000.0,
-        ...     n_print=10,
+        ...     n_print_thermo=10,
         ...     server_kwargs={"cores": 4},
         ... )
         >>> print(out["viscosity"], "±", out["viscosity_sem"], "Pa·s")
@@ -1075,7 +1121,8 @@ def viscosity_ensemble(  # noqa: C901
             temperature_sim=temperature_sim,
             timestep=timestep,
             initial_production_steps=initial_production_steps,
-            n_print=n_print,
+            n_dump=n_dump,
+            n_print_thermo=n_print_thermo,
             max_total_time_ns=max_total_time_ns,
             max_iterations=max_iterations,
             eta_rel_tol=eta_rel_tol,

@@ -281,7 +281,7 @@ def generate_shik_potential(
     lines.append("\npair_modify shift yes\n\n")
 
     lines.append("\nthermo_style custom step temp pe etotal pxx pxy pxz pyy pyz pzz vol\n")
-    lines.append("\nthermo_modify flush yes\n")
+    lines.append("\nthermo_modify flush no\n")
     lines.append("\nthermo 100\n")
     if melt:
         lines.extend(melt_block_lines(_MELT_TEMPERATURE))

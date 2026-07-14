@@ -17,7 +17,8 @@ result = md_simulation(
     temperature_sim=300.0,    # K (start temperature)
     production_steps=10_000_000,
     timestep=1.0,             # fs
-    n_print=1000,             # Write output every N steps
+    n_dump=1000,              # Write trajectory frames every N steps
+    n_print_thermo=1000,      # Write thermo output every N steps
 )
 
 final_structure = result["structure"]
@@ -33,7 +34,8 @@ thermo = result["result"]
 | `temperature_sim` | `float` | `5000.0` | Start temperature in K (constant if `temperature_end` is None) |
 | `production_steps` | `int` | `10_000_000` | Number of MD steps |
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
-| `n_print` | `int` | `1000` | Output frequency in steps |
+| `n_dump` | `int \| None` | `1000` | Trajectory dump frequency in steps |
+| `n_print_thermo` | `int \| None` | `None` | Thermodynamic output frequency in steps (defaults to `n_dump`) |
 | `temperature_end` | `float \| None` | `None` | End temperature for a linear ramp; None = constant temperature |
 | `pressure` | `float \| None` | `None` | Start pressure in GPa; None = NVT, float value = NPT |
 | `pressure_end` | `float \| None` | `None` | End pressure in GPa for a linear ramp; requires `pressure` to be set |

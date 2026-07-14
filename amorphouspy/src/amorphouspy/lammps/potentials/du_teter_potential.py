@@ -838,7 +838,7 @@ def generate_du_teter_potential(
 
     lines.append("\npair_modify shift yes\n\n")
     lines.append("thermo_style custom step temp pe etotal pxx pxy pxz pyy pyz pzz vol\n")
-    lines.append("thermo_modify flush yes\n")
+    lines.append("thermo_modify flush no\n")
     lines.append("thermo 100\n")
 
     if melt:

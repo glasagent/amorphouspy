@@ -12,13 +12,8 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.lammps.io import structure_from_parsed_output
 from amorphouspy.lammps.potentials._melt_block import strip_melt_block
-from amorphouspy.lammps.runner import (
-    get_lammps_command,
-    run_lammps_with_error_capture,
-    simulation_working_directory,
-)
+from amorphouspy.lammps.runner import _run_lammps_md
 from amorphouspy.properties._cte_helpers import (
     _collect_sim_data,
     _create_logger,
@@ -34,97 +29,10 @@ from amorphouspy.properties._cte_helpers import (
     _temperature_scan_merge_results,
 )
 
-
-def _run_lammps_md(  # pragma: no cover
-    structure: Atoms,
-    potential: pd.DataFrame,
-    temperature: float,
-    n_ionic_steps: int,
-    timestep: float,
-    n_dump: int,
-    n_log: int,
-    initial_temperature: float,
-    pressure: float | list[int | float | None] | None = None,
-    server_kwargs: dict | None = None,
-    *,
-    langevin: bool = False,
-    seed: int | None = 12345,
-    tmp_working_directory: str | Path | None = None,
-) -> tuple[Atoms, dict]:  # pylint: disable=too-many-positional-arguments
-    """Run a LAMMPS MD calculation with given parameters and return the final structure and parsed output.
-
-    Args:
-        structure: The atomic structure to simulate.
-        potential: The potential file to be used for the simulation.
-        temperature: The target temperature for the MD run. Can be a single value or a list [start, end].
-        n_ionic_steps: Number of MD steps to run.
-        timestep: Time step for integration in femtoseconds.
-        n_dump: Frequency of dump output writing in simulation steps.
-        n_log: Frequency of log output writing in simulation steps.
-        initial_temperature: Initial temperature for velocity initialization. If None, the initial
-            temperature will be twice the target temperature (which would go immediately down to the target temperature
-            as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
-            initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-        pressure: Target pressure. If None, NVT is used. If a float or int is provided, isotropic NPT is used. If a list
-            of 6 values is provided, anisotropic or tricilinic NPT is used.
-        server_kwargs: Additional keyword arguments for the server.
-        langevin: Whether to use Langevin dynamics.
-        seed: Random seed for velocity initialization (default is 12345). Ignored if `initial_temperature` is 0.
-        tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
-            Per default (None), the directory is located in the operating systems location for temperary files
-            and is removed automatically once the run finishes.
-            With the specification of tmp_working_directory, a uniquely-named sub-directory is created inside
-            it and left in place afterwards (the caller owns it and is responsible for removing it), so the run
-            artefacts such as ``log.lammps`` remain available. tmp_working_directory needs to exist beforehand.
-
-    Returns:
-        A tuple containing:
-            - structure_final: Final atomic structure from the simulation.
-            - parsed_output: Parsed output dictionary returned by `lammps_function`.
-
-    Notes:
-        - Manages a working directory for the run: auto-cleaned when tmp_working_directory is None,
-          otherwise caller-owned (left in place for inspection/cleanup).
-        - Uses `lammpsparser.compatibility.file.lammps_file_interface_function` as the backend.
-        - The `thermo_style` is fixed to report pressure tensor components for post-analysis.
-
-    """
-    # Creates a working directory for the simulation (auto-cleaned when
-    # tmp_working_directory is None; caller-owned otherwise).
-    with simulation_working_directory(tmp_working_directory) as tmpdir:
-        tmp_path = str(Path(tmpdir))
-
-        # Sets up the LAMMPS simulations
-        parsed_output = run_lammps_with_error_capture(
-            working_directory=tmp_path,
-            structure=structure,
-            potential=potential,
-            calc_mode="md",
-            calc_kwargs={
-                "temperature": temperature,
-                "n_ionic_steps": n_ionic_steps,
-                "time_step": timestep,
-                "n_print": n_log,
-                "initial_temperature": initial_temperature,
-                "seed": seed,
-                "pressure": pressure,
-                "langevin": langevin,
-            },
-            units="metal",
-            write_restart_file=False,
-            read_restart_file=False,
-            restart_file="restart.out",
-            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
-            input_control_file={
-                "dump_modify": f"1 every {n_dump} first yes",
-                "thermo_style": "custom step temp pe etotal pxx pxy pxz pyy pyz pzz lx ly lz vol",
-                "thermo_modify": "flush no",
-            },
-        )
-
-        new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
-
-    return new_structure, parsed_output
+CTE_INPUT_CONTROL_FILE = {
+    "thermo_style": "custom step temp pe etotal pxx pxy pxz pyy pyz pzz lx ly lz vol",
+    "thermo_modify": "flush no",
+}
 
 
 def cte_from_fluctuations_simulation(
@@ -140,8 +48,8 @@ def cte_from_fluctuations_simulation(
     min_production_runs: int = 5,
     max_production_runs: int = 25,
     CTE_uncertainty_criterion: float = 1e-6,
-    n_dump: int = 100000,
-    n_log: int = 10,
+    n_dump: int | None = None,
+    n_print_thermo: int = 10,
     server_kwargs: dict[str, Any] | None = None,
     *,
     aniso: bool = False,
@@ -173,8 +81,9 @@ def cte_from_fluctuations_simulation(
             convergence (default 10).
         CTE_uncertainty_criterion: Convergence criterion for the uncertainty of the linear
             CTE (default 1e-6/K).
-        n_dump: Dump output frequency of the production runs (default 100,000).
-        n_log: Log output frequency (default 10).
+        n_dump: Interval of structure dumping in MD steps. If set to `None`, only the last
+            step of the production runs is dumped (default None).
+        n_print_thermo: Interval of printing thermodynamic output in MD steps (default 10).
         server_kwargs: Additional server configuration arguments for pyiron.
         aniso: If false, an isotropic NPT calculation is performed and the simulation box is
               scaled uniformly. If True, anisotropic NPT calculation is performed and the simulation
@@ -251,14 +160,13 @@ def cte_from_fluctuations_simulation(
     logger = _create_logger()
 
     # Check and adjust input parameters if necessary
-    production_steps, min_production_runs, max_production_runs, N_for_averaging, n_dump, equilibration_steps = (
+    production_steps, min_production_runs, max_production_runs, N_for_averaging, equilibration_steps = (
         _fluctuation_simulation_input_checker(
             production_steps,
             min_production_runs,
             max_production_runs,
-            n_log,
+            n_print_thermo,
             timestep,
-            n_dump,
             equilibration_steps,
             logger,
         )
@@ -284,7 +192,8 @@ def cte_from_fluctuations_simulation(
         n_ionic_steps=10_000,
         timestep=timestep,
         n_dump=10_000,
-        n_log=100,
+        n_print_thermo=100,
+        input_control_file=CTE_INPUT_CONTROL_FILE,
         initial_temperature=temperature,
         langevin=False,
         seed=seed,
@@ -304,7 +213,8 @@ def cte_from_fluctuations_simulation(
         n_ionic_steps=equilibration_steps,
         timestep=timestep,
         n_dump=equilibration_steps,
-        n_log=n_log,
+        n_print_thermo=n_print_thermo,
+        input_control_file=CTE_INPUT_CONTROL_FILE,
         initial_temperature=0,
         langevin=True,
         server_kwargs=server_kwargs,
@@ -340,7 +250,8 @@ def cte_from_fluctuations_simulation(
             n_ionic_steps=production_steps,
             timestep=timestep,
             n_dump=n_dump,
-            n_log=n_log,
+            n_print_thermo=n_print_thermo,
+            input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=0,
             langevin=True,
             server_kwargs=server_kwargs,
@@ -412,8 +323,8 @@ def temperature_scan_simulation(
     timestep: float = 1.0,
     equilibration_steps: int = 100_000,
     production_steps: int = 200_000,
-    n_dump: int = 100000,
-    n_log: int = 10,
+    n_dump: int | None = None,
+    n_print_thermo: int = 10,
     server_kwargs: dict[str, Any] | None = None,
     *,
     aniso: bool = False,
@@ -446,8 +357,9 @@ def temperature_scan_simulation(
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
         equilibration_steps: Number of MD steps for the equilibration runs (default 100,000).
         production_steps: Number of MD steps for the production runs (default 200,000).
-        n_dump: Dump output frequency of the production runs (default 100,000).
-        n_log: Log output frequency (default 10).
+        n_dump: Interval for structure dumping in MD steps for the production run. If set
+            to None (default), only the last frame of the production run is dumped.
+        n_print_thermo: Interval for writing thermodynamic data in MD steps (default 10).
         server_kwargs: Additional server configuration arguments.
         aniso: If false, an isotropic NPT calculation is performed and the simulation box is scaled uniformly.
             If True, anisotropic NPT calculation is performed and the simulation box can change shape and
@@ -498,10 +410,10 @@ def temperature_scan_simulation(
     if temperature is None:
         temperature = [300, 400, 500, 600]
 
-    # Check and adjust input parameters if necessary
-    n_dump = _temperature_scan_input_checker(temperature, production_steps, n_dump, logger)
+    # Check input parameters
+    _temperature_scan_input_checker(temperature, logger)
 
-    # Set pressure to anisotropic if requested
+    # Set pressure to lampps "aniso" if requested
     sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
 
     # initial structure used. Afterwards, it is updated after each temperature
@@ -527,8 +439,9 @@ def temperature_scan_simulation(
             temperature=T,
             n_ionic_steps=10_000,
             timestep=timestep,
-            n_dump=10_000,
-            n_log=100,
+            n_dump=None,
+            n_print_thermo=100,
+            input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=T,
             langevin=False,
             seed=seed,
@@ -548,8 +461,9 @@ def temperature_scan_simulation(
             pressure=sim_pressure,
             n_ionic_steps=equilibration_steps,
             timestep=timestep,
-            n_dump=equilibration_steps,
-            n_log=n_log,
+            n_dump=None,
+            n_print_thermo=n_print_thermo,
+            input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=0,
             langevin=True,
             server_kwargs=server_kwargs,
@@ -569,7 +483,8 @@ def temperature_scan_simulation(
             n_ionic_steps=production_steps,
             timestep=timestep,
             n_dump=n_dump,
-            n_log=n_log,
+            n_print_thermo=n_print_thermo,
+            input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=0,
             langevin=True,
             server_kwargs=server_kwargs,

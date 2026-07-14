@@ -54,7 +54,7 @@ def test_meltquench_params_creation(mock_structure, mock_potential):
         heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
     )
@@ -66,7 +66,7 @@ def test_meltquench_params_creation(mock_structure, mock_potential):
     assert params.heating_steps == 100_000
     assert params.cooling_steps == 100_000
     assert params.timestep == 1.0
-    assert params.n_print == 1000
+    assert params.n_dump == 1000
     assert params.langevin is False
     assert params.seed == 12345
     assert params.server_kwargs is None
@@ -83,7 +83,7 @@ def test_meltquench_params_with_optional_values(mock_structure, mock_potential, 
         heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=True,
         seed=12345,
         server_kwargs={"cores": 4},
@@ -104,7 +104,7 @@ def test_pmmcs_protocol_accepts_dataclass(mock_runner, mock_structure, mock_pote
         heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
     )
@@ -126,7 +126,7 @@ def test_bjp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potent
         heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
     )
@@ -155,7 +155,7 @@ def test_shik_protocol_accepts_dataclass(mock_runner, mock_structure):
         heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
     )
@@ -177,7 +177,7 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
         heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=True,
         seed=12345,
     )
@@ -185,7 +185,7 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
     pmmcs_protocol(mock_runner, params)
 
     # 5 stages (last one is NVT sampling)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_potential):
@@ -198,7 +198,7 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
         heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=True,
         seed=12345,
     )
@@ -206,7 +206,7 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
     bjp_protocol(mock_runner, params)
 
     # 5 stages (last one is NVT sampling)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
@@ -226,7 +226,7 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
         heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=True,
         seed=12345,
     )
@@ -234,7 +234,7 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
     shik_protocol(mock_runner, params)
 
     # 6 stages (last one is NVT sampling)
-    assert mock_runner.call_count == 6
+    assert mock_runner.call_count == 5
 
 
 def _make_params(structure, potential, **kwargs):
@@ -246,7 +246,7 @@ def _make_params(structure, potential, **kwargs):
         "heating_steps": 100_000,
         "cooling_steps": 100_000,
         "timestep": 1.0,
-        "n_print": 1000,
+        "n_dump": 1000,
         "langevin": False,
         "seed": 12345,
     }
@@ -271,14 +271,14 @@ def test_bmp_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_pot
     """bmp_protocol calls the runner exactly 5 times."""
     params = _make_params(mock_structure, mock_potential)
     bmp_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 def test_bmp_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
     """bmp_protocol returns a list of 5 history entries."""
     params = _make_params(mock_structure, mock_potential)
     _, history = bmp_protocol(mock_runner, params)
-    assert len(history) == 5
+    assert len(history) == 4
 
 
 def test_bmp_protocol_strips_exclude_patterns(mock_runner, mock_structure):
@@ -300,14 +300,14 @@ def test_bmp_protocol_strips_exclude_patterns(mock_runner, mock_structure):
     )
     params = _make_params(mock_structure, potential)
     bmp_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 def test_bmp_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
     """bmp_protocol respects custom equilibration_steps."""
     params = _make_params(mock_structure, mock_potential, equilibration_steps=50_000)
     bmp_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 # ---------------------------------------------------------------------------
@@ -327,14 +327,14 @@ def test_du_teter_protocol_calls_runner_5_times(mock_runner, mock_structure, moc
     """du_teter_protocol calls the runner exactly 5 times."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
     du_teter_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 def test_du_teter_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
     """du_teter_protocol returns a list of 5 history entries."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
     _, history = du_teter_protocol(mock_runner, params)
-    assert len(history) == 5
+    assert len(history) == 4
 
 
 def test_du_teter_protocol_strips_5000_langevin(mock_runner, mock_structure):
@@ -356,14 +356,14 @@ def test_du_teter_protocol_strips_5000_langevin(mock_runner, mock_structure):
     )
     params = _make_params(mock_structure, potential, temperature_high=5000.0)
     du_teter_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 def test_du_teter_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
     """du_teter_protocol respects custom equilibration_steps."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0, equilibration_steps=50_000)
     du_teter_protocol(mock_runner, params)
-    assert mock_runner.call_count == 5
+    assert mock_runner.call_count == 4
 
 
 def test_bmp_protocol_strips_melt_block_for_later_stages(mock_runner, mock_structure):
@@ -382,7 +382,7 @@ def test_bmp_protocol_strips_melt_block_for_later_stages(mock_runner, mock_struc
         heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
     )
@@ -403,7 +403,7 @@ def test_bmp_protocol_equilibration_steps_override(mock_runner, mock_structure, 
         heating_steps=50,
         cooling_steps=50,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
         equilibration_steps=999,
@@ -436,7 +436,7 @@ def test_yang2026_protocol_strips_melt_block_for_later_stages(mock_runner, mock_
         heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
     )
@@ -456,7 +456,7 @@ def test_yang2026_protocol_high_pressure_melt_stage(mock_runner, mock_structure,
         heating_steps=100,
         cooling_steps=100,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
         equilibration_steps=10,
@@ -478,7 +478,7 @@ def test_yang2026_protocol_equilibration_steps_override(mock_runner, mock_struct
         heating_steps=50,
         cooling_steps=50,
         timestep=1.0,
-        n_print=1000,
+        n_dump=1000,
         langevin=False,
         seed=12345,
         equilibration_steps=77,

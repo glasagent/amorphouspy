@@ -19,6 +19,7 @@ from amorphouspy_api.executor import get_executor, get_future_from_cache
 from amorphouspy_api.models import (
     JobProgress,
     JobSubmission,
+    MeltQuenchTrajectoryStorageMode,
     StepStatus,
 )
 from amorphouspy_api.pipeline import ANALYSIS_NAMES, BASE_STEPS, REGISTRY, submit_pipeline
@@ -281,6 +282,7 @@ def _update_from_resolved(
     if status == "completed":
         result = resolved["result"]
         progress = dict.fromkeys(all_steps, "completed")
+        trajectory_storage_mode = _resolve_melt_quench_trajectory_storage_mode(submission)
 
         # Compute elemental atom-fraction vector from the result
         from amorphouspy_api.database import Job as _Job
@@ -291,6 +293,7 @@ def _update_from_resolved(
 
         store.update_job(
             job_id,
+            trajectory_storage_mode=trajectory_storage_mode,
             status="completed",
             progress=progress,
             result_data=result,
@@ -436,6 +439,7 @@ def refresh_job_from_cache(job: Job) -> None:
     )
 
     store = get_job_store()
+    trajectory_storage_mode = _resolve_melt_quench_trajectory_storage_mode(submission)
     updates: dict[str, object] = {"progress": progress}
     if partial_results:
         updates["result_data"] = partial_results
@@ -445,7 +449,16 @@ def refresh_job_from_cache(job: Job) -> None:
             updates["errors"] = errors
     else:
         updates["status"] = "running"
-    store.update_job(job.job_id, **updates)
+    store.update_job(job.job_id, trajectory_storage_mode=trajectory_storage_mode, **updates)
+
+
+def _resolve_melt_quench_trajectory_storage_mode(
+    submission: JobSubmission | None,
+) -> MeltQuenchTrajectoryStorageMode:
+    """Resolve trajectory storage mode from submission with a safe default."""
+    if submission is None:
+        return MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA
+    return submission.simulation.melt_quench_trajectory_storage_mode
 
 
 def _find_analysis_params(request_data: dict | None, analysis_type: str) -> dict:

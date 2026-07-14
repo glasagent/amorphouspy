@@ -63,7 +63,8 @@ def _run_strained_md(structure: Atoms, strain_tensor: np.ndarray, base_kwargs: d
             - "temperature" (float): Target temperature.
             - "timestep" (float): Integration time step.
             - "tmp_working_directory" (str | Path | None): Temporary working directory.
-            - "n_print" (int): Frequency of output during the simulation.
+            - "n_dump" (int | None): Dump output frequency during the simulation.
+            - "n_print_thermo" (int | None): Thermodynamic output frequency during the simulation.
             - "initial_temperature" (float): Initial temperature for the simulation.
             - "pressure" (float | None): Target pressure for NPT simulations.
             - "langevin" (bool): Whether to use Langevin dynamics.
@@ -139,7 +140,8 @@ def elastic_simulation(
     timestep: float = 1.0,
     equilibration_steps: int = 1_000_000,
     production_steps: int = 10_000,
-    n_print: int = 1,
+    n_dump: int | None = None,
+    n_print_thermo: int | None = 1,
     strain: float = 1e-3,
     server_kwargs: dict[str, Any] | None = None,
     *,
@@ -161,7 +163,8 @@ def elastic_simulation(
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
         equilibration_steps: Number of steps for the initial equilibration phase (default 1,000,000).
         production_steps: Number of MD steps for the production run (default 10,000).
-        n_print: Thermodynamic output frequency (default 1).
+        n_dump: Dump output frequency (default None, i.e., dump only at final step).
+        n_print_thermo: Thermodynamic output frequency (default 1).
         strain: Magnitude of the strain applied for finite differences (default 1e-3).
         server_kwargs: Additional server configuration arguments.
         langevin: Whether to use Langevin dynamics (default False).
@@ -199,12 +202,13 @@ def elastic_simulation(
         temperature=temperature_sim,
         n_ionic_steps=equilibration_steps,
         timestep=timestep,
-        n_print=n_print,
         initial_temperature=temperature_sim,
         pressure=pressure,
         seed=seed,
         langevin=langevin,
         server_kwargs=server_kwargs,
+        n_dump=n_dump,
+        n_print_thermo=n_print_thermo,
     )
 
     structure_npt = structure0.copy()
@@ -226,12 +230,13 @@ def elastic_simulation(
         "temperature": temperature_sim,
         "n_ionic_steps": production_steps,
         "timestep": timestep,
-        "n_print": n_print,
         "initial_temperature": temperature_sim,
         "pressure": pressure,
         "langevin": langevin,
         "seed": seed,
         "server_kwargs": server_kwargs,
+        "n_dump": n_dump,
+        "n_print_thermo": n_print_thermo,
     }
 
     cij = np.zeros((6, 6))
