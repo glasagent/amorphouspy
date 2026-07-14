@@ -46,6 +46,13 @@ packages = [
   "amorphouspy_api/src/amorphouspy_api",
 ]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.github",
+  "/docs",
+  "/notebooks",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120
