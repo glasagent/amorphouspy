@@ -62,7 +62,6 @@ jobs:
           from amorphouspy.fabrication import meltquench
           from amorphouspy.lammps import potentials
           from amorphouspy.lammps import io as lammps_io
-          from amorphouspy import io as io_utils
           from amorphouspy.atoms import neighbors
           print('amorphouspy imports OK')
           "
