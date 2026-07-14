@@ -144,7 +144,7 @@ def _run_lammps_md(
             or triclinic NPT.
         pressure_end: End pressure in GPa for a linear pressure ramp. Requires ``pressure`` to be set.
             The pressure ramp is injected as a custom LAMMPS ``fix npt`` command because the parser does not
-            support pressure ramps natively.
+            support pressure ramps natively. Does not work in combination with ``langevin``.
         server_kwargs: Additional keyword arguments for the server.
         n_dump: Dump frequency of structural output in simulation steps. If None,
             falls back to ``n_ionic_steps``.
@@ -152,7 +152,7 @@ def _run_lammps_md(
             falls back to ``n_dump``.
         input_control_file: Optional LAMMPS input overrides merged on top of the
             default generated controls.
-        langevin: Whether to use Langevin dynamics.
+        langevin: Whether to use Langevin dynamics for thermostats. Cannot be used in combination with ``pressure_end``.
         seed: Random seed for velocity initialization (default is 12345). May be None
             when the backend should choose a random seed. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
@@ -209,6 +209,9 @@ def _run_lammps_md(
         # Pressure ramp: the parser cannot express [P_start → P_end] natively, so inject a
         # custom fix npt command that overrides whatever the parser would generate.
         if pressure_end is not None:
+            if langevin:
+                msg = "langevin cannot be used in combination with pressure ramps via ``pressure_end``."
+                raise ValueError(msg)
             assert isinstance(pressure, int | float), "pressure must be a scalar when pressure_end is given"
             p_start_bar = pressure * 10_000  # GPa → bar (LAMMPS metal units)
             p_end_bar = pressure_end * 10_000
