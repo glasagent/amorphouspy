@@ -236,9 +236,11 @@ class StepSpec:
             default to ``"melt_quench"`` (the full base); viscosity depends only
             on ``"structure_generation"`` so it runs in parallel with the main
             melt-quench.
+        display_name: Human-readable label shown in the UI (e.g. timing table).
     """
 
     fn: Callable[..., Any]
+    display_name: str
     is_base: bool = False
     submits: bool = False
     lammps: bool = False
@@ -247,17 +249,25 @@ class StepSpec:
 
 # Single source of truth for every pipeline step, in execution order.
 REGISTRY: dict[str, StepSpec] = {
-    "structure_generation": StepSpec(_generate_structure, is_base=True),
-    "melt_quench": StepSpec(_run_melt_quench, is_base=True, lammps=True, depends_on="structure_generation"),
-    "structure_characterization": StepSpec(_run_structural_analysis, depends_on="melt_quench"),
-    "cte": StepSpec(_run_cte, lammps=True, depends_on="melt_quench"),
-    "elastic": StepSpec(_run_elastic, lammps=True, depends_on="melt_quench"),
-    "viscosity": StepSpec(_submit_viscosity, submits=True, lammps=True, depends_on="structure_generation"),
+    "structure_generation": StepSpec(_generate_structure, display_name="Structure Generation", is_base=True),
+    "melt_quench": StepSpec(
+        _run_melt_quench, display_name="Melt-Quench", is_base=True, lammps=True, depends_on="structure_generation"
+    ),
+    "structure_characterization": StepSpec(
+        _run_structural_analysis, display_name="Structural Analysis", depends_on="melt_quench"
+    ),
+    "cte": StepSpec(_run_cte, display_name="CTE", lammps=True, depends_on="melt_quench"),
+    "elastic": StepSpec(_run_elastic, display_name="Elastic Properties", lammps=True, depends_on="melt_quench"),
+    "viscosity": StepSpec(
+        _submit_viscosity, display_name="Viscosity", submits=True, lammps=True, depends_on="structure_generation"
+    ),
 }
 
 # Derived views over REGISTRY, kept for external importers and tests.
 # ``STEPS`` holds the base steps plus the simple (non-self-submitting) analyses.
 STEPS: dict[str, AnalysisFn] = {name: spec.fn for name, spec in REGISTRY.items() if not spec.submits}
+# Human-readable label per step, used by the UI (e.g. the timing table).
+DISPLAY_NAMES: dict[str, str] = {name: spec.display_name for name, spec in REGISTRY.items()}
 # Ordered so callers can rely on the base chain sequence (structure_generation
 # before melt_quench); still supports ``in`` membership tests.
 BASE_STEPS: tuple[str, ...] = tuple(name for name, spec in REGISTRY.items() if spec.is_base)
@@ -270,7 +280,16 @@ _SUBMITTERS: dict[str, Callable[..., Future]] = {name: spec.fn for name, spec in
 # progress tracking.
 ANALYSIS_NAMES: frozenset[str] = frozenset(name for name, spec in REGISTRY.items() if not spec.is_base)
 
-__all__ = ["ANALYSES", "ANALYSIS_NAMES", "BASE_STEPS", "REGISTRY", "STEPS", "StepSpec", "submit_pipeline"]
+__all__ = [
+    "ANALYSES",
+    "ANALYSIS_NAMES",
+    "BASE_STEPS",
+    "DISPLAY_NAMES",
+    "REGISTRY",
+    "STEPS",
+    "StepSpec",
+    "submit_pipeline",
+]
 
 
 # ---------------------------------------------------------------------------
