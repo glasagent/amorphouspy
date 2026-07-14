@@ -12,20 +12,28 @@ Trajectory dataflow overview:
     - ``"all_frames_drop_velocities_and_forces"``
     - ``"last_frame_all_data"``
     - ``"last_frame_drop_velocities_and_forces"``
+    For the melt-quench workflow, the selected mode is applied independently to
+    every stage entry in ``simulation_history``.
 4. ``result_data`` is kept lightweight and no longer carries the trajectory.
 """
 
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from sqlalchemy import JSON, DateTime, Index, String, create_engine, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, load_only, mapped_column, sessionmaker
 from sqlalchemy.orm import defer as _defer
 from sqlalchemy.pool import NullPool
 
-from .models import serialize_atoms
+from .models import (
+    MeltQuenchTrajectoryStorageMode,
+    StructuralAnalysisTrajectoryStorageMode,
+    serialize_atoms,
+)
+
+TrajectoryStorageMode = MeltQuenchTrajectoryStorageMode | StructuralAnalysisTrajectoryStorageMode | str
 
 logger = logging.getLogger(__name__)
 
@@ -198,12 +206,7 @@ class JobStore:
         self,
         job_id: str,
         *,
-        trajectory_storage_mode: Literal[
-            "all_frames_all_data",
-            "all_frames_drop_velocities_and_forces",
-            "last_frame_all_data",
-            "last_frame_drop_velocities_and_forces",
-        ] = "last_frame_all_data",
+        trajectory_storage_mode: MeltQuenchTrajectoryStorageMode = MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA,
         **fields: object,
     ) -> None:
         """Update arbitrary columns on a job record.
@@ -214,7 +217,8 @@ class JobStore:
         2. Extract ``melt_quench.simulation_history`` out of ``result_data`` and
            persist it in ``Job.simulation_history``.
         3. Apply trajectory storage policy controlled by
-            ``trajectory_storage_mode``.
+            ``trajectory_storage_mode`` for the melt-quench workflow,
+            independently to each stage in ``simulation_history``.
         """
         with self.session() as s:
             job = s.get(Job, job_id)
@@ -434,18 +438,15 @@ class JobStore:
 def _apply_trajectory_storage_mode(
     history: list[Any],
     *,
-    trajectory_storage_mode: Literal[
-        "all_frames_all_data",
-        "all_frames_drop_velocities_and_forces",
-        "last_frame_all_data",
-        "last_frame_drop_velocities_and_forces",
-    ],
+    trajectory_storage_mode: TrajectoryStorageMode,
 ) -> list[Any]:
     """Transform simulation history according to persistence mode.
 
     Args:
         history: Stage-wise melt-quench history.
-        trajectory_storage_mode: Explicit storage mode for simulation history.
+        trajectory_storage_mode: Explicit storage mode for simulation history,
+            applied independently to each stage entry for the melt-quench
+            workflow.
 
     Returns:
         A transformed history according to selected modes.
@@ -456,13 +457,15 @@ def _apply_trajectory_storage_mode(
     """
     _validate_trajectory_storage_mode(trajectory_storage_mode)
 
-    if trajectory_storage_mode == "all_frames_all_data":
+    trajectory_storage_mode_value = str(trajectory_storage_mode)
+
+    if trajectory_storage_mode_value == MeltQuenchTrajectoryStorageMode.ALL_FRAMES_ALL_DATA.value:
         return history
 
-    if trajectory_storage_mode == "all_frames_drop_velocities_and_forces":
+    if trajectory_storage_mode_value == MeltQuenchTrajectoryStorageMode.ALL_FRAMES_DROP_VELOCITIES_AND_FORCES.value:
         return _drop_velocities_and_forces(history)
 
-    if trajectory_storage_mode == "last_frame_drop_velocities_and_forces":
+    if trajectory_storage_mode_value == MeltQuenchTrajectoryStorageMode.LAST_FRAME_DROP_VELOCITIES_AND_FORCES.value:
         without_force_velocity = _drop_velocities_and_forces(history)
         return _reduce_selected_keys_to_last_frame_per_stage(without_force_velocity)
 
@@ -470,21 +473,16 @@ def _apply_trajectory_storage_mode(
 
 
 def _validate_trajectory_storage_mode(
-    trajectory_storage_mode: Literal[
-        "all_frames_all_data",
-        "all_frames_drop_velocities_and_forces",
-        "last_frame_all_data",
-        "last_frame_drop_velocities_and_forces",
-    ],
+    trajectory_storage_mode: TrajectoryStorageMode,
 ) -> None:
-    allowed = {
-        "all_frames_all_data",
-        "all_frames_drop_velocities_and_forces",
-        "last_frame_all_data",
-        "last_frame_drop_velocities_and_forces",
+    allowed_values = {
+        MeltQuenchTrajectoryStorageMode.ALL_FRAMES_ALL_DATA.value,
+        MeltQuenchTrajectoryStorageMode.ALL_FRAMES_DROP_VELOCITIES_AND_FORCES.value,
+        MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA.value,
+        MeltQuenchTrajectoryStorageMode.LAST_FRAME_DROP_VELOCITIES_AND_FORCES.value,
     }
-    if trajectory_storage_mode not in allowed:
-        msg = f"Invalid trajectory_storage_mode={trajectory_storage_mode!r}; expected one of {sorted(allowed)}"
+    if str(trajectory_storage_mode) not in allowed_values:
+        msg = f"Invalid trajectory_storage_mode={trajectory_storage_mode!r}; expected one of {sorted(allowed_values)}"
         raise ValueError(msg)
 
 

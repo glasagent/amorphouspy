@@ -7,7 +7,7 @@ import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from amorphouspy.fabrication import element_counts_from_formula_units, normalize
@@ -19,6 +19,7 @@ from amorphouspy_api.executor import get_executor, get_future_from_cache
 from amorphouspy_api.models import (
     JobProgress,
     JobSubmission,
+    MeltQuenchTrajectoryStorageMode,
     StepStatus,
 )
 from amorphouspy_api.pipeline import ANALYSIS_NAMES, BASE_STEPS, REGISTRY, submit_pipeline
@@ -453,15 +454,10 @@ def refresh_job_from_cache(job: Job) -> None:
 
 def _resolve_melt_quench_trajectory_storage_mode(
     submission: JobSubmission | None,
-) -> Literal[
-    "all_frames_all_data",
-    "all_frames_drop_velocities_and_forces",
-    "last_frame_all_data",
-    "last_frame_drop_velocities_and_forces",
-]:
+) -> MeltQuenchTrajectoryStorageMode:
     """Resolve trajectory storage mode from submission with a safe default."""
     if submission is None:
-        return "last_frame_all_data"
+        return MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA
     return submission.simulation.melt_quench_trajectory_storage_mode
 
 

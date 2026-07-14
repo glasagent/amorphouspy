@@ -27,6 +27,26 @@ from pydantic import (
 from amorphouspy import DsfConfig, EwaldConfig, PppmConfig, WolfConfig
 from amorphouspy_api.config import API_BASE_URL
 
+
+class MeltQuenchTrajectoryStorageMode(StrEnum):
+    """Storage modes for persisted simulation history of the melt-quench workflow, applied per stage."""
+
+    ALL_FRAMES_ALL_DATA = "all_frames_all_data"
+    ALL_FRAMES_DROP_VELOCITIES_AND_FORCES = "all_frames_drop_velocities_and_forces"
+    LAST_FRAME_ALL_DATA = "last_frame_all_data"
+    LAST_FRAME_DROP_VELOCITIES_AND_FORCES = "last_frame_drop_velocities_and_forces"
+
+
+class StructuralAnalysisTrajectoryStorageMode(StrEnum):
+    """Storage modes for persisted sampling history of the structural-analysis workflow."""
+
+    NO_DUMP_DATA = "no_dump_data"
+    ALL_FRAMES_ALL_DATA = "all_frames_all_data"
+    ALL_FRAMES_DROP_VELOCITIES_AND_FORCES = "all_frames_drop_velocities_and_forces"
+    LAST_FRAME_ALL_DATA = "last_frame_all_data"
+    LAST_FRAME_DROP_VELOCITIES_AND_FORCES = "last_frame_drop_velocities_and_forces"
+
+
 # ---------------------------------------------------------------------------
 # Composition
 # ---------------------------------------------------------------------------
@@ -389,15 +409,12 @@ class MeltQuenchParams(BaseModel):
         default=100,
         description="Output interval for thermodynamic data in MD steps; None uses trajectory dump frequency.",
     )
-    melt_quench_trajectory_storage_mode: Literal[
-        "all_frames_all_data",
-        "all_frames_drop_velocities_and_forces",
-        "last_frame_all_data",
-        "last_frame_drop_velocities_and_forces",
-    ] = Field(
-        default="last_frame_all_data",
+    melt_quench_trajectory_storage_mode: MeltQuenchTrajectoryStorageMode = Field(
+        default=MeltQuenchTrajectoryStorageMode.LAST_FRAME_ALL_DATA,
         description=(
             "Controls how melt-quench simulation_history is persisted: "
+            "for the melt-quench workflow, the selected mode is applied independently to each "
+            "stage entry in the stage-wise simulation_history list; "
             "'all_frames_all_data' keeps full trajectories; "
             "'all_frames_drop_velocities_and_forces' removes per-frame 'forces' and 'velocities'; "
             "'last_frame_all_data' reduces these keys to their final entry per stage when present: "
@@ -405,14 +422,8 @@ class MeltQuenchParams(BaseModel):
             "'last_frame_drop_velocities_and_forces' first removes per-frame 'forces' and 'velocities', then applies the same per-stage key reduction."
         ),
     )
-    structural_analysis_trajectory_storage_mode: Literal[
-        "no_dump_data",
-        "all_frames_all_data",
-        "all_frames_drop_velocities_and_forces",
-        "last_frame_all_data",
-        "last_frame_drop_velocities_and_forces",
-    ] = Field(
-        default="last_frame_all_data",
+    structural_analysis_trajectory_storage_mode: StructuralAnalysisTrajectoryStorageMode = Field(
+        default=StructuralAnalysisTrajectoryStorageMode.LAST_FRAME_ALL_DATA,
         description=(
             "Controls how structural-analysis NVT sampling_history is persisted when n_averaging_frames > 1: "
             "'no_dump_data' stores no dump-related sampling_history at all; "
