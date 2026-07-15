@@ -219,9 +219,14 @@ def _progress_from_dict(d: dict | None) -> JobProgress:
 
 
 def _analyses_list(job: Job) -> list[str]:
-    """Extract the list of requested analysis type names from a stored job."""
-    req = job.request_data or {}
-    return [a.get("type", "structure_characterization") for a in req.get("analyses", [])]
+    """Extract the list of requested analysis type names from a stored job.
+
+    Derived from the lightweight ``progress`` column (whose keys are the
+    pipeline steps) rather than the heavy ``request_data`` JSON blob, so
+    search queries can avoid reading large overflow pages per row.
+    """
+    progress = job.progress or {}
+    return [k for k in progress if k not in BASE_STEPS]
 
 
 def _initial_progress(submission: JobSubmission) -> dict[str, str]:

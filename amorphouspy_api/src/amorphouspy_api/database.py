@@ -90,10 +90,25 @@ class Job(Base):
     __table_args__ = (
         Index("ix_jobs_composition_status", "composition", "status"),
         Index("ix_jobs_hash_status", "request_hash", "status"),
-        # Supports date-range filtering / ordering in search_jobs without a
-        # full table scan (created_at is stored after the heavy JSON columns,
-        # so scanning the table itself is very expensive).
-        Index("ix_jobs_created_at", "created_at"),
+        # Covering index for search_jobs.  Led by ``created_at`` so the
+        # default ``ORDER BY created_at DESC`` (and created_after/before
+        # range filters) is served by a backward index scan, while also
+        # covering every column the search returns.  Because ``created_at``
+        # and ``completed_at`` are stored *after* the huge JSON blob columns
+        # in each row record, reading them from the table would force SQLite
+        # to walk hundreds of MB of overflow pages per row; this covering
+        # index avoids touching the table entirely.
+        Index(
+            "ix_jobs_search",
+            "created_at",
+            "job_id",
+            "composition",
+            "potential",
+            "status",
+            "tags",
+            "progress",
+            "completed_at",
+        ),
         # Covering index for GET /glasses - avoids reading huge result_data
         # overflow pages on every row scan.
         Index(
@@ -144,12 +159,22 @@ class JobStore:
         ``Base.metadata.create_all`` only creates indexes when it first
         creates the table, so indexes added to the model later never appear
         on an already-populated database.  Creating them explicitly and
-        idempotently keeps date-range searches fast on large databases.
-        The first run on a big database can take a while to build the index;
-        subsequent runs are no-ops thanks to ``IF NOT EXISTS``.
+        idempotently keeps searches fast on large databases.  The first run
+        on a big database can take a while to build the covering index (it
+        must scan every row once); subsequent runs are no-ops thanks to
+        ``IF NOT EXISTS``.
         """
         with self.engine.begin() as conn:
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_created_at ON jobs (created_at)"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_jobs_search "
+                    "ON jobs (created_at, job_id, composition, potential, "
+                    "status, tags, progress, completed_at)"
+                )
+            )
+            # Superseded by the covering ix_jobs_search above, which serves
+            # the same ordering / range filters without any table lookups.
+            conn.execute(text("DROP INDEX IF EXISTS ix_jobs_created_at"))
 
     def close(self) -> None:
         """Dispose of the SQLAlchemy engine."""
@@ -290,7 +315,7 @@ class JobStore:
                         Job.potential,
                         Job.status,
                         Job.tags,
-                        Job.request_data,
+                        Job.progress,
                         Job.created_at,
                         Job.completed_at,
                     )
@@ -314,10 +339,13 @@ class JobStore:
     ) -> list[Job]:
         """Search jobs with optional filters.
 
-        Only loads the lightweight columns needed to build search results.
-        The heavy ``simulation_history`` and ``result_data`` columns (which
-        can be hundreds of MB per row) are never touched, keeping the query
-        fast even on very large databases.
+        Only loads the lightweight columns needed to build search results;
+        the requested analyses are derived from the small ``progress`` column
+        instead of the heavy ``request_data`` blob.  All loaded columns are
+        covered by ``ix_jobs_glasses_listing``, so the heavy JSON columns
+        (``request_data``, ``result_data`` and ``simulation_history``, which
+        can be hundreds of MB per row) are never touched — keeping the query
+        fast even on very large databases with no filters applied.
         """
         with self.session() as s:
             q = s.query(Job).options(
@@ -327,7 +355,7 @@ class JobStore:
                     Job.potential,
                     Job.status,
                     Job.tags,
-                    Job.request_data,
+                    Job.progress,
                     Job.created_at,
                     Job.completed_at,
                 )

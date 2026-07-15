@@ -370,6 +370,61 @@ def test_list_glasses_uses_covering_index() -> None:
         conn.close()
 
 
+def test_search_jobs_uses_covering_index() -> None:
+    """Guard against slow /jobs:search on large DBs.
+
+    ``search_jobs`` (with no filters) must be answered entirely from a
+    covering index.  ``created_at`` / ``completed_at`` are stored *after*
+    the multi-hundred-MB JSON blob columns in each row, so any plan that
+    touches the table itself walks those overflow pages per row and turns
+    the query from milliseconds into minutes.  The SQL is captured from the
+    real ``search_jobs`` call (rather than hard-coded) so the guard can't
+    drift from the implementation, then its plan is asserted to be an
+    index-only scan.
+    """
+    from sqlalchemy import event
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = Path(tmp) / "test.db"
+        store = JobStore(db_path)
+        store.create_job(
+            Job(
+                job_id="j-search-idx",
+                request_hash="h-search-idx",
+                composition="SiO2 100",
+                potential="pmmcs",
+                status="completed",
+                progress={"structure_generation": "completed", "melt_quench": "completed"},
+            )
+        )
+
+        # Capture the exact SELECT that search_jobs emits.
+        captured: list[str] = []
+
+        def _capture(conn, cursor, statement, parameters, context, executemany) -> None:
+            if statement.lstrip().upper().startswith("SELECT"):
+                captured.append(statement)
+
+        event.listen(store.engine, "before_cursor_execute", _capture)
+        try:
+            store.search_jobs()
+        finally:
+            event.remove(store.engine, "before_cursor_execute", _capture)
+        store.close()
+
+        assert captured, "search_jobs did not emit a SELECT statement"
+        search_sql = captured[-1]
+
+        conn = sqlite3.connect(str(db_path))
+        plan_rows = conn.execute("EXPLAIN QUERY PLAN " + search_sql).fetchall()
+        plan_text = " ".join(str(r) for r in plan_rows)
+        assert "COVERING INDEX" in plan_text, f"Expected covering index usage, got: {plan_text}"
+        assert "ix_jobs_search" in plan_text
+        # A covering scan never falls back to a per-row table lookup.
+        assert "USING INTEGER PRIMARY KEY" not in plan_text, f"Query touches table rows: {plan_text}"
+        conn.close()
+
+
 def test_simulation_history_separate_column() -> None:
     """Test that simulation_history is extracted from result_data into its own column."""
     with tempfile.TemporaryDirectory() as tmp:
