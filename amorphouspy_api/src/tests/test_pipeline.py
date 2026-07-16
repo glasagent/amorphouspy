@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 from amorphouspy_api.pipeline import (
     _SUBMITTERS,
     ANALYSES,
@@ -196,6 +197,44 @@ class TestRunStructuralAnalysis:
         assert out["density"] == 2.5
         assert out["n_averaging_frames"] == 3
         assert "sampling_history" not in out
+
+    @patch("amorphouspy.properties.structural.all.run_structural_analysis")
+    def test_last_frame_mode_reduces_ndarray_sampling_history(self, mock_run_structural_analysis: MagicMock) -> None:
+        """last_frame modes should also reduce ndarray-backed frame series."""
+        mean_data = MagicMock()
+        mean_data.model_dump.return_value = {"density": 2.5}
+        mock_run_structural_analysis.return_value = (
+            mean_data,
+            None,
+            3,
+            [
+                {
+                    "positions": np.array([[[1.0]], [[2.0]], [[3.0]]]),
+                    "cells": np.array([[[[1.0]]], [[[2.0]]], [[[3.0]]]]),
+                    "temperature": [300.0, 301.0, 302.0],
+                }
+            ],
+        )
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(
+                timestep=1.0,
+                n_atoms=100,
+                cores=1,
+                structural_analysis_trajectory_storage_mode="last_frame_all_data",
+            ),
+        )
+        config = SimpleNamespace(n_averaging_frames=3)
+        result = {
+            "melt_quench": {"final_structure": object()},
+            "structure_generation": {"potential": object()},
+        }
+
+        out = _run_structural_analysis(submission, config, result)
+
+        assert out["sampling_history"][0]["positions"] == [[[3.0]]]
+        assert out["sampling_history"][0]["cells"] == [[[[3.0]]]]
 
 
 # ---------------------------------------------------------------------------
