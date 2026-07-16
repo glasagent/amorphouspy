@@ -13,8 +13,6 @@ python = "3.13.*"
 hatchling = "*"
 # Conda-only / need specific builds
 lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
-pygraphviz = "*"
-# Not in any pyproject.toml
 jupyter = "*"
 # Prefer conda-forge over PyPI for compiled packages
 ase = "*"
