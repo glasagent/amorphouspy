@@ -550,8 +550,22 @@ def _reduce_selected_keys_to_last_frame_per_stage(history: list[Any]) -> list[An
         stage_copy = dict(stage)
         for key in keys_to_reduce:
             value = stage_copy.get(key)
-            if isinstance(value, list) and value:
+            if isinstance(value, (list, tuple)) and value:
                 stage_copy[key] = [value[-1]]
+                continue
+
+            # Structural-analysis sampling history may carry numpy arrays
+            # before serialisation; reduce those to the final frame too.
+            if hasattr(value, "shape") and hasattr(value, "__len__") and hasattr(value, "__getitem__"):
+                try:
+                    if len(value) > 0:
+                        last = value[-1]
+                        if hasattr(last, "tolist"):
+                            last = last.tolist()
+                        stage_copy[key] = [last]
+                except TypeError:
+                    # Non-indexable array-likes are left unchanged.
+                    pass
         reduced.append(stage_copy)
     return reduced
 
