@@ -25,14 +25,10 @@ pandas = "*"
 pymatgen = "*"
 scipy = "*"
 networkx = "*"
-sqlalchemy = "*"
-uvicorn = "*"
 
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
-fastapi = "*"
 PyMCubes = "*"
-mcp = ">=1.6.0"
 
 [feature.dev.dependencies]
 pre-commit = "*"
@@ -49,6 +45,11 @@ h5py = "*"
 pysqa = "*"
 sqlalchemy = "*"
 uvicorn = "*"
+jinja2 = "*"
+
+[feature.api.pypi-dependencies]
+fastapi = "*"
+mcp = ">=1.6.0"
 
 [feature.api.target.linux-64.dependencies]
 flux-core = ">=0.81.0"
