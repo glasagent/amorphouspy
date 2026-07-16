@@ -21,7 +21,6 @@ from ase.atoms import Atoms
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
 
-from amorphouspy.lammps.potentials._melt_block import strip_melt_block
 from amorphouspy.lammps.runner import _run_lammps_md
 
 NPOINTS = 2
@@ -82,10 +81,6 @@ def _viscosity_simulation(
     if potential.empty:
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
-
-    # The input structure is already equilibrated -- the melt pre-equilibration
-    # block must never run again in any viscosity stage.
-    potential = strip_melt_block(potential)
 
     # SHIK melts are equilibrated at 0.1 GPa, matching the melt-quench protocol
     # (compensates the DSF pressure deficit the potential was parameterized with).
@@ -837,10 +832,6 @@ def viscosity_simulation(
         >>> print(converged)
 
     """
-    # Extension runs below reuse this potential directly -- they must not
-    # re-run the melt pre-equilibration block either.
-    potential = strip_melt_block(potential)
-
     max_steps = int(max_total_time_ns * 1e6 / timestep)
     ext_steps = int(100_000.0 / timestep)  # 100 ps per extension
 

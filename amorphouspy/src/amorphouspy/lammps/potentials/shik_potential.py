@@ -13,12 +13,10 @@ import pandas as pd
 
 from amorphouspy.atoms.shared import get_element_types_dict
 from amorphouspy.lammps.potentials._config import DsfConfig, InteractionConfig
-from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _DEFAULT_LONG_RANGE_CUTOFF = 10.0
 _DEFAULT_SHORT_RANGE_CUTOFF = 8.0
 _DEFAULT_ALPHA = 0.2
-_MELT_TEMPERATURE = 4000
 
 # Minimum atoms-per-core for good (~90%) MPI scaling efficiency.
 MIN_ATOMS_PER_CORE = 500
@@ -195,7 +193,6 @@ def generate_shik_potential(
     atoms_dict: dict,
     output_dir: str = "shik_tables",
     *,
-    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate SHIK LAMMPS input configuration with absolute table paths.
@@ -203,7 +200,6 @@ def generate_shik_potential(
     Args:
         atoms_dict: Structure dict from ``get_structure_dict()``.
         output_dir: Directory to save the table files.
-        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K.
         electrostatics: Coulomb solver settings. SHIK only supports ``"dsf"`` —
             any other method raises ``ValueError``. The potential was parameterized
             with a Wolf-class DSF truncation (Sundararaman et al., JCP 2018).
@@ -216,7 +212,6 @@ def generate_shik_potential(
 
     Example:
         >>> shik_pot = generate_shik_potential(struct_dict, output_dir="./potentials")
-        >>> shik_pot_no_melt = generate_shik_potential(struct_dict, melt=False)
 
     """
     electrostatics_cfg = electrostatics if electrostatics is not None else DsfConfig()
@@ -283,8 +278,6 @@ def generate_shik_potential(
     lines.append("\nthermo_style custom step temp pe etotal pxx pxy pxz pyy pyz pzz vol\n")
     lines.append("\nthermo_modify flush no\n")
     lines.append("\nthermo 100\n")
-    if melt:
-        lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     return pd.DataFrame(
         {

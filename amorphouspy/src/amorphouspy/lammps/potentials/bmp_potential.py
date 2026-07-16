@@ -32,13 +32,11 @@ import pandas as pd
 
 from amorphouspy.atoms.shared import get_element_types_dict
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
-from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 7.0
 _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF = 8.0
 _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
 _DEFAULT_ALPHA = 0.25
-_MELT_TEMPERATURE = 4000
 
 # Minimum atoms-per-core for good (~90%) MPI scaling efficiency.
 MIN_ATOMS_PER_CORE = 500
@@ -402,7 +400,6 @@ def generate_bmp_potential(
     output_dir: str | Path = ".",
     *,
     variant: str = "harmonic",
-    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate the BMP potential for the given composition.
@@ -412,7 +409,6 @@ def generate_bmp_potential(
         output_dir: Directory to write the three-body parameter file.
         variant: Three-body style — ``"harmonic"`` uses ``nb3b/harmonic``,
             ``"screened-harmonic"`` uses ``nb3b/screened``.
-        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K.
         electrostatics: Coulomb solver settings. Defaults to DSF with
             ``alpha=0.25`` and Coulomb cutoff 8.0 Å.
 
@@ -428,7 +424,7 @@ def generate_bmp_potential(
 
     Example:
         >>> df = generate_bmp_potential(struct_dict, potential_type="bmp-harmonic")
-        >>> df = generate_bmp_potential(struct_dict, potential_type="bmp-screened-harmonic", melt=False)
+        >>> df = generate_bmp_potential(struct_dict, potential_type="bmp-screened-harmonic")
 
     """
     if variant not in ("harmonic", "screened-harmonic"):
@@ -495,9 +491,6 @@ def generate_bmp_potential(
     config_lines.append(_build_bmp_threebody_pair_coeff_line(types, variant, tb_file))
 
     config_lines.append("\npair_modify shift yes\n")
-
-    if melt:
-        config_lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     return pd.DataFrame(
         {

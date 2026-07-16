@@ -59,6 +59,7 @@ glass = result["structure"]     # Quenched ASE Atoms
 | `cooling_rate` | `float` | `1e12` | Cooling rate in K/s |
 | `equilibration_steps` | `int \| None` | `None` | Override for all fixed equilibration stages inside the protocol. If `None`, each protocol uses its own production defaults. |
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
+| `pre_equilibrate` | `bool` | `True` | Run a 10 000-step Langevin + `nve/limit` block at `temperature_high` before the first stage. Needed for randomly placed structures; set `False` when the starting structure is already equilibrated. |
 
 **Returns:** A dictionary with:
 

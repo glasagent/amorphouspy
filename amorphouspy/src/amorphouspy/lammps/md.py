@@ -8,7 +8,6 @@ from pathlib import Path
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.lammps.potentials._melt_block import strip_melt_block
 from amorphouspy.lammps.runner import _run_lammps_md
 
 
@@ -65,10 +64,6 @@ def md_simulation(
     if potential.empty:
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
-    # Plain MD starts from an already-prepared structure -- the melt
-    # pre-equilibration block must not run here.
-    potential = strip_melt_block(potential)
-
     structure_final, parsed_output = _run_lammps_md(
         structure=structure,
         potential=potential,

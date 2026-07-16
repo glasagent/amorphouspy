@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.lammps.potentials._melt_block import strip_melt_block
 from amorphouspy.lammps.runner import _run_lammps_md
 
 
@@ -190,10 +189,6 @@ def elastic_simulation(
         ... )
 
     """
-    # The input structure is already equilibrated -- the melt pre-equilibration
-    # block must never run in the elastic stages.
-    potential = strip_melt_block(potential)
-
     # Stage 0: INITIAL EQUILIBRATION
     structure0, res = _run_lammps_md(
         structure=structure,

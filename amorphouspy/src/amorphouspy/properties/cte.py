@@ -12,7 +12,6 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.lammps.potentials._melt_block import strip_melt_block
 from amorphouspy.lammps.runner import _run_lammps_md
 from amorphouspy.properties._cte_helpers import (
     _collect_sim_data,
@@ -181,12 +180,9 @@ def cte_from_fluctuations_simulation(
     # Stage 1: Short equilibration in NVT at T for 10 ps
     logger.info("Starting 10 ps (hardcoded) NVT equilibration at %.2f K.", temperature)
 
-    # Take care that langevin-NVE melt block lines are stripped
-    potential2 = strip_melt_block(potential)
-
     structure1, _ = _run_lammps_md(
         structure=structure0,
-        potential=potential2,
+        potential=potential,
         tmp_working_directory=tmp_working_directory,
         temperature=temperature,
         n_ionic_steps=10_000,
@@ -206,7 +202,7 @@ def cte_from_fluctuations_simulation(
 
     structure2, parsed_output = _run_lammps_md(
         structure=structure1,
-        potential=potential2,
+        potential=potential,
         tmp_working_directory=tmp_working_directory,
         temperature=temperature,
         pressure=sim_pressure,
@@ -243,7 +239,7 @@ def cte_from_fluctuations_simulation(
         # actual production run
         structure_production, parsed_output = _run_lammps_md(
             structure=structure2,
-            potential=potential2,
+            potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=temperature,
             pressure=sim_pressure,
@@ -419,9 +415,6 @@ def temperature_scan_simulation(
     # initial structure used. Afterwards, it is updated after each temperature
     structure0 = structure.copy()
 
-    # Take care that langevin-NVE melt block lines are stripped
-    potential2 = strip_melt_block(potential)
-
     # Initialize results dictionary. CTE values will be calculated later
     results = _initialize_datadict(with_CTE_keys=False)
 
@@ -434,7 +427,7 @@ def temperature_scan_simulation(
 
         structure1, _ = _run_lammps_md(
             structure=structure0,
-            potential=potential2,
+            potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=T,
             n_ionic_steps=10_000,
@@ -455,7 +448,7 @@ def temperature_scan_simulation(
 
         structure2, _ = _run_lammps_md(
             structure=structure1,
-            potential=potential2,
+            potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=T,
             pressure=sim_pressure,
@@ -476,7 +469,7 @@ def temperature_scan_simulation(
 
         structure_production, parsed_output = _run_lammps_md(
             structure=structure2,
-            potential=potential2,
+            potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=T,
             pressure=sim_pressure,

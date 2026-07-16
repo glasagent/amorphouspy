@@ -9,12 +9,10 @@ import pandas as pd
 
 from amorphouspy.atoms.shared import get_element_types_dict
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
-from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 8.0
 _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
 _DEFAULT_ALPHA = 0.25
-_MELT_TEMPERATURE = 4000
 
 # Minimum atoms-per-core for good (~90%) MPI scaling efficiency.
 MIN_ATOMS_PER_CORE = 500
@@ -68,14 +66,12 @@ def _build_bjp_pair_coeff_lines(species: list[str], types: dict) -> list[str]:
 def generate_bjp_potential(
     atoms_dict: dict,
     *,
-    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for CAS glass simulations (Bouhadja et al. 2013).
 
     Args:
         atoms_dict: Structure dict from ``get_structure_dict()``.
-        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K.
         electrostatics: Coulomb solver settings. BJP uses a single Born-Mayer cutoff
             controlled by ``short_range_cutoff`` (default 8 Å). ``long_range_cutoff``
             is ignored; kspace handles long range for PPPM/Ewald.
@@ -145,9 +141,6 @@ def generate_bjp_potential(
     config_lines.extend(_build_bjp_pair_coeff_lines(species, types))
 
     config_lines.append("\npair_modify shift yes\n")
-
-    if melt:
-        config_lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     coulomb_label = electrostatics_cfg.lammps_keyword.upper()
     return pd.DataFrame(

@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.lammps.potentials._melt_block import strip_melt_block
+from amorphouspy.fabrication.pre_equilibration import append_melt_block
 
 # Default melt temperatures per protocol (K)
 DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
@@ -58,6 +58,10 @@ class MeltQuenchParams:
         tmp_working_directory: Temporary directory path.
         equilibration_steps: Override for all fixed equilibration stages inside a protocol.
             If None, each protocol uses its own hardcoded defaults.
+        pre_equilibrate: Run the Langevin + nve/limit pre-equilibration block at
+            ``temperature_high`` before the first stage. Needed for randomly
+            placed structures; set to ``False`` when the starting structure is
+            already equilibrated.
 
     """
 
@@ -75,6 +79,7 @@ class MeltQuenchParams:
     server_kwargs: dict | None = None
     tmp_working_directory: str | Path | None = None
     equilibration_steps: int | None = None
+    pre_equilibrate: bool = True
 
 
 def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
@@ -88,10 +93,15 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         Final structure and list of per-stage thermo dicts (one per stage, in order).
 
     """
-    # Bind common parameters to runner
+    # The first stage optionally runs the high-temperature pre-equilibration
+    # block; all later stages use the potential as-is.
+    potential1 = (
+        append_melt_block(params.potential, params.temperature_high) if params.pre_equilibrate else params.potential
+    )
+
     run1 = partial(
         runner,
-        potential=params.potential,
+        potential=potential1,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -100,13 +110,9 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         server_kwargs=params.server_kwargs,
     )
 
-    # run1 keeps the original Config (with the melt block) while run2 uses the
-    # stripped version.
-    potential2 = strip_melt_block(params.potential)
-
     run2 = partial(
         runner,
-        potential=potential2,
+        potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -171,10 +177,15 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         Final structure and list of per-stage thermo dicts (one per stage, in order).
 
     """
-    # Bind common parameters to runner
+    # The first stage optionally runs the high-temperature pre-equilibration
+    # block; all later stages use the potential as-is.
+    potential1 = (
+        append_melt_block(params.potential, params.temperature_high) if params.pre_equilibrate else params.potential
+    )
+
     run1 = partial(
         runner,
-        potential=params.potential,
+        potential=potential1,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -183,13 +194,9 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         server_kwargs=params.server_kwargs,
     )
 
-    # run1 keeps the original Config (with the melt block) while run2 uses the
-    # stripped version.
-    potential2 = strip_melt_block(params.potential)
-
     run2 = partial(
         runner,
-        potential=potential2,
+        potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -254,10 +261,15 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         Final structure and list of per-stage thermo dicts (one per stage, in order).
 
     """
-    # Bind common parameters to runner
+    # The first stage optionally runs the high-temperature pre-equilibration
+    # block; all later stages use the potential as-is.
+    potential1 = (
+        append_melt_block(params.potential, params.temperature_high) if params.pre_equilibrate else params.potential
+    )
+
     run1 = partial(
         runner,
-        potential=params.potential,
+        potential=potential1,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -266,13 +278,9 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         server_kwargs=params.server_kwargs,
     )
 
-    # run1 keeps the original Config (with the melt block) while run2 uses the
-    # stripped version.
-    potential2 = strip_melt_block(params.potential)
-
     run2 = partial(
         runner,
-        potential=potential2,
+        potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -340,10 +348,15 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         Final structure and list of per-stage thermo dicts (one per stage, in order).
 
     """
-    # Bind common parameters to runner
+    # The first stage optionally runs the high-temperature pre-equilibration
+    # block; all later stages use the potential as-is.
+    potential1 = (
+        append_melt_block(params.potential, params.temperature_high) if params.pre_equilibrate else params.potential
+    )
+
     run1 = partial(
         runner,
-        potential=params.potential,
+        potential=potential1,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -352,13 +365,9 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         server_kwargs=params.server_kwargs,
     )
 
-    # run1 keeps the original Config (with the melt block) while run2 uses the
-    # stripped version.
-    potential2 = strip_melt_block(params.potential)
-
     run2 = partial(
         runner,
-        potential=potential2,
+        potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -446,10 +455,15 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         Final structure and list of per-stage thermo dicts (one per stage, in order).
 
     """
-    # Stage 1 uses the original potential config (with Langevin + NVE melt block).
+    # Stage 1 optionally runs the high-temperature pre-equilibration block;
+    # stages 2+ use the potential as-is.
+    potential1 = (
+        append_melt_block(params.potential, params.temperature_high) if params.pre_equilibrate else params.potential
+    )
+
     run1 = partial(
         runner,
-        potential=params.potential,
+        potential=potential1,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -458,11 +472,9 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         server_kwargs=params.server_kwargs,
     )
 
-    # Stages 2+ use a stripped config without the melt preamble.
-    potential_stripped = strip_melt_block(params.potential)
     run2 = partial(
         runner,
-        potential=potential_stripped,
+        potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -541,10 +553,15 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         Final structure and list of per-stage thermo dicts (one per stage, in order).
 
     """
-    # Bind common parameters to runner
+    # The first stage optionally runs the high-temperature pre-equilibration
+    # block; all later stages use the potential as-is.
+    potential1 = (
+        append_melt_block(params.potential, params.temperature_high) if params.pre_equilibrate else params.potential
+    )
+
     run1 = partial(
         runner,
-        potential=params.potential,
+        potential=potential1,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,
@@ -553,13 +570,9 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         server_kwargs=params.server_kwargs,
     )
 
-    # run1 keeps the original Config (with the melt block) while run2 uses the
-    # stripped version.
-    potential2 = strip_melt_block(params.potential)
-
     run2 = partial(
         runner,
-        potential=potential2,
+        potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
         timestep=params.timestep,
         n_dump=params.n_dump,

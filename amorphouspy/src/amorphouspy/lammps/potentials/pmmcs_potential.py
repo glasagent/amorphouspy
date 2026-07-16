@@ -11,13 +11,11 @@ import pandas as pd
 
 from amorphouspy.atoms.shared import get_element_types_dict
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
-from amorphouspy.lammps.potentials._melt_block import melt_block_lines
 
 _DEFAULT_SHORT_RANGE_CUTOFF = 5.5
 _DEFAULT_DSF_WOLF_LONG_RANGE_CUTOFF = 8.0
 _DEFAULT_PPPM_EWALD_LONG_RANGE_CUTOFF = 12.0
 _DEFAULT_ALPHA = 0.25
-_MELT_TEMPERATURE = 4000
 
 # Minimum atoms-per-core for good (~90%) MPI scaling efficiency. A LAMMPS run
 # is given at most one core per ``MIN_ATOMS_PER_CORE`` atoms; a larger value means
@@ -103,20 +101,12 @@ def _build_pmmcs_pair_coeff_lines(species: list[str], types: dict) -> list[str]:
 def generate_pmmcs_potential(
     atoms_dict: dict,
     *,
-    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate the PMMCS (Pedone) potential for the given composition.
 
     Args:
         atoms_dict: Structure dict from ``get_structure_dict()``.
-        melt: If ``True``, appends a high-temperature pre-equilibration block
-            at 4000 K using a Langevin thermostat (``fix langevin``) combined
-            with ``fix nve/limit`` to prevent runaway atom velocities during the
-            first 10 000 steps. This helps relax unfavourable contacts in the
-            random initial structure before the main melt-quench protocol. Set
-            to ``False`` when the starting structure is already equilibrated or
-            when you want full control over the thermostat schedule.
         electrostatics: Controls the Coulomb solver and associated cutoffs.
             When ``None`` (default), DSF is used with ``alpha=0.25``,
             short-range Morse cutoff 5.5 Å, and Coulomb cutoff 8.0 Å.
@@ -196,9 +186,6 @@ def generate_pmmcs_potential(
     config_lines.extend(_build_pmmcs_pair_coeff_lines(species, types))
 
     config_lines.append("\npair_modify shift yes\n")
-
-    if melt:
-        config_lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     return pd.DataFrame(
         {

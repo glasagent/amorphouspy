@@ -281,28 +281,6 @@ def test_bmp_protocol_returns_5_history_entries(mock_runner, mock_structure, moc
     assert len(history) == 4
 
 
-def test_bmp_protocol_strips_exclude_patterns(mock_runner, mock_structure):
-    """bmp_protocol strips langevin/nve patterns from potential config for stages 2+."""
-    potential = pd.DataFrame(
-        {
-            "Name": ["bmp"],
-            "Config": [
-                [
-                    "fix langevinnve all langevin 4000 4000 0.01 48279",
-                    "fix ensemblenve all nve/limit 0.5",
-                    "run 10000",
-                    "unfix langevinnve",
-                    "unfix ensemblenve",
-                    "other line",
-                ]
-            ],
-        }
-    )
-    params = _make_params(mock_structure, potential)
-    bmp_protocol(mock_runner, params)
-    assert mock_runner.call_count == 4
-
-
 def test_bmp_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
     """bmp_protocol respects custom equilibration_steps."""
     params = _make_params(mock_structure, mock_potential, equilibration_steps=50_000)
@@ -337,28 +315,6 @@ def test_du_teter_protocol_returns_5_history_entries(mock_runner, mock_structure
     assert len(history) == 4
 
 
-def test_du_teter_protocol_strips_5000_langevin(mock_runner, mock_structure):
-    """du_teter_protocol strips the 5000 K langevin pattern from stages 2+."""
-    potential = pd.DataFrame(
-        {
-            "Name": ["du_teter"],
-            "Config": [
-                [
-                    "fix langevinnve all langevin 5000 5000 0.01 48279",
-                    "fix ensemblenve all nve/limit 0.5",
-                    "run 10000",
-                    "unfix langevinnve",
-                    "unfix ensemblenve",
-                    "pair_style hybrid/overlay coul/dsf 0.25 8.0 table spline 11000",
-                ]
-            ],
-        }
-    )
-    params = _make_params(mock_structure, potential, temperature_high=5000.0)
-    du_teter_protocol(mock_runner, params)
-    assert mock_runner.call_count == 4
-
-
 def test_du_teter_protocol_with_equilibration_steps(mock_runner, mock_structure, mock_potential):
     """du_teter_protocol respects custom equilibration_steps."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0, equilibration_steps=50_000)
@@ -366,31 +322,39 @@ def test_du_teter_protocol_with_equilibration_steps(mock_runner, mock_structure,
     assert mock_runner.call_count == 4
 
 
-def test_bmp_protocol_strips_melt_block_for_later_stages(mock_runner, mock_structure):
-    """Stages 2-5 in bmp_protocol use a potential with the melt block removed."""
-    potential = pd.DataFrame(
-        {
-            "Name": ["bmp"],
-            "Config": [["fix langevinnve all langevin 4000 4000 0.01 48279\n", "run 10000\n", "other line\n"]],
-        }
-    )
-    params = MeltQuenchParams(
-        structure=mock_structure,
-        potential=potential,
-        temperature_high=4000.0,
-        temperature_low=300.0,
-        heating_steps=100_000,
-        cooling_steps=200_000,
-        timestep=1.0,
-        n_dump=1000,
-        langevin=False,
-        seed=12345,
-    )
-    bmp_protocol(mock_runner, params)
-    # All calls after the first must use the stripped potential (no melt lines)
+_ALL_PROTOCOLS = {
+    "pmmcs": pmmcs_protocol,
+    "bmp": bmp_protocol,
+    "bjp": bjp_protocol,
+    "shik": shik_protocol,
+    "du_teter": du_teter_protocol,
+    "yang2026": yang2026_protocol,
+}
+
+
+@pytest.mark.parametrize("protocol", _ALL_PROTOCOLS.values(), ids=_ALL_PROTOCOLS.keys())
+def test_protocol_first_stage_runs_pre_equilibration_block(protocol, mock_runner, mock_structure, mock_potential):
+    """The first stage appends the block at temperature_high; later stages use the potential as-is."""
+    params = _make_params(mock_structure, mock_potential, temperature_high=4321.0)
+    protocol(mock_runner, params)
+    first_config = mock_runner.call_args_list[0].kwargs["potential"]["Config"].iloc[0]
+    assert first_config[:2] == ["line1", "line2"]
+    assert any("fix langevinnve all langevin 4321 4321 0.01 48279" in line for line in first_config)
+    assert sum("run 10000" in line for line in first_config) == 1
     for c in mock_runner.call_args_list[1:]:
-        config = c.kwargs["potential"]["Config"].iloc[0]
-        assert not any("langevinnve" in line or "run 10000" in line for line in config)
+        assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
+
+
+@pytest.mark.parametrize("protocol", _ALL_PROTOCOLS.values(), ids=_ALL_PROTOCOLS.keys())
+def test_protocol_pre_equilibrate_false_leaves_potential_untouched(
+    protocol, mock_runner, mock_structure, mock_potential
+):
+    """No stage sees the pre-equilibration block when pre_equilibrate=False."""
+    params = _make_params(mock_structure, mock_potential, pre_equilibrate=False)
+    protocol(mock_runner, params)
+    assert mock_runner.call_count > 1
+    for c in mock_runner.call_args_list:
+        assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
 
 
 def test_bmp_protocol_equilibration_steps_override(mock_runner, mock_structure, mock_potential):
@@ -418,32 +382,6 @@ def test_bmp_protocol_equilibration_steps_override(mock_runner, mock_structure, 
 # ---------------------------------------------------------------------------
 # yang2026_protocol
 # ---------------------------------------------------------------------------
-
-
-def test_yang2026_protocol_strips_melt_block_for_later_stages(mock_runner, mock_structure):
-    """Stages 1-7 in yang2026_protocol use a potential with the melt block removed."""
-    potential = pd.DataFrame(
-        {
-            "Name": ["yang2026"],
-            "Config": [["fix langevinnve all langevin 4000 4000 0.01 48279\n", "run 10000\n", "pair_style buck\n"]],
-        }
-    )
-    params = MeltQuenchParams(
-        structure=mock_structure,
-        potential=potential,
-        temperature_high=4000.0,
-        temperature_low=300.0,
-        heating_steps=100_000,
-        cooling_steps=200_000,
-        timestep=1.0,
-        n_dump=1000,
-        langevin=False,
-        seed=12345,
-    )
-    yang2026_protocol(mock_runner, params)
-    for c in mock_runner.call_args_list[1:]:
-        config = c.kwargs["potential"]["Config"].iloc[0]
-        assert not any("langevinnve" in line or "run 10000" in line for line in config)
 
 
 def test_yang2026_protocol_high_pressure_melt_stage(mock_runner, mock_structure, mock_potential):

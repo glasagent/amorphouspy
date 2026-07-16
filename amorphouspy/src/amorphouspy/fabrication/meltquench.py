@@ -16,7 +16,6 @@ from amorphouspy.fabrication.meltquench_protocols import (
     PROTOCOL_MAP,
     MeltQuenchParams,
 )
-from amorphouspy.lammps.potentials._melt_block import set_melt_block_temperature
 from amorphouspy.lammps.runner import _run_lammps_md
 
 
@@ -36,6 +35,7 @@ def melt_quench_simulation(
     langevin: bool = False,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
+    pre_equilibrate: bool = True,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
     """Perform a melt-quench simulation using LAMMPS.
 
@@ -64,6 +64,9 @@ def melt_quench_simulation(
         langevin: Whether to use Langevin dynamics.
         seed: Random seed for velocity initialization. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
+        pre_equilibrate: Run a Langevin + nve/limit pre-equilibration block at
+            `temperature_high` before the first stage. Needed for randomly placed
+            structures; set to False when the starting structure is already equilibrated.
 
     Returns:
         A dictionary containing the simulation steps and temperature data.
@@ -95,10 +98,6 @@ def melt_quench_simulation(
         )
         raise ValueError(msg)
 
-    # The melt pre-equilibration block is generated at the potential's default
-    # melt temperature; retune it to the requested melt temperature.
-    potential = set_melt_block_temperature(potential, temperature_high)
-
     heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
@@ -127,6 +126,7 @@ def melt_quench_simulation(
         server_kwargs=server_kwargs,
         tmp_working_directory=tmp_working_directory,
         equilibration_steps=equilibration_steps,
+        pre_equilibrate=pre_equilibrate,
     )
 
     # Run the protocol using the function-based approach

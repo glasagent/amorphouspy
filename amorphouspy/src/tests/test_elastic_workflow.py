@@ -135,26 +135,16 @@ def test_elastic_simulation_warns_when_c44_c55_c66_differ(
 
 @patch("amorphouspy.properties.elastic._run_strained_md")
 @patch("amorphouspy.properties.elastic._run_lammps_md")
-def test_elastic_simulation_filters_shik_patterns_before_run(
+def test_elastic_simulation_passes_potential_config_unchanged(
     mock_run_lammps_md: MagicMock,
     mock_run_strained_md: MagicMock,
 ) -> None:
-    """SHIK config lines for early melt-quench setup are removed before running elasticity."""
+    """The potential Config reaches the elastic MD stages exactly as supplied."""
     mock_run_lammps_md.return_value = (_structure(), {"generic": {"volume": [125.0] * 4}})
     mock_run_strained_md.return_value = np.zeros((3, 3))
 
-    keep_line = "pair_style table spline 500"
-    potential = _potential(
-        "shik",
-        [
-            "fix langevinnve all langevin 5000 5000 0.01 48279",
-            "fix ensemblenve all nve/limit 0.5",
-            "run 10000",
-            "unfix langevinnve",
-            "unfix ensemblenve",
-            keep_line,
-        ],
-    )
+    config = ["pair_style table spline 500", "pair_modify shift yes"]
+    potential = _potential("shik", list(config))
 
     elastic_module.elastic_simulation(
         structure=_structure(),
@@ -163,8 +153,4 @@ def test_elastic_simulation_filters_shik_patterns_before_run(
         production_steps=10,
     )
 
-    filtered = mock_run_lammps_md.call_args.kwargs["potential"].loc[0, "Config"]
-    assert keep_line in filtered
-    assert "run 10000" not in filtered
-    assert all("langevin" not in line for line in filtered)
-    assert all("nve/limit" not in line for line in filtered)
+    assert mock_run_lammps_md.call_args.kwargs["potential"].loc[0, "Config"] == config

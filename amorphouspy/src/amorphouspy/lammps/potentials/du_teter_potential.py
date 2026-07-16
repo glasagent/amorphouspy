@@ -35,9 +35,6 @@ import pandas as pd
 from scipy.optimize import fsolve
 
 from amorphouspy.atoms.shared import get_element_types_dict
-from amorphouspy.lammps.potentials._melt_block import melt_block_lines
-
-_MELT_TEMPERATURE = 5000
 
 # Minimum atoms-per-core for good (~90%) MPI scaling efficiency.
 MIN_ATOMS_PER_CORE = 500
@@ -749,7 +746,6 @@ def generate_du_teter_potential(
     structure_dict: dict,
     output_dir: str = ".",
     *,
-    melt: bool = True,
     use_three_body: bool = False,
     n4_model: Literal["dbx", "dbx_generalized"] = "dbx",
 ) -> pd.DataFrame:
@@ -763,7 +759,6 @@ def generate_du_teter_potential(
         structure_dict: Dictionary containing the structure information,
             including ``"atoms"`` and optionally ``"mol_fraction"``.
         output_dir: Directory to save the generated table files.
-        melt: If True, append a Langevin + NVE melt run block (10 000 steps).
         use_three_body: If True, write a Stillinger-Weber ``.sw`` file and add
             the ``sw`` pair style to the LAMMPS config for O-P-O / P-O-P
             three-body interactions. Requires P to be present in the structure.
@@ -840,9 +835,6 @@ def generate_du_teter_potential(
     lines.append("thermo_style custom step temp pe etotal pxx pxy pxz pyy pyz pzz vol\n")
     lines.append("thermo_modify flush no\n")
     lines.append("thermo 100\n")
-
-    if melt:
-        lines.extend(melt_block_lines(_MELT_TEMPERATURE))
 
     return pd.DataFrame(
         {
