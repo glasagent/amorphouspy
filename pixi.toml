@@ -11,18 +11,17 @@ platforms = [
 [dependencies]
 python = "3.13.*"
 hatchling = "*"
-# Conda-only / need specific builds
-lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
-jupyter = "*"
-# Prefer conda-forge over PyPI for compiled packages
 ase = "*"
+jupyter = "*"
 lammpsparser = ">=0.0.7"
+lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
+networkx = "*"
 numba = "*"
 numpy = "*"
 pandas = "*"
+pydantic = "*"
 pymatgen = "*"
 scipy = "*"
-networkx = "*"
 
 [pypi-dependencies]
 amorphouspy = { path = ".", editable = true }
