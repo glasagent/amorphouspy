@@ -129,13 +129,13 @@ Includes a Langevin pre-equilibration stage and a pressure ramp during cooling t
 
 | Stage | Temperature range | Ensemble | Duration |
 |---|---|---|---|
-| 1. Heat | T_high | NVT (Langevin) | Variable (heating rate) |
-| 2. NVT equilibration | T_high | NVT | 100,000 / timestep steps (~100 ps) |
-| 3. NPT equilibration | T_high | NPT (P=0.1 GPa) | 700,000 / timestep steps (~700 ps) |
-| 4. Cool | T_high → T_low | NPT (P=0.1→0 GPa) | Variable (cooling rate) |
-| 5. Anneal | T_low | NPT (P=0) | 100,000 / timestep steps (~100 ps) |
+| 0. Pre-equilibration | T_high | Langevin + `nve/limit` | 10,000 steps (skipped when `pre_equilibrate=False`) |
+| 1. Melt equilibration | T_high | NVT | 100,000 / timestep steps (~100 ps) |
+| 2. NPT equilibration | T_high | NPT (P=0.1 GPa) | 700,000 / timestep steps (~700 ps) |
+| 3. Cool | T_high → T_low | NPT (P=0.1→0 GPa) | Variable (cooling rate) |
+| 4. Anneal | T_low | NPT (P=0) | 100,000 / timestep steps (~100 ps) |
 
-The pressure ramp in stage 4 (`iso 0.1 → 0.0 GPa`) helps the system densify correctly during cooling.
+Unlike the other protocols, SHIK has no heating stage and ignores `heating_rate`: stage 0 relaxes the random structure with a Langevin + `nve/limit` run at T_high — its own protocol stage, so it appears as a separate entry in the returned history (when skipped, its entry is `None` so stage indices stay stable) — and stage 1 then equilibrates the liquid directly at T_high, following the published SHIK melt-quench recipe. The pressure ramp in stage 3 (`iso 0.1 → 0.0 GPa`) helps the system densify correctly during cooling.
 
 > **Override:** Pass `equilibration_steps=N` to `melt_quench_simulation` (or the API's `simulation.equilibration_steps`) to replace all fixed-duration stages with `N` steps. This is useful for fast CI tests or exploratory runs without changing production defaults.
 

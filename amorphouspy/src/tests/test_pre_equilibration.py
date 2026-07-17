@@ -6,7 +6,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 import amorphouspy.fabrication.meltquench as mq_module
 import pandas as pd
 from amorphouspy.fabrication.pre_equilibration import append_melt_block, melt_block_lines
-from amorphouspy.lammps.potentials.shik_potential import generate_shik_potential
+from amorphouspy.lammps.potentials.pmmcs_potential import generate_pmmcs_potential
 from ase import Atoms
 
 
@@ -38,8 +38,8 @@ def test_append_melt_block_does_not_mutate_input():
     assert potential.loc[0, "Config"] == ["line1"]
 
 
-def _run_melt_quench_with_fake_runner(monkeypatch, tmp_path, **kwargs):
-    """Run melt_quench_simulation with a fake runner; return per-stage Config lines."""
+def _run_melt_quench_with_fake_runner(monkeypatch, **kwargs):
+    """Run a PMMCS melt_quench_simulation with a fake runner; return per-stage Config lines."""
     captured = []
 
     def fake_runner(structure, potential, **_kwargs):
@@ -47,7 +47,7 @@ def _run_melt_quench_with_fake_runner(monkeypatch, tmp_path, **kwargs):
         return structure, {"generic": {"steps": [0], "temperature": [4500.0]}}
 
     monkeypatch.setattr(mq_module, "_run_lammps_md", fake_runner)
-    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
+    potential = generate_pmmcs_potential(_sio2_atoms_dict())
     structure = Atoms("SiO2", positions=[[0, 0, 0], [1.6, 0, 0], [0, 1.6, 0]], cell=[10, 10, 10], pbc=True)
     mq_module.melt_quench_simulation(
         structure=structure,
@@ -61,9 +61,9 @@ def _run_melt_quench_with_fake_runner(monkeypatch, tmp_path, **kwargs):
     return captured
 
 
-def test_melt_quench_simulation_runs_block_in_first_stage_only(tmp_path, monkeypatch):
+def test_melt_quench_simulation_runs_block_in_first_stage_only(monkeypatch):
     """Stage 1 runs the block once at temperature_high; later stages have none."""
-    captured = _run_melt_quench_with_fake_runner(monkeypatch, tmp_path)
+    captured = _run_melt_quench_with_fake_runner(monkeypatch)
     assert len(captured) > 1
     first_stage = "".join(captured[0])
     assert "fix langevinnve all langevin 4500 4500 0.01 48279" in first_stage
@@ -72,9 +72,9 @@ def test_melt_quench_simulation_runs_block_in_first_stage_only(tmp_path, monkeyp
         assert "langevinnve" not in "".join(config)
 
 
-def test_melt_quench_simulation_pre_equilibrate_false_omits_block(tmp_path, monkeypatch):
+def test_melt_quench_simulation_pre_equilibrate_false_omits_block(monkeypatch):
     """pre_equilibrate=False leaves every stage without the block."""
-    captured = _run_melt_quench_with_fake_runner(monkeypatch, tmp_path, pre_equilibrate=False)
+    captured = _run_melt_quench_with_fake_runner(monkeypatch, pre_equilibrate=False)
     assert len(captured) > 1
     for config in captured:
         assert "langevinnve" not in "".join(config)

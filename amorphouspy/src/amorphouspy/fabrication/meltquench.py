@@ -51,7 +51,8 @@ def melt_quench_simulation(
         temperature_low: The low temperature to which the structure will be cooled.
         timestep: Time step for integration in femtoseconds.
         heating_rate: The rate at which the temperature is increased during the heating phase,
-            in K/s.
+            in K/s. Note: the SHIK protocol has no heating stage and ignores `heating_rate` --
+            it equilibrates the liquid directly at `temperature_high`.
         cooling_rate: The rate at which the temperature is decreased during the cooling phase,
             in K/s.
         n_dump: Dump frequency in simulation steps. If None, falls back to the

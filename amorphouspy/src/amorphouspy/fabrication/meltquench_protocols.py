@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.fabrication.pre_equilibration import append_melt_block
+from amorphouspy.fabrication.pre_equilibration import append_melt_block, pre_equilibration_fix_override
 
 # Default melt temperatures per protocol (K)
 DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
@@ -340,6 +340,15 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
 def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
     """Execute the simulation SHIK protocol.
 
+    Unlike the ramped protocols, SHIK prepares the liquid directly at
+    ``temperature_high`` (Sundararaman et al. recipe): stage 0 runs the
+    Langevin + nve/limit pre-equilibration as its own stage (via the runner's
+    input-control fix override, so the potential Config stays untouched),
+    followed by NVT/NPT equilibration at the melt temperature. There is no
+    heating ramp; ``heating_steps`` is unused. When ``pre_equilibrate`` is
+    False, stage 0 is skipped and its history entry is ``None`` so stage
+    indices stay stable.
+
     Args:
         runner: The function to run LAMMPS MD simulations.
         params: MeltQuenchParams dataclass containing all simulation parameters.
@@ -348,24 +357,7 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         Final structure and list of per-stage thermo dicts (one per stage, in order).
 
     """
-    # The first stage optionally runs the high-temperature pre-equilibration
-    # block; all later stages use the potential as-is.
-    potential1 = (
-        append_melt_block(params.potential, params.temperature_high) if params.pre_equilibrate else params.potential
-    )
-
-    run1 = partial(
-        runner,
-        potential=potential1,
-        tmp_working_directory=params.tmp_working_directory,
-        timestep=params.timestep,
-        n_dump=params.n_dump,
-        n_print_thermo=params.n_print_thermo,
-        langevin=params.langevin,
-        server_kwargs=params.server_kwargs,
-    )
-
-    run2 = partial(
+    run = partial(
         runner,
         potential=params.potential,
         tmp_working_directory=params.tmp_working_directory,
@@ -377,22 +369,34 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
 
     history: list[dict | None] = []
+    structure = params.structure
 
-    # Stage 1: heating from 300 to 5000 K for 100 ps
-    structure, parsed = run1(
-        structure=params.structure,
-        temperature=params.temperature_high,  # 5000 K
-        n_ionic_steps=params.heating_steps,
-        initial_temperature=params.temperature_high,
-        pressure=None,  # NVT ensemble
-        seed=params.seed,
-    )
-    history.append(parsed.get("generic", None))
+    # Stage 0: Langevin + nve/limit pre-equilibration of the random structure
+    # at temperature_high. The runner's generated integrator fix is replaced
+    # via the input-control override (same pathway as the pressure ramp), so
+    # the potential Config stays untouched. initial_temperature=0 keeps the
+    # velocity field uninitialized: atoms start at rest and the Langevin
+    # thermostat heats them, as the embedded block did. langevin=False is
+    # required so exactly one generated fix line exists to be replaced.
+    if params.pre_equilibrate:
+        structure, parsed = run(
+            structure=structure,
+            temperature=params.temperature_high,
+            n_ionic_steps=10_000,
+            initial_temperature=0,
+            pressure=None,
+            langevin=False,
+            input_control_file={"fix": pre_equilibration_fix_override(params.temperature_high)},
+        )
+        history.append(parsed.get("generic", None))
+    else:
+        history.append(None)
 
-    # Stage 2: NVT equilibration at 5000 K for 100 ps
-    structure, parsed = run2(
+    # Stage 1: NVT equilibration at temperature_high for 100 ps; there is no
+    # heating ramp (heating_steps is unused).
+    structure, parsed = run(
         structure=structure,
-        temperature=params.temperature_high,  # 5000 K
+        temperature=params.temperature_high,
         n_ionic_steps=params.equilibration_steps
         if params.equilibration_steps is not None
         else int(100_000 / params.timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
@@ -402,8 +406,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 3: NPT equilibration at 5000 K and 0.1 GPa for 700 ps
-    structure, parsed = run2(
+    # Stage 2: NPT equilibration at temperature_high and 0.1 GPa for 700 ps
+    structure, parsed = run(
         structure=structure,
         temperature=params.temperature_high,
         n_ionic_steps=params.equilibration_steps
@@ -414,8 +418,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 4: Quenching 5000 K -> 300 K in NPT
-    structure, parsed = run2(
+    # Stage 3: Quenching temperature_high -> temperature_low in NPT
+    structure, parsed = run(
         structure=structure,
         temperature=params.temperature_high,
         temperature_end=params.temperature_low,
@@ -426,8 +430,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
     )
     history.append(parsed.get("generic", None))
 
-    # Stage 5: Annealing at 300 K and 0 GPa for 100 ps in NPT
-    structure, parsed = run2(
+    # Stage 4: Annealing at temperature_low and 0 GPa for 100 ps in NPT
+    structure, parsed = run(
         structure=structure,
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps

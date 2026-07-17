@@ -233,7 +233,7 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
 
     shik_protocol(mock_runner, params)
 
-    # 6 stages (last one is NVT sampling)
+    # 5 stages: pre-equilibration, NVT melt equil., NPT equil., NPT quench, NPT anneal
     assert mock_runner.call_count == 5
 
 
@@ -331,8 +331,12 @@ _ALL_PROTOCOLS = {
     "yang2026": yang2026_protocol,
 }
 
+# Protocols that inject the pre-equilibration block into the first stage's
+# potential Config; SHIK instead runs it as its own stage 0 (fix override).
+_CONFIG_INJECTED_PROTOCOLS = {name: fn for name, fn in _ALL_PROTOCOLS.items() if name != "shik"}
 
-@pytest.mark.parametrize("protocol", _ALL_PROTOCOLS.values(), ids=_ALL_PROTOCOLS.keys())
+
+@pytest.mark.parametrize("protocol", _CONFIG_INJECTED_PROTOCOLS.values(), ids=_CONFIG_INJECTED_PROTOCOLS.keys())
 def test_protocol_first_stage_runs_pre_equilibration_block(protocol, mock_runner, mock_structure, mock_potential):
     """The first stage appends the block at temperature_high; later stages use the potential as-is."""
     params = _make_params(mock_structure, mock_potential, temperature_high=4321.0)
@@ -343,6 +347,35 @@ def test_protocol_first_stage_runs_pre_equilibration_block(protocol, mock_runner
     assert sum("run 10000" in line for line in first_config) == 1
     for c in mock_runner.call_args_list[1:]:
         assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
+
+
+def test_shik_protocol_stage0_uses_fix_override(mock_runner, mock_structure, mock_potential):
+    """SHIK runs the pre-equilibration as its own stage 0 via the fix override; all Configs stay clean."""
+    params = _make_params(mock_structure, mock_potential, temperature_high=4321.0)
+    _, history = shik_protocol(mock_runner, params)
+
+    assert mock_runner.call_count == 5
+    assert len(history) == 5
+    stage0 = mock_runner.call_args_list[0].kwargs
+    assert stage0["n_ionic_steps"] == 10_000
+    assert stage0["initial_temperature"] == 0
+    assert stage0["langevin"] is False
+    override = stage0["input_control_file"]["fix"]
+    assert "langevin 4321 4321 0.01 48279" in override
+    assert "nve/limit 0.5" in override
+    for c in mock_runner.call_args_list:
+        assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
+
+
+def test_shik_protocol_pre_equilibrate_false_skips_stage0(mock_runner, mock_structure, mock_potential):
+    """pre_equilibrate=False skips stage 0 but keeps its None history slot for stable indices."""
+    params = _make_params(mock_structure, mock_potential, pre_equilibrate=False)
+    _, history = shik_protocol(mock_runner, params)
+
+    assert mock_runner.call_count == 4
+    assert len(history) == 5
+    assert history[0] is None
+    assert all("input_control_file" not in c.kwargs for c in mock_runner.call_args_list)
 
 
 @pytest.mark.parametrize("protocol", _ALL_PROTOCOLS.values(), ids=_ALL_PROTOCOLS.keys())

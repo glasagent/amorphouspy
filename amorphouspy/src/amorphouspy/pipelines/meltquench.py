@@ -88,7 +88,8 @@ def run_melt_quench(
         structure: Initial ASE Atoms object.
         potential: LAMMPS potential object from ``generate_potential``.
         potential_type: Potential name, used for default ``temperature_high`` lookup.
-        heating_rate: Heating rate in K/ps.
+        heating_rate: Heating rate in K/s. Ignored by the SHIK protocol, which has
+            no heating stage and equilibrates directly at ``temperature_high``.
         cooling_rate: Cooling rate in K/ps.
         timestep: MD timestep in fs.
         temperature_high: Melt temperature in K; ``None`` uses the protocol default.
