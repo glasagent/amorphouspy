@@ -71,7 +71,6 @@ def run_melt_quench(
     potential: pd.DataFrame,
     *,
     potential_type: str = "pmmcs",
-    heating_rate: float = 1e14,
     cooling_rate: float = 1e12,
     timestep: float = 1.0,
     temperature_high: float | None = None,
@@ -88,9 +87,7 @@ def run_melt_quench(
         structure: Initial ASE Atoms object.
         potential: LAMMPS potential object from ``generate_potential``.
         potential_type: Potential name, used for default ``temperature_high`` lookup.
-        heating_rate: Heating rate in K/s. Ignored by the SHIK protocol, which has
-            no heating stage and equilibrates directly at ``temperature_high``.
-        cooling_rate: Cooling rate in K/ps.
+        cooling_rate: Cooling rate in K/s.
         timestep: MD timestep in fs.
         temperature_high: Melt temperature in K; ``None`` uses the protocol default.
         temperature_low: Final quench temperature in K.
@@ -118,7 +115,6 @@ def run_melt_quench(
         potential=potential,
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
-        heating_rate=int(heating_rate),
         cooling_rate=int(cooling_rate),
         timestep=timestep,
         temperature_high=temperature_high,
@@ -143,7 +139,6 @@ def run_melt_quench(
         "simulation_history": mq["result"],
         "timestep": timestep,
         "cooling_rate": int(cooling_rate),
-        "heating_rate": int(heating_rate),
         "temperature_high": temperature_high,
         "temperature_low": temperature_low,
         "n_dump": n_dump,

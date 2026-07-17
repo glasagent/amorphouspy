@@ -12,7 +12,6 @@ def test_build_temperature_time_plot_excludes_structural_sampling_stage() -> Non
     plot_json = build_temperature_time_plot(
         {
             "timestep": 1.0,
-            "heating_rate": 1e14,
             "cooling_rate": 1e12,
             "temperature_high": 3000.0,
             "temperature_low": 300.0,
@@ -31,4 +30,6 @@ def test_build_temperature_time_plot_excludes_structural_sampling_stage() -> Non
     # Four protocol stages -> eight endpoints in the polyline.
     assert len(x) == 8
     assert len(y) == 8
+    # No heating ramp: the profile starts at the melt temperature.
+    assert y[0] == 3000.0
     assert y[-1] == 300.0

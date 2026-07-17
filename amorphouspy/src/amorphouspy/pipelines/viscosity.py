@@ -36,7 +36,6 @@ def _run_single_viscosity(
     base_result: dict,
     temp_high: float | None,
     temp_low: float,
-    heating_rate: float,
     cooling_rate: float,
     timestep: float,
     n_timesteps: int,
@@ -65,7 +64,6 @@ def _run_single_viscosity(
         temperature_high=float(temp_high) if temp_high is not None else None,
         temperature_low=float(temp_low),
         timestep=1.0,
-        heating_rate=float(heating_rate),
         cooling_rate=float(cooling_rate),
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
@@ -128,7 +126,6 @@ def submit_viscosity_workflow(
     base_future: Future,
     temperatures: list[float],
     temp_high: float | None,
-    heating_rate: float,
     cooling_rate: float,
     timestep: float,
     n_timesteps: int,
@@ -158,8 +155,7 @@ def submit_viscosity_workflow(
         temperatures: Target temperatures (K).
         temp_high: Starting melt temperature (K) for the cooling step.
             ``None`` uses the potential-dependent default melt temperature.
-        heating_rate: Heating rate in K/ps.
-        cooling_rate: Cooling rate in K/ps.
+        cooling_rate: Cooling rate in K/s.
         timestep: MD timestep in fs.
         n_timesteps: Production run length (steps).
         n_dump: Dump intervall in MD steps.
@@ -197,7 +193,6 @@ def submit_viscosity_workflow(
             base_result=base_future,
             temp_high=temp_high,
             temp_low=temp,
-            heating_rate=heating_rate,
             cooling_rate=cooling_rate,
             timestep=timestep,
             n_timesteps=n_timesteps,

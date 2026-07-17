@@ -53,7 +53,7 @@ By default, it looks for `lmp_mpi` on the system PATH. Set the `LAMMPS_COMMAND` 
 
 Each workflow has a dedicated page with full parameter documentation, implementation details, and examples:
 
-- [**Melt-Quench Simulation**](melt_quench.md) — Heating, equilibration, and cooling protocols
+- [**Melt-Quench Simulation**](melt_quench.md) — Melt equilibration and cooling protocols
 - [**Molecular Dynamics**](md.md) — NVT/NPT single-point simulations
 - [**Elastic Moduli**](elastic.md) — Stress-strain finite differences method
 - [**Viscosity**](viscosity.md) — Green-Kubo stress autocorrelation

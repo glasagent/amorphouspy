@@ -1,11 +1,10 @@
-"""Tests for the melt-quench pre-equilibration block helpers.
+"""Tests for the melt-quench pre-equilibration fix override.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 import amorphouspy.fabrication.meltquench as mq_module
-import pandas as pd
-from amorphouspy.fabrication.pre_equilibration import append_melt_block, melt_block_lines
+from amorphouspy.fabrication.pre_equilibration import pre_equilibration_fix_override
 from amorphouspy.lammps.potentials.pmmcs_potential import generate_pmmcs_potential
 from ase import Atoms
 
@@ -15,35 +14,19 @@ def _sio2_atoms_dict() -> dict:
     return {"atoms": [{"element": "Si"}, {"element": "O"}, {"element": "O"}]}
 
 
-def test_melt_block_lines_contains_langevin_at_requested_temperature():
-    """melt_block_lines renders the Langevin + nve/limit block at the given temperature."""
-    joined = "".join(melt_block_lines(4500.0))
-    assert "fix langevinnve all langevin 4500 4500 0.01 48279" in joined
-    assert "nve/limit" in joined
-    assert "run 10000" in joined
-
-
-def test_append_melt_block_appends_block_at_end():
-    """append_melt_block places the block after the existing Config lines."""
-    potential = pd.DataFrame({"Name": ["pmmcs"], "Config": [["line1", "line2"]]})
-    appended = append_melt_block(potential, 4321.0)
-    assert appended.loc[0, "Config"][:2] == ["line1", "line2"]
-    assert appended.loc[0, "Config"][2:] == melt_block_lines(4321.0)
-
-
-def test_append_melt_block_does_not_mutate_input():
-    """append_melt_block returns a copy and leaves the caller's DataFrame untouched."""
-    potential = pd.DataFrame({"Name": ["pmmcs"], "Config": [["line1"]]})
-    append_melt_block(potential, 4000.0)
-    assert potential.loc[0, "Config"] == ["line1"]
+def test_fix_override_contains_langevin_at_requested_temperature():
+    """The override renders the Langevin + nve/limit fix pair at the given temperature."""
+    override = pre_equilibration_fix_override(4500.0)
+    assert override.startswith("langevinnve all langevin 4500 4500 0.01 48279")
+    assert "fix ensemblenve all nve/limit 0.5" in override
 
 
 def _run_melt_quench_with_fake_runner(monkeypatch, **kwargs):
-    """Run a PMMCS melt_quench_simulation with a fake runner; return per-stage Config lines."""
+    """Run a PMMCS melt_quench_simulation with a fake runner; return per-stage call kwargs."""
     captured = []
 
     def fake_runner(structure, potential, **_kwargs):
-        captured.append(list(potential.loc[0, "Config"]))
+        captured.append({"config": list(potential.loc[0, "Config"]), **_kwargs})
         return structure, {"generic": {"steps": [0], "temperature": [4500.0]}}
 
     monkeypatch.setattr(mq_module, "_run_lammps_md", fake_runner)
@@ -54,27 +37,30 @@ def _run_melt_quench_with_fake_runner(monkeypatch, **kwargs):
         potential=potential,
         temperature_high=4500.0,
         temperature_low=300.0,
-        heating_rate=1e15,
         cooling_rate=1e15,
         **kwargs,
     )
     return captured
 
 
-def test_melt_quench_simulation_runs_block_in_first_stage_only(monkeypatch):
-    """Stage 1 runs the block once at temperature_high; later stages have none."""
+def test_melt_quench_simulation_runs_pre_equilibration_as_stage0(monkeypatch):
+    """Stage 0 carries the fix override at temperature_high; every stage Config stays clean."""
     captured = _run_melt_quench_with_fake_runner(monkeypatch)
     assert len(captured) > 1
-    first_stage = "".join(captured[0])
-    assert "fix langevinnve all langevin 4500 4500 0.01 48279" in first_stage
-    assert first_stage.count("run 10000") == 1
-    for config in captured[1:]:
-        assert "langevinnve" not in "".join(config)
+    stage0 = captured[0]
+    assert stage0["input_control_file"]["fix"] == pre_equilibration_fix_override(4500.0)
+    assert stage0["n_ionic_steps"] == 10_000
+    assert stage0["langevin"] is False
+    for stage in captured[1:]:
+        assert "input_control_file" not in stage
+    for stage in captured:
+        assert not any("langevinnve" in line for line in stage["config"])
 
 
-def test_melt_quench_simulation_pre_equilibrate_false_omits_block(monkeypatch):
-    """pre_equilibrate=False leaves every stage without the block."""
+def test_melt_quench_simulation_pre_equilibrate_false_omits_stage0(monkeypatch):
+    """pre_equilibrate=False drops the stage-0 call; no stage carries the override."""
     captured = _run_melt_quench_with_fake_runner(monkeypatch, pre_equilibrate=False)
-    assert len(captured) > 1
-    for config in captured:
-        assert "langevinnve" not in "".join(config)
+    with_stage0 = _run_melt_quench_with_fake_runner(monkeypatch)
+    assert len(captured) == len(with_stage0) - 1
+    for stage in captured:
+        assert "input_control_file" not in stage

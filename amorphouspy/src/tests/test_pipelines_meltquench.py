@@ -113,7 +113,6 @@ class TestRunMeltQuench:
             "simulation_history",
             "timestep",
             "cooling_rate",
-            "heating_rate",
             "temperature_high",
             "temperature_low",
             "n_dump",
