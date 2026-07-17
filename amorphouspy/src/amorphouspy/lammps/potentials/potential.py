@@ -157,7 +157,6 @@ def generate_potential(
     atoms_dict: dict,
     potential_type: str = "pmmcs",
     *,
-    melt: bool = False,
     electrostatics: InteractionConfig | None = None,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
@@ -166,7 +165,6 @@ def generate_potential(
         atoms_dict: Structure dict from ``get_structure_dict()``.
         potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``, ``"du_teter"``,
             ``"bmp-harmonic"``, ``"bmp-screened-harmonic"``, or ``"yang2026"``.
-        melt: Append a Langevin NVE/limit pre-equilibration block at 4000 K (all potentials).
         electrostatics: Coulomb solver settings. Defaults to DSF with each
             potential's built-in cutoffs and damping parameter.
 
@@ -175,26 +173,25 @@ def generate_potential(
 
     Example:
         >>> potential = generate_potential(struct_dict, potential_type="shik")
-        >>> potential = generate_potential(struct_dict, potential_type="shik", melt=False)
         >>> potential = generate_potential(struct_dict, potential_type="bmp-harmonic")
-        >>> potential = generate_potential(struct_dict, potential_type="bmp-screened-harmonic", melt=False)
+        >>> potential = generate_potential(struct_dict, potential_type="bmp-screened-harmonic")
         >>> potential = generate_potential(struct_dict, potential_type="du_teter")
         >>> potential = generate_potential(struct_dict, potential_type="yang2026")
 
     """
     if potential_type.lower() == "pmmcs":
-        return pmmcs.generate_pmmcs_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
+        return pmmcs.generate_pmmcs_potential(atoms_dict, electrostatics=electrostatics)
     if potential_type.lower() == "bjp":
-        return bjp.generate_bjp_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
+        return bjp.generate_bjp_potential(atoms_dict, electrostatics=electrostatics)
     if potential_type.lower() == "shik":
-        return shik.generate_shik_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
+        return shik.generate_shik_potential(atoms_dict, electrostatics=electrostatics)
     if potential_type.lower() in ("du_teter", "du_teter_dbx_generalized"):
         n4_model = "dbx_generalized" if potential_type.lower() == "du_teter_dbx_generalized" else "dbx"
-        return du_teter.generate_du_teter_potential(atoms_dict, melt=melt, n4_model=n4_model)
+        return du_teter.generate_du_teter_potential(atoms_dict, n4_model=n4_model)
     if potential_type.lower() in ("bmp-harmonic", "bmp-screened-harmonic"):
         variant = "harmonic" if potential_type.lower() == "bmp-harmonic" else "screened-harmonic"
-        return bmp.generate_bmp_potential(atoms_dict, variant=variant, melt=melt, electrostatics=electrostatics)
+        return bmp.generate_bmp_potential(atoms_dict, variant=variant, electrostatics=electrostatics)
     if potential_type.lower() == "yang2026":
-        return yang2026.generate_yang2026_potential(atoms_dict, melt=melt, electrostatics=electrostatics)
+        return yang2026.generate_yang2026_potential(atoms_dict, electrostatics=electrostatics)
     msg = f"Unsupported potential type: {potential_type}"
     raise ValueError(msg)

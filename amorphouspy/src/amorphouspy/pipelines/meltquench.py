@@ -56,7 +56,6 @@ def generate_structure(
     potential = generate_potential(
         atoms_dict=atoms_dict,
         potential_type=potential_type,
-        melt=True,
         electrostatics=electrostatics_config,
     )
 
@@ -81,6 +80,7 @@ def run_melt_quench(
     n_dump: int | None = 100_000,
     n_print_thermo: int | None = None,
     server_kwargs: dict[str, Any] | None = None,
+    pre_equilibrate: bool = True,
 ) -> dict[str, Any]:
     """Run a LAMMPS melt-quench simulation.
 
@@ -88,7 +88,8 @@ def run_melt_quench(
         structure: Initial ASE Atoms object.
         potential: LAMMPS potential object from ``generate_potential``.
         potential_type: Potential name, used for default ``temperature_high`` lookup.
-        heating_rate: Heating rate in K/ps.
+        heating_rate: Heating rate in K/s. Ignored by the SHIK protocol, which has
+            no heating stage and equilibrates directly at ``temperature_high``.
         cooling_rate: Cooling rate in K/ps.
         timestep: MD timestep in fs.
         temperature_high: Melt temperature in K; ``None`` uses the protocol default.
@@ -98,6 +99,9 @@ def run_melt_quench(
         n_print_thermo: Thermodynamic output frequency (steps). ``None`` uses ``n_dump``.
 
         server_kwargs: LAMMPS server/resource configuration.
+        pre_equilibrate: Run a Langevin + nve/limit pre-equilibration block at
+            ``temperature_high`` before the first stage. Needed for randomly placed
+            structures; set to ``False`` when the starting structure is already equilibrated.
 
     Returns:
         Dict with ``final_structure``, ``mean_temperature``, ``simulation_steps``,
@@ -122,6 +126,7 @@ def run_melt_quench(
         equilibration_steps=equilibration_steps,
         langevin=False,
         server_kwargs=server_kwargs,
+        pre_equilibrate=pre_equilibrate,
     )
 
     # Extract only the data of the last stage of the melt-quench simulation to

@@ -83,14 +83,13 @@ structure_dict = get_structure_dict(
     target_atoms=3000,
 )
 
-# Default: DSF electrostatics, melt pre-equilibration enabled
+# Default: DSF electrostatics
 potential = generate_potential(structure_dict, potential_type="pmmcs")
 
-# PPPM with custom cutoff, no melt block
+# PPPM with custom cutoff
 potential = generate_potential(
     structure_dict,
     potential_type="pmmcs",
-    melt=False,
     electrostatics=PppmConfig(
         long_range_cutoff=12.0,
         kspace_accuracy=1e-5,
@@ -98,9 +97,9 @@ potential = generate_potential(
 )
 ```
 
-### `melt` — high-temperature pre-equilibration
+### High-temperature pre-equilibration
 
-When `melt=True`, the generator appends a 10 000-step Langevin NVE/limit block at 4000 K:
+The melt-quench protocol runs a 10 000-step Langevin NVE/limit block at the melt temperature before its first heating stage (enabled by default via the `pre_equilibrate` argument of `run_melt_quench` / `melt_quench_simulation`):
 
 ```lammps
 fix langevinnve all langevin 4000 4000 0.01 48279
@@ -110,7 +109,7 @@ unfix langevinnve
 unfix ensemblenve
 ```
 
-This relaxes unfavourable atomic contacts that are common in randomly packed starting structures before the main melt–quench run. The `nve/limit 0.5` cap prevents runaway atom velocities if two atoms are placed too close together. Set `melt=False` when the starting structure is already equilibrated or when you want full control over the thermostat schedule.
+This relaxes unfavourable atomic contacts that are common in randomly packed starting structures before the main melt–quench run. The `nve/limit 0.5` cap prevents runaway atom velocities if two atoms are placed too close together. Pass `pre_equilibrate=False` when the starting structure is already equilibrated or when you want full control over the thermostat schedule.
 
 ### Electrostatics options
 

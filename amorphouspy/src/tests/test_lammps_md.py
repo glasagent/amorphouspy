@@ -28,31 +28,17 @@ def test_md_simulation_raises_on_empty_potential() -> None:
 
 
 @patch("amorphouspy.lammps.md._run_lammps_md")
-def test_md_simulation_filters_shik_excluded_patterns(mock_run_md: MagicMock) -> None:
-    """SHIK potential config removes known equilibration snippets before execution."""
+def test_md_simulation_passes_potential_config_unchanged(mock_run_md: MagicMock) -> None:
+    """The potential Config reaches the runner exactly as the caller supplied it."""
     mock_run_md.return_value = (Atoms("Si"), {"generic": {"steps": [0, 1]}})
 
-    keep_line = "pair_style table spline 500"
-    potential = _potential(
-        name="shik",
-        config=[
-            "fix langevinnve all langevin 5000 5000 0.01 48279",
-            "fix ensemblenve all nve/limit 0.5",
-            "run 10000",
-            "unfix langevinnve",
-            "unfix ensemblenve",
-            keep_line,
-        ],
-    )
+    config = ["pair_style table spline 500", "pair_modify shift yes"]
+    potential = _potential(name="shik", config=list(config))
 
     md_simulation(structure=Atoms("Si"), potential=potential)
 
     _, kwargs = mock_run_md.call_args
-    filtered = kwargs["potential"].loc[0, "Config"]
-    assert keep_line in filtered
-    assert all("langevinnve" not in line for line in filtered)
-    assert all("ensemblenve" not in line for line in filtered)
-    assert "run 10000" not in filtered
+    assert kwargs["potential"].loc[0, "Config"] == config
 
 
 @patch("amorphouspy.lammps.md._run_lammps_md")

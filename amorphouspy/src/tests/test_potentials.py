@@ -191,14 +191,14 @@ def test_sw_file_twobody_always_zero(tmp_path):
 
 def test_generate_du_teter_no_three_body(tmp_path):
     """generate_du_teter_potential with use_three_body=False omits SW entries and pair_coeff sw."""
-    df = generate_du_teter_potential(_po_atoms_dict(), output_dir=tmp_path, melt=False, use_three_body=False)
+    df = generate_du_teter_potential(_po_atoms_dict(), output_dir=tmp_path, use_three_body=False)
     config = "".join(df["Config"].iloc[0])
     assert " sw" not in config
 
 
 def test_generate_du_teter_three_body_adds_sw(tmp_path):
     """generate_du_teter_potential with use_three_body=True includes SW entries and pair_coeff sw."""
-    df = generate_du_teter_potential(_po_atoms_dict(), output_dir=tmp_path, melt=False, use_three_body=True)
+    df = generate_du_teter_potential(_po_atoms_dict(), output_dir=tmp_path, use_three_body=True)
     config = "".join(df["Config"].iloc[0])
     assert "table spline 11000 sw" in config
     assert "pair_coeff * * sw" in config
@@ -459,20 +459,6 @@ def test_generate_shik_potential_contains_pair_style(tmp_path):
     assert any("pair_style" in line for line in config)
 
 
-def test_generate_shik_potential_melt_false_omits_run(tmp_path):
-    """melt=False omits the run 10000 line from SHIK config."""
-    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=False)
-    config = result["Config"].iloc[0]
-    assert not any("run 10000" in line for line in config)
-
-
-def test_generate_shik_potential_melt_true_includes_run(tmp_path):
-    """melt=True includes the run 10000 line in SHIK config."""
-    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
-    config = result["Config"].iloc[0]
-    assert any("run 10000" in line for line in config)
-
-
 # ---------------------------------------------------------------------------
 # InteractionConfig — PMMCS
 # ---------------------------------------------------------------------------
@@ -579,35 +565,21 @@ def test_defaults_unchanged_shik(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Melt block — all three potentials
+# Potential configs are pure force-field descriptions (no MD run commands)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("generator", "atoms_dict_fn", "kwargs"),
-    [
-        (generate_pmmcs_potential, _sio2_atoms_dict, {}),
-        (generate_bjp_potential, _cas_atoms_dict, {}),
-    ],
-)
-def test_melt_block_present_and_absent(generator, atoms_dict_fn, kwargs):
-    """melt=True produces run 10000 and 4000 in langevin; melt=False omits block."""
-    result_with = generator(atoms_dict_fn(), melt=True, **kwargs)
-    config_with = "".join(result_with["Config"].iloc[0])
-    assert "run 10000" in config_with
-    assert "4000" in config_with
-
-    result_without = generator(atoms_dict_fn(), melt=False, **kwargs)
-    config_without = "".join(result_without["Config"].iloc[0])
-    assert "run 10000" not in config_without
-
-
-def test_shik_melt_block_uses_4000(tmp_path):
-    """SHIK melt block uses 4000 K (not the old 5000 K)."""
-    result = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
-    config_text = "".join(result["Config"].iloc[0])
-    assert "langevin 4000 4000" in config_text
-    assert "5000" not in config_text
+def test_generated_configs_contain_no_run_commands(tmp_path):
+    """Generators emit no run/fix-dynamics lines; pre-equilibration lives in the protocols."""
+    potentials = [
+        generate_pmmcs_potential(_sio2_atoms_dict()),
+        generate_bjp_potential(_cas_atoms_dict()),
+        generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path),
+    ]
+    for result in potentials:
+        config = result["Config"].iloc[0]
+        assert not any(line.strip().startswith("run ") for line in config)
+        assert not any("langevinnve" in line for line in config)
 
 
 # ---------------------------------------------------------------------------
@@ -1079,24 +1051,14 @@ def test_validate_du_teter_inputs_unsupported_element():
 
 
 # ---------------------------------------------------------------------------
-# generate_du_teter_potential — melt block
+# generate_du_teter_potential — pure force-field config
 # ---------------------------------------------------------------------------
 
 
-def test_generate_du_teter_melt_true_includes_langevin(tmp_path):
-    """melt=True adds langevin + nve/limit + run 10000 block."""
+def test_generate_du_teter_omits_langevin(tmp_path):
+    """The generated config contains no pre-equilibration block."""
     atoms = {"atoms": [{"element": "Si"}, {"element": "O"}, {"element": "O"}]}
-    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=True)
-    config = "".join(df["Config"].iloc[0])
-    assert "langevin 5000 5000" in config
-    assert "nve/limit" in config
-    assert "run 10000" in config
-
-
-def test_generate_du_teter_melt_false_omits_langevin(tmp_path):
-    """melt=False omits the melt block."""
-    atoms = {"atoms": [{"element": "Si"}, {"element": "O"}, {"element": "O"}]}
-    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False)
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path))
     config = "".join(df["Config"].iloc[0])
     assert "langevin" not in config
     assert "run 10000" not in config
@@ -1135,7 +1097,7 @@ def test_generate_du_teter_with_boron(tmp_path):
         ],
         "mol_fraction": {"B2O3": 0.3, "SiO2": 0.5, "Na2O": 0.2},
     }
-    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False)
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path))
     config = "".join(df["Config"].iloc[0])
     assert "pair_coeff" in config
     tbl_files = list(tmp_path.glob("table_B_O*"))
@@ -1148,8 +1110,8 @@ def test_generate_du_teter_original_dbx_approach_default(tmp_path):
         "atoms": [{"element": "B"}, {"element": "O"}, {"element": "Na"}],
         "mol_fraction": {"B2O3": 0.3, "Na2O": 0.2},
     }
-    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "default"), melt=False)
-    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "explicit"), melt=False, n4_model="dbx")
+    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "default"))
+    generate_du_teter_potential(atoms, output_dir=str(tmp_path / "explicit"), n4_model="dbx")
     # Both should produce a table file for B-O
     assert list((tmp_path / "default").glob("table_B_O*"))
     assert list((tmp_path / "explicit").glob("table_B_O*"))
@@ -1169,7 +1131,7 @@ def test_generate_du_teter_original_vs_modified_dbx_approach_differ(tmp_path):
     assert result_orig["A"] != result_mod["A"]
 
     # generate_du_teter_potential should accept and pass through the flag
-    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), melt=False, n4_model="dbx_generalized")
+    df = generate_du_teter_potential(atoms, output_dir=str(tmp_path), n4_model="dbx_generalized")
     assert "pair_coeff" in "".join(df["Config"].iloc[0])
 
 
@@ -1327,13 +1289,9 @@ def test_yang2026_species_column_matches_input():
 # ---------------------------------------------------------------------------
 
 
-def test_yang2026_melt_block_present_and_absent():
-    """melt=True emits langevin 4000 and run 10000; melt=False omits both."""
-    result_with = generate_yang2026_potential(_yang_nabo_atoms_dict(), melt=True)
-    config_with = "".join(result_with["Config"].iloc[0])
-    assert "run 10000" in config_with
-    assert "langevin 4000 4000" in config_with
-
-    result_without = generate_yang2026_potential(_yang_nabo_atoms_dict(), melt=False)
-    config_without = "".join(result_without["Config"].iloc[0])
-    assert "run 10000" not in config_without
+def test_yang2026_omits_melt_block():
+    """The generated config contains no pre-equilibration block."""
+    result = generate_yang2026_potential(_yang_nabo_atoms_dict())
+    config = "".join(result["Config"].iloc[0])
+    assert "run 10000" not in config
+    assert "langevinnve" not in config

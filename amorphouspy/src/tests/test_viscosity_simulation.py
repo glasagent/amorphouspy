@@ -303,7 +303,7 @@ def test_viscosity_ensemble_saves_seed_file(mock_sim: MagicMock, tmp_path) -> No
 
 
 # ---------------------------------------------------------------------------
-# _viscosity_simulation — melt-block stripping and equilibration pressure
+# _viscosity_simulation — potential pass-through and equilibration pressure
 # ---------------------------------------------------------------------------
 
 
@@ -313,25 +313,24 @@ def _sio2_atoms_dict() -> dict:
 
 
 @patch("amorphouspy.properties.viscosity._run_lammps_md")
-def test_viscosity_stages_never_see_melt_block(mock_lammps: MagicMock, tmp_path) -> None:
-    """No MD stage (including Stage 0) receives the melt pre-equilibration block."""
+def test_viscosity_stages_receive_potential_unchanged(mock_lammps: MagicMock, tmp_path) -> None:
+    """Every MD stage receives the caller's potential Config as-is."""
     mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
-    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
+    original = list(potential.loc[0, "Config"])
 
     _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
 
     assert mock_lammps.call_count == 3
     for call in mock_lammps.call_args_list:
-        config = "".join(call.kwargs["potential"].loc[0, "Config"])
-        for marker in ("langevinnve", "nve/limit", "run 10000"):
-            assert marker not in config
+        assert call.kwargs["potential"].loc[0, "Config"] == original
 
 
 @patch("amorphouspy.properties.viscosity._run_lammps_md")
 def test_viscosity_simulation_does_not_mutate_potential(mock_lammps: MagicMock, tmp_path) -> None:
-    """The caller's potential DataFrame keeps its melt block after the run."""
+    """The caller's potential DataFrame is unchanged after the run."""
     mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
-    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
     before = list(potential.loc[0, "Config"])
 
     _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
@@ -343,7 +342,7 @@ def test_viscosity_simulation_does_not_mutate_potential(mock_lammps: MagicMock, 
 def test_viscosity_equilibration_pressure_shik(mock_lammps: MagicMock, tmp_path) -> None:
     """SHIK equilibrates at 0.1 GPa (100 MPa); Langevin and production stages stay NVT."""
     mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
-    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
 
     _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
 
@@ -357,7 +356,7 @@ def test_viscosity_equilibration_pressure_shik(mock_lammps: MagicMock, tmp_path)
 def test_viscosity_equilibration_pressure_non_shik(mock_lammps: MagicMock) -> None:
     """Non-SHIK potentials keep the 0 GPa equilibration."""
     mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
-    potential = generate_pmmcs_potential(_sio2_atoms_dict(), melt=True)
+    potential = generate_pmmcs_potential(_sio2_atoms_dict())
 
     _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
 
@@ -367,11 +366,11 @@ def test_viscosity_equilibration_pressure_non_shik(mock_lammps: MagicMock) -> No
 
 @patch("amorphouspy.properties.viscosity._run_lammps_md")
 @patch("amorphouspy.properties.viscosity._viscosity_simulation")
-def test_viscosity_extension_uses_stripped_potential(mock_sim: MagicMock, mock_lammps: MagicMock, tmp_path) -> None:
-    """Extension runs in viscosity_simulation use the stripped potential."""
+def test_viscosity_extension_uses_potential_unchanged(mock_sim: MagicMock, mock_lammps: MagicMock, tmp_path) -> None:
+    """Extension runs in viscosity_simulation use the caller's potential as-is."""
     mock_sim.return_value = {"result": _make_pressure_block(500), "structure": MagicMock()}
     mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
-    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path, melt=True)
+    potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
 
     viscosity_simulation(
         structure=MagicMock(),
@@ -386,5 +385,5 @@ def test_viscosity_extension_uses_stripped_potential(mock_sim: MagicMock, mock_l
     )
 
     assert mock_lammps.call_count >= 1
-    config = "".join(mock_lammps.call_args_list[0].kwargs["potential"].loc[0, "Config"])
-    assert "langevinnve" not in config
+    config = mock_lammps.call_args_list[0].kwargs["potential"].loc[0, "Config"]
+    assert config == potential.loc[0, "Config"]
