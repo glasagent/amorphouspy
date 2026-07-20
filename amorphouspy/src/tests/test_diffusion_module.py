@@ -1,8 +1,8 @@
 """Tests for the pure self-diffusion analysis functions in ``amorphouspy.properties.diffusion``.
 
 These exercise the MSD algorithm, diffusion fitting, PBC unwrapping, COM-drift removal,
-per-species resolution, the cross-check, the Arrhenius fit and Nernst-Einstein conductivity
-against analytic ground truths, without running LAMMPS.
+per-species resolution, the Arrhenius fit and Nernst-Einstein conductivity against analytic
+ground truths, without running LAMMPS.
 """
 
 import warnings
@@ -13,7 +13,6 @@ from amorphouspy.properties.diffusion import (
     _msd_brute_force,
     _msd_fft_multi,
     compute_msd,
-    crosscheck_msd,
     fit_arrhenius,
     get_diffusion,
     log_linear_dump_steps,
@@ -99,29 +98,6 @@ def test_per_species_distinct_mobility():
     assert msd["n_atoms_per_species"] == {"Na": n_each, "Si": n_each}
     diffusion = get_diffusion(msd, fit_start_frac=0.05, fit_end_frac=0.5)
     assert diffusion["per_species"]["Na"]["diffusion_cm2_s"] > 5 * diffusion["per_species"]["Si"]["diffusion_cm2_s"]
-
-
-def test_crosscheck_brute_force_exact():
-    """The brute-force cross-check matches the FFT MSD to tight tolerance."""
-    rng = np.random.default_rng(3)
-    trajectory = np.cumsum(rng.normal(scale=0.1, size=(200, 40, 3)), axis=0)
-    frames = _frames_from_trajectory(trajectory, "H" * 40)
-    msd = compute_msd(frames, remove_com_drift=False)
-    result = crosscheck_msd(msd, frames, reference="brute_force", remove_com_drift=False)
-    assert result["passed"]
-    assert result["relative_deviation"] < 1e-6
-
-
-def test_crosscheck_flags_mismatch():
-    """A corrupted MSD trips the cross-check and warns."""
-    rng = np.random.default_rng(4)
-    trajectory = np.cumsum(rng.normal(scale=0.1, size=(200, 40, 3)), axis=0)
-    frames = _frames_from_trajectory(trajectory, "H" * 40)
-    msd = compute_msd(frames, remove_com_drift=False)
-    msd["msd_total"] = [value * 2.0 for value in msd["msd_total"]]
-    with pytest.warns(UserWarning, match="exceeds rtol"):
-        result = crosscheck_msd(msd, frames, reference="brute_force", remove_com_drift=False)
-    assert not result["passed"]
 
 
 def test_compute_msd_requires_two_frames():

@@ -3,16 +3,17 @@
 Implements a molecular-dynamics driver and post-processing utilities for atomic self-diffusion.
 The primary mean-squared displacement (MSD) is computed by the multi-time-origin Fast Correlation
 Algorithm (FFT, Calandrini et al. 2011) on LAMMPS unwrapped coordinates, giving a well-averaged MSD
-from a single trajectory. A single-origin MSD on the same exact-unwrapped coordinates is provided as
-an independent cross-check.
+from a single trajectory. For non-uniformly sampled trajectories (e.g. the log-then-linear dump
+schedule used by :func:`diffusion_simulation`), where the FFT estimator does not apply, a
+single-origin MSD on the same exact-unwrapped coordinates is used instead.
 
 Note:
-    A LAMMPS-side ``compute msd`` was evaluated as the cross-check but cannot be wired through the
-    ``lammpsparser`` file interface: its ``input_control`` mapping is keyed by the leading command
-    token (so per-species ``group``/``compute`` lines collide) and injected commands are appended
-    after the ``thermo_style``/``dump`` lines that would reference them. The cross-check therefore
-    uses a single-origin MSD computed in Python from LAMMPS' own image-flag-unwrapped coordinates,
-    which is the same exact unwrapping ``compute msd`` would use.
+    A LAMMPS-side ``compute msd`` was evaluated for the single-origin path but cannot be wired
+    through the ``lammpsparser`` file interface: its ``input_control`` mapping is keyed by the
+    leading command token (so per-species ``group``/``compute`` lines collide) and injected commands
+    are appended after the ``thermo_style``/``dump`` lines that would reference them. The
+    single-origin MSD is therefore computed in Python from LAMMPS' own image-flag-unwrapped
+    coordinates, which is the same exact unwrapping ``compute msd`` would use.
 
 Author
 ------
@@ -45,7 +46,6 @@ _A2_PS_TO_M2_S = 1e-8
 
 _MIN_POINTS = 2  # minimum frames/fit points/data pairs
 _DIFFUSIVE_SLOPE_TOL = 0.25  # allowed |log-log MSD slope - 1| before warning
-_EPS = 1e-12  # small denominator guard
 
 
 def _unwrap_trajectory(wrapped: NDArray[np.float64], cells: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -366,92 +366,6 @@ def get_diffusion(
     if "msd_per_species" in msd_result:
         output["per_species"] = {symbol: _one(msd) for symbol, msd in msd_result["msd_per_species"].items()}
     return output
-
-
-def _window_slope(lag_time_ps: NDArray[np.float64], msd: NDArray[np.float64], start: int, stop: int) -> float:
-    times = lag_time_ps[start:stop]
-    values = msd[start:stop]
-    if times.size < _MIN_POINTS:
-        return float("nan")
-    return float(np.polyfit(times, values, 1)[0])
-
-
-def crosscheck_msd(
-    msd_result: dict[str, Any],
-    frames: list[Atoms],
-    *,
-    rtol: float = 0.25,
-    reference: str = "single_origin",
-    remove_com_drift: bool = True,
-    fit_start_frac: float = 0.2,
-    fit_end_frac: float = 0.8,
-) -> dict[str, Any]:
-    """Cross-check the multi-origin MSD against an independent estimator.
-
-    The check compares the *diffusion slope* (the quantity that sets ``D``) from the multi-origin FFT
-    MSD against a reference MSD computed on the same exact-unwrapped coordinates — this is robust to
-    the point-wise statistical noise of a single time origin. The ``"single_origin"`` reference
-    (default) is ``<|r(t) - r(0)|^2>``; the ``"brute_force"`` reference is the full multi-origin
-    definition and matches the FFT slope to numerical precision (used in tests).
-
-    Args:
-        msd_result: Output of :func:`compute_msd`.
-        frames: The same trajectory passed to :func:`compute_msd`.
-        rtol: Maximum tolerated relative slope deviation before a warning is raised.
-        reference: ``"single_origin"`` or ``"brute_force"``.
-        remove_com_drift: Must match the setting used in :func:`compute_msd`.
-        fit_start_frac: Start of the slope window as a fraction of the number of lags.
-        fit_end_frac: End of the slope window as a fraction of the number of lags.
-
-    Returns:
-        Dict with ``"reference"``, the two slopes ``"slope_fft_a2_ps"`` / ``"slope_reference_a2_ps"``,
-        the ``"relative_deviation"`` and ``"passed"``.
-
-    Example:
-        >>> import numpy as np
-        >>> from ase import Atoms
-        >>> rng = np.random.default_rng(0)
-        >>> n_frames, n_atoms = 200, 50
-        >>> steps = rng.normal(scale=0.1, size=(n_frames, n_atoms, 3))
-        >>> traj = np.cumsum(steps, axis=0)
-        >>> frames = []
-        >>> for pos in traj:
-        ...     atoms = Atoms("H" * n_atoms, positions=pos, cell=[100, 100, 100], pbc=True)
-        ...     atoms.arrays["unwrapped_positions"] = pos
-        ...     frames.append(atoms)
-        >>> msd = compute_msd(frames, remove_com_drift=False)
-        >>> crosscheck_msd(msd, frames, reference="brute_force", remove_com_drift=False)["passed"]
-        True
-    """
-    positions, _, _ = _build_trajectory(frames, remove_com_drift=remove_com_drift)
-    n_lags = len(msd_result["msd_total"])
-    reference_msd = (
-        _msd_single_origin(positions)[:n_lags] if reference == "single_origin" else _msd_brute_force(positions)[:n_lags]
-    )
-    lag_time_ps = np.asarray(msd_result["lag_time_ps"], dtype=float)
-    fft_msd = np.asarray(msd_result["msd_total"], dtype=float)
-
-    start = max(1, int(fit_start_frac * n_lags))
-    stop = min(n_lags, max(start + 2, int(fit_end_frac * n_lags)))
-    slope_fft = _window_slope(lag_time_ps, fft_msd, start, stop)
-    slope_reference = _window_slope(lag_time_ps, reference_msd, start, stop)
-
-    denominator = max(_EPS, abs(slope_reference))
-    relative_deviation = abs(slope_fft - slope_reference) / denominator
-    passed = bool(relative_deviation <= rtol)
-    if not passed:
-        warnings.warn(
-            f"MSD cross-check ({reference}) slope deviation {relative_deviation:.3f} exceeds rtol {rtol}.",
-            stacklevel=2,
-        )
-
-    return {
-        "reference": reference,
-        "slope_fft_a2_ps": slope_fft,
-        "slope_reference_a2_ps": slope_reference,
-        "relative_deviation": float(relative_deviation),
-        "passed": passed,
-    }
 
 
 def fit_arrhenius(

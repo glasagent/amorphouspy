@@ -29,7 +29,6 @@ from amorphouspy.properties.cte_analysis import (
 )
 from amorphouspy.properties.diffusion import (
     compute_msd,
-    crosscheck_msd,
     diffusion_simulation,
     fit_arrhenius,
     get_diffusion,
@@ -82,7 +81,6 @@ __all__ = [
     "compute_structure_factor",
     "count_distribution",
     "create_random_atoms",
-    "crosscheck_msd",
     "cte_from_fluctuations_simulation",
     "cte_from_npt_fluctuations",
     "cte_from_volume_temperature_data",
