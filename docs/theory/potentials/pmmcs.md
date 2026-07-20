@@ -99,14 +99,12 @@ potential = generate_potential(
 
 ### High-temperature pre-equilibration
 
-The melt-quench protocol runs a 10 000-step Langevin NVE/limit block at the melt temperature before its first heating stage (enabled by default via the `pre_equilibrate` argument of `run_melt_quench` / `melt_quench_simulation`):
+The melt-quench protocol runs a 10 000-step Langevin NVE/limit stage at the melt temperature as its own stage 0, before the melt equilibration (enabled by default via the `pre_equilibrate` argument of `run_melt_quench` / `melt_quench_simulation`):
 
 ```lammps
 fix langevinnve all langevin 4000 4000 0.01 48279
 fix ensemblenve all nve/limit 0.5
 run 10000
-unfix langevinnve
-unfix ensemblenve
 ```
 
 This relaxes unfavourable atomic contacts that are common in randomly packed starting structures before the main melt–quench run. The `nve/limit 0.5` cap prevents runaway atom velocities if two atoms are placed too close together. Pass `pre_equilibrate=False` when the starting structure is already equilibrated or when you want full control over the thermostat schedule.

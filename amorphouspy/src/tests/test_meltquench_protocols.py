@@ -51,7 +51,6 @@ def test_meltquench_params_creation(mock_structure, mock_potential):
         potential=mock_potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
@@ -63,7 +62,6 @@ def test_meltquench_params_creation(mock_structure, mock_potential):
     assert params.potential.equals(mock_potential)
     assert params.temperature_high == 5000.0
     assert params.temperature_low == 300.0
-    assert params.heating_steps == 100_000
     assert params.cooling_steps == 100_000
     assert params.timestep == 1.0
     assert params.n_dump == 1000
@@ -80,7 +78,6 @@ def test_meltquench_params_with_optional_values(mock_structure, mock_potential, 
         potential=mock_potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
@@ -101,7 +98,6 @@ def test_pmmcs_protocol_accepts_dataclass(mock_runner, mock_structure, mock_pote
         potential=mock_potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
@@ -123,7 +119,6 @@ def test_bjp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potent
         potential=mock_potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
@@ -152,7 +147,6 @@ def test_shik_protocol_accepts_dataclass(mock_runner, mock_structure):
         potential=potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
@@ -174,7 +168,6 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
         potential=mock_potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
         n_dump=1000,
@@ -184,7 +177,7 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
 
     pmmcs_protocol(mock_runner, params)
 
-    # 5 stages (last one is NVT sampling)
+    # 4 runner calls: stage 0 pre-equilibration + equilibrate, cool, release
     assert mock_runner.call_count == 4
 
 
@@ -195,7 +188,6 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
         potential=mock_potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
         n_dump=1000,
@@ -205,7 +197,7 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
 
     bjp_protocol(mock_runner, params)
 
-    # 5 stages (last one is NVT sampling)
+    # 4 runner calls: stage 0 pre-equilibration + equilibrate, cool, release
     assert mock_runner.call_count == 4
 
 
@@ -223,7 +215,6 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
         potential=potential,
         temperature_high=5000.0,
         temperature_low=300.0,
-        heating_steps=100_000,
         cooling_steps=200_000,
         timestep=1.0,
         n_dump=1000,
@@ -243,7 +234,6 @@ def _make_params(structure, potential, **kwargs):
         "potential": potential,
         "temperature_high": 4000.0,
         "temperature_low": 300.0,
-        "heating_steps": 100_000,
         "cooling_steps": 100_000,
         "timestep": 1.0,
         "n_dump": 1000,
@@ -267,15 +257,15 @@ def test_bmp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potent
     assert history is not None
 
 
-def test_bmp_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
-    """bmp_protocol calls the runner exactly 5 times."""
+def test_bmp_protocol_calls_runner_4_times(mock_runner, mock_structure, mock_potential):
+    """bmp_protocol calls the runner exactly 4 times (stage 0 + 3 stages)."""
     params = _make_params(mock_structure, mock_potential)
     bmp_protocol(mock_runner, params)
     assert mock_runner.call_count == 4
 
 
-def test_bmp_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
-    """bmp_protocol returns a list of 5 history entries."""
+def test_bmp_protocol_returns_4_history_entries(mock_runner, mock_structure, mock_potential):
+    """bmp_protocol returns a list of 4 history entries."""
     params = _make_params(mock_structure, mock_potential)
     _, history = bmp_protocol(mock_runner, params)
     assert len(history) == 4
@@ -301,15 +291,15 @@ def test_du_teter_protocol_accepts_dataclass(mock_runner, mock_structure, mock_p
     assert history is not None
 
 
-def test_du_teter_protocol_calls_runner_5_times(mock_runner, mock_structure, mock_potential):
-    """du_teter_protocol calls the runner exactly 5 times."""
+def test_du_teter_protocol_calls_runner_4_times(mock_runner, mock_structure, mock_potential):
+    """du_teter_protocol calls the runner exactly 4 times (stage 0 + 3 stages)."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
     du_teter_protocol(mock_runner, params)
     assert mock_runner.call_count == 4
 
 
-def test_du_teter_protocol_returns_5_history_entries(mock_runner, mock_structure, mock_potential):
-    """du_teter_protocol returns a list of 5 history entries."""
+def test_du_teter_protocol_returns_4_history_entries(mock_runner, mock_structure, mock_potential):
+    """du_teter_protocol returns a list of 4 history entries."""
     params = _make_params(mock_structure, mock_potential, temperature_high=5000.0)
     _, history = du_teter_protocol(mock_runner, params)
     assert len(history) == 4
@@ -331,31 +321,29 @@ _ALL_PROTOCOLS = {
     "yang2026": yang2026_protocol,
 }
 
-# Protocols that inject the pre-equilibration block into the first stage's
-# potential Config; SHIK instead runs it as its own stage 0 (fix override).
-_CONFIG_INJECTED_PROTOCOLS = {name: fn for name, fn in _ALL_PROTOCOLS.items() if name != "shik"}
+# Runner calls per protocol with pre_equilibrate=True (stage 0 included).
+_EXPECTED_STAGE_COUNTS = {
+    "pmmcs": 4,
+    "bmp": 4,
+    "bjp": 4,
+    "shik": 5,
+    "du_teter": 4,
+    "yang2026": 7,
+}
+
+# Protocols whose stage 1 equilibrates directly at temperature_high with
+# freshly created velocities (shik and yang2026 have their own stage-1 shapes).
+_DIRECT_MELT_PROTOCOLS = ("pmmcs", "bmp", "bjp", "du_teter")
 
 
-@pytest.mark.parametrize("protocol", _CONFIG_INJECTED_PROTOCOLS.values(), ids=_CONFIG_INJECTED_PROTOCOLS.keys())
-def test_protocol_first_stage_runs_pre_equilibration_block(protocol, mock_runner, mock_structure, mock_potential):
-    """The first stage appends the block at temperature_high; later stages use the potential as-is."""
+@pytest.mark.parametrize("name", list(_ALL_PROTOCOLS))
+def test_protocol_stage0_uses_fix_override(name, mock_runner, mock_structure, mock_potential):
+    """Every protocol runs the pre-equilibration as its own stage 0 via the fix override; Configs stay clean."""
     params = _make_params(mock_structure, mock_potential, temperature_high=4321.0)
-    protocol(mock_runner, params)
-    first_config = mock_runner.call_args_list[0].kwargs["potential"]["Config"].iloc[0]
-    assert first_config[:2] == ["line1", "line2"]
-    assert any("fix langevinnve all langevin 4321 4321 0.01 48279" in line for line in first_config)
-    assert sum("run 10000" in line for line in first_config) == 1
-    for c in mock_runner.call_args_list[1:]:
-        assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
+    _, history = _ALL_PROTOCOLS[name](mock_runner, params)
 
-
-def test_shik_protocol_stage0_uses_fix_override(mock_runner, mock_structure, mock_potential):
-    """SHIK runs the pre-equilibration as its own stage 0 via the fix override; all Configs stay clean."""
-    params = _make_params(mock_structure, mock_potential, temperature_high=4321.0)
-    _, history = shik_protocol(mock_runner, params)
-
-    assert mock_runner.call_count == 5
-    assert len(history) == 5
+    assert mock_runner.call_count == _EXPECTED_STAGE_COUNTS[name]
+    assert len(history) == _EXPECTED_STAGE_COUNTS[name]
     stage0 = mock_runner.call_args_list[0].kwargs
     assert stage0["n_ionic_steps"] == 10_000
     assert stage0["initial_temperature"] == 0
@@ -367,27 +355,31 @@ def test_shik_protocol_stage0_uses_fix_override(mock_runner, mock_structure, moc
         assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
 
 
-def test_shik_protocol_pre_equilibrate_false_skips_stage0(mock_runner, mock_structure, mock_potential):
+@pytest.mark.parametrize("name", list(_ALL_PROTOCOLS))
+def test_protocol_pre_equilibrate_false_skips_stage0(name, mock_runner, mock_structure, mock_potential):
     """pre_equilibrate=False skips stage 0 but keeps its None history slot for stable indices."""
     params = _make_params(mock_structure, mock_potential, pre_equilibrate=False)
-    _, history = shik_protocol(mock_runner, params)
+    _, history = _ALL_PROTOCOLS[name](mock_runner, params)
 
-    assert mock_runner.call_count == 4
-    assert len(history) == 5
+    assert mock_runner.call_count == _EXPECTED_STAGE_COUNTS[name] - 1
+    assert len(history) == _EXPECTED_STAGE_COUNTS[name]
     assert history[0] is None
     assert all("input_control_file" not in c.kwargs for c in mock_runner.call_args_list)
-
-
-@pytest.mark.parametrize("protocol", _ALL_PROTOCOLS.values(), ids=_ALL_PROTOCOLS.keys())
-def test_protocol_pre_equilibrate_false_leaves_potential_untouched(
-    protocol, mock_runner, mock_structure, mock_potential
-):
-    """No stage sees the pre-equilibration block when pre_equilibrate=False."""
-    params = _make_params(mock_structure, mock_potential, pre_equilibrate=False)
-    protocol(mock_runner, params)
-    assert mock_runner.call_count > 1
     for c in mock_runner.call_args_list:
         assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
+
+
+@pytest.mark.parametrize("name", _DIRECT_MELT_PROTOCOLS)
+def test_protocol_stage1_equilibrates_directly_at_temperature_high(name, mock_runner, mock_structure, mock_potential):
+    """Stage 1 creates velocities at temperature_high and holds it -- there is no heating ramp."""
+    params = _make_params(mock_structure, mock_potential, temperature_high=4321.0)
+    _ALL_PROTOCOLS[name](mock_runner, params)
+
+    stage1 = mock_runner.call_args_list[1].kwargs
+    assert stage1["temperature"] == 4321.0
+    assert stage1["initial_temperature"] == 4321.0
+    assert stage1["seed"] == 12345
+    assert "temperature_end" not in stage1
 
 
 def test_bmp_protocol_equilibration_steps_override(mock_runner, mock_structure, mock_potential):
@@ -397,7 +389,6 @@ def test_bmp_protocol_equilibration_steps_override(mock_runner, mock_structure, 
         potential=mock_potential,
         temperature_high=4000.0,
         temperature_low=300.0,
-        heating_steps=50,
         cooling_steps=50,
         timestep=1.0,
         n_dump=1000,
@@ -424,7 +415,6 @@ def test_yang2026_protocol_high_pressure_melt_stage(mock_runner, mock_structure,
         potential=mock_potential,
         temperature_high=4000.0,
         temperature_low=300.0,
-        heating_steps=100,
         cooling_steps=100,
         timestep=1.0,
         n_dump=1000,
@@ -446,7 +436,6 @@ def test_yang2026_protocol_equilibration_steps_override(mock_runner, mock_struct
         potential=mock_potential,
         temperature_high=4000.0,
         temperature_low=300.0,
-        heating_steps=50,
         cooling_steps=50,
         timestep=1.0,
         n_dump=1000,
@@ -455,7 +444,7 @@ def test_yang2026_protocol_equilibration_steps_override(mock_runner, mock_struct
         equilibration_steps=77,
     )
     yang2026_protocol(mock_runner, params)
-    # Stages 1-4 and 6 use eq_steps; stage 7 is now NVT sampling (not equilibration)
+    # Stages 1-4 and 6 use eq_steps; stage 0 is the pre-equilibration, stage 5 the cooling ramp
     for idx in (1, 2, 3, 4, 6):
         n_steps = mock_runner.call_args_list[idx].kwargs["n_ionic_steps"]
         assert n_steps == 77, f"Stage {idx}: expected 77 steps, got {n_steps}"
@@ -466,15 +455,14 @@ def test_yang2026_protocol_equilibration_steps_override(mock_runner, mock_struct
 # ---------------------------------------------------------------------------
 
 
-def test_melt_quench_simulation_heating_cooling_step_counts(mock_structure):
-    """Heating and cooling step counts are computed correctly from rates and timestep."""
+def test_melt_quench_simulation_cooling_step_count(mock_structure):
+    """The cooling step count is computed correctly from the rate and timestep."""
     # With T_high=4300, T_low=300, rate=1e12 K/s, timestep=1 fs:
     # steps = ((4300-300) / (1.0 * 1e12)) * 1e15 = 4000 * 1e3 = 4_000_000
     potential = pd.DataFrame({"Name": ["pmmcs"], "Config": [["line"]]})
     captured = {}
 
     def fake_protocol(_runner, params):
-        captured["heating_steps"] = params.heating_steps
         captured["cooling_steps"] = params.cooling_steps
         return mock_structure, []
 
@@ -486,19 +474,17 @@ def test_melt_quench_simulation_heating_cooling_step_counts(mock_structure):
             potential,
             temperature_high=4300.0,
             temperature_low=300.0,
-            heating_rate=1e12,
             cooling_rate=1e12,
             timestep=1.0,
         )
     finally:
         mq_module.PROTOCOL_MAP.update(original)
 
-    assert captured["heating_steps"] == 4_000_000
     assert captured["cooling_steps"] == 4_000_000
 
 
 def test_melt_quench_simulation_rejects_equal_temperatures(mock_structure):
-    """temperature_high == temperature_low raises before any protocol stage runs (0 heating/cooling steps)."""
+    """temperature_high == temperature_low raises before any protocol stage runs (zero cooling steps)."""
     potential = pd.DataFrame({"Name": ["pmmcs"], "Config": [["line"]]})
     with pytest.raises(ValueError, match="must differ"):
         melt_quench_simulation(mock_structure, potential, temperature_high=3000.0, temperature_low=3000.0)

@@ -25,7 +25,6 @@ def melt_quench_simulation(
     temperature_high: float | None = None,
     temperature_low: float = 300.0,
     timestep: float = 1.0,
-    heating_rate: float = 1e12,
     cooling_rate: float = 1e12,
     n_dump: int | None = None,
     n_print_thermo: int | None = 100,
@@ -39,20 +38,20 @@ def melt_quench_simulation(
 ) -> dict:  # pylint: disable=too-many-positional-arguments
     """Perform a melt-quench simulation using LAMMPS.
 
-    This function heats a structure to a high temperature, equilibrates it,
-    and then cools it down to a low temperature, simulating a melt-quench process.
-    The heating and cooling rates are given in K/s, and the conversion into simulation steps is done automatically.
+    This function equilibrates the liquid directly at a high temperature and
+    then cools it down to a low temperature, simulating a melt-quench process.
+    There is no heating ramp: every protocol optionally pre-equilibrates the
+    random structure at `temperature_high` (stage 0) and then equilibrates the
+    melt at that temperature. The cooling rate is given in K/s, and the
+    conversion into simulation steps is done automatically.
 
     Args:
         structure: The initial atomic structure to be melted and quenched.
         potential: The potential file to be used for the simulation.
-        temperature_high: The high temperature to which the structure will be heated.
+        temperature_high: The melt temperature at which the liquid is equilibrated.
             If None, the protocol's default melt temperature is used (e.g. 4000 K for SHIK, 5000 K for others).
         temperature_low: The low temperature to which the structure will be cooled.
         timestep: Time step for integration in femtoseconds.
-        heating_rate: The rate at which the temperature is increased during the heating phase,
-            in K/s. Note: the SHIK protocol has no heating stage and ignores `heating_rate` --
-            it equilibrates the liquid directly at `temperature_high`.
         cooling_rate: The rate at which the temperature is decreased during the cooling phase,
             in K/s.
         n_dump: Dump frequency in simulation steps. If None, falls back to the
@@ -74,7 +73,7 @@ def melt_quench_simulation(
 
     Raises:
         ValueError: If the resolved `temperature_high` equals `temperature_low`
-            (zero heating/cooling steps would otherwise be sent to LAMMPS).
+            (zero cooling steps would otherwise be sent to LAMMPS).
 
     Example:
         >>> result = melt_quench_simulation(
@@ -95,11 +94,10 @@ def melt_quench_simulation(
     if temperature_high == temperature_low:
         msg = (
             f"temperature_high must differ from temperature_low (both are {temperature_high} K): "
-            "heating/cooling requires a nonzero temperature range."
+            "cooling requires a nonzero temperature range."
         )
         raise ValueError(msg)
 
-    heating_steps = int(((temperature_high - temperature_low) / (timestep * heating_rate)) * seconds_to_femtos)
     cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
 
     if potential_name in {"bmp-screened-harmonic", "bmp-harmonic"}:
@@ -117,7 +115,6 @@ def melt_quench_simulation(
         potential=potential,
         temperature_high=temperature_high,
         temperature_low=temperature_low,
-        heating_steps=heating_steps,
         cooling_steps=cooling_steps,
         timestep=timestep,
         n_dump=n_dump,

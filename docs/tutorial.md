@@ -69,7 +69,7 @@ potential = generate_potential(structure_dict, potential_type="pmmcs")
 
 ### 3. Run a melt-quench simulation
 
-Transform the random initial structure into a realistic amorphous glass through a heating-equilibration-cooling cycle:
+Transform the random initial structure into a realistic amorphous glass through a melt-equilibration-cooling cycle:
 
 ```python
 from amorphouspy import melt_quench_simulation
@@ -79,8 +79,7 @@ result = melt_quench_simulation(
     potential=potential,
     temperature_high=5000.0,   # Melt at 5000 K
     temperature_low=300.0,     # Quench to 300 K
-    heating_rate=1e12,         # K/s (typical for MD)
-    cooling_rate=1e12,         # K/s
+    cooling_rate=1e12,         # K/s (typical for MD)
 )
 
 glass_structure = result["structure"]  # Quenched glass

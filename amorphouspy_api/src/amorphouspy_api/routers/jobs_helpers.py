@@ -584,19 +584,17 @@ def _compute_total_md_steps(mq: dict) -> str:
     """Estimate the total MD integration steps from melt-quench parameters."""
     timestep_fs = mq.get("timestep", 1.0)
     cooling_rate = mq.get("cooling_rate")
-    heating_rate = mq.get("heating_rate")
     t_high = mq.get("temperature_high")
     t_low = mq.get("temperature_low", 300.0)
 
-    if not all([cooling_rate, heating_rate, t_high]):
+    if not all([cooling_rate, t_high]):
         return "N/A"
 
     seconds_to_fs = 1e15
     delta_t = t_high - t_low
-    heating_steps = int((delta_t / (timestep_fs * heating_rate)) * seconds_to_fs)
     cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
-    # Fixed protocol stages: equil_high(10k) + pressure_release(10k) + long_equil(100k)
-    total = heating_steps + 10_000 + cooling_steps + 10_000 + 100_000
+    # Fixed protocol stages: pre_equilibration(10k) + equil_high(10k) + pressure_release(10k) + long_equil(100k)
+    total = 10_000 + 10_000 + cooling_steps + 10_000 + 100_000
     return f"{total:,}"
 
 
@@ -721,19 +719,20 @@ def build_visualization_context(
     _protocol_descriptions: dict[str, str] = {
         "pmmcs": (
             "PMMCS (Pedone-Menziani-Morse-Coulomb-Short) protocol: "
-            "NVT heating ramp, NVT high-temperature equilibration (1\u2009ns), "
-            "NVT cooling ramp, NPT pressure release at P\u2009=\u20090 (1\u2009ns), "
-            "and final NVT equilibration (0.1\u2009ns)."
+            "Langevin + nve/limit pre-equilibration at the melt temperature, "
+            "NVT melt equilibration (1\u2009ns), NVT cooling ramp, "
+            "and NPT pressure release at P\u2009=\u20090 (1\u2009ns)."
         ),
         "bjp": (
             "BJP (Born-Mayer-Huggins) protocol: "
-            "NPT heating ramp at P\u2009=\u20090, NPT high-temperature equilibration (0.1\u2009ns), "
-            "NPT cooling ramp, NPT pressure release (0.1\u2009ns), "
-            "and final NVT equilibration (0.1\u2009ns)."
+            "Langevin + nve/limit pre-equilibration at the melt temperature, "
+            "NPT melt equilibration at P\u2009=\u20090 (0.1\u2009ns), "
+            "NPT cooling ramp, and NPT pressure release (0.1\u2009ns)."
         ),
         "shik": (
             "SHIK (Buckingham + r\u207b\u00b2\u2074 repulsion) protocol: "
-            "NVT Langevin heating, NVT equilibration (~0.1\u2009ns), "
+            "Langevin + nve/limit pre-equilibration at the melt temperature, "
+            "NVT equilibration (~0.1\u2009ns), "
             "NPT equilibration at 0.1\u2009GPa (~0.7\u2009ns), "
             "NPT cooling with pressure ramp 0.1\u2009\u2192\u20090\u2009GPa, "
             "and NPT anneal at 0\u2009GPa (~0.1\u2009ns)."

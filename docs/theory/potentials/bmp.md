@@ -168,7 +168,7 @@ potential_b = generate_potential(structure_dict_b, potential_type="bmp-screened-
 
 ### Melt pre-equilibration
 
-The BMP potential can produce large forces on random configurations, particularly from the $r^{-12}$ repulsive wall. The melt-quench protocol therefore runs 10,000 steps of Langevin dynamics with a maximum displacement of 0.5 Å per step at the melt temperature to gently relax atomic overlaps before its first heating stage (enabled by default via the `pre_equilibrate` argument of `run_melt_quench` / `melt_quench_simulation`).
+The BMP potential can produce large forces on random configurations, particularly from the $r^{-12}$ repulsive wall. The melt-quench protocol therefore runs 10,000 steps of Langevin dynamics with a maximum displacement of 0.5 Å per step at the melt temperature as its own stage 0, gently relaxing atomic overlaps before the melt equilibration (enabled by default via the `pre_equilibrate` argument of `run_melt_quench` / `melt_quench_simulation`).
 
 Pass `pre_equilibrate=False` to omit this stage — useful when starting from an already-equilibrated structure.
 

@@ -15,30 +15,28 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
     """
     timestep_fs = mq_data.get("timestep", 1.0)
     cooling_rate = mq_data.get("cooling_rate")
-    heating_rate = mq_data.get("heating_rate")
     t_high = mq_data.get("temperature_high")
     t_low = mq_data.get("temperature_low", 300.0)
 
-    if not all([cooling_rate, heating_rate, t_high]):
+    if not all([cooling_rate, t_high]):
         return None
 
     assert cooling_rate is not None
-    assert heating_rate is not None
     assert t_high is not None
 
     fs_to_ps = 1e-3
     seconds_to_fs = 1e15
     dt_ps = timestep_fs * fs_to_ps
 
-    # Reconstruct protocol stages (PMMCS-like):
-    # Stage 1: Heat T_low -> T_high
-    delta_t = t_high - t_low
-    heating_steps = int((delta_t / (timestep_fs * heating_rate)) * seconds_to_fs)
-    # Stage 2: Equilibration at T_high (10k steps)
+    # Reconstruct protocol stages (no heating ramp -- the melt starts at T_high):
+    # Stage 0: Langevin + nve/limit pre-equilibration at T_high (10k steps)
+    pre_equilibration_steps = 10_000
+    # Stage 1: Equilibration at T_high (10k steps)
     equil_high_steps = 10_000
-    # Stage 3: Cool T_high -> T_low
+    # Stage 2: Cool T_high -> T_low
+    delta_t = t_high - t_low
     cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
-    # Stage 4: Pressure release at T_low (10k steps)
+    # Stage 3: Pressure release at T_low (10k steps)
     pressure_release_steps = 10_000
 
     # Build time and temperature arrays
@@ -59,13 +57,13 @@ def build_temperature_time_plot(mq_data: dict[str, Any]) -> str | None:
         t_offset = t1
         return t1
 
-    # Stage 1: Heating
-    _add_segment(heating_steps, t_low, t_high)
-    # Stage 2: Equil at T_high
+    # Stage 0: Pre-equilibration at T_high
+    _add_segment(pre_equilibration_steps, t_high, t_high)
+    # Stage 1: Equil at T_high
     _add_segment(equil_high_steps, t_high, t_high)
-    # Stage 3: Cooling
+    # Stage 2: Cooling
     _add_segment(cooling_steps, t_high, t_low)
-    # Stage 4: Pressure release
+    # Stage 3: Pressure release
     _add_segment(pressure_release_steps, t_low, t_low)
 
     # Cooling rate annotation

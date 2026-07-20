@@ -125,14 +125,12 @@ potential = generate_potential(structure_dict, potential_type="shik")
 
 ### Langevin pre-equilibration
 
-Randomly generated starting structures (from `generate_structure`) contain atomic overlaps that can make the simulation explode when integrated directly with the SHIK potential, due to extremely large forces from the steep $r^{-24}$ repulsion term at short inter-atomic distances. For this reason the melt-quench protocol runs a **Langevin dynamics + NVE/limit pre-equilibration** at the melt temperature as its own stage 0 (enabled by default via the `pre_equilibrate` argument of `run_melt_quench` / `melt_quench_simulation`; when disabled, the stage is skipped and its history entry is `None`). The SHIK protocol has no heating ramp — after stage 0, stage 1 equilibrates the system directly at the melt temperature, following the published SHIK recipe:
+Randomly generated starting structures (from `generate_structure`) contain atomic overlaps that can make the simulation explode when integrated directly with the SHIK potential, due to extremely large forces from the steep $r^{-24}$ repulsion term at short inter-atomic distances. For this reason the melt-quench protocol runs a **Langevin dynamics + NVE/limit pre-equilibration** at the melt temperature as its own stage 0 (enabled by default via the `pre_equilibrate` argument of `run_melt_quench` / `melt_quench_simulation`; when disabled, the stage is skipped and its history entry is `None`). Like every protocol, SHIK has no heating ramp — after stage 0, stage 1 equilibrates the system directly at the melt temperature, following the published SHIK recipe:
 
 ```
-fix langevin all langevin 4000 4000 0.01 48279
-fix ensemble all nve/limit 0.5
+fix langevinnve all langevin 4000 4000 0.01 48279
+fix ensemblenve all nve/limit 0.5
 run 10000
-unfix langevin
-unfix ensemble
 ```
 
 This runs 10,000 steps of velocity-limited NVE with Langevin damping, allowing atoms to move apart gently (max 0.5 Å per step) before the main simulation begins.
