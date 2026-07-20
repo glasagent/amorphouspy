@@ -28,6 +28,7 @@ def md_simulation(
     langevin: bool = False,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
+    input_control_file: dict | None = None,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
     """Perform a molecular dynamics simulation using LAMMPS.
 
@@ -57,6 +58,8 @@ def md_simulation(
             With the specification of tmp_working_directory, the temporary directory is created in the specified
             location. Therefore, tmp_working_directory needs to exist beforehand. Data will be cleaned after the
             simulation is finished.
+        input_control_file: Optional LAMMPS input overrides merged on top of the
+            default generated controls.
 
     Returns:
         A dictionary containing the simulation steps and temperature data.
@@ -85,6 +88,7 @@ def md_simulation(
         langevin=langevin,
         seed=seed,
         server_kwargs=server_kwargs,
+        input_control_file=input_control_file,
     )
 
     result = parsed_output.get("generic", None)
