@@ -44,7 +44,7 @@ $$
 \sigma = \frac{1}{H_R}\sum_i \frac{N_i}{V}\frac{(z_i e)^2 D_i}{k_\mathrm{B} T},
 $$
 
-summed over mobile species $i$ with formal charge $z_i$. Because cross-correlations between ions are ignored, this is an upper-bound estimate.
+summed over mobile species $i$ with formal charge $z_i$. Because cross-correlations between ions are ignored, this is an upper-bound estimate; Salrin et al. 2023 compute $H_R$ directly from LAMMPS MD for alkali silicate glasses if a non-unity Haven ratio is needed.
 
 ---
 
@@ -109,3 +109,5 @@ sigma = nernst_einstein_conductivity(
 ## References
 
 Calandrini, V., Pellegrini, E., Calligari, P., Hinsen, K. & Kneller, G. R. nMoldyn - Interfacing spectroscopic experiments, molecular dynamics simulations and models for time correlation functions. *Collection SFN* **12**, 201–232 (2011). <https://doi.org/10.1051/sfn/201112010>
+
+Salrin, T. C., Johnson, L., White, S., Kilpatrick, G., Weber, E. & Bragatto, C. Using LAMMPS to shed light on Haven's ratio: Calculation of Haven's ratio in alkali silicate glasses using molecular dynamics. *Frontiers in Materials* **10**, 1123213 (2023). <https://doi.org/10.3389/fmats.2023.1123213>
