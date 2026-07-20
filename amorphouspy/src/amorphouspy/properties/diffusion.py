@@ -162,8 +162,11 @@ def log_linear_dump_steps(
         Sorted list of dump timesteps (inclusive of *first_step*, up to *total_steps*).
 
     Example:
+        ```pycon
         >>> log_linear_dump_steps(100000, crossover_steps=100000, points_per_decade=9, linear_interval_steps=1000)[:12]
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20]
+
+        ```
     """
     steps = [int(first_step)]
     current = first_step
@@ -231,11 +234,14 @@ def compute_msd(
         *per_species* is set, also ``"msd_per_species"`` and ``"n_atoms_per_species"``.
 
     Example:
+        ```pycon
         >>> from amorphouspy import diffusion_simulation  # doctest: +SKIP
         >>> out = diffusion_simulation(structure, potential)  # doctest: +SKIP
         >>> msd = compute_msd(out["frames"], timestep=1.0, output_frequency=100)  # doctest: +SKIP
         >>> msd["msd_total"][0]  # doctest: +SKIP
         0.0
+
+        ```
     """
     positions, numbers, temperature = _build_trajectory(frames, remove_com_drift=remove_com_drift)
     n_frames = positions.shape[0]
@@ -343,10 +349,13 @@ def get_diffusion(
         ``slope_a2_ps``, ``fit_residual_cm2_s``, ``fit_window_ps`` and ``loglog_slope``.
 
     Example:
+        ```pycon
         >>> msd = {"lag_time_ps": [0, 1, 2, 3, 4], "msd_total": [0.0, 6.0, 12.0, 18.0, 24.0]}
         >>> out = get_diffusion(msd, fit_start_frac=0.0, fit_end_frac=1.0)
         >>> round(out["total"]["diffusion_cm2_s"], 6)
         0.0001
+
+        ```
     """
     lag_time_ps = np.asarray(msd_result["lag_time_ps"], dtype=float)
 
@@ -555,8 +564,11 @@ def diffusion_simulation(
         (:func:`get_diffusion` output) and ``"trajectory_path"`` (or ``None``).
 
     Example:
+        ```pycon
         >>> out = diffusion_simulation(structure, potential, temperature_sim=3000.0)  # doctest: +SKIP
         >>> out["diffusion"]["per_species"]["Na"]["diffusion_cm2_s"]  # doctest: +SKIP
+
+        ```
     """
     if potential.empty:
         msg = "No matching potential found for the given configuration."

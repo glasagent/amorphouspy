@@ -11,7 +11,7 @@ Self-diffusion quantifies how far atoms wander over time. It characterises ionic
 The self part of atomic motion is captured by the mean-squared displacement (MSD) of species $s$,
 
 $$
-\mathrm{MSD}_s(t) = \frac{1}{N_s}\sum_{i\in s}\big\langle\,|\mathbf{r}_i(t_0+t) - \mathbf{r}_i(t_0)|^2\,\big\rangle_{t_0},
+\mathrm{MSD}_s(t) = \frac{1}{N_s}\sum_{i\in s}\big\langle|\mathbf{r}_i(t_0+t) - \mathbf{r}_i(t_0)|^2\big\rangle_{t_0},
 $$
 
 averaged over all atoms of the species and over all available time origins $t_0$. The displacements use **unwrapped** coordinates, so an atom crossing a periodic boundary contributes its true path, not an artificial jump back into the box.
@@ -21,8 +21,7 @@ averaged over all atoms of the species and over all available time origins $t_0$
 In the diffusive regime the MSD grows linearly with time, and the self-diffusion coefficient follows from the Einstein relation in $d$ dimensions:
 
 $$
-\mathrm{MSD}(t) = 2\,d\,D\,t \qquad\Rightarrow\qquad D = \frac{1}{2d}\,\frac{\mathrm{d}\,\mathrm{MSD}}{\mathrm{d}t}
-\quad (d = 3 \Rightarrow \mathrm{MSD} = 6 D t).
+\mathrm{MSD}(t) = 2dDt \qquad\Rightarrow\qquad D = \frac{1}{2d}\frac{\mathrm{d}\mathrm{MSD}}{\mathrm{d}t} \quad (d = 3 \Rightarrow \mathrm{MSD} = 6 D t).
 $$
 
 $D$ is obtained from the slope of a straight-line fit over the diffusive window. At short times motion is ballistic ($\mathrm{MSD}\propto t^2$) and at long times the single-origin average becomes noisy, so the fit excludes both ends. The log–log slope of the MSD over the fit window is reported; a value far from 1 signals that the trajectory has not reached the diffusive regime.
@@ -32,7 +31,7 @@ $D$ is obtained from the slope of a straight-line fit over the diffusive window.
 Diffusion in glass-forming oxides is thermally activated. Fitting $D(T)$ at several temperatures to an Arrhenius law
 
 $$
-D(T) = D_0\,\exp\!\left(-\frac{E_a}{k_\mathrm{B} T}\right)
+D(T) = D_0\exp\left(-\frac{E_a}{k_\mathrm{B} T}\right)
 $$
 
 (a linear fit of $\ln D$ versus $1/T$) gives the activation energy $E_a$ and prefactor $D_0$.
@@ -42,7 +41,7 @@ $$
 Assuming uncorrelated ionic motion (Haven ratio $H_R = 1$), the diffusion coefficients map onto an ionic conductivity through the Nernst–Einstein relation,
 
 $$
-\sigma = \frac{1}{H_R}\sum_i \frac{N_i}{V}\,\frac{(z_i e)^2 D_i}{k_\mathrm{B} T},
+\sigma = \frac{1}{H_R}\sum_i \frac{N_i}{V}\frac{(z_i e)^2 D_i}{k_\mathrm{B} T},
 $$
 
 summed over mobile species $i$ with formal charge $z_i$. Because cross-correlations between ions are ignored, this is an upper-bound estimate.
@@ -102,7 +101,7 @@ sigma = nernst_einstein_conductivity(
 ### Units & conventions
 
 - Positions in Å, time in ps; MSD in Å²; $D$ reported in both cm²/s and m²/s
-  ($1\,\text{Å}^2/\text{ps} = 10^{-4}\,\text{cm}^2/\text{s} = 10^{-8}\,\text{m}^2/\text{s}$).
+  ($1\text{\AA}^2/\text{ps} = 10^{-4}\text{cm}^2/\text{s} = 10^{-8}\text{m}^2/\text{s}$).
 - Production trajectories are dumped id-sorted (`dump_modify ... sort id`) so an atom keeps its identity across frames.
 
 ---
