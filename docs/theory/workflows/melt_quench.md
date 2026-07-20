@@ -17,7 +17,7 @@ graph TD
 
 ### Stages
 
-1. **Pre-equilibration (stage 0)** — Langevin + `nve/limit` run at the melt temperature that gently relaxes atomic overlaps in the random configuration (optional; `pre_equilibrate=True` by default)
+1. **Pre-equilibration (stage 0)** — Langevin + `nve/limit` run at the melt temperature that removes atomic overlaps in the random configuration (optional; `pre_equilibrate=True` by default)
 2. **Melt equilibration** — Equilibrate the liquid directly at the melt temperature (typically 3000–6000 K); there is no heating ramp
 3. **Cooling** — Ramp temperature down to the target glass temperature (typically 300 K)
 4. **Final equilibration** — Pressure release / anneal at the target temperature
