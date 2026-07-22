@@ -1,8 +1,8 @@
 """Tests for the pure self-diffusion analysis functions in ``amorphouspy.properties.diffusion``.
 
 These exercise the MSD algorithm, diffusion fitting, PBC unwrapping, COM-drift removal,
-per-species resolution, the Arrhenius fit and Nernst-Einstein conductivity against analytic
-ground truths, without running LAMMPS.
+per-species resolution and the Arrhenius fit against analytic ground truths, without running
+LAMMPS.
 """
 
 import warnings
@@ -16,7 +16,6 @@ from amorphouspy.properties.diffusion import (
     fit_arrhenius,
     get_diffusion,
     log_linear_dump_steps,
-    nernst_einstein_conductivity,
 )
 from ase import Atoms
 
@@ -121,22 +120,6 @@ def test_fit_arrhenius_rejects_nonpositive():
     """Non-positive diffusivities are rejected."""
     with pytest.raises(ValueError, match="strictly positive"):
         fit_arrhenius([2000.0, 3000.0], [1e-3, -1e-3])
-
-
-def test_nernst_einstein_closed_form():
-    """Single-species Nernst-Einstein conductivity matches the closed-form value."""
-    diffusion = 1e-9
-    out = nernst_einstein_conductivity(
-        {"Na": diffusion},
-        {"Na": 1.0},
-        n_per_species={"Na": 100},
-        volume_a3=1.0e5,
-        temperature=1000.0,
-    )
-    e_charge, kb_j = 1.602176634e-19, 1.380649e-23
-    expected = (100 / (1.0e5 * 1e-30)) * (1.0 * e_charge) ** 2 * diffusion / (kb_j * 1000.0)
-    assert out["conductivity_S_m"] == pytest.approx(expected, rel=1e-9)
-    assert out["per_species_contribution"]["Na"] == pytest.approx(expected, rel=1e-9)
 
 
 def test_subdiffusive_warning():

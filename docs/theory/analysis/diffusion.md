@@ -1,6 +1,6 @@
 # Self-Diffusion & Mean-Squared Displacement
 
-Self-diffusion quantifies how far atoms wander over time. It characterises ionic mobility in melts and glasses (e.g. alkali transport), sets the time scale for structural relaxation, and — together with formal charges — yields an estimate of the ionic conductivity.
+Self-diffusion quantifies how far atoms wander over time. It characterises ionic mobility in melts and glasses (e.g. alkali transport) and sets the time scale for structural relaxation.
 
 ---
 
@@ -36,16 +36,6 @@ $$
 
 (a linear fit of $\ln D$ versus $1/T$) gives the activation energy $E_a$ and prefactor $D_0$.
 
-### Ionic conductivity (Nernst–Einstein)
-
-Assuming uncorrelated ionic motion (Haven ratio $H_R = 1$), the diffusion coefficients map onto an ionic conductivity through the Nernst–Einstein relation,
-
-$$
-\sigma = \frac{1}{H_R}\sum_i \frac{N_i}{V}\frac{(z_i e)^2 D_i}{k_\mathrm{B} T},
-$$
-
-summed over mobile species $i$ with formal charge $z_i$. Because cross-correlations between ions are ignored, this is an upper-bound estimate; Salrin et al. 2023 compute $H_R$ directly from LAMMPS MD for alkali silicate glasses if a non-unity Haven ratio is needed.
-
 ---
 
 ## Implementation
@@ -67,7 +57,7 @@ Implementation: an equal-style LAMMPS variable drives `dump_modify <id> every v_
 ```python
 from amorphouspy import (
     diffusion_simulation, compute_msd, get_diffusion,
-    fit_arrhenius, nernst_einstein_conductivity, save_frames,
+    fit_arrhenius, save_frames,
 )
 import ase.io, gzip
 
@@ -86,12 +76,6 @@ diffusion = get_diffusion(compute_msd(frames, method="single_origin"))
 
 # Activation energy from D(T) collected at several temperatures.
 (D0, Ea_eV), _ = fit_arrhenius(temperatures, diffusivities)
-
-# Ionic conductivity from per-species D (m^2/s) and formal charges.
-sigma = nernst_einstein_conductivity(
-    {"Na": D_na_m2_s}, {"Na": 1.0},
-    n_per_species={"Na": n_na}, volume_a3=volume, temperature=3000.0,
-)
 ```
 
 ### Saving & reloading
@@ -100,8 +84,7 @@ sigma = nernst_einstein_conductivity(
 
 ### Units & conventions
 
-- Positions in Å, time in ps; MSD in Å²; $D$ reported in both cm²/s and m²/s
-  ($1\text{\AA}^2/\text{ps} = 10^{-4}\text{cm}^2/\text{s} = 10^{-8}\text{m}^2/\text{s}$).
+- Positions in Å, time in ps; MSD in Å²; $D$ reported in both cm²/s and m²/s ($1\text{\AA}^2/\text{ps} = 10^{-4}\text{cm}^2/\text{s} = 10^{-8}\text{m}^2/\text{s}$).
 - Production trajectories are dumped id-sorted (`dump_modify ... sort id`) so an atom keeps its identity across frames.
 
 ---
@@ -109,5 +92,3 @@ sigma = nernst_einstein_conductivity(
 ## References
 
 Calandrini, V., Pellegrini, E., Calligari, P., Hinsen, K. & Kneller, G. R. nMoldyn - Interfacing spectroscopic experiments, molecular dynamics simulations and models for time correlation functions. *Collection SFN* **12**, 201–232 (2011). <https://doi.org/10.1051/sfn/201112010>
-
-Salrin, T. C., Johnson, L., White, S., Kilpatrick, G., Weber, E. & Bragatto, C. Using LAMMPS to shed light on Haven's ratio: Calculation of Haven's ratio in alkali silicate glasses using molecular dynamics. *Frontiers in Materials* **10**, 1123213 (2023). <https://doi.org/10.3389/fmats.2023.1123213>

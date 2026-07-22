@@ -33,7 +33,6 @@ from amorphouspy.properties.diffusion import (
     fit_arrhenius,
     get_diffusion,
     log_linear_dump_steps,
-    nernst_einstein_conductivity,
     save_frames,
 )
 from amorphouspy.properties.elastic import elastic_simulation
@@ -108,7 +107,6 @@ __all__ = [
     "log_linear_dump_steps",
     "md_simulation",
     "melt_quench_simulation",
-    "nernst_einstein_conductivity",
     "parse_formula",
     "plan_system",
     "plot_analysis_results_plotly",

@@ -36,9 +36,7 @@ from amorphouspy.lammps.io import frames_from_melt_quench_result
 from amorphouspy.lammps.runner import _run_lammps_md
 
 # Physical constants (CODATA 2018).
-_KB_J = 1.380649e-23  # Boltzmann constant, J/K
 _KB_EV = 8.617333262e-5  # Boltzmann constant, eV/K
-_E_CHARGE = 1.602176634e-19  # elementary charge, C
 
 # Unit conversion for diffusion coefficients: 1 Angstrom^2/ps = 1e-4 cm^2/s = 1e-8 m^2/s.
 _A2_PS_TO_CM2_S = 1e-4
@@ -417,68 +415,6 @@ def fit_arrhenius(
     activation_energy_ev = -slope * _KB_EV
     prefactor = float(np.exp(intercept))
     return (prefactor, float(activation_energy_ev)), covariance
-
-
-def nernst_einstein_conductivity(
-    diffusion_per_species: dict[str, float],
-    charges: dict[str, float],
-    *,
-    n_per_species: dict[str, int],
-    volume_a3: float,
-    temperature: float,
-    haven_ratio: float = 1.0,
-) -> dict[str, Any]:
-    """Estimate ionic conductivity from self-diffusion via the Nernst-Einstein relation.
-
-    Computes ``sigma = (1 / H_R) * sum_i (N_i / V) * (z_i e)^2 * D_i / (kB T)``. The Haven ratio
-    ``H_R`` defaults to 1 (no cross-correlations), so this is an upper-bound estimate that ignores
-    correlated ionic motion.
-
-    Args:
-        diffusion_per_species: Self-diffusion coefficient per element in m^2/s.
-        charges: Formal charge per element in units of the elementary charge (e.g. ``{"Na": 1}``).
-        n_per_species: Number of atoms of each element in the cell.
-        volume_a3: Cell volume in cubic Angstrom.
-        temperature: Temperature in Kelvin.
-        haven_ratio: Haven ratio ``H_R``.
-
-    Returns:
-        Dict with total ``"conductivity_S_m"`` (S/m), the ``"per_species_contribution"`` mapping,
-        ``"haven_ratio"`` and ``"temperature"``.
-
-    Example:
-        >>> out = nernst_einstein_conductivity(
-        ...     {"Na": 1e-9},
-        ...     {"Na": 1.0},
-        ...     n_per_species={"Na": 100},
-        ...     volume_a3=1.0e5,
-        ...     temperature=1000.0,
-        ... )
-        >>> out["conductivity_S_m"] > 0
-        True
-    """
-    if temperature <= 0 or volume_a3 <= 0 or haven_ratio <= 0:
-        msg = "temperature, volume_a3 and haven_ratio must be strictly positive."
-        raise ValueError(msg)
-
-    volume_m3 = volume_a3 * 1e-30
-    contributions: dict[str, float] = {}
-    total = 0.0
-    for symbol, diffusion in diffusion_per_species.items():
-        charge = charges.get(symbol)
-        count = n_per_species.get(symbol)
-        if charge is None or count is None or charge == 0:
-            continue
-        sigma_i = (count / volume_m3) * (charge * _E_CHARGE) ** 2 * diffusion / (_KB_J * temperature) / haven_ratio
-        contributions[symbol] = float(sigma_i)
-        total += sigma_i
-
-    return {
-        "conductivity_S_m": float(total),
-        "per_species_contribution": contributions,
-        "haven_ratio": haven_ratio,
-        "temperature": temperature,
-    }
 
 
 def save_frames(frames: list[Atoms], path: str | Path) -> Path:
