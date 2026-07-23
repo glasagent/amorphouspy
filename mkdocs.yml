@@ -54,6 +54,7 @@ nav:
     - Trajectory Averaging: notebooks/TrajectoryAveragingTutorial.ipynb
     - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/ViscosityTutorial.ipynb
+    - Self-Diffusion: notebooks/DiffusionTutorial.ipynb
     - CTE: notebooks/CTE.ipynb
     # - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
   - Theory:
@@ -82,6 +83,7 @@ nav:
         - Ring Statistics: theory/analysis/rings.md
         - Cavity Analysis: theory/analysis/cavities.md
         - Structure Factor: theory/analysis/structure_factor.md
+        - Self-Diffusion & MSD: theory/analysis/diffusion.md
         - CTE Analysis: theory/analysis/cte_analysis.md
         - Trajectory Averaging: theory/analysis/trajectory_averaging.md
   - Developers:

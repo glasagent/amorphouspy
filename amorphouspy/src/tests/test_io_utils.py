@@ -289,6 +289,26 @@ def test_structure_from_parsed_output_wrap_true_wraps_positions():
     assert (result.get_positions() >= 0.0).all()
 
 
+def test_frames_from_result_handles_more_dump_than_thermo_frames():
+    """Thermo scalars are shorter than dump arrays (e.g. log-spaced dump); building must not crash."""
+    atoms = _simple_atoms()
+    n_dump, n_thermo = 8, 5
+    stage = {
+        "positions": np.zeros((n_dump, len(atoms), 3)),
+        "cells": np.tile(np.eye(3) * 5.0, (n_dump, 1, 1)),
+        "unwrapped_positions": np.zeros((n_dump, len(atoms), 3)),
+        "temperature": np.full(n_thermo, 3000.0),
+        "energy_pot": np.zeros(n_thermo),
+        "energy_tot": np.zeros(n_thermo),
+        "volume": np.full(n_thermo, 125.0),
+        "pressures": np.zeros((n_thermo, 3, 3)),
+    }
+    frames = frames_from_melt_quench_result({"structure": atoms, "result": [stage]}, atoms)
+    assert len(frames) == n_dump
+    assert frames[0].info["temperature"] == 3000.0  # set where thermo data exists
+    assert "temperature" not in frames[-1].info  # gracefully skipped beyond thermo length
+
+
 # ---------------------------------------------------------------------------
 # frames_from_melt_quench_result
 # ---------------------------------------------------------------------------

@@ -150,13 +150,18 @@ def frames_from_melt_quench_result(
             atoms.set_velocities(stage_data["velocities"][i])
         if "indices" in stage_data:
             atoms.set_array("indices", stage_data["indices"][i])
-        atoms.info["temperature"] = stage_data["temperature"][i]
-        atoms.info["energy_pot"] = stage_data["energy_pot"][i]
-        atoms.info["energy_tot"] = stage_data["energy_tot"][i]
-        atoms.info["volume"] = stage_data["volume"][i]
-        atoms.info["pressure"] = stage_data["pressures"][i]
-        if "steps" in stage_data and i < len(stage_data["steps"]):
-            atoms.info["step"] = stage_data["steps"][i]
+        # Thermo-derived scalars are logged on a separate (thermo) cadence, so they can be shorter than
+        # the per-frame dump arrays (e.g. with a log-spaced dump schedule); guard each access.
+        for info_key, data_key in (
+            ("temperature", "temperature"),
+            ("energy_pot", "energy_pot"),
+            ("energy_tot", "energy_tot"),
+            ("volume", "volume"),
+            ("pressure", "pressures"),
+            ("step", "steps"),
+        ):
+            if data_key in stage_data and i < len(stage_data[data_key]):
+                atoms.info[info_key] = stage_data[data_key][i]
         if "forces" in stage_data:
             atoms.arrays["forces"] = stage_data["forces"][i]
         if "unwrapped_positions" in stage_data:
