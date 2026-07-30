@@ -100,6 +100,7 @@ def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysi
         potential=potential,
         timestep=submission.simulation.timestep,
         n_averaging_frames=config.n_averaging_frames,
+        n_jobs=config.n_jobs,
         temperature=300.0,
         r_max=config.rdf_cutoff,
         n_bins=n_bins,

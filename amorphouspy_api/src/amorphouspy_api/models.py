@@ -230,6 +230,15 @@ class StructureAnalysis(BaseModel):
         ge=1,
         description="Number of frames to collect in the separate post-quench NVT sampling run; 1 analyzes only the final quenched structure without extra MD",
     )
+    n_jobs: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Number of worker processes for frame-averaged structural post-processing. "
+            "Values larger than n_averaging_frames + 1 are capped automatically "
+            "(+1 accounts for frame 0)."
+        ),
+    )
 
 
 class ViscosityAnalysis(BaseModel):

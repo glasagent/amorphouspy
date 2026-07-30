@@ -186,6 +186,35 @@ class TestRunStructuralAnalysis:
             run_structural_analysis(glass_atoms, n_averaging_frames=2)
 
     @patch("amorphouspy.properties.structural.all._run_lammps_md")
+    @patch("amorphouspy.properties.structural.all.analyze_structure")
+    def test_n_jobs_larger_than_n_averaging_frames_is_capped(
+        self,
+        mock_analyze: MagicMock,
+        mock_run_md: MagicMock,
+        glass_atoms: Atoms,
+    ) -> None:
+        """Oversized n_jobs should be capped automatically instead of raising."""
+        mock_mean = MagicMock()
+        mock_sem = MagicMock()
+        mock_analyze.return_value = (mock_mean, mock_sem)
+
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        mock_run_md.return_value = (
+            glass_atoms,
+            {"generic": {"positions": [base_pos, base_pos + 0.01, base_pos + 0.02], "cells": [cell] * 3}},
+        )
+
+        run_structural_analysis(
+            glass_atoms,
+            potential=MagicMock(),
+            n_averaging_frames=2,
+            n_jobs=99,
+        )
+
+        assert mock_analyze.call_args.kwargs["n_jobs"] == 3
+
+    @patch("amorphouspy.properties.structural.all._run_lammps_md")
     def test_multi_frame_path_requires_positions_and_cells(self, mock_run_md: MagicMock, glass_atoms: Atoms) -> None:
         """Missing geometry arrays in NVT output should raise a clear error."""
         mock_run_md.return_value = (glass_atoms, {"generic": {"temperature": [300.0]}})

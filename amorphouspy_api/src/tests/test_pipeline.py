@@ -113,7 +113,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_drop_velocities_and_forces",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02, n_jobs=3)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -130,6 +130,7 @@ class TestRunStructuralAnalysis:
                 "temperature": [300.0, 301.0, 302.0],
             }
         ]
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 3
 
     @patch("amorphouspy.properties.structural.all.run_structural_analysis")
     def test_omits_sampling_history_when_not_present(self, mock_run_structural_analysis: MagicMock) -> None:
@@ -147,7 +148,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_all_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=1, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=1, rdf_cutoff=10.0, bin_width=0.02, n_jobs=1)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -158,6 +159,7 @@ class TestRunStructuralAnalysis:
         assert out["density"] == 2.5
         assert out["n_averaging_frames"] == 1
         assert "sampling_history" not in out
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 1
 
     @patch("amorphouspy.properties.structural.all.run_structural_analysis")
     def test_no_dump_data_omits_sampling_history(self, mock_run_structural_analysis: MagicMock) -> None:
@@ -186,7 +188,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="no_dump_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02, n_jobs=3)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -197,6 +199,7 @@ class TestRunStructuralAnalysis:
         assert out["density"] == 2.5
         assert out["n_averaging_frames"] == 3
         assert "sampling_history" not in out
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 3
 
     @patch("amorphouspy.properties.structural.all.run_structural_analysis")
     def test_last_frame_mode_reduces_ndarray_sampling_history(self, mock_run_structural_analysis: MagicMock) -> None:
@@ -225,7 +228,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_all_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02, n_jobs=3)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -235,6 +238,7 @@ class TestRunStructuralAnalysis:
 
         assert out["sampling_history"][0]["positions"] == [[[3.0]]]
         assert out["sampling_history"][0]["cells"] == [[[[3.0]]]]
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 3
 
 
 # ---------------------------------------------------------------------------
