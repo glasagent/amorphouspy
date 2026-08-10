@@ -22,6 +22,7 @@ from pydantic import (
     RootModel,
     Tag,
     WithJsonSchema,
+    model_validator,
 )
 
 from amorphouspy import DsfConfig, EwaldConfig, PppmConfig, WolfConfig
@@ -451,6 +452,24 @@ class MeltQuenchParams(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Potential configuration
+# ---------------------------------------------------------------------------
+
+
+class PotentialConfig(BaseModel):
+    """Potential-specific configuration parameters."""
+
+    use_three_body: bool = Field(
+        default=False,
+        description=(
+            "For du_teter potential: include Stillinger-Weber three-body terms "
+            "for O-P-O / P-O-P interactions (requires P in composition). "
+            "No effect for other potentials."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Electrostatics settings
 # ---------------------------------------------------------------------------
 
@@ -490,6 +509,10 @@ class JobSubmission(BaseModel):
         description="Oxide glass composition as {oxide: mol%}, rescaled to 100%",
     )
     potential: Potential = Field(default="pmmcs")
+    potential_config: PotentialConfig = Field(
+        default_factory=PotentialConfig,
+        description="Potential-specific configuration options.",
+    )
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(  # type: ignore[ty:invalid-assignment]
         default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
@@ -503,6 +526,14 @@ class JobSubmission(BaseModel):
         default_factory=list,
         description=("User-defined tags for labelling or grouping jobs (e.g. project names, batch identifiers)."),
     )
+
+    @model_validator(mode="after")
+    def validate_potential_config(self) -> "JobSubmission":
+        """Validate that potential_config options are compatible with the selected potential."""
+        if self.potential_config.use_three_body and self.potential not in ("du_teter", "du_teter_dbx_generalized"):
+            msg = f"use_three_body is only supported for du_teter potential, got '{self.potential}'"
+            raise ValueError(msg)
+        return self
 
 
 def _job_urls(job_id: str) -> dict[str, str]:
