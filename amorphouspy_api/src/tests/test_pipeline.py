@@ -113,7 +113,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_drop_velocities_and_forces",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -147,7 +147,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_all_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=1)
+        config = SimpleNamespace(n_averaging_frames=1, rdf_cutoff=10.0, bin_width=0.02)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -186,7 +186,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="no_dump_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -225,7 +225,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_all_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
