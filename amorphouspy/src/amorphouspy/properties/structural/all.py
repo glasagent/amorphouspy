@@ -784,6 +784,8 @@ def analyze_structure(
     *,
     frame_averaging: bool = False,
     compute_rings: bool = True,
+    r_max: float = 10.0,
+    n_bins: int = 500,
 ) -> tuple[StructureData, StructureData]:
     """Perform a comprehensive structural analysis of an atomic configuration.
 
@@ -794,6 +796,8 @@ def analyze_structure(
             Ring statistics are computed on the first frame only; all other properties
             are averaged over all frames.
         compute_rings: Whether to run the ring statistics analysis.
+        r_max: Maximum radius in Å for RDF calculation (default 10.0).
+        n_bins: Number of bins for RDF calculation (default 500).
 
     Returns:
         StructureData: Object containing structured analysis results.
@@ -810,7 +814,7 @@ def analyze_structure(
             raise ValueError(msg)
         frames = cast("list[Atoms]", atoms if isinstance(atoms, list) else [atoms])
         per_frame_results = [
-            analyze_structure(frame_atoms, compute_rings=compute_rings and i == 0)[0]
+            analyze_structure(frame_atoms, compute_rings=compute_rings and i == 0, r_max=r_max, n_bins=n_bins)[0]
             for i, frame_atoms in enumerate(frames)
         ]
         return _build_sem_structure_data(per_frame_results)
@@ -824,7 +828,7 @@ def analyze_structure(
     modifier_types = [z for z, sym in type_map.items() if sym in modifiers]
     o_type = [z for z, sym in type_map.items() if sym == "O"]
 
-    r, rdfs, cumcn = compute_rdf(atoms)
+    r, rdfs, cumcn = compute_rdf(atoms, r_max=r_max, n_bins=n_bins)
     cutoff_map = _build_cutoff_map(unique_z, type_map, former_types, o_type, r, rdfs)
 
     o_coord, former_coords, modifier_coords = _compute_coordination_data(
@@ -1386,6 +1390,8 @@ def run_structural_analysis(
     n_averaging_frames: int = 1,
     temperature: float = 300.0,
     server_kwargs: dict[str, Any] | None = None,
+    r_max: float = 10.0,
+    n_bins: int = 500,
 ) -> tuple[StructureData, StructureData | None, int, list[dict[str, Any]] | None]:
     """Run structural analysis, optionally averaging over trajectory frames.
 
@@ -1398,6 +1404,8 @@ def run_structural_analysis(
             simulation is run to collect frames for averaging.
         temperature: Temperature (K) for NVT equilibration/production simulation.
         server_kwargs: LAMMPS server configuration dict.
+        r_max: Maximum radius in Å for RDF calculation (default 10.0).
+        n_bins: Number of bins for RDF calculation (default 500).
 
     Returns:
         Tuple of ``(mean_data, sem_data, n_frames, sampling_history)`` where
@@ -1459,8 +1467,8 @@ def run_structural_analysis(
 
     if n_frames > 1:
         logger.info("Frame-averaging structural analysis over %d frames", n_frames)
-        mean_data, sem_data = analyze_structure(atoms=frames, frame_averaging=True)
+        mean_data, sem_data = analyze_structure(atoms=frames, frame_averaging=True, r_max=r_max, n_bins=n_bins)
     else:
-        mean_data, sem_data = analyze_structure(atoms=frames[0])
+        mean_data, sem_data = analyze_structure(atoms=frames[0], r_max=r_max, n_bins=n_bins)
 
     return mean_data, sem_data, n_frames, sampling_history

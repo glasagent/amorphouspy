@@ -91,12 +91,17 @@ def _run_structural_analysis(submission: JobSubmission, config: StructureAnalysi
 
     from amorphouspy_api.database import _apply_trajectory_storage_mode
 
+    # Calculate n_bins from rdf_cutoff and bin_width
+    n_bins = int(config.rdf_cutoff / config.bin_width)
+
     mean_data, _sem_data, n_frames, sampling_history = run_structural_analysis(
         final_structure=mq["final_structure"],
         potential=potential,
         timestep=submission.simulation.timestep,
         n_averaging_frames=config.n_averaging_frames,
         temperature=300.0,
+        r_max=config.rdf_cutoff,
+        n_bins=n_bins,
         server_kwargs=get_lammps_server_kwargs(
             submission.potential, submission.simulation.n_atoms, submission.simulation.cores
         ),
