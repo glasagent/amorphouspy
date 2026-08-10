@@ -222,7 +222,7 @@ class StructureAnalysis(BaseModel):
     """
 
     type: Literal["structure_characterization"] = "structure_characterization"
-    rdf_cutoff: float = Field(default=8.0, description="RDF cutoff in Å")
+    rdf_cutoff: float = Field(default=10.0, description="RDF cutoff in Å")
     bin_width: float = Field(default=0.02, description="RDF bin width in Å")
     n_averaging_frames: int = Field(
         default=100,
