@@ -1261,6 +1261,32 @@ def test_electrostatics_params_to_config_roundtrip():
     assert config_any.kspace_accuracy == 1e-4
 
 
+@pytest.mark.parametrize(
+    ("method", "expected_keyword"),
+    [
+        ("dsf", "dsf"),
+        ("wolf", "wolf"),
+        ("pppm", "pppm"),
+        ("ewald", "ewald"),
+    ],
+)
+def test_electrostatics_params_to_config_all_methods(method: str, expected_keyword: str) -> None:
+    """to_electrostatics_config returns correct InteractionConfig for all methods (covers line 487)."""
+    from amorphouspy_api.models import ElectrostaticsParams, LongRangeMethod
+
+    from amorphouspy import InteractionConfig
+
+    params = ElectrostaticsParams(method=LongRangeMethod(method), long_range_cutoff=8.5, alpha=0.25)
+    config = params.to_electrostatics_config()
+
+    assert isinstance(config, InteractionConfig)
+    assert config.lammps_keyword == expected_keyword
+    assert config.long_range_cutoff == 8.5
+    # DSF and Wolf should have alpha
+    if method in ("dsf", "wolf"):
+        assert config.alpha == 0.25  # type: ignore[attr-defined]
+
+
 def test_job_submission_accepts_electrostatics():
     """JobSubmission with a non-default electrostatics field serialises and deserialises correctly."""
     from amorphouspy_api.models import ElectrostaticsParams, JobSubmission, LongRangeMethod

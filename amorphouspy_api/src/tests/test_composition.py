@@ -31,6 +31,20 @@ def test_from_canonical() -> None:
     assert c.root == {"CaO": 15.0, "Na2O": 15.0, "SiO2": 70.0}
 
 
+def test_from_canonical_with_extra_spaces() -> None:
+    """from_canonical handles extra whitespace gracefully (covers line 102)."""
+    # Double spaces around separator create empty tokens that should be skipped
+    c = Composition.from_canonical("CaO 15  -  Na2O 15  -  SiO2 70")
+    assert c.root == {"CaO": 15.0, "Na2O": 15.0, "SiO2": 70.0}
+
+
+def test_from_canonical_with_trailing_separator() -> None:
+    """from_canonical handles trailing separator gracefully."""
+    # Trailing separator could create an empty token
+    c = Composition.from_canonical("SiO2 70 - Na2O 30 - ")
+    assert c.root == {"Na2O": 30.0, "SiO2": 70.0}
+
+
 def test_serialises_as_dict() -> None:
     c = Composition({"SiO2": 70, "Na2O": 30})
     dumped = c.model_dump()
@@ -132,3 +146,74 @@ def test_elemental_from_job_falls_back_to_composition() -> None:
     fracs = elemental_fractions_from_job(job)
     assert math.isclose(fracs["Si"], 1 / 3, rel_tol=1e-9)
     assert math.isclose(fracs["O"], 2 / 3, rel_tol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# validate_atoms edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_validate_atoms_none_returns_none() -> None:
+    """validate_atoms returns None for None input."""
+    from amorphouspy_api.models import validate_atoms
+
+    assert validate_atoms(None) is None
+
+
+def test_validate_atoms_atoms_object_returned_as_is() -> None:
+    """validate_atoms returns Atoms object unchanged."""
+    from amorphouspy_api.models import validate_atoms
+    from ase import Atoms
+
+    atoms = Atoms("H2O", positions=[[0, 0, 0], [1, 0, 0], [0, 1, 0]])
+    result = validate_atoms(atoms)
+    assert result is atoms
+
+
+def test_validate_atoms_invalid_dict_raises_valueerror() -> None:
+    """validate_atoms raises ValueError for invalid dict input (covers line 122-142)."""
+    import pytest
+    from amorphouspy_api.models import validate_atoms
+
+    # Dict with invalid Atoms kwargs should raise ValueError
+    invalid_dict = {"invalid_key": "value"}
+    with pytest.raises(ValueError, match="Could not reconstruct Atoms from dict"):
+        validate_atoms(invalid_dict)
+
+
+def test_validate_atoms_invalid_string_raises_valueerror() -> None:
+    """validate_atoms raises ValueError for invalid string input (covers line 137-142)."""
+    import pytest
+    from amorphouspy_api.models import validate_atoms
+
+    # Invalid JSON string should raise ValueError
+    invalid_string = "not valid json {{"
+    with pytest.raises(ValueError, match="Could not parse Atoms from string"):
+        validate_atoms(invalid_string)
+
+
+def test_validate_atoms_invalid_type_raises_typeerror() -> None:
+    """validate_atoms raises TypeError for invalid type input (covers line 160-161)."""
+    import pytest
+    from amorphouspy_api.models import validate_atoms
+
+    # Invalid type (int) should raise TypeError
+    with pytest.raises(TypeError, match="Expected ASE Atoms, dict, str, or None"):
+        validate_atoms(12345)  # type: ignore[arg-type]
+
+
+def test_validate_atoms_json_string_with_list_takes_last() -> None:
+    """validate_atoms handles JSON string containing list (trajectory) by taking last frame (covers line 115-117)."""
+    from unittest.mock import patch
+
+    from amorphouspy_api.models import validate_atoms
+    from ase import Atoms
+
+    atoms1 = Atoms("H2", positions=[[0, 0, 0], [1, 0, 0]])
+    atoms2 = Atoms("H2", positions=[[0, 0, 1], [1, 0, 1]])
+
+    # Mock read to return a list of atoms (simulating trajectory file)
+    with patch("amorphouspy_api.models.read", return_value=[atoms1, atoms2]):
+        result = validate_atoms("{}")  # Any JSON string will trigger read
+        # Should return the last frame
+        assert result is atoms2
