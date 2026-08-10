@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+import pytest
 from amorphouspy_api.app import app
 from amorphouspy_api.database import Job, get_job_store
 from amorphouspy_api.models import Composition
@@ -1381,6 +1382,119 @@ def test_submit_job_with_structure_seed():
 
     assert resp.status_code == 200
     assert resp.json()["status"] in ("pending", "completed")
+
+
+# ---------------------------------------------------------------------------
+# Potential configuration (use_three_body)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("potential", "should_work"),
+    [
+        ("du_teter", True),
+        ("du_teter_dbx_generalized", True),
+        ("pmmcs", False),
+        ("bjp", False),
+        ("shik", False),
+        ("bmp-harmonic", False),
+        ("yang2026", False),
+    ],
+)
+def test_job_submission_use_three_body_validation(potential: str, should_work: bool) -> None:  # noqa: FBT001
+    """use_three_body=True is only valid for du_teter potentials; other potentials raise ValueError."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    if should_work:
+        # Should create successfully
+        sub = JobSubmission(
+            composition=Composition({"P2O5": 30, "SiO2": 70}),
+            potential=potential,
+            potential_config=PotentialConfig(use_three_body=True),
+        )
+        assert sub.potential_config.use_three_body is True
+        assert sub.potential == potential
+    else:
+        # Should raise ValueError during validation
+        with pytest.raises(ValueError, match="use_three_body is only supported for du_teter"):
+            JobSubmission(
+                composition=Composition({"SiO2": 70, "Na2O": 30}),
+                potential=potential,
+                potential_config=PotentialConfig(use_three_body=True),
+            )
+
+
+def test_job_submission_use_three_body_false_all_potentials() -> None:
+    """use_three_body=False (default) is accepted for all potentials."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    for potential in ["pmmcs", "bjp", "shik", "du_teter", "du_teter_dbx_generalized", "bmp-harmonic"]:
+        sub = JobSubmission(
+            composition=Composition({"SiO2": 70, "Na2O": 30}),
+            potential=potential,
+            potential_config=PotentialConfig(use_three_body=False),
+        )
+        assert sub.potential_config.use_three_body is False
+
+
+def test_job_submission_use_three_body_serializes() -> None:
+    """use_three_body field serializes and deserializes correctly in JobSubmission."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    sub = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=True),
+    )
+    data = sub.model_dump()
+    assert data["potential_config"]["use_three_body"] is True
+
+    # Roundtrip through JSON validation
+    roundtrip = JobSubmission.model_validate(data)
+    assert roundtrip.potential_config.use_three_body is True
+
+
+def test_submit_job_with_use_three_body_accepted() -> None:
+    """POST /jobs with use_three_body=True for du_teter returns 200 without error."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch("amorphouspy_api.routers.jobs_helpers.submit_pipeline", return_value=mock_future),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"P2O5": 30, "SiO2": 70},
+                "potential": "du_teter",
+                "potential_config": {"use_three_body": True},
+                "simulation": {"target_density": 2.5},  # P2O5 requires explicit density
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("pending", "completed")
+
+
+def test_submit_job_with_use_three_body_non_du_teter_rejected() -> None:
+    """POST /jobs with use_three_body=True for non-du_teter potential returns validation error."""
+    resp = client.post(
+        "/jobs",
+        json={
+            "composition": {"SiO2": 70, "Na2O": 30},
+            "potential": "pmmcs",
+            "potential_config": {"use_three_body": True},
+        },
+    )
+
+    assert resp.status_code == 422  # Validation error
+    error_data = resp.json()
+    assert "use_three_body is only supported for du_teter" in str(error_data)
 
 
 # ---------------------------------------------------------------------------
