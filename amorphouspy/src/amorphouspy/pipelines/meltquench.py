@@ -31,7 +31,9 @@ def generate_structure(
     potential_type: str = "pmmcs",
     density: float | None = None,
     structure_seed: int = 42,
+    *,
     electrostatics_config: InteractionConfig | None = None,
+    use_three_body: bool = False,
 ) -> dict[str, Any]:
     """Generate an initial random structure and matching LAMMPS potential.
 
@@ -42,6 +44,8 @@ def generate_structure(
         density: Target density in g/cm³; ``None`` uses the Fluegel model.
         structure_seed: Random seed for atom placement.
         electrostatics_config: Electrostatics configuration (e.g. ``DsfConfig``).
+        use_three_body: For du_teter potential, include Stillinger-Weber three-body
+            terms for O-P-O / P-O-P interactions (requires P in composition).
 
     Returns:
         Dict with ``atoms_dict``, ``structure`` (ASE Atoms), and ``potential``.
@@ -57,6 +61,7 @@ def generate_structure(
         atoms_dict=atoms_dict,
         potential_type=potential_type,
         electrostatics=electrostatics_config,
+        use_three_body=use_three_body,
     )
 
     return {

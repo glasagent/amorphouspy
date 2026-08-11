@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+import pytest
 from amorphouspy_api.app import app
 from amorphouspy_api.database import Job, get_job_store
 from amorphouspy_api.models import Composition
@@ -1260,6 +1261,32 @@ def test_electrostatics_params_to_config_roundtrip():
     assert config_any.kspace_accuracy == 1e-4
 
 
+@pytest.mark.parametrize(
+    ("method", "expected_keyword"),
+    [
+        ("dsf", "dsf"),
+        ("wolf", "wolf"),
+        ("pppm", "pppm"),
+        ("ewald", "ewald"),
+    ],
+)
+def test_electrostatics_params_to_config_all_methods(method: str, expected_keyword: str) -> None:
+    """to_electrostatics_config returns correct InteractionConfig for all methods (covers line 487)."""
+    from amorphouspy_api.models import ElectrostaticsParams, LongRangeMethod
+
+    from amorphouspy import InteractionConfig
+
+    params = ElectrostaticsParams(method=LongRangeMethod(method), long_range_cutoff=8.5, alpha=0.25)
+    config = params.to_electrostatics_config()
+
+    assert isinstance(config, InteractionConfig)
+    assert config.lammps_keyword == expected_keyword
+    assert config.long_range_cutoff == 8.5
+    # DSF and Wolf should have alpha
+    if method in ("dsf", "wolf"):
+        assert config.alpha == 0.25  # type: ignore[attr-defined]
+
+
 def test_job_submission_accepts_electrostatics():
     """JobSubmission with a non-default electrostatics field serialises and deserialises correctly."""
     from amorphouspy_api.models import ElectrostaticsParams, JobSubmission, LongRangeMethod
@@ -1338,6 +1365,27 @@ def test_job_hash_differs_with_structure_seed():
     assert _job_hash(sub1, sub1.composition.canonical) != _job_hash(sub2, sub2.composition.canonical)
 
 
+def test_job_hash_differs_with_use_three_body():
+    """Job hash changes when use_three_body differs for du_teter potential."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
+
+    sub_no_three_body = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=False),
+    )
+    sub_with_three_body = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=True),
+    )
+
+    assert _job_hash(sub_no_three_body, sub_no_three_body.composition.canonical) != _job_hash(
+        sub_with_three_body, sub_with_three_body.composition.canonical
+    )
+
+
 def test_generate_structure_passes_structure_seed():
     """generate_structure forwards structure_seed as random_seed to get_structure_dict."""
     from amorphouspy_api.models import JobSubmission, MeltQuenchParams
@@ -1381,6 +1429,140 @@ def test_submit_job_with_structure_seed():
 
     assert resp.status_code == 200
     assert resp.json()["status"] in ("pending", "completed")
+
+
+# ---------------------------------------------------------------------------
+# Potential configuration (use_three_body)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("potential", "should_work"),
+    [
+        ("du_teter", True),
+        ("du_teter_dbx_generalized", True),
+        ("pmmcs", False),
+        ("bjp", False),
+        ("shik", False),
+        ("bmp-harmonic", False),
+        ("yang2026", False),
+    ],
+)
+def test_job_submission_use_three_body_validation(potential: str, should_work: bool) -> None:  # noqa: FBT001
+    """use_three_body=True is only valid for du_teter potentials; other potentials raise ValueError."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    if should_work:
+        # Should create successfully
+        sub = JobSubmission(
+            composition=Composition({"P2O5": 30, "SiO2": 70}),
+            potential=potential,
+            potential_config=PotentialConfig(use_three_body=True),
+        )
+        assert sub.potential_config.use_three_body is True
+        assert sub.potential == potential
+    else:
+        # Should raise ValueError during validation
+        with pytest.raises(ValueError, match="use_three_body is only supported for du_teter"):
+            JobSubmission(
+                composition=Composition({"SiO2": 70, "Na2O": 30}),
+                potential=potential,
+                potential_config=PotentialConfig(use_three_body=True),
+            )
+
+
+def test_job_submission_use_three_body_false_all_potentials() -> None:
+    """use_three_body=False (default) is accepted for all potentials."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    for potential in ["pmmcs", "bjp", "shik", "du_teter", "du_teter_dbx_generalized", "bmp-harmonic"]:
+        sub = JobSubmission(
+            composition=Composition({"SiO2": 70, "Na2O": 30}),
+            potential=potential,
+            potential_config=PotentialConfig(use_three_body=False),
+        )
+        assert sub.potential_config.use_three_body is False
+
+
+def test_job_submission_use_three_body_requires_phosphorus() -> None:
+    """use_three_body=True requires P (phosphorus) in the composition."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    # Without P, should raise ValueError
+    with pytest.raises(ValueError, match="use_three_body requires P \\(phosphorus\\) in the composition"):
+        JobSubmission(
+            composition=Composition({"SiO2": 70, "Na2O": 30}),
+            potential="du_teter",
+            potential_config=PotentialConfig(use_three_body=True),
+        )
+
+    # With P, should succeed
+    sub = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=True),
+    )
+    assert sub.potential_config.use_three_body is True
+
+
+def test_job_submission_use_three_body_serializes() -> None:
+    """use_three_body field serializes and deserializes correctly in JobSubmission."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    sub = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=True),
+    )
+    data = sub.model_dump()
+    assert data["potential_config"]["use_three_body"] is True
+
+    # Roundtrip through JSON validation
+    roundtrip = JobSubmission.model_validate(data)
+    assert roundtrip.potential_config.use_three_body is True
+
+
+def test_submit_job_with_use_three_body_accepted() -> None:
+    """POST /jobs with use_three_body=True for du_teter returns 200 without error."""
+    mock_future = MagicMock()
+    mock_future.done.return_value = True
+    mock_future.exception.return_value = None
+    mock_future.result.return_value = _mock_result()
+
+    with (
+        patch("amorphouspy_api.routers.jobs_helpers.get_executor") as mock_exe,
+        patch("amorphouspy_api.routers.jobs_helpers.submit_pipeline", return_value=mock_future),
+    ):
+        mock_exe.return_value.shutdown = MagicMock()
+
+        resp = client.post(
+            "/jobs",
+            json={
+                "composition": {"P2O5": 30, "SiO2": 70},
+                "potential": "du_teter",
+                "potential_config": {"use_three_body": True},
+                "simulation": {"target_density": 2.5},  # P2O5 requires explicit density
+            },
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("pending", "completed")
+
+
+def test_submit_job_with_use_three_body_non_du_teter_rejected() -> None:
+    """POST /jobs with use_three_body=True for non-du_teter potential returns validation error."""
+    resp = client.post(
+        "/jobs",
+        json={
+            "composition": {"SiO2": 70, "Na2O": 30},
+            "potential": "pmmcs",
+            "potential_config": {"use_three_body": True},
+        },
+    )
+
+    assert resp.status_code == 422  # Validation error
+    error_data = resp.json()
+    assert "use_three_body is only supported for du_teter" in str(error_data)
 
 
 # ---------------------------------------------------------------------------

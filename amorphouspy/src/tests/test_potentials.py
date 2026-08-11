@@ -700,6 +700,33 @@ def test_generate_potential_unsupported_raises():
         generate_potential(_sio2_atoms_dict(), potential_type="unknown_potential")
 
 
+@pytest.mark.parametrize(
+    ("potential_type", "atoms_dict", "should_work"),
+    [
+        ("du_teter", _po_atoms_dict(), True),
+        ("du_teter_dbx_generalized", _po_atoms_dict(), True),
+        ("pmmcs", _sio2_atoms_dict(), False),
+        ("bjp", _cas_atoms_dict(), False),
+        ("shik", _sio2_atoms_dict(), False),
+        ("bmp-harmonic", _nabs_atoms_dict(), False),
+    ],
+)
+def test_generate_potential_three_body_option(tmp_path, monkeypatch, potential_type, atoms_dict, should_work):
+    """use_three_body option is only valid for du_teter potentials; other potentials raise ValueError."""
+    monkeypatch.chdir(tmp_path)
+    if should_work:
+        result = generate_potential(atoms_dict, potential_type=potential_type, use_three_body=True)
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) > 0
+        # Verify that SW configuration is included for du_teter
+        if potential_type.startswith("du_teter"):
+            config = "".join(result["Config"].iloc[0])
+            assert "pair_coeff * * sw" in config
+    else:
+        with pytest.raises(ValueError, match="use_three_body is only supported for du_teter"):
+            generate_potential(atoms_dict, potential_type=potential_type, use_three_body=True)
+
+
 # ---------------------------------------------------------------------------
 # dddBuckingham
 # ---------------------------------------------------------------------------

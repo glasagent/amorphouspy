@@ -158,6 +158,7 @@ def generate_potential(
     potential_type: str = "pmmcs",
     *,
     electrostatics: InteractionConfig | None = None,
+    use_three_body: bool = False,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 
@@ -167,18 +168,29 @@ def generate_potential(
             ``"bmp-harmonic"``, ``"bmp-screened-harmonic"``, or ``"yang2026"``.
         electrostatics: Coulomb solver settings. Defaults to DSF with each
             potential's built-in cutoffs and damping parameter.
+        use_three_body: For du_teter potential, include Stillinger-Weber three-body
+            terms for O-P-O / P-O-P interactions (requires P in composition).
+            No effect for other potentials.
 
     Returns:
         DataFrame with columns Name, Filename, Model, Species, Config.
+
+    Raises:
+        ValueError: If use_three_body is True for a non-du_teter potential.
 
     Example:
         >>> potential = generate_potential(struct_dict, potential_type="shik")
         >>> potential = generate_potential(struct_dict, potential_type="bmp-harmonic")
         >>> potential = generate_potential(struct_dict, potential_type="bmp-screened-harmonic")
-        >>> potential = generate_potential(struct_dict, potential_type="du_teter")
+        >>> potential = generate_potential(struct_dict, potential_type="du_teter", use_three_body=True)
         >>> potential = generate_potential(struct_dict, potential_type="yang2026")
 
     """
+    # Validate that use_three_body is only set for du_teter potentials
+    if use_three_body and potential_type.lower() not in ("du_teter", "du_teter_dbx_generalized"):
+        msg = f"use_three_body is only supported for du_teter potential, got '{potential_type}'"
+        raise ValueError(msg)
+
     if potential_type.lower() == "pmmcs":
         return pmmcs.generate_pmmcs_potential(atoms_dict, electrostatics=electrostatics)
     if potential_type.lower() == "bjp":
@@ -187,7 +199,7 @@ def generate_potential(
         return shik.generate_shik_potential(atoms_dict, electrostatics=electrostatics)
     if potential_type.lower() in ("du_teter", "du_teter_dbx_generalized"):
         n4_model = "dbx_generalized" if potential_type.lower() == "du_teter_dbx_generalized" else "dbx"
-        return du_teter.generate_du_teter_potential(atoms_dict, n4_model=n4_model)
+        return du_teter.generate_du_teter_potential(atoms_dict, n4_model=n4_model, use_three_body=use_three_body)
     if potential_type.lower() in ("bmp-harmonic", "bmp-screened-harmonic"):
         variant = "harmonic" if potential_type.lower() == "bmp-harmonic" else "screened-harmonic"
         return bmp.generate_bmp_potential(atoms_dict, variant=variant, electrostatics=electrostatics)

@@ -49,6 +49,7 @@ def _generate_structure(submission: JobSubmission, config: BaseModel, result: di
         density=submission.simulation.target_density,
         structure_seed=submission.simulation.structure_seed,
         electrostatics_config=submission.electrostatics.to_electrostatics_config(),
+        use_three_body=submission.potential_config.use_three_body,
     )
 
 
