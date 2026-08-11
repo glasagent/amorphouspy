@@ -1484,6 +1484,27 @@ def test_job_submission_use_three_body_false_all_potentials() -> None:
         assert sub.potential_config.use_three_body is False
 
 
+def test_job_submission_use_three_body_requires_phosphorus() -> None:
+    """use_three_body=True requires P (phosphorus) in the composition."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+
+    # Without P, should raise ValueError
+    with pytest.raises(ValueError, match="use_three_body requires P \\(phosphorus\\) in the composition"):
+        JobSubmission(
+            composition=Composition({"SiO2": 70, "Na2O": 30}),
+            potential="du_teter",
+            potential_config=PotentialConfig(use_three_body=True),
+        )
+
+    # With P, should succeed
+    sub = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=True),
+    )
+    assert sub.potential_config.use_three_body is True
+
+
 def test_job_submission_use_three_body_serializes() -> None:
     """use_three_body field serializes and deserializes correctly in JobSubmission."""
     from amorphouspy_api.models import JobSubmission, PotentialConfig
