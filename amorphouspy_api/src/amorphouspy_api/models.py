@@ -530,9 +530,13 @@ class JobSubmission(BaseModel):
     @model_validator(mode="after")
     def validate_potential_config(self) -> "JobSubmission":
         """Validate that potential_config options are compatible with the selected potential."""
-        if self.potential_config.use_three_body and self.potential not in ("du_teter", "du_teter_dbx_generalized"):
-            msg = f"use_three_body is only supported for du_teter potential, got '{self.potential}'"
-            raise ValueError(msg)
+        if self.potential_config.use_three_body:
+            if self.potential not in ("du_teter", "du_teter_dbx_generalized"):
+                msg = f"use_three_body is only supported for du_teter potential, got '{self.potential}'"
+                raise ValueError(msg)
+            if "P2O5" not in self.composition.root:
+                msg = "use_three_body requires P (phosphorus) in the composition"
+                raise ValueError(msg)
         return self
 
 
