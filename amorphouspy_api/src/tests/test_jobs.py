@@ -1365,6 +1365,27 @@ def test_job_hash_differs_with_structure_seed():
     assert _job_hash(sub1, sub1.composition.canonical) != _job_hash(sub2, sub2.composition.canonical)
 
 
+def test_job_hash_differs_with_use_three_body():
+    """Job hash changes when use_three_body differs for du_teter potential."""
+    from amorphouspy_api.models import JobSubmission, PotentialConfig
+    from amorphouspy_api.routers.jobs_helpers import _job_hash
+
+    sub_no_three_body = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=False),
+    )
+    sub_with_three_body = JobSubmission(
+        composition=Composition({"P2O5": 30, "SiO2": 70}),
+        potential="du_teter",
+        potential_config=PotentialConfig(use_three_body=True),
+    )
+
+    assert _job_hash(sub_no_three_body, sub_no_three_body.composition.canonical) != _job_hash(
+        sub_with_three_body, sub_with_three_body.composition.canonical
+    )
+
+
 def test_generate_structure_passes_structure_seed():
     """generate_structure forwards structure_seed as random_seed to get_structure_dict."""
     from amorphouspy_api.models import JobSubmission, MeltQuenchParams
