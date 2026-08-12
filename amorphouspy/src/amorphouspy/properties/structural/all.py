@@ -6,6 +6,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 from __future__ import annotations
 
 import logging
+import os
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING, Any, cast
@@ -1418,7 +1419,7 @@ def run_structural_analysis(
     potential: LammpsPotential | None = None,
     timestep: float = 1.0,
     n_averaging_frames: int = 1,
-    n_jobs: int = 1,
+    n_jobs: int | None = None,
     temperature: float = 300.0,
     server_kwargs: dict[str, Any] | None = None,
     r_max: float = 10.0,
@@ -1434,8 +1435,10 @@ def run_structural_analysis(
             simulation and only the provided structure is analyzed. If set to >1, then an additional NVT
             simulation is run to collect frames for averaging.
         n_jobs: Number of worker processes for frame-averaging post-processing.
-            Must be at least 1. Values larger than ``n_averaging_frames + 1``
-            are capped automatically (``+1`` accounts for frame 0).
+            ``None`` auto-selects a conservative value based on about half of
+            the allocated LAMMPS cores (capped by available frames). Explicit
+            values must be at least 1 and are capped to ``n_averaging_frames + 1``
+            (``+1`` accounts for frame 0).
         temperature: Temperature (K) for NVT equilibration/production simulation.
         server_kwargs: LAMMPS server configuration dict.
         r_max: Maximum radius in Å for RDF calculation (default 10.0).
@@ -1456,10 +1459,11 @@ def run_structural_analysis(
     if n_averaging_frames < 1:
         msg = "n_averaging_frames must be >= 1"
         raise ValueError(msg)
-    if n_jobs < 1:
-        msg = "n_jobs must be >= 1"
-        raise ValueError(msg)
-    effective_n_jobs = min(n_jobs, n_averaging_frames + 1)
+    effective_n_jobs = _resolve_effective_n_jobs(
+        n_jobs=n_jobs,
+        n_averaging_frames=n_averaging_frames,
+        server_kwargs=server_kwargs,
+    )
 
     if n_averaging_frames > 1:
         if potential is None:
@@ -1506,8 +1510,57 @@ def run_structural_analysis(
 
     if n_frames > 1:
         logger.info("Frame-averaging structural analysis over %d frames", n_frames)
-        mean_data, sem_data = analyze_structure(atoms=frames, frame_averaging=True, n_jobs=effective_n_jobs, r_max=r_max, n_bins=n_bins)
+        mean_data, sem_data = analyze_structure(
+            atoms=frames, frame_averaging=True, n_jobs=effective_n_jobs, r_max=r_max, n_bins=n_bins
+        )
     else:
         mean_data, sem_data = analyze_structure(atoms=frames[0], r_max=r_max, n_bins=n_bins)
 
     return mean_data, sem_data, n_frames, sampling_history
+
+
+def _resolve_effective_n_jobs(
+    n_jobs: int | None,
+    n_averaging_frames: int,
+    server_kwargs: dict[str, Any] | None,
+) -> int:
+    """Resolve effective worker count for frame-averaging post-processing.
+
+    Decision order:
+    1. If ``n_jobs`` is explicitly provided, it must be >= 1 and is used
+       directly.
+    2. If ``n_jobs`` is ``None``, choose an automatic value from available
+       cores:
+       - Prefer ``server_kwargs["cores"]`` when present (this mirrors the
+         resolved LAMMPS allocation used by the NVT sampling run).
+       - Otherwise fall back to ``os.cpu_count()``.
+       - Use roughly half of that core count to reduce memory-bandwidth/cache
+         pressure for large structures while avoiding a single-core fallback.
+    3. In all cases, cap the worker count at ``n_averaging_frames + 1``
+       because at most that many frames are analyzed (frame 0 plus sampled
+       frames).
+
+    Returns:
+        Effective worker-process count passed to frame-averaged
+        :func:`analyze_structure`.
+    """
+    if n_jobs is not None and n_jobs < 1:
+        msg = "n_jobs must be >= 1"
+        raise ValueError(msg)
+
+    max_frame_jobs = n_averaging_frames + 1
+    if n_jobs is not None:
+        return min(n_jobs, max_frame_jobs)
+
+    configured_cores = 1
+    if isinstance(server_kwargs, dict):
+        cores = server_kwargs.get("cores")
+        if isinstance(cores, int) and cores >= 1:
+            configured_cores = cores
+    if configured_cores == 1:
+        configured_cores = os.cpu_count() or 1
+
+    # Default to about half of available cores to reduce memory-bandwidth
+    # pressure for large structures while avoiding single-core fallback.
+    n_jobs_resolved = max(1, configured_cores // 2)
+    return min(n_jobs_resolved, max_frame_jobs)

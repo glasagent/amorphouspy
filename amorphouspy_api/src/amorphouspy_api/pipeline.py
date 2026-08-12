@@ -376,6 +376,18 @@ def _build_resource_dict(
     return rd
 
 
+def _analysis_uses_lammps(step_name: str, config: BaseModel) -> bool:
+    """Return whether an analysis step needs LAMMPS-sized resources.
+
+    Structural analysis only runs an internal LAMMPS NVT sampling stage when
+    ``n_averaging_frames > 1``. In that case we must request the LAMMPS-sized
+    SLURM allocation for the outer executor task as well.
+    """
+    if step_name == "structure_characterization":
+        return bool(getattr(config, "n_averaging_frames", 1) > 1)
+    return False
+
+
 def submit_pipeline(
     executor: BaseExecutor,
     submission: JobSubmission,
@@ -445,7 +457,9 @@ def submit_pipeline(
                 cache_key=cache_key,
             )
         else:
-            resource_dict = _build_resource_dict(_resource_for(spec), name, is_slurm=slurm, cache_key=cache_key)
+            use_lammps_resources = spec.lammps or _analysis_uses_lammps(name, config)
+            selected_resources = lammps_resource_dict if use_lammps_resources else base_resource_dict
+            resource_dict = _build_resource_dict(selected_resources, name, is_slurm=slurm, cache_key=cache_key)
             analysis_futures[name] = executor.submit(
                 _run_analysis,
                 resource_dict=resource_dict,

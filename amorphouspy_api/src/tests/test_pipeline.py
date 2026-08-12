@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -16,7 +17,11 @@ from amorphouspy_api.pipeline import (
     _merge_results,
     _run_analysis,
     _run_structural_analysis,
+    submit_pipeline,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ---------------------------------------------------------------------------
 # _accumulate_step
@@ -306,3 +311,71 @@ class TestStepRegistry:
         """Every registered step function is callable."""
         for fn in STEPS.values():
             assert callable(fn)
+
+
+class _DummyExecutor:
+    """Minimal executor mock collecting submit kwargs."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def submit(self, fn: Callable[..., object], **kwargs: object) -> dict[str, int]:
+        self.calls.append({"fn": fn, "kwargs": kwargs})
+        return {"future": len(self.calls)}
+
+
+class TestSubmitPipelineResources:
+    """Tests for resource selection in submit_pipeline."""
+
+    @patch("amorphouspy_api.executor.get_lammps_resource_dict")
+    @patch("amorphouspy_api.executor.get_base_resource_dict")
+    @patch("amorphouspy_api.executor._is_slurm")
+    def test_structure_single_frame_uses_base_resources(
+        self,
+        mock_is_slurm: MagicMock,
+        mock_base_resources: MagicMock,
+        mock_lammps_resources: MagicMock,
+    ) -> None:
+        """structure_characterization with n_averaging_frames=1 should not request LAMMPS-sized resources."""
+        mock_is_slurm.return_value = True
+        mock_base_resources.return_value = {"base_token": 1}
+        mock_lammps_resources.return_value = {"threads_per_core": 24}
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(n_atoms=15_000, cores=24),
+            analyses=[SimpleNamespace(type="structure_characterization", n_averaging_frames=1)],
+        )
+        executor = _DummyExecutor()
+
+        submit_pipeline(executor=executor, submission=submission, cache_key="abc123")
+
+        structure_call = next(c for c in executor.calls if c["kwargs"].get("step_name") == "structure_characterization")
+        assert structure_call["kwargs"]["resource_dict"]["base_token"] == 1
+        assert "threads_per_core" not in structure_call["kwargs"]["resource_dict"]
+
+    @patch("amorphouspy_api.executor.get_lammps_resource_dict")
+    @patch("amorphouspy_api.executor.get_base_resource_dict")
+    @patch("amorphouspy_api.executor._is_slurm")
+    def test_structure_averaging_uses_lammps_resources(
+        self,
+        mock_is_slurm: MagicMock,
+        mock_base_resources: MagicMock,
+        mock_lammps_resources: MagicMock,
+    ) -> None:
+        """structure_characterization with n_averaging_frames>1 should request LAMMPS-sized resources."""
+        mock_is_slurm.return_value = True
+        mock_base_resources.return_value = {"base_token": 1}
+        mock_lammps_resources.return_value = {"threads_per_core": 24}
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(n_atoms=15_000, cores=24),
+            analyses=[SimpleNamespace(type="structure_characterization", n_averaging_frames=2)],
+        )
+        executor = _DummyExecutor()
+
+        submit_pipeline(executor=executor, submission=submission, cache_key="abc123")
+
+        structure_call = next(c for c in executor.calls if c["kwargs"].get("step_name") == "structure_characterization")
+        assert structure_call["kwargs"]["resource_dict"]["threads_per_core"] == 24
