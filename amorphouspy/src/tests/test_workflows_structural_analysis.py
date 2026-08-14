@@ -1,6 +1,7 @@
 """Tests for amorphouspy.properties.structural.all — full coverage."""
 
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
@@ -664,11 +665,18 @@ def test_analyze_structure_frame_averaging_rejects_invalid_n_jobs() -> None:
 
 
 def test_analyze_structure_frame_averaging_runs_in_parallel() -> None:
-    """n_jobs > 1 with multiple frames uses the ProcessPoolExecutor path."""
+    """n_jobs > 1 with multiple frames exercises the ProcessPoolExecutor code path.
+
+    Uses ThreadPoolExecutor in place of ProcessPoolExecutor (same submit/map API) to avoid
+    spawning real subprocesses, which is flaky under CI's coverage/multiprocessing setup.
+    """
     atoms = cast("Atoms", read(SIO2_XYZ))
-    with patch(
-        "amorphouspy.properties.structural.all.compute_guttmann_rings",
-        return_value=({4: 10, 6: 20}, 5.5),
+    with (
+        patch(
+            "amorphouspy.properties.structural.all.compute_guttmann_rings",
+            return_value=({4: 10, 6: 20}, 5.5),
+        ),
+        patch("amorphouspy.properties.structural.all.ProcessPoolExecutor", ThreadPoolExecutor),
     ):
         single, _sem_single = analyze_structure(atoms)
         mean_data, sem_data = analyze_structure([atoms, atoms, atoms], frame_averaging=True, n_jobs=2)
