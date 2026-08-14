@@ -20,6 +20,8 @@ from amorphouspy.properties.structural.all import (
     _add_network_plots,
     _add_rdf_plots,
     _add_ring_plots,
+    _analyze_frame_with_rings,
+    _analyze_frame_without_rings,
     _classify_elements,
     analyze_structure,
     find_rdf_minimum,
@@ -652,3 +654,43 @@ def test_analyze_structure_list_uses_first_frame() -> None:
         single, _sem_single = analyze_structure(atoms)
         result, _sem_result = analyze_structure([atoms, atoms])
     assert result.density == pytest.approx(single.density, rel=1e-6)
+
+
+def test_analyze_structure_frame_averaging_rejects_invalid_n_jobs() -> None:
+    """frame_averaging=True with n_jobs < 1 raises ValueError."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with pytest.raises(ValueError, match="n_jobs must be >= 1"):
+        analyze_structure([atoms, atoms], frame_averaging=True, n_jobs=0)
+
+
+def test_analyze_structure_frame_averaging_runs_in_parallel() -> None:
+    """n_jobs > 1 with multiple frames uses the ProcessPoolExecutor path."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with patch(
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
+        return_value=({4: 10, 6: 20}, 5.5),
+    ):
+        single, _sem_single = analyze_structure(atoms)
+        mean_data, sem_data = analyze_structure([atoms, atoms, atoms], frame_averaging=True, n_jobs=2)
+    assert mean_data.density == pytest.approx(single.density, rel=1e-6)
+    assert isinstance(sem_data, StructureData)
+
+
+def test_analyze_frame_with_rings_computes_ring_stats() -> None:
+    """Worker helper used by the parallel path includes ring statistics."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with patch(
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
+        return_value=({4: 10, 6: 20}, 5.5),
+    ):
+        result = _analyze_frame_with_rings(atoms)
+    assert isinstance(result, StructureData)
+    assert result.distributions.rings
+
+
+def test_analyze_frame_without_rings_skips_ring_stats() -> None:
+    """Worker helper used by the parallel path skips ring statistics."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    result = _analyze_frame_without_rings(atoms)
+    assert isinstance(result, StructureData)
+    assert result.distributions.rings == {}

@@ -185,6 +185,11 @@ class TestRunStructuralAnalysis:
         with pytest.raises(ValueError, match="potential must be provided"):
             run_structural_analysis(glass_atoms, n_averaging_frames=2)
 
+    def test_n_averaging_frames_less_than_one_raises(self, glass_atoms: Atoms) -> None:
+        """n_averaging_frames < 1 raises a clear error."""
+        with pytest.raises(ValueError, match="n_averaging_frames must be >= 1"):
+            run_structural_analysis(glass_atoms, n_averaging_frames=0)
+
     @patch("amorphouspy.properties.structural.all._run_lammps_md")
     @patch("amorphouspy.properties.structural.all.analyze_structure")
     def test_n_jobs_larger_than_n_averaging_frames_is_capped(
