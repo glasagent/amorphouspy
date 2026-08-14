@@ -14,6 +14,7 @@ from amorphouspy_api.pipeline import (
     BASE_STEPS,
     STEPS,
     _accumulate_step,
+    _analysis_uses_lammps,
     _merge_results,
     _run_analysis,
     _run_structural_analysis,
@@ -311,6 +312,25 @@ class TestStepRegistry:
         """Every registered step function is callable."""
         for fn in STEPS.values():
             assert callable(fn)
+
+
+class TestAnalysisUsesLammps:
+    """Tests for the ``_analysis_uses_lammps`` helper."""
+
+    def test_structure_characterization_single_frame_is_false(self) -> None:
+        """n_averaging_frames=1 does not need LAMMPS-sized resources."""
+        config = SimpleNamespace(n_averaging_frames=1)
+        assert _analysis_uses_lammps("structure_characterization", config) is False
+
+    def test_structure_characterization_multi_frame_is_true(self) -> None:
+        """n_averaging_frames>1 needs LAMMPS-sized resources."""
+        config = SimpleNamespace(n_averaging_frames=2)
+        assert _analysis_uses_lammps("structure_characterization", config) is True
+
+    def test_other_step_names_are_false(self) -> None:
+        """Non-structural-analysis steps never need LAMMPS resources from this helper."""
+        config = SimpleNamespace(n_averaging_frames=2)
+        assert _analysis_uses_lammps("cte", config) is False
 
 
 class _DummyExecutor:

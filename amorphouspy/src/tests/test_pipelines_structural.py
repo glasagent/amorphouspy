@@ -185,6 +185,16 @@ class TestRunStructuralAnalysis:
         with pytest.raises(ValueError, match="potential must be provided"):
             run_structural_analysis(glass_atoms, n_averaging_frames=2)
 
+    def test_final_structure_none_raises(self) -> None:
+        """final_structure=None raises a clear error."""
+        with pytest.raises(ValueError, match="final_structure must be provided"):
+            run_structural_analysis(None)
+
+    def test_n_jobs_less_than_one_raises(self, glass_atoms: Atoms) -> None:
+        """n_jobs < 1 raises a clear error before any MD/analysis runs."""
+        with pytest.raises(ValueError, match="n_jobs must be >= 1"):
+            run_structural_analysis(glass_atoms, n_jobs=0)
+
     def test_n_averaging_frames_less_than_one_raises(self, glass_atoms: Atoms) -> None:
         """n_averaging_frames < 1 raises a clear error."""
         with pytest.raises(ValueError, match="n_averaging_frames must be >= 1"):
