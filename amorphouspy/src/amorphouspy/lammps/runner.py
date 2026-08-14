@@ -258,7 +258,7 @@ def _run_lammps_md(
 
 
 def get_lammps_command(server_kwargs: dict | None = None) -> str:
-    """Generate a LAMMPS command, by default this function returns: "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in".
+    """Generate a portable LAMMPS MPI command.
 
     Args:
         server_kwargs: Server dictionary for example: {"cores": 2}.
@@ -267,7 +267,7 @@ def get_lammps_command(server_kwargs: dict | None = None) -> str:
         LAMMPS command as a string.
 
     """
-    lmp_command = "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
+    lmp_command = "mpiexec -n 1 lmp_mpi -in lmp.in"
     if server_kwargs is not None and isinstance(server_kwargs, dict) and "cores" in server_kwargs:
-        lmp_command = f"mpiexec -n {server_kwargs['cores']} --oversubscribe lmp_mpi -in lmp.in"
+        lmp_command = f"mpiexec -n {server_kwargs['cores']} lmp_mpi -in lmp.in"
     return lmp_command
