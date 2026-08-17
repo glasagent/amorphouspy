@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import logging
 import warnings
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -302,6 +304,11 @@ def _avg_list_arrays(per_frame: list[list[float]]) -> tuple[list[float], list[fl
     ddof = 1 if len(per_frame) > 1 else 0
     sem = (arr.std(axis=0, ddof=ddof) / np.sqrt(len(per_frame))).tolist()
     return mean, sem
+
+
+def _analyze_frame(frame_atoms: Atoms, *, compute_rings: bool, r_max: float, n_bins: int) -> StructureData:
+    """Analyze one frame with the requested structural-analysis settings."""
+    return analyze_structure(frame_atoms, compute_rings=compute_rings, r_max=r_max, n_bins=n_bins)[0]
 
 
 def _build_bond_angles_mean_sem(
@@ -784,6 +791,7 @@ def analyze_structure(
     *,
     frame_averaging: bool = False,
     compute_rings: bool = True,
+    n_jobs: int = 1,
     r_max: float = 10.0,
     n_bins: int = 500,
 ) -> tuple[StructureData, StructureData]:
@@ -796,6 +804,9 @@ def analyze_structure(
             Ring statistics are computed on the first frame only; all other properties
             are averaged over all frames.
         compute_rings: Whether to run the ring statistics analysis.
+        n_jobs: Number of worker processes for frame averaging. Used only when
+            ``frame_averaging=True``. ``n_jobs=1`` runs serially. Values larger
+            than the available frame count are capped automatically.
         r_max: Maximum radius in Å for RDF calculation (default 10.0).
         n_bins: Number of bins for RDF calculation (default 500).
 
@@ -812,11 +823,28 @@ def analyze_structure(
         if isinstance(atoms, list) and len(atoms) == 0:
             msg = "frame_averaging=True requires a non-empty list[Atoms]"
             raise ValueError(msg)
+        if n_jobs < 1:
+            msg = "n_jobs must be >= 1"
+            raise ValueError(msg)
         frames = cast("list[Atoms]", atoms if isinstance(atoms, list) else [atoms])
-        per_frame_results = [
-            analyze_structure(frame_atoms, compute_rings=compute_rings and i == 0, r_max=r_max, n_bins=n_bins)[0]
-            for i, frame_atoms in enumerate(frames)
-        ]
+
+        effective_jobs = min(n_jobs, len(frames))
+
+        if effective_jobs == 1:
+            per_frame_results = [
+                analyze_structure(frame_atoms, compute_rings=compute_rings and i == 0, r_max=r_max, n_bins=n_bins)[0]
+                for i, frame_atoms in enumerate(frames)
+            ]
+            return _build_sem_structure_data(per_frame_results)
+
+        # Frame 0 is analyzed with rings; remaining frames skip rings and are
+        # distributed dynamically across workers.
+        analyze_first = partial(_analyze_frame, compute_rings=compute_rings, r_max=r_max, n_bins=n_bins)
+        analyze_rest = partial(_analyze_frame, compute_rings=False, r_max=r_max, n_bins=n_bins)
+        with ProcessPoolExecutor(max_workers=effective_jobs) as executor:
+            frame0_future = executor.submit(analyze_first, frames[0])
+            per_frame_results_rest = list(executor.map(analyze_rest, frames[1:]))
+        per_frame_results = [frame0_future.result(), *per_frame_results_rest]
         return _build_sem_structure_data(per_frame_results)
     if isinstance(atoms, list):
         atoms = cast("Atoms", atoms[0])
@@ -1388,6 +1416,7 @@ def run_structural_analysis(
     potential: LammpsPotential | None = None,
     timestep: float = 1.0,
     n_averaging_frames: int = 1,
+    n_jobs: int | None = None,
     temperature: float = 300.0,
     server_kwargs: dict[str, Any] | None = None,
     r_max: float = 10.0,
@@ -1402,6 +1431,13 @@ def run_structural_analysis(
         n_averaging_frames: Number of frames to collect for averaging. If set to 1, then no MD
             simulation and only the provided structure is analyzed. If set to >1, then an additional NVT
             simulation is run to collect frames for averaging.
+        n_jobs: Number of worker processes for frame-averaging post-processing.
+            ``None`` auto-selects a conservative value based on about half of
+            the allocated LAMMPS cores, defaulting to one core when no allocation
+            is configured. Explicit values must be at least 1.
+            Both explicit and automatic values are capped by the allocated
+            LAMMPS cores and by ``n_averaging_frames + 1`` (``+1`` accounts for
+            frame 0).
         temperature: Temperature (K) for NVT equilibration/production simulation.
         server_kwargs: LAMMPS server configuration dict.
         r_max: Maximum radius in Å for RDF calculation (default 10.0).
@@ -1409,7 +1445,8 @@ def run_structural_analysis(
 
     Returns:
         Tuple of ``(mean_data, sem_data, n_frames, sampling_history)`` where
-        *sem_data* is ``None`` when only one frame is used and
+        *sem_data* is always returned as ``StructureData`` (for one frame, SEM
+        values are computed from a single sample and are typically zero) and
         *sampling_history* is the raw NVT parsed output wrapped as a single
         stage list when ``n_averaging_frames > 1``.
     """
@@ -1421,6 +1458,11 @@ def run_structural_analysis(
     if n_averaging_frames < 1:
         msg = "n_averaging_frames must be >= 1"
         raise ValueError(msg)
+    effective_n_jobs = _resolve_effective_n_jobs(
+        n_jobs=n_jobs,
+        n_averaging_frames=n_averaging_frames,
+        server_kwargs=server_kwargs,
+    )
 
     if n_averaging_frames > 1:
         if potential is None:
@@ -1467,8 +1509,52 @@ def run_structural_analysis(
 
     if n_frames > 1:
         logger.info("Frame-averaging structural analysis over %d frames", n_frames)
-        mean_data, sem_data = analyze_structure(atoms=frames, frame_averaging=True, r_max=r_max, n_bins=n_bins)
+        mean_data, sem_data = analyze_structure(
+            atoms=frames, frame_averaging=True, n_jobs=effective_n_jobs, r_max=r_max, n_bins=n_bins
+        )
     else:
         mean_data, sem_data = analyze_structure(atoms=frames[0], r_max=r_max, n_bins=n_bins)
 
     return mean_data, sem_data, n_frames, sampling_history
+
+
+def _resolve_effective_n_jobs(
+    n_jobs: int | None,
+    n_averaging_frames: int,
+    server_kwargs: dict[str, Any] | None,
+) -> int:
+    """Resolve effective worker count for frame-averaging post-processing.
+
+    Decision order:
+        1. Determine the worker budget from ``server_kwargs["cores"]``,
+            defaulting to one when it is not configured.
+        2. If ``n_jobs`` is explicitly provided, it must be >= 1 and is used.
+        3. If ``n_jobs`` is ``None``, choose an automatic value from available
+            cores:
+            - Use the worker budget established from the LAMMPS allocation.
+            - Use roughly half of that core count to reduce memory-bandwidth/cache
+                pressure for large structures while avoiding a single-core fallback.
+         4. In all cases, cap the worker count by the LAMMPS core allocation and at
+            ``n_averaging_frames + 1`` because at most that many frames are analyzed
+            (frame 0 plus sampled frames).
+
+    Returns:
+        Effective worker-process count passed to frame-averaged
+        :func:`analyze_structure`.
+    """
+    if n_jobs is not None and n_jobs < 1:
+        msg = "n_jobs must be >= 1"
+        raise ValueError(msg)
+
+    configured_cores = 1
+    if isinstance(server_kwargs, dict):
+        cores = server_kwargs.get("cores", 1)
+        if isinstance(cores, int) and cores >= 1:
+            configured_cores = cores
+    max_jobs = min(configured_cores, n_averaging_frames + 1)
+
+    if n_jobs is not None:
+        return min(n_jobs, max_jobs)
+
+    n_jobs_resolved = max(1, configured_cores // 2)
+    return min(n_jobs_resolved, max_jobs)

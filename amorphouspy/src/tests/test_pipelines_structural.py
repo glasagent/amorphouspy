@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 from amorphouspy.fabrication.meltquench import extract_equilibration_frames
-from amorphouspy.properties.structural.all import run_structural_analysis
+from amorphouspy.properties.structural.all import _resolve_effective_n_jobs, run_structural_analysis
 from ase import Atoms
 
 # ---------------------------------------------------------------------------
@@ -184,6 +184,122 @@ class TestRunStructuralAnalysis:
         """Requesting multi-frame averaging without potential raises a clear error."""
         with pytest.raises(ValueError, match="potential must be provided"):
             run_structural_analysis(glass_atoms, n_averaging_frames=2)
+
+    def test_final_structure_none_raises(self) -> None:
+        """final_structure=None raises a clear error."""
+        with pytest.raises(ValueError, match="final_structure must be provided"):
+            run_structural_analysis(None)
+
+    def test_n_jobs_less_than_one_raises(self, glass_atoms: Atoms) -> None:
+        """n_jobs < 1 raises a clear error before any MD/analysis runs."""
+        with pytest.raises(ValueError, match="n_jobs must be >= 1"):
+            run_structural_analysis(glass_atoms, n_jobs=0)
+
+    def test_explicit_n_jobs_defaults_to_one_allocated_core(self) -> None:
+        """Missing LAMMPS core configuration conservatively limits explicit workers to one."""
+        assert _resolve_effective_n_jobs(n_jobs=99, n_averaging_frames=20, server_kwargs=None) == 1
+
+    def test_explicit_n_jobs_is_capped_by_allocated_cores(self) -> None:
+        """Explicit worker counts cannot exceed the configured LAMMPS allocation."""
+        assert _resolve_effective_n_jobs(n_jobs=99, n_averaging_frames=20, server_kwargs={"cores": 2}) == 2
+
+    def test_auto_n_jobs_uses_half_of_allocated_cores(self) -> None:
+        """Automatic worker count uses half of the configured LAMMPS allocation."""
+        assert _resolve_effective_n_jobs(n_jobs=None, n_averaging_frames=20, server_kwargs={"cores": 24}) == 12
+
+    def test_n_averaging_frames_less_than_one_raises(self, glass_atoms: Atoms) -> None:
+        """n_averaging_frames < 1 raises a clear error."""
+        with pytest.raises(ValueError, match="n_averaging_frames must be >= 1"):
+            run_structural_analysis(glass_atoms, n_averaging_frames=0)
+
+    @patch("amorphouspy.properties.structural.all._run_lammps_md")
+    @patch("amorphouspy.properties.structural.all.analyze_structure")
+    def test_n_jobs_without_core_allocation_is_capped_to_one(
+        self,
+        mock_analyze: MagicMock,
+        mock_run_md: MagicMock,
+        glass_atoms: Atoms,
+    ) -> None:
+        """Explicit n_jobs cannot exceed the default one-core allocation."""
+        mock_mean = MagicMock()
+        mock_sem = MagicMock()
+        mock_analyze.return_value = (mock_mean, mock_sem)
+
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        mock_run_md.return_value = (
+            glass_atoms,
+            {"generic": {"positions": [base_pos, base_pos + 0.01, base_pos + 0.02], "cells": [cell] * 3}},
+        )
+
+        run_structural_analysis(
+            glass_atoms,
+            potential=MagicMock(),
+            n_averaging_frames=2,
+            n_jobs=99,
+        )
+
+        assert mock_analyze.call_args.kwargs["n_jobs"] == 1
+
+    @patch("amorphouspy.properties.structural.all._run_lammps_md")
+    @patch("amorphouspy.properties.structural.all.analyze_structure")
+    def test_n_jobs_auto_selects_half_of_allocated_cores(
+        self,
+        mock_analyze: MagicMock,
+        mock_run_md: MagicMock,
+        glass_atoms: Atoms,
+    ) -> None:
+        """Default n_jobs uses about half of allocated cores and caps by frame count."""
+        mock_mean = MagicMock()
+        mock_sem = MagicMock()
+        mock_analyze.return_value = (mock_mean, mock_sem)
+
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        mock_run_md.return_value = (
+            glass_atoms,
+            {"generic": {"positions": [base_pos, base_pos + 0.01], "cells": [cell, cell]}},
+        )
+
+        run_structural_analysis(
+            glass_atoms,
+            potential=MagicMock(),
+            n_averaging_frames=2,
+            n_jobs=None,
+            server_kwargs={"cores": 24},
+        )
+
+        # max frame jobs = n_averaging_frames + 1 = 3; half of 24 would be 12.
+        assert mock_analyze.call_args.kwargs["n_jobs"] == 3
+
+    @patch("amorphouspy.properties.structural.all._run_lammps_md")
+    @patch("amorphouspy.properties.structural.all.analyze_structure")
+    def test_n_jobs_auto_uses_half_cores_when_many_frames(
+        self,
+        mock_analyze: MagicMock,
+        mock_run_md: MagicMock,
+        glass_atoms: Atoms,
+    ) -> None:
+        """Auto n_jobs should use half cores when frame count is not the limiting factor."""
+        mock_mean = MagicMock()
+        mock_sem = MagicMock()
+        mock_analyze.return_value = (mock_mean, mock_sem)
+
+        base_pos = glass_atoms.get_positions()
+        cell = glass_atoms.get_cell().array
+        positions = [base_pos + i * 0.01 for i in range(20)]
+        cells = [cell] * 20
+        mock_run_md.return_value = (glass_atoms, {"generic": {"positions": positions, "cells": cells}})
+
+        run_structural_analysis(
+            glass_atoms,
+            potential=MagicMock(),
+            n_averaging_frames=20,
+            n_jobs=None,
+            server_kwargs={"cores": 24},
+        )
+
+        assert mock_analyze.call_args.kwargs["n_jobs"] == 12
 
     @patch("amorphouspy.properties.structural.all._run_lammps_md")
     def test_multi_frame_path_requires_positions_and_cells(self, mock_run_md: MagicMock, glass_atoms: Atoms) -> None:

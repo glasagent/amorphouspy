@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -13,10 +14,15 @@ from amorphouspy_api.pipeline import (
     BASE_STEPS,
     STEPS,
     _accumulate_step,
+    _analysis_uses_lammps,
     _merge_results,
     _run_analysis,
     _run_structural_analysis,
+    submit_pipeline,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # ---------------------------------------------------------------------------
 # _accumulate_step
@@ -113,7 +119,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_drop_velocities_and_forces",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02, n_jobs=3)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -130,6 +136,7 @@ class TestRunStructuralAnalysis:
                 "temperature": [300.0, 301.0, 302.0],
             }
         ]
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 3
 
     @patch("amorphouspy.properties.structural.all.run_structural_analysis")
     def test_omits_sampling_history_when_not_present(self, mock_run_structural_analysis: MagicMock) -> None:
@@ -147,7 +154,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_all_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=1, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=1, rdf_cutoff=10.0, bin_width=0.02, n_jobs=1)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -158,6 +165,7 @@ class TestRunStructuralAnalysis:
         assert out["density"] == 2.5
         assert out["n_averaging_frames"] == 1
         assert "sampling_history" not in out
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 1
 
     @patch("amorphouspy.properties.structural.all.run_structural_analysis")
     def test_no_dump_data_omits_sampling_history(self, mock_run_structural_analysis: MagicMock) -> None:
@@ -186,7 +194,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="no_dump_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02, n_jobs=3)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -197,6 +205,7 @@ class TestRunStructuralAnalysis:
         assert out["density"] == 2.5
         assert out["n_averaging_frames"] == 3
         assert "sampling_history" not in out
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 3
 
     @patch("amorphouspy.properties.structural.all.run_structural_analysis")
     def test_last_frame_mode_reduces_ndarray_sampling_history(self, mock_run_structural_analysis: MagicMock) -> None:
@@ -225,7 +234,7 @@ class TestRunStructuralAnalysis:
                 structural_analysis_trajectory_storage_mode="last_frame_all_data",
             ),
         )
-        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02)
+        config = SimpleNamespace(n_averaging_frames=3, rdf_cutoff=10.0, bin_width=0.02, n_jobs=3)
         result = {
             "melt_quench": {"final_structure": object()},
             "structure_generation": {"potential": object()},
@@ -235,6 +244,7 @@ class TestRunStructuralAnalysis:
 
         assert out["sampling_history"][0]["positions"] == [[[3.0]]]
         assert out["sampling_history"][0]["cells"] == [[[[3.0]]]]
+        assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +312,90 @@ class TestStepRegistry:
         """Every registered step function is callable."""
         for fn in STEPS.values():
             assert callable(fn)
+
+
+class TestAnalysisUsesLammps:
+    """Tests for the ``_analysis_uses_lammps`` helper."""
+
+    def test_structure_characterization_single_frame_is_false(self) -> None:
+        """n_averaging_frames=1 does not need LAMMPS-sized resources."""
+        config = SimpleNamespace(n_averaging_frames=1)
+        assert _analysis_uses_lammps("structure_characterization", config) is False
+
+    def test_structure_characterization_multi_frame_is_true(self) -> None:
+        """n_averaging_frames>1 needs LAMMPS-sized resources."""
+        config = SimpleNamespace(n_averaging_frames=2)
+        assert _analysis_uses_lammps("structure_characterization", config) is True
+
+    def test_other_step_names_are_false(self) -> None:
+        """Non-structural-analysis steps never need LAMMPS resources from this helper."""
+        config = SimpleNamespace(n_averaging_frames=2)
+        assert _analysis_uses_lammps("cte", config) is False
+
+
+class _DummyExecutor:
+    """Minimal executor mock collecting submit kwargs."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def submit(self, fn: Callable[..., object], **kwargs: object) -> dict[str, int]:
+        self.calls.append({"fn": fn, "kwargs": kwargs})
+        return {"future": len(self.calls)}
+
+
+class TestSubmitPipelineResources:
+    """Tests for resource selection in submit_pipeline."""
+
+    @patch("amorphouspy_api.executor.get_lammps_resource_dict")
+    @patch("amorphouspy_api.executor.get_base_resource_dict")
+    @patch("amorphouspy_api.executor._is_slurm")
+    def test_structure_single_frame_uses_base_resources(
+        self,
+        mock_is_slurm: MagicMock,
+        mock_base_resources: MagicMock,
+        mock_lammps_resources: MagicMock,
+    ) -> None:
+        """structure_characterization with n_averaging_frames=1 should not request LAMMPS-sized resources."""
+        mock_is_slurm.return_value = True
+        mock_base_resources.return_value = {"base_token": 1}
+        mock_lammps_resources.return_value = {"threads_per_core": 24}
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(n_atoms=15_000, cores=24),
+            analyses=[SimpleNamespace(type="structure_characterization", n_averaging_frames=1)],
+        )
+        executor = _DummyExecutor()
+
+        submit_pipeline(executor=executor, submission=submission, cache_key="abc123")
+
+        structure_call = next(c for c in executor.calls if c["kwargs"].get("step_name") == "structure_characterization")
+        assert structure_call["kwargs"]["resource_dict"]["base_token"] == 1
+        assert "threads_per_core" not in structure_call["kwargs"]["resource_dict"]
+
+    @patch("amorphouspy_api.executor.get_lammps_resource_dict")
+    @patch("amorphouspy_api.executor.get_base_resource_dict")
+    @patch("amorphouspy_api.executor._is_slurm")
+    def test_structure_averaging_uses_lammps_resources(
+        self,
+        mock_is_slurm: MagicMock,
+        mock_base_resources: MagicMock,
+        mock_lammps_resources: MagicMock,
+    ) -> None:
+        """structure_characterization with n_averaging_frames>1 should request LAMMPS-sized resources."""
+        mock_is_slurm.return_value = True
+        mock_base_resources.return_value = {"base_token": 1}
+        mock_lammps_resources.return_value = {"threads_per_core": 24}
+
+        submission = SimpleNamespace(
+            potential="pmmcs",
+            simulation=SimpleNamespace(n_atoms=15_000, cores=24),
+            analyses=[SimpleNamespace(type="structure_characterization", n_averaging_frames=2)],
+        )
+        executor = _DummyExecutor()
+
+        submit_pipeline(executor=executor, submission=submission, cache_key="abc123")
+
+        structure_call = next(c for c in executor.calls if c["kwargs"].get("step_name") == "structure_characterization")
+        assert structure_call["kwargs"]["resource_dict"]["threads_per_core"] == 24

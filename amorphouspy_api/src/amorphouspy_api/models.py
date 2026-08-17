@@ -230,6 +230,16 @@ class StructureAnalysis(BaseModel):
         ge=1,
         description="Number of frames to collect in the separate post-quench NVT sampling run; 1 analyzes only the final quenched structure without extra MD",
     )
+    n_jobs: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Number of worker processes for frame-averaged structural post-processing. "
+            "If omitted, it is auto-selected from roughly half of the resolved "
+            "LAMMPS core count and capped by n_averaging_frames + 1 "
+            "(+1 accounts for frame 0)."
+        ),
+    )
 
 
 class ViscosityAnalysis(BaseModel):

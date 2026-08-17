@@ -157,9 +157,9 @@ def test_run_lammps_md_merges_input_control_overrides(
 
 def test_get_lammps_command_defaults_to_single_core() -> None:
     """Default command uses one MPI rank."""
-    assert get_lammps_command() == "mpiexec -n 1 --oversubscribe lmp_mpi -in lmp.in"
+    assert get_lammps_command() == "mpiexec -n 1 lmp_mpi -in lmp.in"
 
 
 def test_get_lammps_command_uses_server_cores() -> None:
     """Server kwargs with cores overrides rank count."""
-    assert get_lammps_command({"cores": 4}) == "mpiexec -n 4 --oversubscribe lmp_mpi -in lmp.in"
+    assert get_lammps_command({"cores": 4}) == "mpiexec -n 4 lmp_mpi -in lmp.in"

@@ -1,6 +1,7 @@
 """Tests for amorphouspy.properties.structural.all — full coverage."""
 
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
@@ -20,6 +21,7 @@ from amorphouspy.properties.structural.all import (
     _add_network_plots,
     _add_rdf_plots,
     _add_ring_plots,
+    _analyze_frame,
     _classify_elements,
     analyze_structure,
     find_rdf_minimum,
@@ -652,3 +654,59 @@ def test_analyze_structure_list_uses_first_frame() -> None:
         single, _sem_single = analyze_structure(atoms)
         result, _sem_result = analyze_structure([atoms, atoms])
     assert result.density == pytest.approx(single.density, rel=1e-6)
+
+
+def test_analyze_structure_frame_averaging_rejects_invalid_n_jobs() -> None:
+    """frame_averaging=True with n_jobs < 1 raises ValueError."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with pytest.raises(ValueError, match="n_jobs must be >= 1"):
+        analyze_structure([atoms, atoms], frame_averaging=True, n_jobs=0)
+
+
+def test_analyze_structure_frame_averaging_runs_in_parallel() -> None:
+    """The parallel path forwards RDF and ring settings to every worker.
+
+    Uses ThreadPoolExecutor in place of ProcessPoolExecutor (same submit/map API) to avoid
+    spawning real subprocesses, which is flaky under CI's coverage/multiprocessing setup.
+    """
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with (
+        patch(
+            "amorphouspy.properties.structural.all.compute_guttmann_rings",
+            return_value=({4: 10, 6: 20}, 5.5),
+        ),
+        patch("amorphouspy.properties.structural.all.ProcessPoolExecutor", ThreadPoolExecutor),
+    ):
+        single, _sem_single = analyze_structure(atoms, compute_rings=False, r_max=8.0, n_bins=200)
+        mean_data, sem_data = analyze_structure(
+            [atoms, atoms, atoms],
+            frame_averaging=True,
+            compute_rings=False,
+            n_jobs=2,
+            r_max=8.0,
+            n_bins=200,
+        )
+    assert mean_data.density == pytest.approx(single.density, rel=1e-6)
+    assert mean_data.rdfs.r == pytest.approx(single.rdfs.r)
+    assert mean_data.distributions.rings == {}
+    assert isinstance(sem_data, StructureData)
+
+
+def test_analyze_frame_computes_ring_stats() -> None:
+    """Worker helper used by the parallel path includes ring statistics."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    with patch(
+        "amorphouspy.properties.structural.all.compute_guttmann_rings",
+        return_value=({4: 10, 6: 20}, 5.5),
+    ):
+        result = _analyze_frame(atoms, compute_rings=True, r_max=10.0, n_bins=500)
+    assert isinstance(result, StructureData)
+    assert result.distributions.rings
+
+
+def test_analyze_frame_skips_ring_stats() -> None:
+    """Worker helper used by the parallel path skips ring statistics."""
+    atoms = cast("Atoms", read(SIO2_XYZ))
+    result = _analyze_frame(atoms, compute_rings=False, r_max=10.0, n_bins=500)
+    assert isinstance(result, StructureData)
+    assert result.distributions.rings == {}
