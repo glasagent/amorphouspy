@@ -6,9 +6,9 @@ Author: Achraf Atila (achraf.atila@bam.de)
 from __future__ import annotations
 
 import logging
-import os
 import warnings
 from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -306,14 +306,9 @@ def _avg_list_arrays(per_frame: list[list[float]]) -> tuple[list[float], list[fl
     return mean, sem
 
 
-def _analyze_frame_with_rings(frame_atoms: Atoms) -> StructureData:
-    """Analyze one frame including ring statistics."""
-    return analyze_structure(frame_atoms, compute_rings=True)[0]
-
-
-def _analyze_frame_without_rings(frame_atoms: Atoms) -> StructureData:
-    """Analyze one frame while skipping ring statistics."""
-    return analyze_structure(frame_atoms, compute_rings=False)[0]
+def _analyze_frame(frame_atoms: Atoms, *, compute_rings: bool, r_max: float, n_bins: int) -> StructureData:
+    """Analyze one frame with the requested structural-analysis settings."""
+    return analyze_structure(frame_atoms, compute_rings=compute_rings, r_max=r_max, n_bins=n_bins)[0]
 
 
 def _build_bond_angles_mean_sem(
@@ -835,7 +830,7 @@ def analyze_structure(
 
         effective_jobs = min(n_jobs, len(frames))
 
-        if effective_jobs == 1 or len(frames) == 1:
+        if effective_jobs == 1:
             per_frame_results = [
                 analyze_structure(frame_atoms, compute_rings=compute_rings and i == 0, r_max=r_max, n_bins=n_bins)[0]
                 for i, frame_atoms in enumerate(frames)
@@ -844,9 +839,11 @@ def analyze_structure(
 
         # Frame 0 is analyzed with rings; remaining frames skip rings and are
         # distributed dynamically across workers.
+        analyze_first = partial(_analyze_frame, compute_rings=compute_rings, r_max=r_max, n_bins=n_bins)
+        analyze_rest = partial(_analyze_frame, compute_rings=False, r_max=r_max, n_bins=n_bins)
         with ProcessPoolExecutor(max_workers=effective_jobs) as executor:
-            frame0_future = executor.submit(_analyze_frame_with_rings, frames[0])
-            per_frame_results_rest = list(executor.map(_analyze_frame_without_rings, frames[1:]))
+            frame0_future = executor.submit(analyze_first, frames[0])
+            per_frame_results_rest = list(executor.map(analyze_rest, frames[1:]))
         per_frame_results = [frame0_future.result(), *per_frame_results_rest]
         return _build_sem_structure_data(per_frame_results)
     if isinstance(atoms, list):
@@ -1436,9 +1433,11 @@ def run_structural_analysis(
             simulation is run to collect frames for averaging.
         n_jobs: Number of worker processes for frame-averaging post-processing.
             ``None`` auto-selects a conservative value based on about half of
-            the allocated LAMMPS cores (capped by available frames). Explicit
-            values must be at least 1 and are capped to ``n_averaging_frames + 1``
-            (``+1`` accounts for frame 0).
+            the allocated LAMMPS cores, defaulting to one core when no allocation
+            is configured. Explicit values must be at least 1.
+            Both explicit and automatic values are capped by the allocated
+            LAMMPS cores and by ``n_averaging_frames + 1`` (``+1`` accounts for
+            frame 0).
         temperature: Temperature (K) for NVT equilibration/production simulation.
         server_kwargs: LAMMPS server configuration dict.
         r_max: Maximum radius in Å for RDF calculation (default 10.0).
@@ -1527,18 +1526,17 @@ def _resolve_effective_n_jobs(
     """Resolve effective worker count for frame-averaging post-processing.
 
     Decision order:
-    1. If ``n_jobs`` is explicitly provided, it must be >= 1 and is used
-       directly.
-    2. If ``n_jobs`` is ``None``, choose an automatic value from available
-       cores:
-       - Prefer ``server_kwargs["cores"]`` when present (this mirrors the
-         resolved LAMMPS allocation used by the NVT sampling run).
-       - Otherwise fall back to ``os.cpu_count()``.
-       - Use roughly half of that core count to reduce memory-bandwidth/cache
-         pressure for large structures while avoiding a single-core fallback.
-    3. In all cases, cap the worker count at ``n_averaging_frames + 1``
-       because at most that many frames are analyzed (frame 0 plus sampled
-       frames).
+        1. Determine the worker budget from ``server_kwargs["cores"]``,
+            defaulting to one when it is not configured.
+        2. If ``n_jobs`` is explicitly provided, it must be >= 1 and is used.
+        3. If ``n_jobs`` is ``None``, choose an automatic value from available
+            cores:
+            - Use the worker budget established from the LAMMPS allocation.
+            - Use roughly half of that core count to reduce memory-bandwidth/cache
+                pressure for large structures while avoiding a single-core fallback.
+         4. In all cases, cap the worker count by the LAMMPS core allocation and at
+            ``n_averaging_frames + 1`` because at most that many frames are analyzed
+            (frame 0 plus sampled frames).
 
     Returns:
         Effective worker-process count passed to frame-averaged
@@ -1548,19 +1546,15 @@ def _resolve_effective_n_jobs(
         msg = "n_jobs must be >= 1"
         raise ValueError(msg)
 
-    max_frame_jobs = n_averaging_frames + 1
-    if n_jobs is not None:
-        return min(n_jobs, max_frame_jobs)
-
     configured_cores = 1
     if isinstance(server_kwargs, dict):
-        cores = server_kwargs.get("cores")
+        cores = server_kwargs.get("cores", 1)
         if isinstance(cores, int) and cores >= 1:
             configured_cores = cores
-    if configured_cores == 1:
-        configured_cores = os.cpu_count() or 1
+    max_jobs = min(configured_cores, n_averaging_frames + 1)
 
-    # Default to about half of available cores to reduce memory-bandwidth
-    # pressure for large structures while avoiding single-core fallback.
+    if n_jobs is not None:
+        return min(n_jobs, max_jobs)
+
     n_jobs_resolved = max(1, configured_cores // 2)
-    return min(n_jobs_resolved, max_frame_jobs)
+    return min(n_jobs_resolved, max_jobs)
