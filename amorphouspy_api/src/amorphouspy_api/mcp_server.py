@@ -36,11 +36,16 @@ dashboard with RDF plots, bond-angle distributions, and 3-D structure viewers.
 
 Typical workflow:
 1. `submit_job` — submit a simulation (returns job ID + URLs).
-2. `get_job_status` — poll until status is "completed".
-3. `get_job_results` — retrieve analysis data.
-4. `get_job_settings` — inspect the original submission parameters.
-5. `search_jobs` — find existing results for similar compositions.
-6. `list_glasses` / `lookup_glass` — browse available compositions.
+2. `search_jobs` — find existing jobs by exact filters (composition, tags, status, time window).
+3. `get_job_status` — confirm live per-job status before fetching results.
+4. `get_job_results` — retrieve analysis data.
+5. `get_job_settings` — inspect the original submission parameters.
+6. `list_glasses` / `lookup_glass` — browse completed compositions/results.
+
+Notes:
+- `search_jobs` is a listing/filter tool, not a similarity search.
+- For nearest/close composition matching among completed results, use `lookup_glass`.
+- When status accuracy matters for jobs returned by `search_jobs`, call `get_job_status` for each job ID.
 """
 
 mcp = FastMCP(
