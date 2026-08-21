@@ -351,6 +351,13 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
     Use *created_after* / *created_before* to constrain results to a
     creation-time window (inclusive ISO 8601 datetimes).
 
+    Status values come from the persisted job table and are returned as
+    a snapshot at query time. For live, per-job status refresh against
+    executor cache state, call ``GET /jobs/{job_id}`` on each returned id.
+
+    Tag filtering uses "all tags required" semantics: every tag supplied
+    in the request must be present on a job for it to be included.
+
     To search completed results by composition similarity, use
     ``POST /glasses:search`` instead.
     """
