@@ -385,6 +385,11 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
             refreshed_jobs.append(job)
         jobs = refreshed_jobs
 
+    # ``statuses`` is applied in the DB query for performance. Re-apply it
+    # after optional refresh so matches respect the post-refresh truth.
+    if statuses is not None:
+        jobs = [j for j in jobs if j.status in statuses]
+
     matches = [
         JobSearchMatch(
             job_id=j.job_id,

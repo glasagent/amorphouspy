@@ -573,6 +573,40 @@ def test_search_jobs_can_skip_status_refresh() -> None:
     mock_refresh.assert_not_called()
 
 
+def test_search_jobs_applies_status_filter_after_refresh() -> None:
+    """A refreshed status change should still obey the requested statuses filter."""
+    _insert_running_job("j-running-refresh-status-filter")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        store = get_job_store()
+
+        def _mark_completed(job: Job) -> None:
+            store.update_job(
+                job.job_id,
+                status="completed",
+                progress={
+                    "structure_generation": "completed",
+                    "melt_quench": "completed",
+                    "structure_characterization": "completed",
+                },
+                completed_at=datetime(2026, 8, 21, tzinfo=UTC),
+            )
+
+        mock_refresh.side_effect = _mark_completed
+
+        # Query asks for running jobs; refreshed job flips to completed and
+        # must be filtered out.
+        resp = client.post(
+            "/jobs:search",
+            json={"composition": {"SiO2": 100}, "statuses": ["running"]},
+        )
+
+    assert resp.status_code == 200
+    ids = {m["job_id"] for m in resp.json()["matches"]}
+    assert "j-running-refresh-status-filter" not in ids
+    mock_refresh.assert_called_once()
+
+
 def test_search_glasses_close_match() -> None:
     """A nearby composition should appear as a close match via glasses:search."""
     _insert_completed_job("j-close-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
