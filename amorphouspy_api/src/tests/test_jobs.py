@@ -557,6 +557,31 @@ def test_search_jobs_refreshes_running_status_by_default() -> None:
     mock_refresh.assert_called_once()
 
 
+def test_search_jobs_keeps_original_record_when_refresh_returns_no_latest_job() -> None:
+    """If the cache refresh yields no updated record, fall back to the DB snapshot."""
+    _insert_running_job("j-running-refresh-missing")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        store = get_job_store()
+        original_get_job = store.get_job
+
+        def _get_job_missing(job_id: str) -> Job | None:
+            if job_id == "j-running-refresh-missing":
+                return None
+            return original_get_job(job_id)
+
+        with patch.object(store, "get_job", side_effect=_get_job_missing):
+            resp = client.post(
+                "/jobs:search",
+                json={"composition": {"SiO2": 100}},
+            )
+
+    assert resp.status_code == 200
+    match = next(m for m in resp.json()["matches"] if m["job_id"] == "j-running-refresh-missing")
+    assert match["status"] == "running"
+    mock_refresh.assert_called_once()
+
+
 def test_search_jobs_can_skip_status_refresh() -> None:
     """refresh_status=false keeps snapshot semantics and does not touch cache."""
     _insert_running_job("j-running-refresh-off")
