@@ -351,9 +351,9 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
     Use *created_after* / *created_before* to constrain results to a
     creation-time window (inclusive ISO 8601 datetimes).
 
-    Status values come from the persisted job table and are returned as
-    a snapshot at query time. For live, per-job status refresh against
-    executor cache state, call ``GET /jobs/{job_id}`` on each returned id.
+    By default, jobs currently marked ``running`` are refreshed against
+    executor cache state before matches are returned. Set
+    ``refresh_status=false`` to return a pure DB snapshot.
 
     Tag filtering uses "all tags required" semantics: every tag supplied
     in the request must be present on a job for it to be included.
@@ -372,6 +372,19 @@ def search_jobs(body: JobSearchRequest) -> JobSearchResponse:
         created_after=body.created_after,
         created_before=body.created_before,
     )
+
+    if body.refresh_status:
+        refreshed_jobs = []
+        for job in jobs:
+            if job.status == "running":
+                refresh_job_from_cache(job)
+                latest = store.get_job(job.job_id)
+                if latest is not None:
+                    refreshed_jobs.append(latest)
+                    continue
+            refreshed_jobs.append(job)
+        jobs = refreshed_jobs
+
     matches = [
         JobSearchMatch(
             job_id=j.job_id,

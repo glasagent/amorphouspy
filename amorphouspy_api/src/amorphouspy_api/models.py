@@ -671,6 +671,13 @@ class JobSearchRequest(BaseModel):
             "For live per-job refresh, call GET /jobs/{job_id}."
         ),
     )
+    refresh_status: bool = Field(
+        default=True,
+        description=(
+            "If true (default), refresh jobs currently marked running against executor cache "
+            "before returning results. Set to false for snapshot-only DB reads."
+        ),
+    )
     created_after: datetime | None = Field(
         default=None,
         description=(

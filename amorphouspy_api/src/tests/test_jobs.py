@@ -525,6 +525,54 @@ def test_search_jobs_date_range() -> None:
     assert ids == {"j-date-new"}
 
 
+def test_search_jobs_refreshes_running_status_by_default() -> None:
+    """search_jobs should refresh running jobs unless explicitly disabled."""
+    _insert_running_job("j-running-refresh-default")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        store = get_job_store()
+
+        def _mark_completed(job: Job) -> None:
+            store.update_job(
+                job.job_id,
+                status="completed",
+                progress={
+                    "structure_generation": "completed",
+                    "melt_quench": "completed",
+                    "structure_characterization": "completed",
+                },
+                completed_at=datetime(2026, 8, 21, tzinfo=UTC),
+            )
+
+        mock_refresh.side_effect = _mark_completed
+
+        resp = client.post(
+            "/jobs:search",
+            json={"composition": {"SiO2": 100}},
+        )
+
+    assert resp.status_code == 200
+    match = next(m for m in resp.json()["matches"] if m["job_id"] == "j-running-refresh-default")
+    assert match["status"] == "completed"
+    mock_refresh.assert_called_once()
+
+
+def test_search_jobs_can_skip_status_refresh() -> None:
+    """refresh_status=false keeps snapshot semantics and does not touch cache."""
+    _insert_running_job("j-running-refresh-off")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        resp = client.post(
+            "/jobs:search",
+            json={"composition": {"SiO2": 100}, "refresh_status": False},
+        )
+
+    assert resp.status_code == 200
+    match = next(m for m in resp.json()["matches"] if m["job_id"] == "j-running-refresh-off")
+    assert match["status"] == "running"
+    mock_refresh.assert_not_called()
+
+
 def test_search_glasses_close_match() -> None:
     """A nearby composition should appear as a close match via glasses:search."""
     _insert_completed_job("j-close-1", composition="Al2O3 15 - CaO 25 - SiO2 60")
