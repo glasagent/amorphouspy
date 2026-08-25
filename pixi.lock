@@ -14292,7 +14292,6 @@ packages:
   - pandas
   - pydantic
   - lammpsparser>=0.0.7
-  - networkx
   - pymatgen
   - pymcubes
   - scipy
