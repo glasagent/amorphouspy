@@ -17,7 +17,6 @@ python = "3.13.*"
 h5py = "*"
 jupyter = "*"
 lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
-networkx = "*"
 numba = "*"
 numpy = "*"
 pandas = "*"

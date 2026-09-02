@@ -8,22 +8,25 @@ Ring analysis determines the distribution of closed loops in the atomic network,
 
 ### Guttman Rings
 
-A **Guttman ring** is a closed path through the T-O-T network that satisfies the *primitiveness* (shortest-path) criterion: no shortcut exists through the rest of the network between any two non-adjacent ring nodes. Specifically, for every pair of non-adjacent ring atoms, the shortest path in the full network graph equals their arc distance along the ring.
+A **Guttman ring** is defined per bond: the ring belonging to a given T-O bond is the *shortest closed path* that contains it. This is the shortest-path criterion, and it is weaker than the *primitive* (King/Franzblau) criterion — a Guttman ring may still have a shortcut across it, so the two definitions do not select the same set of rings.
 
-The ring size is counted in terms of the number of **network-forming cation nodes** (T atoms, e.g. Si, Al) — not total atoms — in the loop.
+The ring size is counted in terms of the number of **network-forming cation nodes** (T atoms, e.g. Si, Al) — not total atoms — in the loop. Every ring alternates T and O, so an *n*-membered ring contains 2*n* atoms.
 
 For example, in SiO₂:
-- A **3-membered ring** contains 3 Si atoms connected by bridging oxygens: Si-O-Si-O-Si-O-Si
+- A **2-membered ring** is two Si sharing a polyhedron edge: Si-O-Si-O, two tetrahedra bridged by two oxygens
+- A **3-membered ring** contains 3 Si atoms connected by bridging oxygens: Si-O-Si-O-Si-O
 - A **6-membered ring** (most common in vitreous silica) contains 6 Si atoms
 
 #### Algorithm
 
-The implementation is a pure-Python networkx-based BFS approach:
+The search runs on the **bipartite T-O atom network** — formers and oxygens are both nodes, and the only edges are T-O bonds:
 
-1. Build a **T-T connectivity graph** where two network formers share an edge if they are both bonded to the same bridging oxygen (coordination ≥ 2).
-2. For every edge (u, v): temporarily remove it, find all shortest paths from u back to v, restore the edge.
-3. Each candidate ring is tested against the **Guttman primitiveness criterion** using shortest-path lengths in the full graph.
-4. Canonical ring forms (rotation- and reflection-invariant) prevent double-counting.
+1. Build the T-O network from the neighbour list, keeping the minimum-image vector of every bond. Nodes with fewer than two bonds are stripped iteratively, which removes non-bridging oxygens and dangling formers before any search starts.
+2. For every bond (u, v): suppress it and sweep breadth-first from u, stopping as soon as the level containing v is complete. Every shortest path found closes the bond into a candidate ring.
+3. Keep only candidates that **close in real space**: the minimum-image bond vectors summed around the loop must vanish. A path that leaves the cell and re-enters through the opposite face returns to the same atom index but is a helix, not a ring. If every shortest closure through a bond fails this test, the search deepens by two atoms at a time until it finds the shortest one that does close.
+4. Canonical ring forms (rotation- and reflection-invariant, over the full T-O cycle) prevent double-counting.
+
+Working at the atom level rather than on a contracted T-T graph matters physically. An oxygen bonded to three or more formers — a tricluster, common in aluminosilicates and borosilicates — is a single node, so it cannot be traversed twice and does not masquerade as a small ring. Two formers bridged by two distinct oxygens form a genuine four-node cycle, so edge-sharing polyhedra are detected instead of collapsing onto one edge.
 
 ### Physical Significance
 
@@ -31,6 +34,7 @@ Ring statistics connect structure to properties:
 
 | Ring size | Structural feature |
 |---|---|
+| 2-membered | Edge-sharing polyhedra — two formers bridged by two oxygens. Rare in equilibrium silicates; a marker of strongly non-equilibrium or high-pressure structures |
 | 3-membered | Associated with the D₂ Raman band (~606 cm⁻¹) in SiO₂ |
 | 4-membered | Associated with the D₁ Raman band (~492 cm⁻¹) in SiO₂ |
 | 5–7 | Dominant in vitreous silica; peak at 6 |
@@ -75,13 +79,14 @@ print(histogram)
 |---|---|---|---|
 | `structure` | `Atoms` | — | ASE Atoms object |
 | `bond_lengths` | `dict[tuple[str, str], float]` | — | Cutoff distances per element pair in Å |
-| `max_size` | `int` | `24` | Maximum ring size (number of T atoms) to search for |
+| `max_size` | `int` | `24` | Maximum ring size (number of T atoms) to search for. It bounds the breadth-first sweep itself, so raising it costs almost nothing — the sweep still stops at each ring's own radius |
+| `n_cpus` | `int` | `1` | Worker processes. Only networks above ~100 000 T-O bonds benefit; below that the search stays sequential regardless, because starting workers costs more than it saves |
 
 **Returns:** `(histogram, mean_ring_size)` where:
 
 | Value | Type | Description |
 |---|---|---|
-| `histogram` | `dict[int, int]` | Mapping from ring size to ring count |
+| `histogram` | `dict[int, float]` | Mapping from ring size to ring count. The smallest reportable size is 2 |
 | `mean_ring_size` | `float` | Mean ring size weighted by count |
 
 ### `generate_bond_length_dict(atoms, specific_cutoffs, default_cutoff)`
