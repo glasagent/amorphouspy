@@ -1,12 +1,23 @@
 """Neighbor list module for multicomponent glass systems.
 
-Supports both orthogonal and triclinic boxes.
+Supports orthogonal and triclinic boxes with any combination of periodic and
+non-periodic directions.
+
+The cell-list builders and the compiled kernels are deliberately pbc-unaware:
+they always apply the minimum-image convention along all three lattice
+vectors. Periodicity is a property of the (cell, coords) pair handed to them.
+``_pad_nonperiodic`` stretches every non-periodic lattice vector so that it
+exceeds the atom cloud by ``2 * cutoff``, after which no wrapped image can fall
+inside the cutoff and the periodic kernels return the exact non-periodic
+answer. Do not add per-axis wrapping logic to a kernel: it would be applied
+twice.
 
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +26,7 @@ if TYPE_CHECKING:
 
 import numpy as np
 from ase import Atoms
+from ase.geometry import complete_cell, minkowski_reduce
 
 # Try to import numba for maximum performance
 try:
@@ -41,6 +53,11 @@ SHIFT_GRID_3D = np.stack(
 ).reshape(-1, 3)
 
 _MIN_VOLUME: float = 1e-10
+# Cap on the cell-list grid. Beyond this the int32 flat cell ids would overflow
+# for large sparse systems; halving the grid keeps the stencil correct, only slower.
+_MAX_CELLS: int = 1_000_000
+# Width of the neighbour-cell stencil along one dimension: offsets -1, 0, +1.
+_STENCIL_WIDTH: int = 3
 
 
 # ============================================================================
@@ -75,7 +92,19 @@ def _parse_cutoff(
         use_pair_cutoffs: True when per-pair mode is active.
     """
     if isinstance(cutoff, (int, float)):
+        if float(cutoff) <= 0.0:
+            msg = f"cutoff must be a positive distance in Angstrom, got {float(cutoff)}"
+            raise ValueError(msg)
         return float(cutoff), np.empty((0, 2), dtype=np.int32), np.empty(0, dtype=np.float64), False
+
+    if not cutoff:
+        msg = "cutoff is an empty dict; pass a positive float or a non-empty {(Z_i, Z_j): r_c} mapping"
+        raise ValueError(msg)
+
+    for pair, rc in cutoff.items():
+        if float(rc) <= 0.0:
+            msg = f"cutoff for pair {pair!r} must be a positive distance in Angstrom, got {float(rc)}"
+            raise ValueError(msg)
 
     unique_types = np.unique(types).tolist()
     max_cutoff = float(max(cutoff.values()))
@@ -156,9 +185,234 @@ def cell_perpendicular_heights(cell: np.ndarray) -> np.ndarray:
     return np.array([height_a, height_b, height_c])
 
 
+def _half_min_height(cell: np.ndarray) -> float:
+    """Return half the smallest perpendicular cell height.
+
+    Any displacement shorter than this bound is guaranteed to be the minimum
+    image: every non-zero lattice vector is at least as long as the smallest
+    perpendicular height, so a competing image cannot be closer.
+
+    Args:
+        cell: (3, 3) array with lattice vectors as rows.
+
+    Returns:
+        half_height: Half the smallest perpendicular height in Angstrom.
+    """
+    return float(cell_perpendicular_heights(cell).min()) / 2.0
+
+
+def _image_search_bound(cell: np.ndarray, n_cells: np.ndarray) -> float | None:
+    """Return the squared bound for the exact minimum-image test, or None if it cannot fire.
+
+    Candidate pairs only ever come from the 3x3x3 block of cells around an atom,
+    which caps each rounded fractional component at min(0.5, 2 / n_cells). The
+    longest Cartesian displacement reachable inside that fractional box sits at
+    one of its eight corners. When even that is within half the smallest
+    perpendicular height, per-component rounding is provably the nearest image
+    for every pair the kernel can see, and the guard is pure overhead — a branch
+    inside the innermost loop costs real time whether or not it is ever taken.
+
+    Args:
+        cell: (3, 3) array with lattice vectors as rows.
+        n_cells: (3,) number of cell-list cells along each lattice vector.
+
+    Returns:
+        bound_sq: Squared half-height to test against, or None when no candidate
+                  pair can possibly need the image search.
+    """
+    half_height = _half_min_height(cell)
+    component_bounds = np.minimum(0.5, 2.0 / np.asarray(n_cells, dtype=np.float64))
+    corners = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)], dtype=np.float64)
+    longest = float(np.linalg.norm((corners * component_bounds) @ cell, axis=1).max())
+    if longest <= half_height:
+        return None
+    return half_height**2
+
+
+def _min_periodic_lattice_vector(cell: np.ndarray, pbc: np.ndarray) -> float:
+    """Return the length of the shortest non-zero lattice vector of the periodic sub-lattice.
+
+    The minimum-image convention is exact iff the cutoff is below half this
+    length. Perpendicular heights are only a lower bound on it, so they would
+    make the warning fire spuriously on skewed cells and on every slab.
+
+    Args:
+        cell: (3, 3) array with lattice vectors as rows.
+        pbc: (3,) bool array, one flag per lattice vector.
+
+    Returns:
+        Shortest periodic lattice vector in Angstrom; inf when nothing is periodic.
+    """
+    if not pbc.any():
+        return np.inf
+    reduced, _ = minkowski_reduce(cell, pbc=pbc)
+    return float(np.linalg.norm(reduced[pbc], axis=1).min())
+
+
+def _warn_if_cutoff_exceeds_minimum_image(cell: np.ndarray, cutoff: float, pbc: np.ndarray) -> None:
+    """Warn when the cutoff is too large for the minimum-image convention.
+
+    Beyond half the shortest periodic lattice vector a pair can have more than
+    one periodic image inside the cutoff, so a minimum-image neighbor list is
+    approximate no matter how it is built.
+
+    Args:
+        cell: (3, 3) array with lattice vectors as rows.
+        cutoff: Requested cutoff in Angstrom.
+        pbc: (3,) bool array, one flag per lattice vector.
+    """
+    half_shortest = _min_periodic_lattice_vector(cell, pbc) / 2.0
+    if cutoff > half_shortest:
+        msg = (
+            f"cutoff {cutoff:.3f} A exceeds half the shortest periodic lattice vector "
+            f"({half_shortest:.3f} A). The minimum-image convention is not valid in this regime: "
+            "only the nearest periodic image of each pair is reported, so neighbor counts are "
+            "underestimated. Use a larger cell or a smaller cutoff."
+        )
+        warnings.warn(msg, RuntimeWarning, stacklevel=3)
+
+
+def _pad_nonperiodic(
+    cell: np.ndarray,
+    coords: np.ndarray,
+    pbc: np.ndarray,
+    cutoff: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Stretch every non-periodic lattice vector so no wrapped image can reach the cutoff.
+
+    Along lattice vector d the fractional coordinate equals the signed distance
+    to the face plane divided by the perpendicular height h_d, and the other two
+    vectors contribute nothing along that normal. Scaling a_d therefore changes
+    h_d alone: the periodic sub-lattice is untouched and several non-periodic
+    axes compose independently. With the padded height set to exactly
+    E_d + 2 * cutoff (E_d the extent of the atom cloud), every image with a
+    non-zero coefficient along d is at least 2 * cutoff away, so the periodic
+    kernels can never accept one. The factor 2 is load-bearing: with 1 * cutoff
+    a crystalline slab whose surface layers sit in registry produces spurious
+    cross-vacuum bonds at exactly the cutoff.
+
+    Args:
+        cell: (3, 3) array with lattice vectors as rows. Zero rows are completed.
+        coords: (N, 3) Cartesian coordinates, wrapped or not.
+        pbc: (3,) bool array, one flag per lattice vector.
+        cutoff: Largest cutoff in Angstrom the neighbor search will use.
+
+    Returns:
+        (cell, coords): unchanged objects when fully periodic; otherwise a padded
+        cell and coordinates rigidly translated so the cloud starts at the origin
+        along each non-periodic vector.
+    """
+    if pbc.all():
+        return cell, coords
+    cell = np.array(complete_cell(cell), dtype=np.float64)
+    frac = coords @ np.linalg.inv(cell)
+    heights = cell_perpendicular_heights(cell)
+    for axis in np.flatnonzero(~pbc):
+        lowest = frac[:, axis].min()
+        stretch = frac[:, axis].max() - lowest + 2.0 * cutoff / heights[axis]
+        frac[:, axis] = (frac[:, axis] - lowest) / stretch
+        cell[axis] *= stretch
+    return cell, frac @ cell
+
+
+def _validate_coords(coords: np.ndarray) -> None:
+    """Reject non-finite coordinates; under fastmath they would silently vanish from the kernels."""
+    if not np.isfinite(coords).all():
+        msg = "coordinates contain NaN or inf"
+        raise ValueError(msg)
+
+
+def _validate_cell(cell: np.ndarray) -> None:
+    """Reject a zero-volume cell; fractional coordinates are undefined for it."""
+    if abs(np.linalg.det(cell)) < _MIN_VOLUME:
+        msg = "cell is degenerate (zero volume): every periodic direction needs a non-zero, independent lattice vector"
+        raise ValueError(msg)
+
+
+def _normalize_type_filter(value: int | list[int] | None, name: str) -> list[int] | None:
+    """Normalize a target/neighbor type argument into a list of atomic numbers.
+
+    A bare atomic number is accepted and wrapped, so ``target_types=14`` behaves
+    like ``target_types=[14]`` instead of failing inside the compiled kernel.
+
+    Args:
+        value: None, a single atomic number, or a sequence of atomic numbers.
+        name: Argument name, used in the error message.
+
+    Returns:
+        The normalized list, or None when no filter was requested.
+
+    Raises:
+        TypeError: If the value is neither None, an integer, nor a sequence of integers.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
+        return [int(value)]
+    if isinstance(value, (list, tuple, np.ndarray)):
+        try:
+            return [int(v) for v in value]
+        except (TypeError, ValueError) as exc:
+            msg = f"{name} must contain atomic numbers (integers), got {value!r}"
+            raise TypeError(msg) from exc
+    msg = f"{name} must be None, an atomic number, or a list of atomic numbers, got {type(value).__name__}"
+    raise TypeError(msg)
+
+
 # ============================================================================
 # Cell list construction
 # ============================================================================
+
+
+def _cell_offsets(n_cells: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Stencil (start, count) per dimension so that each neighbour cell is visited exactly once.
+
+    With three or more cells along a dimension the usual -1, 0, +1 offsets are
+    all distinct. With fewer, some of them wrap onto the same cell, so the
+    stencil is simply every cell along that dimension: offsets 0 .. n_cells - 1.
+
+    Args:
+        n_cells: (3,) number of cells along each lattice vector.
+
+    Returns:
+        start: (3,) int32 first offset per dimension (-1 or 0).
+        count: (3,) int32 number of offsets per dimension (1, 2 or 3).
+    """
+    n_cells = np.asarray(n_cells)
+    start = np.where(n_cells >= _STENCIL_WIDTH, -1, 0).astype(np.int32)
+    count = np.minimum(n_cells, _STENCIL_WIDTH).astype(np.int32)
+    return start, count
+
+
+def _stencil_grid(n_cells: np.ndarray) -> np.ndarray:
+    """Return the (K, 3) stencil offsets of _cell_offsets as one array for the NumPy path."""
+    start, count = _cell_offsets(n_cells)
+    axes = [np.arange(start[d], start[d] + count[d]) for d in range(3)]
+    return np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3)
+
+
+def _clamp_cell_count(n_cells: np.ndarray) -> np.ndarray:
+    """Halve the cell grid until it holds at most _MAX_CELLS cells.
+
+    Thicker cells are always correct — the stencil still covers the cutoff
+    sphere — only slower.
+    """
+    n_cells = np.asarray(n_cells).astype(np.int64)
+    while np.prod(n_cells) > _MAX_CELLS:
+        n_cells = np.maximum(1, n_cells // 2)
+    return n_cells.astype(np.int32)
+
+
+def _csr_cell_list(atom_cells: np.ndarray, n_cells: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Sort atoms by flat cell id into CSR form: (cell_start, order)."""
+    n_total = int(np.prod(n_cells, dtype=np.int64))
+    strides = np.array([int(n_cells[1]) * int(n_cells[2]), int(n_cells[2]), 1], dtype=np.int64)
+    flat_cell_ids = atom_cells @ strides
+    order = np.argsort(flat_cell_ids, kind="stable").astype(np.int32)
+    cell_start = np.zeros(n_total + 1, dtype=np.int32)
+    cell_start[1:] = np.bincount(flat_cell_ids, minlength=n_total)
+    np.cumsum(cell_start, out=cell_start)
+    return cell_start, order
 
 
 def compute_cell_list_orthogonal(
@@ -169,26 +423,17 @@ def compute_cell_list_orthogonal(
     """Construct a flat CSR-style cell list for orthogonal boxes.
 
     Args:
-        coords: Cartesian coordinates of atoms.
+        coords: Cartesian coordinates of atoms, wrapped or not.
         box_size: Lengths of the simulation box.
         cutoff: Cell list cutoff.
 
     Returns:
         A tuple of (atom_cells, n_cells, cell_start, order).
     """
-    n_cells = np.maximum(1, np.floor(box_size / cutoff)).astype(np.int32)
-    inv_cell_size = n_cells / box_size
-    atom_cells = np.floor(coords * inv_cell_size).astype(np.int64) % n_cells
-    n_total = int(n_cells[0]) * int(n_cells[1]) * int(n_cells[2])
-    flat_cell_ids = (
-        atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2]) + atom_cells[:, 1] * int(n_cells[2]) + atom_cells[:, 2]
-    ).astype(np.int32)
-    order = np.argsort(flat_cell_ids, kind="stable")
-    sorted_flat_cell_ids = flat_cell_ids[order]
-    cell_start = np.zeros(n_total + 1, dtype=np.int32)
-    np.add.at(cell_start[1:], sorted_flat_cell_ids, 1)
-    np.cumsum(cell_start, out=cell_start)
-    return atom_cells.astype(np.int32), n_cells, cell_start, order.astype(np.int32)
+    n_cells = _clamp_cell_count(np.maximum(1, np.floor(box_size / cutoff)))
+    atom_cells = (np.floor(coords * (n_cells / box_size)).astype(np.int64) % n_cells).astype(np.int32)
+    cell_start, order = _csr_cell_list(atom_cells, n_cells)
+    return atom_cells, n_cells, cell_start, order
 
 
 def compute_cell_list_triclinic(
@@ -199,28 +444,50 @@ def compute_cell_list_triclinic(
     """Construct a flat CSR-style cell list for triclinic boxes (fractional coords).
 
     Args:
-        coords: Cartesian coordinates of atoms.
+        coords: Cartesian coordinates of atoms, wrapped or not.
         cell: Lattice vector matrix.
         cutoff: Cell list cutoff.
 
     Returns:
         A tuple of (coords_frac, atom_cells, n_cells, cell_start, order).
     """
-    inv_cell = np.linalg.inv(cell)
-    coords_frac = (inv_cell @ coords.T).T % 1.0
+    # Lattice vectors are rows, so fractional coordinates are coords @ inv(cell).
+    coords_frac = (coords @ np.linalg.inv(cell)) % 1.0
     heights = cell_perpendicular_heights(cell)
-    n_cells = np.maximum(1, np.floor(heights / cutoff)).astype(np.int32)
-    n_total = int(n_cells[0]) * int(n_cells[1]) * int(n_cells[2])
+    n_cells = _clamp_cell_count(np.maximum(1, np.floor(heights / cutoff)))
     atom_cells = (np.floor(coords_frac * n_cells).astype(np.int64) % n_cells).astype(np.int32)
-    flat_cell_ids = (
-        atom_cells[:, 0] * int(n_cells[1]) * int(n_cells[2]) + atom_cells[:, 1] * int(n_cells[2]) + atom_cells[:, 2]
-    ).astype(np.int32)
-    order = np.argsort(flat_cell_ids, kind="stable")
-    sorted_flat_cell_ids = flat_cell_ids[order]
-    cell_start = np.zeros(n_total + 1, dtype=np.int32)
-    np.add.at(cell_start[1:], sorted_flat_cell_ids, 1)
-    np.cumsum(cell_start, out=cell_start)
-    return coords_frac, atom_cells, n_cells, cell_start, order.astype(np.int32)
+    cell_start, order = _csr_cell_list(atom_cells, n_cells)
+    return coords_frac, atom_cells, n_cells, cell_start, order
+
+
+def _build_cell_list(
+    coords: np.ndarray,
+    cell: np.ndarray,
+    cutoff: float,
+) -> tuple[bool, np.ndarray | None, np.ndarray | None, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Build the cell list on the orthogonal or the triclinic path, whichever the cell needs.
+
+    Args:
+        coords: Cartesian coordinates of atoms, wrapped or not.
+        cell: (3, 3) array with lattice vectors as rows.
+        cutoff: Cell list cutoff in Angstrom.
+
+    Returns:
+        is_orthogonal: True when the cell is diagonal and the orthogonal path was taken.
+        box_size: (3,) box lengths on the orthogonal path, None on the triclinic one.
+        coords_frac: (N, 3) fractional coordinates on the triclinic path, None otherwise.
+        atom_cells: (N, 3) int32 cell index per atom.
+        n_cells: (3,) int32 number of cells along each lattice vector.
+        cell_start: (n_total + 1,) int32 CSR offsets into cell_atoms.
+        cell_atoms: (N,) int32 atom indices sorted by cell.
+    """
+    is_orthogonal = bool(np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-10))
+    if is_orthogonal:
+        box_size = np.diag(cell)
+        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, cutoff)
+        return is_orthogonal, box_size, None, atom_cells, n_cells, cell_start, cell_atoms
+    coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, cutoff)
+    return is_orthogonal, None, coords_frac, atom_cells, n_cells, cell_start, cell_atoms
 
 
 # ============================================================================
@@ -237,7 +504,8 @@ def _dist_and_vec_ortho(
     """Minimum-image displacement vector and squared distance, orthogonal box.
 
     Returns:
-        (dx, dy, dz, dist_sq) — displacement i->j and its squared length.
+        (dx, dy, dz, dist_sq) — displacement r_i - r_j and its squared length.
+        Note the sign: this points from j to i, opposite to ASE's "D".
     """
     dx = ci[0] - cj[0]
     dx -= box[0] * round(dx / box[0])
@@ -254,12 +522,15 @@ def _dist_and_vec_tri(
     frac_j: np.ndarray,
     cell: np.ndarray,
 ) -> tuple[float, float, float, float]:
-    """Minimum-image displacement vector and squared distance, triclinic box.
+    """Nearest-integer displacement vector and squared distance, triclinic box.
+
+    Per-component rounding is exact whenever the result is shorter than half the
+    smallest perpendicular cell height; beyond that bound a skewed cell can have
+    a closer image. Use _dist_and_vec_tri_exact when that guarantee is needed.
 
     Returns:
-        (dx, dy, dz, dist_sq) — Cartesian displacement i->j and its squared length.
+        (dx, dy, dz, dist_sq) — Cartesian displacement r_i - r_j and its squared length.
     """
-    # Nearest-integer rounding is an approximation; may miss the MIC image for highly skewed boxes.
     delta_frac_x = frac_i[0] - frac_j[0]
     delta_frac_x -= round(delta_frac_x)
     delta_frac_y = frac_i[1] - frac_j[1]
@@ -270,6 +541,90 @@ def _dist_and_vec_tri(
     dy = delta_frac_x * cell[0, 1] + delta_frac_y * cell[1, 1] + delta_frac_z * cell[2, 1]
     dz = delta_frac_x * cell[0, 2] + delta_frac_y * cell[1, 2] + delta_frac_z * cell[2, 2]
     return dx, dy, dz, dx * dx + dy * dy + dz * dz
+
+
+@jit(nopython=True, fastmath=True, cache=True)
+def _search_mic_images_tri(
+    base_x: float,
+    base_y: float,
+    base_z: float,
+    cell: np.ndarray,
+    dx: float,
+    dy: float,
+    dz: float,
+    dist_sq: float,
+) -> tuple[float, float, float, float]:
+    """Search the 27 images around a rounded fractional displacement for the nearest one.
+
+    Args:
+        base_x: Rounded fractional displacement along a.
+        base_y: Rounded fractional displacement along b.
+        base_z: Rounded fractional displacement along c.
+        cell: (3, 3) lattice vectors as rows.
+        dx: Cartesian displacement of the rounded image along x.
+        dy: Cartesian displacement of the rounded image along y.
+        dz: Cartesian displacement of the rounded image along z.
+        dist_sq: Squared length of the rounded image.
+
+    Returns:
+        (dx, dy, dz, dist_sq) for the shortest image found.
+    """
+    for shift_x in range(-1, 2):
+        trial_x = base_x + shift_x
+        for shift_y in range(-1, 2):
+            trial_y = base_y + shift_y
+            for shift_z in range(-1, 2):
+                trial_z = base_z + shift_z
+                trial_dx = trial_x * cell[0, 0] + trial_y * cell[1, 0] + trial_z * cell[2, 0]
+                trial_dy = trial_x * cell[0, 1] + trial_y * cell[1, 1] + trial_z * cell[2, 1]
+                trial_dz = trial_x * cell[0, 2] + trial_y * cell[1, 2] + trial_z * cell[2, 2]
+                trial_sq = trial_dx * trial_dx + trial_dy * trial_dy + trial_dz * trial_dz
+                if trial_sq < dist_sq:
+                    dx = trial_dx
+                    dy = trial_dy
+                    dz = trial_dz
+                    dist_sq = trial_sq
+
+    return dx, dy, dz, dist_sq
+
+
+@jit(nopython=True, fastmath=True, cache=True)
+def _dist_and_vec_tri_exact(
+    frac_i: np.ndarray,
+    frac_j: np.ndarray,
+    cell: np.ndarray,
+    half_height_sq: float,
+) -> tuple[float, float, float, float]:
+    """Exact minimum-image displacement vector and squared distance, triclinic box.
+
+    Takes the nearest-integer result first. Anything shorter than half the
+    smallest perpendicular height is provably minimal and returned as is; only
+    longer displacements call into _search_mic_images_tri. For typical
+    cutoff-to-box ratios that search never runs, leaving one extra float
+    comparison relative to _dist_and_vec_tri.
+
+    Args:
+        frac_i: Fractional coordinates of atom i.
+        frac_j: Fractional coordinates of atom j.
+        cell: (3, 3) lattice vectors as rows.
+        half_height_sq: Squared half of the smallest perpendicular cell height.
+
+    Returns:
+        (dx, dy, dz, dist_sq) — Cartesian displacement r_i - r_j and its squared length.
+    """
+    base_x = frac_i[0] - frac_j[0]
+    base_x -= round(base_x)
+    base_y = frac_i[1] - frac_j[1]
+    base_y -= round(base_y)
+    base_z = frac_i[2] - frac_j[2]
+    base_z -= round(base_z)
+    dx = base_x * cell[0, 0] + base_y * cell[1, 0] + base_z * cell[2, 0]
+    dy = base_x * cell[0, 1] + base_y * cell[1, 1] + base_z * cell[2, 1]
+    dz = base_x * cell[0, 2] + base_y * cell[1, 2] + base_z * cell[2, 2]
+    dist_sq = dx * dx + dy * dy + dz * dz
+    if dist_sq <= half_height_sq:
+        return dx, dy, dz, dist_sq
+    return _search_mic_images_tri(base_x, base_y, base_z, cell, dx, dy, dz, dist_sq)
 
 
 # ============================================================================
@@ -286,6 +641,8 @@ def _build_nl_ortho_numba(
     n_cells: np.ndarray,
     cell_start: np.ndarray,
     cell_atoms: np.ndarray,
+    stencil_start: np.ndarray,
+    stencil_count: np.ndarray,
     cutoff_sq: float,
     target_types: np.ndarray,
     neighbor_types: np.ndarray,
@@ -312,10 +669,12 @@ def _build_nl_ortho_numba(
     n_cells_y = n_cells[1]
     n_cells_z = n_cells[2]
 
-    neighbor_list = np.full((n_atoms, max_neighbors), -1, dtype=np.int32)
+    # Only the first neighbor_counts[i] slots of each row are ever read, so the
+    # buffers are left uninitialised rather than paying for a memset.
+    neighbor_list = np.empty((n_atoms, max_neighbors), dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     if return_vectors:
-        vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
+        vector_list = np.empty((n_atoms, max_neighbors, 3), dtype=np.float32)
     else:
         vector_list = np.empty((0, 0, 3), dtype=np.float32)
 
@@ -333,12 +692,12 @@ def _build_nl_ortho_numba(
         cell_idx_i = atom_cells[i]
         count = 0
 
-        for cell_offset_x in range(-1, 2):
-            neighbor_cell_x = (cell_idx_i[0] + cell_offset_x) % n_cells[0]
-            for cell_offset_y in range(-1, 2):
-                neighbor_cell_y = (cell_idx_i[1] + cell_offset_y) % n_cells[1]
-                for cell_offset_z in range(-1, 2):
-                    neighbor_cell_z = (cell_idx_i[2] + cell_offset_z) % n_cells[2]
+        for offset_x in range(stencil_count[0]):
+            neighbor_cell_x = (cell_idx_i[0] + stencil_start[0] + offset_x) % n_cells[0]
+            for offset_y in range(stencil_count[1]):
+                neighbor_cell_y = (cell_idx_i[1] + stencil_start[1] + offset_y) % n_cells[1]
+                for offset_z in range(stencil_count[2]):
+                    neighbor_cell_z = (cell_idx_i[2] + stencil_start[2] + offset_z) % n_cells[2]
                     flat_cell_idx = (
                         neighbor_cell_x * n_cells_y * n_cells_z + neighbor_cell_y * n_cells_z + neighbor_cell_z
                     )
@@ -388,7 +747,7 @@ def _build_nl_ortho_numba(
 
 
 @jit(nopython=True, parallel=True, cache=True)
-def _build_nl_tri_numba(
+def _build_nl_tri_numba(  # noqa: PLR0915
     coords_frac: np.ndarray,
     types: np.ndarray,
     cell: np.ndarray,
@@ -396,6 +755,8 @@ def _build_nl_tri_numba(
     n_cells: np.ndarray,
     cell_start: np.ndarray,
     cell_atoms: np.ndarray,
+    stencil_start: np.ndarray,
+    stencil_count: np.ndarray,
     cutoff_sq: float,
     target_types: np.ndarray,
     neighbor_types: np.ndarray,
@@ -406,6 +767,7 @@ def _build_nl_tri_numba(
     pair_cutoffs_sq: np.ndarray,
     use_pair_cutoffs: bool,  # noqa: FBT001
     return_vectors: bool,  # noqa: FBT001
+    half_height_sq: float | None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build neighbor list for a triclinic box using Numba.
 
@@ -418,10 +780,12 @@ def _build_nl_tri_numba(
     n_cells_y = n_cells[1]
     n_cells_z = n_cells[2]
 
-    neighbor_list = np.full((n_atoms, max_neighbors), -1, dtype=np.int32)
+    # Only the first neighbor_counts[i] slots of each row are ever read, so the
+    # buffers are left uninitialised rather than paying for a memset.
+    neighbor_list = np.empty((n_atoms, max_neighbors), dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     if return_vectors:
-        vector_list = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
+        vector_list = np.empty((n_atoms, max_neighbors, 3), dtype=np.float32)
     else:
         vector_list = np.empty((0, 0, 3), dtype=np.float32)
 
@@ -439,12 +803,12 @@ def _build_nl_tri_numba(
         cell_idx_i = atom_cells[i]
         count = 0
 
-        for cell_offset_x in range(-1, 2):
-            neighbor_cell_x = (cell_idx_i[0] + cell_offset_x) % n_cells[0]
-            for cell_offset_y in range(-1, 2):
-                neighbor_cell_y = (cell_idx_i[1] + cell_offset_y) % n_cells[1]
-                for cell_offset_z in range(-1, 2):
-                    neighbor_cell_z = (cell_idx_i[2] + cell_offset_z) % n_cells[2]
+        for offset_x in range(stencil_count[0]):
+            neighbor_cell_x = (cell_idx_i[0] + stencil_start[0] + offset_x) % n_cells[0]
+            for offset_y in range(stencil_count[1]):
+                neighbor_cell_y = (cell_idx_i[1] + stencil_start[1] + offset_y) % n_cells[1]
+                for offset_z in range(stencil_count[2]):
+                    neighbor_cell_z = (cell_idx_i[2] + stencil_start[2] + offset_z) % n_cells[2]
                     flat_cell_idx = (
                         neighbor_cell_x * n_cells_y * n_cells_z + neighbor_cell_y * n_cells_z + neighbor_cell_z
                     )
@@ -472,7 +836,14 @@ def _build_nl_tri_numba(
                             else cutoff_sq
                         )
 
-                        dx, dy, dz, dist_sq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
+                        # half_height_sq is None when the cell list geometry rules the
+                        # image search out; Numba prunes this branch at compile time.
+                        if half_height_sq is None:
+                            dx, dy, dz, dist_sq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
+                        else:
+                            dx, dy, dz, dist_sq = _dist_and_vec_tri_exact(
+                                coords_frac[i], coords_frac[j], cell, half_height_sq
+                            )
 
                         if dist_sq <= pair_cutoff_sq:
                             if count < max_neighbors:
@@ -502,6 +873,8 @@ def _build_distances_numba(  # pragma: no cover
     n_cells: np.ndarray,
     cell_start: np.ndarray,
     cell_atoms: np.ndarray,
+    stencil_start: np.ndarray,
+    stencil_count: np.ndarray,
     r_max_sq: float,
     max_pairs: int,
     pair_types: np.ndarray,
@@ -530,24 +903,13 @@ def _build_distances_numba(  # pragma: no cover
 
         ci = atom_cells[i]
         k = 0
-        visited_buf = np.empty(27, dtype=np.int32)
-        visited_count = np.int32(0)
-        for dix in range(-1, 2):
-            cjx = (ci[0] + dix) % n_cells_x
-            for diy in range(-1, 2):
-                cjy = (ci[1] + diy) % n_cells_y
-                for diz in range(-1, 2):
-                    cjz = (ci[2] + diz) % n_cells_z
+        for dix in range(stencil_count[0]):
+            cjx = (ci[0] + stencil_start[0] + dix) % n_cells_x
+            for diy in range(stencil_count[1]):
+                cjy = (ci[1] + stencil_start[1] + diy) % n_cells_y
+                for diz in range(stencil_count[2]):
+                    cjz = (ci[2] + stencil_start[2] + diz) % n_cells_z
                     flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
-                    already_visited = False
-                    for _v in range(visited_count):
-                        if visited_buf[_v] == flat:
-                            already_visited = True
-                            break
-                    if already_visited:
-                        continue
-                    visited_buf[visited_count] = flat
-                    visited_count += np.int32(1)
                     for p in range(cell_start[flat], cell_start[flat + 1]):
                         j = cell_atoms[p]
                         if j <= i:
@@ -583,10 +945,13 @@ def _build_distances_numba_tri(  # pragma: no cover
     n_cells: np.ndarray,
     cell_start: np.ndarray,
     cell_atoms: np.ndarray,
+    stencil_start: np.ndarray,
+    stencil_count: np.ndarray,
     r_max_sq: float,
     max_pairs: int,
     pair_types: np.ndarray,
     use_type_filter: bool,  # noqa: FBT001
+    half_height_sq: float | None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Collect half-pair (j > i) distances within r_max_sq for a triclinic box.
 
@@ -611,24 +976,13 @@ def _build_distances_numba_tri(  # pragma: no cover
 
         ci = atom_cells[i]
         k = 0
-        visited_buf = np.empty(27, dtype=np.int32)
-        visited_count = np.int32(0)
-        for dix in range(-1, 2):
-            cjx = (ci[0] + dix) % n_cells_x
-            for diy in range(-1, 2):
-                cjy = (ci[1] + diy) % n_cells_y
-                for diz in range(-1, 2):
-                    cjz = (ci[2] + diz) % n_cells_z
+        for dix in range(stencil_count[0]):
+            cjx = (ci[0] + stencil_start[0] + dix) % n_cells_x
+            for diy in range(stencil_count[1]):
+                cjy = (ci[1] + stencil_start[1] + diy) % n_cells_y
+                for diz in range(stencil_count[2]):
+                    cjz = (ci[2] + stencil_start[2] + diz) % n_cells_z
                     flat = cjx * n_cells_y * n_cells_z + cjy * n_cells_z + cjz
-                    already_visited = False
-                    for _v in range(visited_count):
-                        if visited_buf[_v] == flat:
-                            already_visited = True
-                            break
-                    if already_visited:
-                        continue
-                    visited_buf[visited_count] = flat
-                    visited_count += np.int32(1)
                     for p in range(cell_start[flat], cell_start[flat + 1]):
                         j = cell_atoms[p]
                         if j <= i:
@@ -644,7 +998,11 @@ def _build_distances_numba_tri(  # pragma: no cover
                                     break
                             if not pair_ok:
                                 continue
-                        _, _, _, dsq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
+                        # See _build_nl_tri_numba: None prunes the guard at compile time.
+                        if half_height_sq is None:
+                            _, _, _, dsq = _dist_and_vec_tri(coords_frac[i], coords_frac[j], cell)
+                        else:
+                            _, _, _, dsq = _dist_and_vec_tri_exact(coords_frac[i], coords_frac[j], cell, half_height_sq)
                         if dsq <= r_max_sq:
                             if k < max_pairs:
                                 dist_buf[i, k] = dsq**0.5
@@ -655,20 +1013,74 @@ def _build_distances_numba_tri(  # pragma: no cover
     return dist_buf, j_buf, counts
 
 
+def _valid_slots(counts: np.ndarray, width: int) -> np.ndarray:
+    """(N, width) bool mask of the filled slots in a padded (N, width) kernel buffer."""
+    return np.arange(width)[np.newaxis, :] < counts[:, np.newaxis]
+
+
 def _flatten_distance_buffers(
     dist_buf: np.ndarray,
     j_buf: np.ndarray,
     counts: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Flatten (N, max_pairs) Numba output buffers into flat (M,) arrays."""
-    n = len(counts)
-    # Boolean mask of valid slots — vectorised, no Python per-atom loop
-    slots = np.arange(dist_buf.shape[1])
-    valid = slots[np.newaxis, :] < counts[:, np.newaxis]  # (N, max_pairs) bool
+    valid = _valid_slots(counts, dist_buf.shape[1])
     dist_out = dist_buf[valid].astype(np.float64)
     j_out = j_buf[valid].astype(np.int32)
-    i_out = np.repeat(np.arange(n, dtype=np.int32), counts)
+    i_out = np.repeat(np.arange(len(counts), dtype=np.int32), counts)
     return dist_out, i_out, j_out
+
+
+def _build_distances_numpy(
+    coords: np.ndarray,
+    cell: np.ndarray,
+    r_max: float,
+    types: np.ndarray,
+    pair_types: np.ndarray,
+    use_type_filter: bool,  # noqa: FBT001
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Half-pair distances without Numba, derived from the shared _numpy_fallback.
+
+    The fallback returns every (i, j) within r_max; keeping j > i halves it and
+    the requested unordered type pairs are applied afterwards.
+    """
+    n_atoms = len(coords)
+    is_orthogonal, box_size, coords_frac, atom_cells, n_cells, _cell_start, _cell_atoms = _build_cell_list(
+        coords, cell, r_max
+    )
+    flat_j, counts, flat_vecs = _numpy_fallback(
+        coords=coords,
+        coords_frac=coords_frac,
+        types=types,
+        cell=cell,
+        box_size=box_size,
+        atom_cells=atom_cells,
+        n_cells=n_cells,
+        cutoff_sq=r_max * r_max,
+        pair_types=np.empty((0, 2), dtype=np.int32),
+        pair_cutoffs_sq=np.empty(0, dtype=np.float64),
+        use_pair_cutoffs=False,
+        use_target_filter=False,
+        use_neighbor_filter=False,
+        target_types=None,
+        neighbor_types=None,
+        n_atoms=n_atoms,
+        return_vectors=True,
+        is_orthogonal=is_orthogonal,
+    )
+    i_idx = np.repeat(np.arange(n_atoms, dtype=np.int32), counts)
+    keep = flat_j > i_idx
+    if use_type_filter:
+        if len(pair_types) == 0:
+            keep[:] = False
+        else:
+            n_types = max(int(types.max()), int(pair_types.max())) + 1
+            allowed = np.zeros((n_types, n_types), dtype=bool)
+            allowed[pair_types[:, 0], pair_types[:, 1]] = True
+            allowed |= allowed.T
+            keep &= allowed[types[i_idx], types[flat_j]]
+    dists = np.linalg.norm(flat_vecs[keep], axis=1)
+    return dists, i_idx[keep], flat_j[keep]
 
 
 def build_distances(
@@ -681,10 +1093,11 @@ def build_distances(
 
     When types and unordered_pairs are given, only pairs whose types match a
     requested canonical pair are collected — skipping irrelevant atoms entirely
-    inside the compiled kernel.
+    inside the compiled kernel. ``structure_wrapped.pbc`` is honoured per
+    lattice vector; coordinates need not actually be wrapped.
 
     Args:
-        structure_wrapped: ASE Atoms object with coordinates already wrapped.
+        structure_wrapped: ASE Atoms object.
         r_max: Maximum distance cutoff in Angstroms.
         types: Atomic-number array aligned with structure positions.
         unordered_pairs: Canonical (min, max) type pairs to restrict to.
@@ -695,9 +1108,12 @@ def build_distances(
         j_indices: (M,) int32 array of second atom indices (always > i).
     """
     coords = structure_wrapped.get_positions()
-    cell = structure_wrapped.get_cell().array
-    is_orthogonal = np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-10)
-    r_max_sq = r_max * r_max
+    cell = np.array(structure_wrapped.get_cell().array, dtype=np.float64)
+    pbc = np.asarray(structure_wrapped.pbc, dtype=bool)
+    n_atoms = len(coords)
+    if n_atoms == 0:
+        return np.empty(0, dtype=np.float64), np.empty(0, dtype=np.int32), np.empty(0, dtype=np.int32)
+    _validate_coords(coords)
 
     use_type_filter = types is not None and unordered_pairs is not None
     if use_type_filter and unordered_pairs is not None and types is not None:
@@ -709,50 +1125,54 @@ def build_distances(
         pair_types_arr = np.empty((0, 2), dtype=np.int32)
         types_arr = np.empty(0, dtype=np.int32)
 
-    # Initial max_pairs estimate: 4/3 pi r_max^3 x number_density x 1.5
-    n = len(coords)
+    # Initial max_pairs estimate on the real cell, before padding inflates the
+    # volume: 4/3 pi r_max^3 x number_density x 1.5.
     volume = float(abs(np.linalg.det(cell)))
-    max_pairs = max(32, int(4.0 / 3.0 * np.pi * r_max**3 * (n / volume) * 1.5))
+    max_pairs = max(32, int(4.0 / 3.0 * np.pi * r_max**3 * (n_atoms / volume) * 1.5)) if volume >= _MIN_VOLUME else 200
 
+    cell, coords = _pad_nonperiodic(cell, coords, pbc, r_max)
+    _validate_cell(cell)
+    _warn_if_cutoff_exceeds_minimum_image(cell, r_max, pbc)
+
+    if not NUMBA_AVAILABLE:
+        types_full = types_arr if use_type_filter else np.zeros(n_atoms, dtype=np.int32)
+        return _build_distances_numpy(coords, cell, r_max, types_full, pair_types_arr, use_type_filter)
+
+    is_orthogonal, box_size, coords_frac, atom_cells, n_cells, cell_start, cell_atoms = _build_cell_list(
+        coords, cell, r_max
+    )
+    stencil_start, stencil_count = _cell_offsets(n_cells)
+    kwargs: dict[str, Any] = {
+        "types": types_arr,
+        "atom_cells": atom_cells,
+        "n_cells": n_cells,
+        "cell_start": cell_start,
+        "cell_atoms": cell_atoms,
+        "stencil_start": stencil_start,
+        "stencil_count": stencil_count,
+        "r_max_sq": r_max * r_max,
+        "max_pairs": max_pairs,
+        "pair_types": pair_types_arr,
+        "use_type_filter": use_type_filter,
+    }
     if is_orthogonal:
-        box_size = np.diag(cell)
-        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, r_max)
-        while True:
-            dist_buf, j_buf, counts = _build_distances_numba(
-                coords,
-                box_size,
-                types_arr,
-                atom_cells,
-                n_cells,
-                cell_start,
-                cell_atoms,
-                r_max_sq,
-                max_pairs,
-                pair_types_arr,
-                use_type_filter,
-            )
-            if int(counts.max()) <= max_pairs:
-                break
-            max_pairs = int(counts.max() * 1.2) + 1
+        build_fn = _build_distances_numba
+        kwargs.update(coords=coords, box_size=box_size)
     else:
-        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, r_max)
-        while True:
-            dist_buf, j_buf, counts = _build_distances_numba_tri(
-                coords_frac,
-                cell,
-                types_arr,
-                atom_cells,
-                n_cells,
-                cell_start,
-                cell_atoms,
-                r_max_sq,
-                max_pairs,
-                pair_types_arr,
-                use_type_filter,
-            )
-            if int(counts.max()) <= max_pairs:
-                break
-            max_pairs = int(counts.max() * 1.2) + 1
+        build_fn = _build_distances_numba_tri
+        kwargs.update(
+            coords_frac=coords_frac,
+            cell=cell,
+            half_height_sq=_image_search_bound(cell, n_cells),
+        )
+
+    # The kernels count past the buffer instead of truncating, so counts holds
+    # the true value even on overflow and one retry always suffices.
+    while True:
+        dist_buf, j_buf, counts = build_fn(**kwargs)
+        if int(counts.max()) <= kwargs["max_pairs"]:
+            break
+        kwargs["max_pairs"] = int(counts.max() * 1.2) + 1
 
     return _flatten_distance_buffers(dist_buf, j_buf, counts)
 
@@ -762,36 +1182,57 @@ def build_distances(
 # ============================================================================
 
 
-def _numba_to_list(
+def _grow_until_fits(
+    build_fn: Callable,
+    build_kwargs: dict[str, Any],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Run a neighbor-list kernel, enlarging max_neighbors until every atom's neighbors fit.
+
+    The kernels count past the buffer instead of truncating, so neighbor_counts
+    holds the true count even on overflow and one retry always suffices.
+    """
+    neighbor_list, neighbor_counts, vector_list = build_fn(**build_kwargs)
+    overflow = int(neighbor_counts.max())
+    while overflow > build_kwargs["max_neighbors"]:
+        build_kwargs["max_neighbors"] = int(overflow * 1.2) + 1
+        neighbor_list, neighbor_counts, vector_list = build_fn(**build_kwargs)
+        overflow = int(neighbor_counts.max())
+    return neighbor_list, neighbor_counts, vector_list
+
+
+def _padded_to_csr(
     neighbor_list: np.ndarray,
     neighbor_counts: np.ndarray,
     vector_list: np.ndarray,
-    n_atoms: int,
-    max_neighbors: int,
-    build_fn: Callable,
-    build_kwargs: dict[str, Any],
     return_vectors: bool,  # noqa: FBT001
-) -> tuple[list[list[int]], list[np.ndarray]]:
-    """Convert Numba output arrays to Python lists, retrying on buffer overflow."""
-    overflow = int(neighbor_counts.max()) if n_atoms > 0 else 0
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compact padded (N, max_neighbors) kernel buffers into flat CSR arrays (flat_j, flat_vecs)."""
+    valid = _valid_slots(neighbor_counts, neighbor_list.shape[1])
+    flat_j = neighbor_list[valid]
+    flat_vecs = vector_list[valid].astype(np.float64) if return_vectors else np.empty((0, 3), dtype=np.float64)
+    return flat_j, flat_vecs
 
-    while overflow > max_neighbors:
-        max_neighbors = int(overflow * 1.2) + 1
-        build_kwargs["max_neighbors"] = max_neighbors
-        neighbor_list, neighbor_counts, vector_list = build_fn(**build_kwargs)
-        overflow = int(neighbor_counts.max())
 
-    idx_neighbors: list[list[int]] = []
-    vec_neighbors: list[np.ndarray] = []
+def _build_neighbor_output(
+    flat_j: np.ndarray,
+    counts: np.ndarray,
+    flat_vecs: np.ndarray,
+    atom_ids: np.ndarray,
+    return_vectors: bool,  # noqa: FBT001
+) -> list[tuple]:
+    """Assemble the public [(central_id, [neighbor_ids], ...)] list from CSR arrays.
 
-    for i in range(n_atoms):
-        n_neighbors = int(neighbor_counts[i])
-        idx_neighbors.append(neighbor_list[i, :n_neighbors].tolist())
-        vec_neighbors.append(
-            vector_list[i, :n_neighbors].astype(np.float64) if return_vectors else np.empty((0, 3), dtype=np.float64)
-        )
-
-    return idx_neighbors, vec_neighbors
+    Everything is converted to Python objects once, up front; the per-atom loop
+    then only slices Python lists. Per-row ndarray.tolist() calls and per-id
+    int() conversions were the dominant cost of get_neighbors before this.
+    """
+    flat_ids = atom_ids[flat_j].tolist()
+    offsets = np.concatenate(([0], np.cumsum(counts))).tolist()
+    ids_list = atom_ids.tolist()
+    rows = zip(ids_list, offsets[:-1], offsets[1:], strict=True)
+    if return_vectors:
+        return [(cid, flat_ids[a:b], flat_vecs[a:b]) for cid, a, b in rows]
+    return [(cid, flat_ids[a:b]) for cid, a, b in rows]
 
 
 # ============================================================================
@@ -806,17 +1247,29 @@ def _dist_vec_ortho(coord_i: np.ndarray, coords_j: np.ndarray, box_size: np.ndar
     return np.einsum("ij,ij->i", rij, rij), rij
 
 
-def _dist_vec_tri(frac_i: np.ndarray, frac_j: np.ndarray, cell: np.ndarray) -> tuple:
-    """Vectorised minimum-image displacements and squared distances, triclinic box."""
+def _dist_vec_tri(frac_i: np.ndarray, frac_j: np.ndarray, cell: np.ndarray, half_height_sq: float) -> tuple:
+    """Vectorised minimum-image displacements and squared distances, triclinic box.
+
+    Mirrors _dist_and_vec_tri_exact: nearest-integer rounding first, then a
+    search over the 27 surrounding images for the rows that are longer than
+    half the smallest perpendicular height and so are not provably minimal.
+    """
     delta_frac = frac_i - frac_j
     delta_frac -= np.round(delta_frac)
     rij = delta_frac @ cell
-    return np.einsum("ij,ij->i", rij, rij), rij
+    dist_sq = np.einsum("ij,ij->i", rij, rij)
 
+    needs_search = dist_sq > half_height_sq
+    if np.any(needs_search):
+        trial_frac = delta_frac[needs_search][:, np.newaxis, :] + SHIFT_GRID_3D[np.newaxis, :, :]  # (m, 27, 3)
+        trial_rij = trial_frac @ cell
+        trial_sq = np.einsum("ijk,ijk->ij", trial_rij, trial_rij)
+        best = np.argmin(trial_sq, axis=1)
+        rows = np.arange(len(best))
+        rij[needs_search] = trial_rij[rows, best]
+        dist_sq[needs_search] = trial_sq[rows, best]
 
-def _get_neighbor_cells_numpy(cell_idx_i: np.ndarray, n_cells: np.ndarray) -> np.ndarray:
-    """Return the 27 neighbour cell indices (with periodic wrap) for cell cell_idx_i."""
-    return (cell_idx_i + SHIFT_GRID_3D) % n_cells
+    return dist_sq, rij
 
 
 # ============================================================================
@@ -843,8 +1296,16 @@ def _numpy_fallback(
     n_atoms: int,
     return_vectors: bool,  # noqa: FBT001
     is_orthogonal: bool,  # noqa: FBT001
-) -> tuple[list[list[int]], list[np.ndarray]]:
-    """Shared NumPy fallback for both orthogonal and triclinic boxes."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Shared NumPy fallback for both orthogonal and triclinic boxes.
+
+    Returns:
+        flat_j: (M,) int32 neighbor array indices, grouped by central atom.
+        counts: (N,) int32 neighbors per atom; zero for atoms the filters skip.
+        flat_vecs: (M, 3) float64 bond vectors r_i - r_j, or (0, 3) when not requested.
+    """
+    half_height_sq = 0.0 if is_orthogonal else _half_min_height(cell) ** 2
+
     cells: defaultdict[tuple, list[int]] = defaultdict(list)
     for idx, c in enumerate(atom_cells):
         cells[tuple(c)].append(idx)
@@ -861,17 +1322,18 @@ def _numpy_fallback(
     else:
         cutoff_matrix = np.empty((0, 0), dtype=np.float64)
 
-    idx_neighbors: list[list[int]] = [[] for _ in range(n_atoms)]
-    vec_neighbors: list[np.ndarray] = [np.empty((0, 3), dtype=np.float64) for _ in range(n_atoms)]
+    stencil = _stencil_grid(n_cells)
+    counts = np.zeros(n_atoms, dtype=np.int32)
+    flat_j_parts: list[np.ndarray] = []
+    vec_parts: list[np.ndarray] = []
 
     for i in range(n_atoms):
         type_i = int(types[i])
         if target_set is not None and type_i not in target_set:
             continue
 
-        cell_idx_i = atom_cells[i]
         candidates: list[int] = []
-        for neighbor_cell in _get_neighbor_cells_numpy(cell_idx_i, n_cells):
+        for neighbor_cell in (atom_cells[i] + stencil) % n_cells:
             candidates.extend(cells[tuple(neighbor_cell)])
         candidates = [j for j in candidates if j != i]
         if neighbor_set is not None:
@@ -886,18 +1348,22 @@ def _numpy_fallback(
             dist_sq_arr, rij = _dist_vec_ortho(coords[i], coords[candidates_arr], box_size)
         else:
             assert coords_frac is not None
-            dist_sq_arr, rij = _dist_vec_tri(coords_frac[i], coords_frac[candidates_arr], cell)
+            dist_sq_arr, rij = _dist_vec_tri(coords_frac[i], coords_frac[candidates_arr], cell, half_height_sq)
 
         if use_pair_cutoffs:
             mask = dist_sq_arr <= cutoff_matrix[type_i, types[candidates_arr]]
         else:
             mask = dist_sq_arr <= cutoff_sq
 
-        idx_neighbors[i] = candidates_arr[mask].tolist()
+        kept = candidates_arr[mask]
+        counts[i] = len(kept)
+        flat_j_parts.append(kept)
         if return_vectors:
-            vec_neighbors[i] = rij[mask]
+            vec_parts.append(rij[mask])
 
-    return idx_neighbors, vec_neighbors
+    flat_j = np.concatenate(flat_j_parts) if flat_j_parts else np.empty(0, dtype=np.int32)
+    flat_vecs = np.concatenate(vec_parts) if vec_parts else np.empty((0, 3), dtype=np.float64)
+    return flat_j, counts, flat_vecs
 
 
 # ============================================================================
@@ -930,8 +1396,8 @@ def _extract_atom_ids(atoms: Atoms | tuple[np.ndarray, ...]) -> np.ndarray:
 def get_neighbors(
     atoms: Atoms | tuple[np.ndarray, np.ndarray, np.ndarray],
     cutoff: float | dict[tuple[int, int], float],
-    target_types: list[int] | None = None,
-    neighbor_types: list[int] | None = None,
+    target_types: int | list[int] | None = None,
+    neighbor_types: int | list[int] | None = None,
     *,
     return_vectors: bool = False,
     use_numba: bool | None = None,
@@ -944,6 +1410,9 @@ def get_neighbors(
     Args:
         atoms: Either an ASE Atoms object or a tuple (coords, types, cell_matrix)
                where cell_matrix is a (3,3) array with lattice vectors as rows.
+               For an Atoms object ``atoms.pbc`` is honoured per lattice vector
+               (slabs, wires and isolated molecules are handled); the tuple form
+               is treated as fully periodic. Coordinates need not be wrapped.
         cutoff: Cutoff radius in Angstrom. Either:
                   - A single float applied uniformly to all pairs.
                   - A dict mapping (atomic_number_i, atomic_number_j) to a
@@ -951,13 +1420,16 @@ def get_neighbors(
                     (14, 8) are equivalent. Pairs not listed default to the
                     maximum cutoff in the dict. The cell list is built on the
                     maximum cutoff so only one build is needed.
-        target_types: Atomic numbers of atoms to find neighbors for.
-                      None means all atoms.
-        neighbor_types: Atomic numbers that count as valid neighbors.
-                        None means all types.
+        target_types: Atomic numbers of atoms to find neighbors for. A bare
+                      atomic number is accepted and treated as a one-element
+                      list. None means all atoms.
+        neighbor_types: Atomic numbers that count as valid neighbors. A bare
+                        atomic number is accepted. None means all types.
         return_vectors: If True, each output tuple gains a third element — a
                         (k, 3) float64 array of Cartesian minimum-image bond
-                        vectors (i -> j) in Angstrom. Scalar distances are
+                        vectors r_i - r_j in Angstrom, i.e. pointing from the
+                        neighbour to the central atom (the opposite sign of
+                        ASE's neighbor_list "D"). Scalar distances are
                         np.linalg.norm(vectors, axis=1).
         use_numba: Force Numba on/off. None = auto-detect.
 
@@ -995,6 +1467,9 @@ def get_neighbors(
     if use_numba is None:
         use_numba = NUMBA_AVAILABLE
 
+    target_types = _normalize_type_filter(target_types, "target_types")
+    neighbor_types = _normalize_type_filter(neighbor_types, "neighbor_types")
+
     # ------------------------------------------------------------------
     # Parse input
     # ------------------------------------------------------------------
@@ -1005,21 +1480,23 @@ def get_neighbors(
         coords = np.asarray(coords, dtype=np.float64)
         types = np.asarray(types, dtype=np.int32)
         cell = np.asarray(cell, dtype=np.float64)
+        pbc = np.ones(3, dtype=bool)
     else:
-        atoms_copy = atoms.copy()
-        atoms_copy.wrap()
-        coords = atoms_copy.get_positions()
-        types = atoms_copy.get_atomic_numbers().astype(np.int32)
-        cell = atoms_copy.get_cell().array
+        coords = atoms.get_positions()
+        types = atoms.get_atomic_numbers().astype(np.int32)
+        cell = np.array(atoms.get_cell().array, dtype=np.float64)
+        pbc = np.asarray(atoms.pbc, dtype=bool)
 
     n_atoms = len(coords)
-    is_orthogonal = np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-10)
+    _validate_coords(coords)
 
     # ------------------------------------------------------------------
     # Parse cutoff
     # ------------------------------------------------------------------
     max_cutoff, pair_types, pair_cutoffs_sq, use_pair_cutoffs = _parse_cutoff(cutoff, types)
     cutoff_sq = max_cutoff * max_cutoff
+    if n_atoms == 0:
+        return []
 
     target_arr = np.array(target_types, dtype=np.int32) if target_types is not None else np.empty(0, dtype=np.int32)
     neighbor_arr = (
@@ -1028,129 +1505,76 @@ def get_neighbors(
     use_target_filter = target_types is not None
     use_neighbor_filter = neighbor_types is not None
 
+    # ------------------------------------------------------------------
+    # Geometry: estimate density on the real cell, then pad non-periodic axes
+    # ------------------------------------------------------------------
     initial_max_neighbors = _estimate_max_neighbors(coords, cell, max_cutoff)
+    cell, coords = _pad_nonperiodic(cell, coords, pbc, max_cutoff)
+    _validate_cell(cell)
+    _warn_if_cutoff_exceeds_minimum_image(cell, max_cutoff, pbc)
+    is_orthogonal, box_size, coords_frac, atom_cells, n_cells, cell_start, cell_atoms = _build_cell_list(
+        coords, cell, max_cutoff
+    )
 
     # ------------------------------------------------------------------
     # Build neighbor list
     # ------------------------------------------------------------------
-    if is_orthogonal:
-        box_size = np.diag(cell)
-        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, max_cutoff)
-        if use_numba and NUMBA_AVAILABLE:
-            kwargs = {
-                "coords": coords,
-                "types": types,
-                "box_size": box_size,
-                "atom_cells": atom_cells,
-                "n_cells": n_cells,
-                "cell_start": cell_start,
-                "cell_atoms": cell_atoms,
-                "cutoff_sq": cutoff_sq,
-                "target_types": target_arr,
-                "neighbor_types": neighbor_arr,
-                "use_target_filter": use_target_filter,
-                "use_neighbor_filter": use_neighbor_filter,
-                "max_neighbors": initial_max_neighbors,
-                "pair_types": pair_types,
-                "pair_cutoffs_sq": pair_cutoffs_sq,
-                "use_pair_cutoffs": use_pair_cutoffs,
-                "return_vectors": return_vectors,
-            }
-            raw_neighbor_list, raw_neighbor_counts, raw_vector_list = _build_nl_ortho_numba(**kwargs)
-            idx_neighbors, vec_neighbors = _numba_to_list(
-                raw_neighbor_list,
-                raw_neighbor_counts,
-                raw_vector_list,
-                n_atoms,
-                initial_max_neighbors,
-                _build_nl_ortho_numba,
-                kwargs,
-                return_vectors,
-            )
+    if use_numba and NUMBA_AVAILABLE:
+        stencil_start, stencil_count = _cell_offsets(n_cells)
+        kwargs: dict[str, Any] = {
+            "types": types,
+            "atom_cells": atom_cells,
+            "n_cells": n_cells,
+            "cell_start": cell_start,
+            "cell_atoms": cell_atoms,
+            "stencil_start": stencil_start,
+            "stencil_count": stencil_count,
+            "cutoff_sq": cutoff_sq,
+            "target_types": target_arr,
+            "neighbor_types": neighbor_arr,
+            "use_target_filter": use_target_filter,
+            "use_neighbor_filter": use_neighbor_filter,
+            "max_neighbors": initial_max_neighbors,
+            "pair_types": pair_types,
+            "pair_cutoffs_sq": pair_cutoffs_sq,
+            "use_pair_cutoffs": use_pair_cutoffs,
+            "return_vectors": return_vectors,
+        }
+        if is_orthogonal:
+            build_fn = _build_nl_ortho_numba
+            kwargs.update(coords=coords, box_size=box_size)
         else:
-            idx_neighbors, vec_neighbors = _numpy_fallback(
-                coords=coords,
-                coords_frac=None,
-                types=types,
-                cell=cell,
-                box_size=box_size,
-                atom_cells=atom_cells,
-                n_cells=n_cells,
-                cutoff_sq=cutoff_sq,
-                pair_types=pair_types,
-                pair_cutoffs_sq=pair_cutoffs_sq,
-                use_pair_cutoffs=use_pair_cutoffs,
-                use_target_filter=use_target_filter,
-                use_neighbor_filter=use_neighbor_filter,
-                target_types=target_types,
-                neighbor_types=neighbor_types,
-                n_atoms=n_atoms,
-                return_vectors=return_vectors,
-                is_orthogonal=True,
-            )
-    else:
-        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, max_cutoff)
-        if use_numba and NUMBA_AVAILABLE:
-            kwargs = {
-                "coords_frac": coords_frac,
-                "types": types,
-                "cell": cell,
-                "atom_cells": atom_cells,
-                "n_cells": n_cells,
-                "cell_start": cell_start,
-                "cell_atoms": cell_atoms,
-                "cutoff_sq": cutoff_sq,
-                "target_types": target_arr,
-                "neighbor_types": neighbor_arr,
-                "use_target_filter": use_target_filter,
-                "use_neighbor_filter": use_neighbor_filter,
-                "max_neighbors": initial_max_neighbors,
-                "pair_types": pair_types,
-                "pair_cutoffs_sq": pair_cutoffs_sq,
-                "use_pair_cutoffs": use_pair_cutoffs,
-                "return_vectors": return_vectors,
-            }
-            raw_neighbor_list, raw_neighbor_counts, raw_vector_list = _build_nl_tri_numba(**kwargs)
-            idx_neighbors, vec_neighbors = _numba_to_list(
-                raw_neighbor_list,
-                raw_neighbor_counts,
-                raw_vector_list,
-                n_atoms,
-                initial_max_neighbors,
-                _build_nl_tri_numba,
-                kwargs,
-                return_vectors,
-            )
-        else:
-            idx_neighbors, vec_neighbors = _numpy_fallback(
-                coords=coords,
+            build_fn = _build_nl_tri_numba
+            kwargs.update(
                 coords_frac=coords_frac,
-                types=types,
                 cell=cell,
-                box_size=None,
-                atom_cells=atom_cells,
-                n_cells=n_cells,
-                cutoff_sq=cutoff_sq,
-                pair_types=pair_types,
-                pair_cutoffs_sq=pair_cutoffs_sq,
-                use_pair_cutoffs=use_pair_cutoffs,
-                use_target_filter=use_target_filter,
-                use_neighbor_filter=use_neighbor_filter,
-                target_types=target_types,
-                neighbor_types=neighbor_types,
-                n_atoms=n_atoms,
-                return_vectors=return_vectors,
-                is_orthogonal=False,
+                half_height_sq=_image_search_bound(cell, n_cells),
             )
+        neighbor_list, counts, vector_list = _grow_until_fits(build_fn, kwargs)
+        flat_j, flat_vecs = _padded_to_csr(neighbor_list, counts, vector_list, return_vectors)
+    else:
+        flat_j, counts, flat_vecs = _numpy_fallback(
+            coords=coords,
+            coords_frac=coords_frac,
+            types=types,
+            cell=cell,
+            box_size=box_size,
+            atom_cells=atom_cells,
+            n_cells=n_cells,
+            cutoff_sq=cutoff_sq,
+            pair_types=pair_types,
+            pair_cutoffs_sq=pair_cutoffs_sq,
+            use_pair_cutoffs=use_pair_cutoffs,
+            use_target_filter=use_target_filter,
+            use_neighbor_filter=use_neighbor_filter,
+            target_types=target_types,
+            neighbor_types=neighbor_types,
+            n_atoms=n_atoms,
+            return_vectors=return_vectors,
+            is_orthogonal=is_orthogonal,
+        )
 
-    # ------------------------------------------------------------------
-    # Translate array indices -> real atom IDs
-    # ------------------------------------------------------------------
-    if return_vectors:
-        return [
-            (int(atom_ids[i]), [int(atom_ids[j]) for j in idx_neighbors[i]], vec_neighbors[i]) for i in range(n_atoms)
-        ]
-    return [(int(atom_ids[i]), [int(atom_ids[j]) for j in idx_neighbors[i]]) for i in range(n_atoms)]
+    return _build_neighbor_output(flat_j, counts, flat_vecs, atom_ids, return_vectors)
 
 
 # ============================================================================

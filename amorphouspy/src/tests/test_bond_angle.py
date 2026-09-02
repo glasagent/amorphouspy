@@ -144,11 +144,22 @@ def test_compute_angles_list_uses_first_frame() -> None:
     assert np.allclose(hist_a, hist_s)
 
 
-def test_compute_angles_triclinic_cell() -> None:
-    """Triclinic (sheared) cell produces same peak as orthogonal cell — covers fractional minimum-image branch."""
-    atoms_ortho = _atoms_with_known_angle(90.0)
+@pytest.mark.parametrize("shear", [1.0, 3.0, 5.0])
+def test_compute_angles_triclinic_cell(shear: float) -> None:
+    """Shearing the cell must not change the angles between fixed Cartesian coordinates.
+
+    The atoms are well inside the box, so no bond crosses a boundary and the
+    whole histogram — not just its peak — has to be identical to the orthogonal
+    case. Checking only the peak hides a transposed fractional transform, which
+    rotates bond directions while roughly preserving bond lengths.
+
+    The angle is 104.5° rather than 90° so it falls mid-bin: bin edges sit on
+    whole degrees, and an exactly-90° angle straddles two bins, where ordinary
+    floating-point noise decides which one it lands in.
+    """
+    atoms_ortho = _atoms_with_known_angle(104.5)
     cell_shear = atoms_ortho.get_cell().array.copy()
-    cell_shear[1, 0] = 1.0  # shear b-vector along a
+    cell_shear[1, 0] = shear  # shear b-vector along a
     atoms_tri = Atoms(
         numbers=atoms_ortho.get_atomic_numbers(),
         positions=atoms_ortho.get_positions(),
@@ -157,9 +168,9 @@ def test_compute_angles_triclinic_cell() -> None:
     )
     bins_ortho, hist_ortho = compute_angles(atoms_ortho, center_type=14, neighbor_type=8, cutoff=2.0)
     bins_tri, hist_tri = compute_angles(atoms_tri, center_type=14, neighbor_type=8, cutoff=2.0)
-    peak_ortho = bins_ortho[np.argmax(hist_ortho)]
-    peak_tri = bins_tri[np.argmax(hist_tri)]
-    assert abs(peak_ortho - peak_tri) < 2.0
+    assert np.allclose(bins_ortho, bins_tri)
+    assert np.allclose(hist_ortho, hist_tri)
+    assert bins_tri[np.argmax(hist_tri)] == pytest.approx(104.5, abs=1.0)
 
 
 def test_compute_angles_fewer_than_two_neighbors() -> None:
