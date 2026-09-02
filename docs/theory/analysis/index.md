@@ -85,7 +85,7 @@ Each analysis method has its own dedicated page with full parameter documentatio
 | **Projected RDF** | [Projected RDF](projected_rdf.md) | Uniaxial (Y₂₀) and shear (Y₂₁/Y₂₂) anisotropy from deformed glasses |
 | **$Q^n$ Distribution** | [$Q^n$ & Network Connectivity](qn.md) | Bridging oxygen analysis, network connectivity |
 | **Bond Angles** | [Bond Angle Distribution](bond_angles.md) | O-X-O and X-O-X angle histograms |
-| **Ring Statistics** | [Ring Analysis](rings.md) | Guttman ring counting via networkx BFS |
+| **Ring Statistics** | [Ring Analysis](rings.md) | Guttman shortest-path ring counting on the bipartite T-O network |
 | **Cavity Analysis** | [Cavity / Void Analysis](cavities.md) | Void volume and size distributions via mcubes voxelization |
 | **Thermal Expansion** | [CTE Analysis](cte_analysis.md) | From NPT enthalpy-volume fluctuations |
 
