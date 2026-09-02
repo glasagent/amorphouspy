@@ -712,7 +712,7 @@ def _compute_distributions(
     if compute_rings and network_formers and o_type:
         specific_cutoffs = {(former, "O"): cutoff_map[former] for former in network_formers}
         bond_lengths = generate_bond_length_dict(atoms, specific_cutoffs=specific_cutoffs)
-        rings_dist, mean_ring_size = compute_guttmann_rings(atoms, bond_lengths=bond_lengths, max_size=40, n_cpus=1)
+        rings_dist, mean_ring_size = compute_guttmann_rings(atoms, bond_lengths=bond_lengths, max_size=40)
         rings_dist_str = {str(k): v for k, v in rings_dist.items()}
         ring_statistics_data = {"distribution": rings_dist_str, "mean_size": mean_ring_size}
 
