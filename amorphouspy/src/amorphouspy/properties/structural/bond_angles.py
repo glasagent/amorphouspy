@@ -96,10 +96,11 @@ def compute_angles(
             box = np.diag(cell)
             vecs -= box * np.round(vecs / box)
         else:
+            # Lattice vectors are rows, so fractional coordinates are vecs @ inv(cell).
             inv_cell = np.linalg.inv(cell)
-            delta_frac = (inv_cell @ vecs.T).T
+            delta_frac = vecs @ inv_cell
             delta_frac -= np.round(delta_frac)
-            vecs = (cell.T @ delta_frac.T).T
+            vecs = delta_frac @ cell
 
         # Normalise all vectors at once
         norms = np.linalg.norm(vecs, axis=1)  # (k,)
