@@ -100,15 +100,32 @@ All analysis methods depend on neighbor finding. `amorphouspy` provides a cell-l
 Uses a cell-list algorithm (with Numba JIT compilation for performance) to find all pairs of atoms within a given cutoff distance. The algorithm:
 
 1. Divides the simulation box into cells of size ≥ cutoff
-2. For each atom, only checks atoms in the same cell and 26 neighboring cells
-3. Applies the minimum image convention for periodic boundaries
-4. Returns neighbor lists as arrays of pairs and distances
+2. For each atom, only checks atoms in the same cell and up to 26 neighboring cells
+3. Applies the minimum image convention along each **periodic** lattice vector, honouring
+   `structure.pbc`, so slabs, wires and isolated molecules are handled correctly
+4. Returns one entry per atom: the atom's own ID and the list of its neighbours' IDs
 
 ```python
 from amorphouspy import get_neighbors
 
 neighbors = get_neighbors(glass_structure, cutoff=3.0)
-# Returns arrays of (i, j, distance) for all pairs within cutoff
+# [(central_id, [neighbour_ids]), ...] — one entry per atom, using the real
+# atom IDs from the structure file, not array indices
+for central_id, neighbour_ids in neighbors:
+    print(central_id, neighbour_ids)
 ```
+
+Instead of one cutoff for every pair, a dict keyed by atomic number applies a different
+cutoff to each species pair. A non-positive value marks a pair as never bonded:
+
+```python
+# Si-O bonds only; O-O and Si-Si are excluded
+neighbors = get_neighbors(glass_structure, cutoff={(14, 8): 1.8, (8, 8): 0.0, (14, 14): 0.0})
+```
+
+Pass `return_vectors=True` to also get the minimum-image bond vectors, as a `(k, 3)` array
+per atom. These point from the neighbour to the central atom (`r_i - r_j`), the opposite
+sign convention to ASE's `neighbor_list("D", ...)`. `target_types` and `neighbor_types`
+restrict which species are searched and which count as neighbours.
 
 This scales as $O(N)$ rather than the naïve $O(N^2)$, making it efficient for systems with thousands of atoms.
