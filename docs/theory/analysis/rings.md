@@ -99,9 +99,14 @@ from amorphouspy.properties.structural.rings import generate_bond_length_dict
 bond_lengths = generate_bond_length_dict(
     glass_structure,
     specific_cutoffs={('Si', 'O'): 1.8},
-    default_cutoff=-1.0,   # -1.0 marks pairs to ignore (e.g. T-T, O-O)
+    default_cutoff=0.0,   # 0.0 (the default) marks pairs as never bonded, e.g. T-T and O-O
 )
 ```
+
+A cutoff of `0.0` means "these two species never bond", so only the pairs named in
+`specific_cutoffs` can form an edge in the ring graph. Any non-positive value is treated
+the same way, so an explicit `-1.0` still works, but `0.0` is preferred: it reads as a
+zero bonding radius rather than a negative distance.
 
 **Parameters:**
 
@@ -109,7 +114,7 @@ bond_lengths = generate_bond_length_dict(
 |---|---|---|---|
 | `atoms` | `Atoms` | — | ASE Atoms object (determines element set) |
 | `specific_cutoffs` | `dict` or `None` | `None` | Per-pair cutoff overrides |
-| `default_cutoff` | `float` | `-1.0` | Fallback for unspecified pairs; negative values are ignored by the ring finder |
+| `default_cutoff` | `float` | `0.0` | Fallback for unspecified pairs. Non-positive values mark a pair as never bonded, so the default excludes every pair not named in `specific_cutoffs` |
 
 ---
 
