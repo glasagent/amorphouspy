@@ -14,11 +14,8 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 
 from amorphouspy.atoms.neighbors import (
-    NUMBA_AVAILABLE,
     build_distances,
     cell_perpendicular_heights,
-    compute_cell_list_orthogonal,
-    compute_cell_list_triclinic,
     get_neighbors,
 )
 from amorphouspy.atoms.shared import count_distribution
@@ -73,7 +70,7 @@ def compute_coordination(
     return {k: float(v) for k, v in sorted(coord_numbers_distribution.items())}
 
 
-def _compute_distances(  # noqa: C901, PLR0912, PLR0915
+def _compute_distances(
     structure: Atoms,
     r_max: float,
     types: np.ndarray | None = None,
@@ -81,13 +78,14 @@ def _compute_distances(  # noqa: C901, PLR0912, PLR0915
 ) -> tuple:
     """Collect all pairwise distances up to r_max using a cell list.
 
-    Uses Numba-compiled parallel kernels when available, falling back to a
-    pure-Python cell-list loop.
+    Delegates to build_distances, which uses Numba-compiled parallel kernels
+    when available and the shared NumPy fallback otherwise; both honour the
+    structure's pbc.
 
     Args:
         structure: The atomic structure.
         r_max: Maximum distance for pair collection.
-        types: Atomic-number array; forwarded to the Numba kernel for type filtering.
+        types: Atomic-number array; forwarded to the kernel for type filtering.
         unordered_pairs: Canonical type pairs to restrict collection to.
 
     Returns:
@@ -95,81 +93,7 @@ def _compute_distances(  # noqa: C901, PLR0912, PLR0915
     """
     structure_wrapped = structure.copy()
     structure_wrapped.wrap()
-
-    if NUMBA_AVAILABLE:
-        return build_distances(structure_wrapped, r_max, types, unordered_pairs)
-
-    coords = structure_wrapped.get_positions()
-    cell = structure_wrapped.get_cell().array
-    n = len(coords)
-    is_orthogonal = np.allclose(cell - np.diag(np.diag(cell)), 0.0, atol=1e-10)
-    r_max_sq = r_max * r_max
-
-    # Pre-allocate output lists; typical fill is O(N * avg_neighbors)
-    dist_list: list[float] = []
-    i_list: list[int] = []
-    j_list: list[int] = []
-
-    if is_orthogonal:
-        box_size = np.diag(cell)
-        atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, r_max)
-
-        for i in range(n):
-            ci = atom_cells[i]
-            for dix in range(-1, 2):
-                cjx = int((ci[0] + dix) % n_cells[0])
-                for diy in range(-1, 2):
-                    cjy = int((ci[1] + diy) % n_cells[1])
-                    for diz in range(-1, 2):
-                        cjz = int((ci[2] + diz) % n_cells[2])
-                        flat_id = cjx * int(n_cells[1]) * int(n_cells[2]) + cjy * int(n_cells[2]) + cjz
-                        start = cell_start[flat_id]
-                        end = cell_start[flat_id + 1]
-                        js = cell_atoms[start:end]
-                        js = js[js > i]  # only i < j pairs to avoid duplicates
-                        if len(js) == 0:
-                            continue
-                        rij = coords[i] - coords[js]
-                        rij -= box_size * np.round(rij / box_size)
-                        dsq = np.einsum("ij,ij->i", rij, rij)
-                        mask = dsq <= r_max_sq
-                        if mask.any():
-                            dist_list.extend(np.sqrt(dsq[mask]).tolist())
-                            i_list.extend([i] * int(mask.sum()))
-                            j_list.extend(js[mask].tolist())
-    else:
-        coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, r_max)
-
-        for i in range(n):
-            ci = atom_cells[i]
-            for dix in range(-1, 2):
-                cjx = int((ci[0] + dix) % n_cells[0])
-                for diy in range(-1, 2):
-                    cjy = int((ci[1] + diy) % n_cells[1])
-                    for diz in range(-1, 2):
-                        cjz = int((ci[2] + diz) % n_cells[2])
-                        flat_id = cjx * int(n_cells[1]) * int(n_cells[2]) + cjy * int(n_cells[2]) + cjz
-                        start = cell_start[flat_id]
-                        end = cell_start[flat_id + 1]
-                        js = cell_atoms[start:end]
-                        js = js[js > i]
-                        if len(js) == 0:
-                            continue
-                        delta_frac = coords_frac[i] - coords_frac[js]
-                        delta_frac -= np.round(delta_frac)
-                        rij = delta_frac @ cell
-                        dsq = np.einsum("ij,ij->i", rij, rij)
-                        mask = dsq <= r_max_sq
-                        if mask.any():
-                            dist_list.extend(np.sqrt(dsq[mask]).tolist())
-                            i_list.extend([i] * int(mask.sum()))
-                            j_list.extend(js[mask].tolist())
-
-    return (
-        np.array(dist_list, dtype=np.float64),
-        np.array(i_list, dtype=np.int32),
-        np.array(j_list, dtype=np.int32),
-    )
+    return build_distances(structure_wrapped, r_max, types, unordered_pairs)
 
 
 # ============================================================================

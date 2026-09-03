@@ -75,7 +75,7 @@ def test_compute_coordination_o() -> None:
 
     o_coord_dist = compute_coordination(
         atoms,
-        [O_type],
+        O_type[0],
         cutoff_map["O"],
         former_types,
     )

@@ -1,7 +1,10 @@
 """Tests for amorphouspy.atoms.neighbors — cell lists, cutoff parsing, and get_neighbors."""
 
 import importlib
+import itertools
 import sys
+import warnings
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,15 +12,24 @@ from amorphouspy.atoms.neighbors import (
     NUMBA_AVAILABLE,
     _build_nl_ortho_numba,
     _build_nl_tri_numba,
+    _cell_offsets,
+    _clamp_cell_count,
     _dist_and_vec_ortho,
     _dist_and_vec_tri,
+    _dist_and_vec_tri_exact,
     _estimate_max_neighbors,
     _extract_atom_ids,
     _flatten_distance_buffers,
     _get_pair_cutoff_sq_python,
+    _grow_until_fits,
+    _half_min_height,
+    _image_search_bound,
     _lookup_cutoff_sq,
-    _numba_to_list,
+    _min_periodic_lattice_vector,
+    _normalize_type_filter,
+    _pad_nonperiodic,
     _parse_cutoff,
+    _stencil_grid,
     build_distances,
     cell_perpendicular_heights,
     compute_cell_list_orthogonal,
@@ -25,6 +37,10 @@ from amorphouspy.atoms.neighbors import (
     get_neighbors,
 )
 from ase import Atoms
+from ase.build import molecule
+from ase.geometry import find_mic
+from ase.io import read
+from ase.neighborlist import neighbor_list
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -496,6 +512,7 @@ def _make_ortho_nl_inputs(atoms, cutoff):
     max_cutoff, pair_types, pair_cutoffs_sq, use_pair_cutoffs = _parse_cutoff(cutoff, types)
     cutoff_sq = max_cutoff**2
     atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_orthogonal(coords, box_size, max_cutoff)
+    stencil_start, stencil_count = _cell_offsets(n_cells)
     max_neighbors = _estimate_max_neighbors(coords, cell, max_cutoff)
     return {
         "coords": coords,
@@ -505,6 +522,8 @@ def _make_ortho_nl_inputs(atoms, cutoff):
         "n_cells": n_cells,
         "cell_start": cell_start,
         "cell_atoms": cell_atoms,
+        "stencil_start": stencil_start,
+        "stencil_count": stencil_count,
         "cutoff_sq": cutoff_sq,
         "max_neighbors": max_neighbors,
         "pair_types": pair_types,
@@ -629,6 +648,7 @@ def _make_tri_nl_inputs(atoms, cutoff):
     max_cutoff, pair_types, pair_cutoffs_sq, use_pair_cutoffs = _parse_cutoff(cutoff, types)
     cutoff_sq = max_cutoff**2
     coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, max_cutoff)
+    stencil_start, stencil_count = _cell_offsets(n_cells)
     max_neighbors = _estimate_max_neighbors(coords, cell, max_cutoff)
     return {
         "coords_frac": coords_frac,
@@ -638,11 +658,14 @@ def _make_tri_nl_inputs(atoms, cutoff):
         "n_cells": n_cells,
         "cell_start": cell_start,
         "cell_atoms": cell_atoms,
+        "stencil_start": stencil_start,
+        "stencil_count": stencil_count,
         "cutoff_sq": cutoff_sq,
         "max_neighbors": max_neighbors,
         "pair_types": pair_types,
         "pair_cutoffs_sq": pair_cutoffs_sq,
         "use_pair_cutoffs": use_pair_cutoffs,
+        "half_height_sq": _half_min_height(cell) ** 2,
     }
 
 
@@ -732,45 +755,31 @@ def test_build_nl_tri_numba_return_vectors() -> None:
 
 
 # ---------------------------------------------------------------------------
-# _numba_to_list overflow loop (lines 503-506)
+# _grow_until_fits overflow loop
 # ---------------------------------------------------------------------------
 
 
-def test_numba_to_list_overflow_retry() -> None:
-    """_numba_to_list triggers overflow retry when counts exceed max_neighbors."""
+def test_grow_until_fits_retries_with_a_larger_buffer() -> None:
+    """When counts exceed max_neighbors the kernel is re-run with max_neighbors = int(1.2 * overflow) + 1."""
     n_atoms = 4
-    max_neighbors = 1  # start too small
-
-    # First call returns neighbor_counts with value > max_neighbors
-    nl_overflow = np.full((n_atoms, 1), 0, dtype=np.int32)
-    counts_overflow = np.array([3, 3, 3, 3], dtype=np.int32)  # 3 > 1
-    vecs_overflow = np.zeros((n_atoms, 1, 3), dtype=np.float32)
-
-    call_count = {"n": 0}
+    calls: list[int] = []
 
     def mock_build_fn(**kwargs):
-        call_count["n"] += 1
-        mn = kwargs["max_neighbors"]
-        # Return a proper result on retry with larger buffer
-        nl = np.zeros((n_atoms, mn), dtype=np.int32)
-        counts = np.array([1, 1, 1, 1], dtype=np.int32)
-        vecs = np.zeros((n_atoms, mn, 3), dtype=np.float32)
+        max_neighbors = kwargs["max_neighbors"]
+        calls.append(max_neighbors)
+        # The kernels report the true count whatever the buffer size.
+        counts = np.full(n_atoms, 3, dtype=np.int32)
+        nl = np.zeros((n_atoms, max_neighbors), dtype=np.int32)
+        vecs = np.zeros((n_atoms, max_neighbors, 3), dtype=np.float32)
         return nl, counts, vecs
 
-    build_kwargs = {"max_neighbors": max_neighbors}
-    idx_neighbors, _vec_neighbors = _numba_to_list(
-        nl_overflow,
-        counts_overflow,
-        vecs_overflow,
-        n_atoms,
-        max_neighbors,
-        mock_build_fn,
-        build_kwargs,
-        return_vectors=False,
-    )
-    # Should have called build_fn at least once (retry)
-    assert call_count["n"] >= 1
-    assert len(idx_neighbors) == n_atoms
+    build_kwargs = {"max_neighbors": 1}
+    neighbor_list, counts, _vecs = _grow_until_fits(mock_build_fn, build_kwargs)
+
+    assert calls == [1, 4]
+    assert neighbor_list.shape == (n_atoms, 4)
+    assert build_kwargs["max_neighbors"] == 4
+    np.testing.assert_array_equal(counts, 3)
 
 
 # ---------------------------------------------------------------------------
@@ -952,12 +961,9 @@ def test_build_distances_triclinic_matches_brute_force() -> None:
 
     coords = atoms.get_positions()
     cell = atoms.get_cell().array
-    inv_cell = np.linalg.inv(cell)
+    # Ground truth from ASE, which is independent of this module's conventions
     for d, i, j in zip(dists, i_idx, j_idx, strict=False):
-        diff = coords[i] - coords[j]
-        frac = inv_cell @ diff
-        frac -= np.round(frac)
-        expected = float(np.linalg.norm(cell.T @ frac))
+        expected = float(find_mic(coords[i] - coords[j], cell)[1])
         assert d == pytest.approx(expected, abs=1e-10)
 
 
@@ -1065,3 +1071,660 @@ def test_numpy_fallback_pair_cutoffs_tighter_cutoff_excludes_pairs() -> None:
                 diff = coords[idx] - coords[jdx]
                 diff -= box * np.round(diff / box)
                 assert np.linalg.norm(diff) <= 1.2 + 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Regression: duplicate neighbours when a box edge spans fewer than 3 cells
+# ---------------------------------------------------------------------------
+
+
+def _glass_300() -> Atoms:
+    """The 300-atom SiO2 glass fixture, wrapped, as an orthogonal 16.4876 Å cube."""
+    return read(Path(__file__).parent / "data" / "SiO2_glass_300_atoms.xyz")
+
+
+@pytest.mark.parametrize("cutoff", [2.0, 5.0, 5.5, 6.0, 9.0])
+@pytest.mark.parametrize("use_numba", [True, False])
+def test_get_neighbors_no_duplicates_across_cell_counts(cutoff: float, use_numba: bool) -> None:  # noqa: FBT001
+    """No atom is reported twice, including when n_cells drops to 2 or 1.
+
+    n_cells = max(1, floor(height / cutoff)), so a 16.4876 Å box gives n_cells of
+    8, 3, 2, 2 and 1 for these cutoffs. Below 3 several of the 27 offsets wrap
+    onto the same cell, which used to append every atom in it again.
+    """
+    atoms = _glass_300()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = get_neighbors(atoms, cutoff=cutoff, use_numba=use_numba)
+    for central_id, nn_ids in result:
+        assert len(nn_ids) == len(set(nn_ids)), f"atom {central_id} has duplicate neighbours at cutoff {cutoff}"
+
+
+def test_stencil_grid_visits_each_cell_once() -> None:
+    """_stencil_grid yields each wrapped cell once, not 27 raw offsets."""
+    n_cells = np.array([1, 2, 3], dtype=np.int32)
+    cells = (np.array([0, 0, 0], dtype=np.int32) + _stencil_grid(n_cells)) % n_cells
+    assert len(cells) == len({tuple(c) for c in cells})
+    # 1 * 2 * 3 distinct cells exist in total, and all are within one offset of the origin
+    assert len(cells) == 6
+
+
+def _wrapped_cells_with_dedup(cell_idx: tuple[int, ...], n_cells: tuple[int, ...]) -> set[tuple[int, ...]]:
+    """Reference stencil: the 27 raw offsets, wrapped, then deduplicated."""
+    return {
+        tuple(((np.array(cell_idx) + np.array(offset)) % np.array(n_cells)).tolist())
+        for offset in itertools.product((-1, 0, 1), repeat=3)
+    }
+
+
+def test_cell_offsets_visit_each_cell_exactly_once() -> None:
+    """The restricted per-dimension ranges enumerate exactly the deduplicated 27-offset stencil, never twice."""
+    for n_cells in itertools.product(range(1, 6), repeat=3):
+        stencil = _stencil_grid(np.array(n_cells, dtype=np.int32))
+        for cell_idx in itertools.product(*(range(n) for n in n_cells)):
+            visited = [tuple(c) for c in ((np.array(cell_idx) + stencil) % np.array(n_cells)).tolist()]
+            assert len(visited) == len(set(visited)), (n_cells, cell_idx)
+            assert set(visited) == _wrapped_cells_with_dedup(cell_idx, n_cells), (n_cells, cell_idx)
+
+
+def test_clamp_cell_count_caps_total_and_keeps_each_axis_positive() -> None:
+    """A grid past the cap is halved until it fits; small grids pass through unchanged."""
+    clamped = _clamp_cell_count(np.array([2000, 2000, 2000]))
+    assert int(np.prod(clamped, dtype=np.int64)) <= 1_000_000
+    assert np.all(clamped >= 1)
+    np.testing.assert_array_equal(_clamp_cell_count(np.array([8, 3, 2])), [8, 3, 2])
+
+
+# ---------------------------------------------------------------------------
+# Regression: fractional-coordinate handedness (ASE stores lattice vectors as rows)
+# ---------------------------------------------------------------------------
+
+
+def test_compute_cell_list_triclinic_frac_roundtrip() -> None:
+    """coords_frac @ cell must reproduce the Cartesian coordinates.
+
+    Guards against computing fractional coordinates as inv(cell) @ r, which is
+    the column-vector convention and silently distorts every non-orthogonal cell.
+    """
+    cell = np.array([[8.0, 0.0, 0.0], [3.0, 8.0, 0.0], [2.0, 1.5, 8.0]])
+    rng = np.random.default_rng(11)
+    coords = rng.random((25, 3)) @ cell  # inside the cell by construction
+    coords_frac, _atom_cells, _n_cells, _cell_start, _order = compute_cell_list_triclinic(coords, cell, 2.0)
+    assert np.allclose(coords_frac @ cell, coords, atol=1e-10)
+
+
+def test_compute_cell_list_triclinic_frac_matches_ase() -> None:
+    """Fractional coordinates agree with ASE's own scaled positions."""
+    cell = np.array([[8.0, 0.0, 0.0], [3.0, 8.0, 0.0], [2.0, 1.5, 8.0]])
+    rng = np.random.default_rng(12)
+    coords = rng.random((25, 3)) @ cell
+    atoms = Atoms(numbers=np.full(25, 14), positions=coords, cell=cell, pbc=True)
+    coords_frac, *_ = compute_cell_list_triclinic(coords, cell, 2.0)
+    assert np.allclose(coords_frac, atoms.get_scaled_positions() % 1.0, atol=1e-10)
+
+
+@pytest.mark.parametrize("shear", [0.0, 0.03, 0.12, 0.30])
+@pytest.mark.parametrize("cutoff", [2.0, 3.5])
+@pytest.mark.parametrize("use_numba", [True, False])
+def test_get_neighbors_matches_ase_under_shear(shear: float, cutoff: float, use_numba: bool) -> None:  # noqa: FBT001
+    """Neighbour pairs match ase.neighborlist exactly for sheared (triclinic) cells."""
+    atoms = _glass_300()
+    box_length = atoms.get_cell().array[0, 0]
+    cell = atoms.get_cell().array.copy()
+    cell[1, 0] = shear * box_length
+    cell[2, 0] = 0.5 * shear * box_length
+    atoms.set_cell(cell, scale_atoms=False)
+    atoms.set_pbc(True)
+    atoms.wrap()
+
+    i_ase, j_ase = neighbor_list("ij", atoms, cutoff)
+    expected = set(zip(i_ase.tolist(), j_ase.tolist(), strict=False))
+
+    # get_neighbors returns 1-based IDs for a file without an explicit id column
+    obtained = {
+        (central_id - 1, neighbor_id - 1)
+        for central_id, nn_ids in get_neighbors(atoms, cutoff=cutoff, use_numba=use_numba)
+        for neighbor_id in nn_ids
+    }
+    assert obtained == expected
+
+
+def test_build_distances_matches_ase_under_shear() -> None:
+    """build_distances half-pairs match ase.neighborlist for a sheared cell."""
+    atoms = _glass_300()
+    cell = atoms.get_cell().array.copy()
+    cell[1, 0] = 2.0
+    atoms.set_cell(cell, scale_atoms=False)
+    atoms.set_pbc(True)
+    atoms.wrap()
+
+    dists, i_idx, j_idx = build_distances(atoms, r_max=3.5)
+    obtained = {(int(i), int(j)) for i, j in zip(i_idx, j_idx, strict=False)}
+
+    i_ase, j_ase = neighbor_list("ij", atoms, 3.5)
+    expected = {(int(i), int(j)) for i, j in zip(i_ase, j_ase, strict=False) if j > i}
+    assert obtained == expected
+
+    coords = atoms.get_positions()
+    for d, i, j in zip(dists, i_idx, j_idx, strict=False):
+        assert d == pytest.approx(float(find_mic(coords[i] - coords[j], cell)[1]), abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# _dist_and_vec_tri_exact — guarded minimum-image search
+# ---------------------------------------------------------------------------
+
+
+def test_dist_and_vec_tri_exact_fast_path_matches_rounding() -> None:
+    """Below half the smallest perpendicular height the rounded image is returned unchanged."""
+    fast = _dist_and_vec_tri.py_func if NUMBA_AVAILABLE else _dist_and_vec_tri
+    exact = _dist_and_vec_tri_exact.py_func if NUMBA_AVAILABLE else _dist_and_vec_tri_exact
+    cell = np.array([[10.0, 0.0, 0.0], [1.0, 10.0, 0.0], [0.0, 0.0, 10.0]])
+    half_height_sq = _half_min_height(cell) ** 2
+    frac_i = np.array([0.10, 0.10, 0.10])
+    frac_j = np.array([0.15, 0.10, 0.10])
+    assert exact(frac_i, frac_j, cell, half_height_sq) == fast(frac_i, frac_j, cell)
+
+
+def test_dist_and_vec_tri_exact_beats_rounding_on_skewed_cell() -> None:
+    """On a strongly skewed cell the search finds a closer image than per-component rounding."""
+    fast = _dist_and_vec_tri.py_func if NUMBA_AVAILABLE else _dist_and_vec_tri
+    exact = _dist_and_vec_tri_exact.py_func if NUMBA_AVAILABLE else _dist_and_vec_tri_exact
+    cell = np.array([[10.0, 0.0, 0.0], [7.0, 10.0, 0.0], [7.0, 7.0, 10.0]])
+    half_height_sq = _half_min_height(cell) ** 2
+
+    rng = np.random.default_rng(0)
+    n_improved = 0
+    for _ in range(500):
+        frac_i, frac_j = rng.random(3), rng.random(3)
+        *_, dist_sq_fast = fast(frac_i, frac_j, cell)
+        *_, dist_sq_exact = exact(frac_i, frac_j, cell, half_height_sq)
+        assert dist_sq_exact <= dist_sq_fast + 1e-12
+        # ASE's find_mic is the independent ground truth
+        reference = float(find_mic((frac_i - frac_j) @ cell, cell)[1])
+        assert np.sqrt(dist_sq_exact) == pytest.approx(reference, abs=1e-9)
+        if dist_sq_exact < dist_sq_fast - 1e-9:
+            n_improved += 1
+    assert n_improved > 0, "skewed cell should expose cases where rounding is not the nearest image"
+
+
+# ---------------------------------------------------------------------------
+# Input validation at the public boundary
+# ---------------------------------------------------------------------------
+
+
+def test_parse_cutoff_empty_dict_raises() -> None:
+    """An empty cutoff dict names the argument instead of failing inside max()."""
+    types = np.array([8, 14], dtype=np.int32)
+    with pytest.raises(ValueError, match="empty dict"):
+        _parse_cutoff({}, types)
+
+
+@pytest.mark.parametrize("bad_cutoff", [0.0, -1.0])
+def test_parse_cutoff_non_positive_scalar_raises(bad_cutoff: float) -> None:
+    """A non-positive scalar cutoff is rejected."""
+    types = np.array([8, 14], dtype=np.int32)
+    with pytest.raises(ValueError, match="positive distance"):
+        _parse_cutoff(bad_cutoff, types)
+
+
+def test_parse_cutoff_non_positive_pair_marks_pair_excluded() -> None:
+    """A non-positive per-pair cutoff means "never bonded", the convention generate_bond_length_dict uses.
+
+    Squaring -1.0 would turn it into a 1.0 A cutoff, which only looks like "no bond"
+    because no real pair sits that close, so the encoded value must stay negative.
+    """
+    types = np.array([8, 14], dtype=np.int32)
+    max_cutoff, pair_types, pair_cutoffs_sq, use_pair_cutoffs = _parse_cutoff({(14, 8): 1.8, (8, 8): -1.0}, types)
+
+    assert use_pair_cutoffs is True
+    assert max_cutoff == pytest.approx(1.8)
+    rows = [tuple(row) for row in pair_types]
+    assert pair_cutoffs_sq[rows.index((8, 8))] < 0.0
+    assert pair_cutoffs_sq[rows.index((14, 8))] == pytest.approx(1.8**2)
+
+
+def test_parse_cutoff_all_pairs_excluded_raises() -> None:
+    """A dict with no positive cutoff can never produce a neighbour, so it is rejected."""
+    types = np.array([8, 14], dtype=np.int32)
+    with pytest.raises(ValueError, match="no pair in the cutoff dict has a positive distance"):
+        _parse_cutoff({(14, 8): -1.0, (8, 8): -1.0}, types)
+
+
+@pytest.mark.parametrize("use_numba", [True, False])
+def test_excluded_pair_never_bonds_even_when_atoms_overlap(use_numba: bool) -> None:  # noqa: FBT001
+    """An excluded pair stays unbonded at any separation, including below the 1 A the old squaring implied."""
+    atoms = Atoms(
+        numbers=[14, 8, 8],
+        positions=[[0.0, 0.0, 0.0], [5.0, 5.0, 5.0], [5.5, 5.0, 5.0]],
+        cell=np.diag([10.0, 10.0, 10.0]),
+        pbc=True,
+    )
+    cutoff = {(14, 8): 1.8, (8, 8): -1.0, (14, 14): -1.0}
+    neighbours = {central: sorted(nn) for central, nn in get_neighbors(atoms, cutoff, use_numba=use_numba)}
+    assert neighbours == {1: [], 2: [], 3: []}
+
+
+def test_normalize_type_filter_accepts_scalar() -> None:
+    """A bare atomic number is wrapped into a one-element list."""
+    assert _normalize_type_filter(14, "target_types") == [14]
+    assert _normalize_type_filter(np.int32(8), "target_types") == [8]
+    assert _normalize_type_filter([8, 14], "target_types") == [8, 14]
+    assert _normalize_type_filter(None, "target_types") is None
+
+
+def test_normalize_type_filter_rejects_string() -> None:
+    """A non-integer type filter raises a TypeError naming the argument."""
+    with pytest.raises(TypeError, match="neighbor_types"):
+        _normalize_type_filter("Si", "neighbor_types")
+
+
+def test_get_neighbors_accepts_scalar_type_filters() -> None:
+    """target_types=14 behaves exactly like target_types=[14]."""
+    atoms = _ortho_atoms()
+    scalar = {cid: sorted(nn) for cid, nn in get_neighbors(atoms, cutoff=1.5, target_types=14, neighbor_types=8)}
+    listed = {cid: sorted(nn) for cid, nn in get_neighbors(atoms, cutoff=1.5, target_types=[14], neighbor_types=[8])}
+    assert scalar == listed
+
+
+def test_get_neighbors_warns_when_cutoff_exceeds_minimum_image() -> None:
+    """A cutoff beyond half the shortest lattice vector warns instead of silently truncating."""
+    atoms = _ortho_atoms()  # 6 Å cube → half the shortest lattice vector is 3 Å
+    with pytest.warns(RuntimeWarning, match="minimum-image"):
+        get_neighbors(atoms, cutoff=4.0)
+
+
+def test_get_neighbors_does_not_warn_within_minimum_image() -> None:
+    """No warning while the cutoff stays within half the shortest lattice vector."""
+    atoms = _ortho_atoms()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        get_neighbors(atoms, cutoff=2.5)
+
+
+# ---------------------------------------------------------------------------
+# _image_search_bound — when the exact-MIC guard is compiled in at all
+# ---------------------------------------------------------------------------
+
+
+def test_image_search_bound_none_for_fine_grid() -> None:
+    """A grid fine enough that no candidate pair can beat rounding needs no guard."""
+    cell = np.diag([49.5, 49.5, 49.5])
+    assert _image_search_bound(cell, np.array([14, 14, 14])) is None
+
+
+def test_image_search_bound_set_for_coarse_grid() -> None:
+    """With few cells per edge a candidate can exceed the bound, so the guard is required."""
+    cell = np.diag([49.5, 49.5, 49.5])
+    bound = _image_search_bound(cell, np.array([2, 2, 2]))
+    assert bound is not None
+    assert bound == pytest.approx(_half_min_height(cell) ** 2)
+
+
+def test_image_search_bound_set_for_skewed_cell() -> None:
+    """A strongly skewed cell keeps the guard even on a moderately fine grid."""
+    cell = np.array([[10.0, 0.0, 0.0], [7.0, 10.0, 0.0], [7.0, 7.0, 10.0]])
+    assert _image_search_bound(cell, np.array([4, 4, 4])) is not None
+
+
+@pytest.mark.parametrize("shear", [0.05, 0.30, 0.70])
+@pytest.mark.parametrize("cutoff", [2.0, 3.5, 6.0])
+def test_image_search_pruning_does_not_change_results(shear: float, cutoff: float) -> None:
+    """Pruning the guard must never change a neighbour list.
+
+    Runs the triclinic kernel twice — once with whatever _image_search_bound
+    decides, once with the guard forced on — and requires identical output.
+    """
+    atoms = _glass_300()
+    cell = atoms.get_cell().array.copy()
+    cell[1, 0] = shear * cell[0, 0]
+    cell[2, 1] = 0.5 * shear * cell[1, 1]
+    atoms.set_cell(cell, scale_atoms=False)
+    atoms.set_pbc(True)
+    atoms.wrap()
+
+    coords = atoms.get_positions()
+    types = atoms.get_atomic_numbers().astype(np.int32)
+    coords_frac, atom_cells, n_cells, cell_start, cell_atoms = compute_cell_list_triclinic(coords, cell, cutoff)
+    stencil_start, stencil_count = _cell_offsets(n_cells)
+
+    fn = _build_nl_tri_numba
+    common = {
+        "coords_frac": coords_frac,
+        "types": types,
+        "cell": cell,
+        "atom_cells": atom_cells,
+        "n_cells": n_cells,
+        "cell_start": cell_start,
+        "cell_atoms": cell_atoms,
+        "stencil_start": stencil_start,
+        "stencil_count": stencil_count,
+        "cutoff_sq": cutoff**2,
+        "target_types": np.empty(0, dtype=np.int32),
+        "neighbor_types": np.empty(0, dtype=np.int32),
+        "use_target_filter": False,
+        "use_neighbor_filter": False,
+        "max_neighbors": _estimate_max_neighbors(coords, cell, cutoff),
+        "pair_types": np.empty((0, 2), dtype=np.int32),
+        "pair_cutoffs_sq": np.empty(0, dtype=np.float64),
+        "use_pair_cutoffs": False,
+        "return_vectors": True,
+    }
+    nl_auto, counts_auto, vecs_auto = fn(**common, half_height_sq=_image_search_bound(cell, n_cells))
+    nl_forced, counts_forced, vecs_forced = fn(**common, half_height_sq=_half_min_height(cell) ** 2)
+
+    np.testing.assert_array_equal(counts_auto, counts_forced)
+    # The kernel buffers are uninitialised past each atom's count; compare only the filled slots.
+    filled = np.arange(nl_auto.shape[1])[np.newaxis, :] < counts_auto[:, np.newaxis]
+    np.testing.assert_array_equal(nl_auto[filled], nl_forced[filled])
+    np.testing.assert_allclose(vecs_auto[filled], vecs_forced[filled], atol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# pbc handling — non-periodic directions via box padding, ASE as ground truth
+# ---------------------------------------------------------------------------
+
+_PBC_CELLS = {
+    "orthogonal": np.diag([16.0, 16.0, 16.0]),
+    "shear_b": np.array([[16.0, 0.0, 0.0], [4.0, 16.0, 0.0], [0.0, 0.0, 16.0]]),
+    "shear_c": np.array([[16.0, 0.0, 0.0], [0.0, 16.0, 0.0], [5.0, 4.0, 16.0]]),
+    "skewed": np.array([[16.0, 0.0, 0.0], [9.0, 14.0, 0.0], [8.0, 7.0, 13.0]]),
+}
+_ALL_PBC = list(itertools.product([True, False], repeat=3))
+
+
+def _pbc_id(pbc: tuple[bool, ...]) -> str:
+    return "".join("T" if flag else "F" for flag in pbc)
+
+
+def _random_atoms(cell: np.ndarray, pbc, n_atoms: int = 200, seed: int = 0) -> Atoms:
+    """Random Si/O atoms filling the cell, with the requested pbc flags."""
+    rng = np.random.default_rng(seed)
+    positions = rng.random((n_atoms, 3)) @ cell
+    numbers = np.resize([14, 8, 8], n_atoms)
+    return Atoms(numbers=numbers, positions=positions, cell=cell, pbc=pbc)
+
+
+def _pairs_ase(atoms: Atoms, cutoff: float) -> set[tuple[int, int]]:
+    """Ordered (i, j) pairs within cutoff from ASE, which honours pbc."""
+    i_ase, j_ase = neighbor_list("ij", atoms, cutoff)
+    return set(zip(i_ase.tolist(), j_ase.tolist(), strict=True))
+
+
+def _pairs_ours(atoms: Atoms, cutoff, use_numba: bool = True) -> set[tuple[int, int]]:  # noqa: FBT001
+    """Ordered (i, j) pairs from get_neighbors, converted from 1-based ids to 0-based indices."""
+    return {
+        (central_id - 1, neighbor_id - 1)
+        for central_id, nn_ids in get_neighbors(atoms, cutoff=cutoff, use_numba=use_numba)
+        for neighbor_id in nn_ids
+    }
+
+
+@pytest.mark.parametrize("pbc", _ALL_PBC, ids=_pbc_id)
+@pytest.mark.parametrize("cell_name", list(_PBC_CELLS))
+@pytest.mark.parametrize("use_numba", [True, False])
+def test_get_neighbors_honours_pbc(pbc: tuple[bool, ...], cell_name: str, use_numba: bool) -> None:  # noqa: FBT001
+    """Every pbc combination matches ASE exactly; the flags index lattice vectors, not Cartesian axes."""
+    atoms = _random_atoms(_PBC_CELLS[cell_name], pbc)
+    assert _pairs_ours(atoms, 3.2, use_numba) == _pairs_ase(atoms, 3.2)
+
+
+def test_slab_in_registry_has_no_cross_vacuum_bonds() -> None:
+    """Padding must be 2 * cutoff: with 1 * cutoff the surface layers of this slab bond across the vacuum.
+
+    Two 4 x 4 layers exactly 7 Å apart in a cell exactly 7 Å tall. With
+    pbc=[T, T, F] the layers must not see each other, yet the wrapped image of
+    the top layer sits exactly one cutoff (3.5 Å) below the bottom layer unless
+    the padding leaves 2 * cutoff of clearance — and the kernel accepts
+    dist <= cutoff.
+    """
+    grid = np.arange(4) * 2.5
+    thickness = 7.0
+    positions = np.array([[x, y, z] for x in grid for y in grid for z in (0.0, thickness)])
+    atoms = Atoms("H32", positions=positions, cell=np.diag([10.0, 10.0, thickness]), pbc=[True, True, False])
+    pairs = _pairs_ours(atoms, 3.5)
+    assert pairs == _pairs_ase(atoms, 3.5)
+    assert all(positions[i, 2] == positions[j, 2] for i, j in pairs), "a pair crosses the vacuum"
+
+
+def test_slab_with_zero_length_nonperiodic_vector() -> None:
+    """A zero-length c vector (ASE's usual slab setup) is completed instead of crashing inside numba."""
+    grid = np.arange(4) * 2.5
+    positions = np.array([[x, y, 0.0] for x in grid for y in grid])
+    cell = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 0.0]])
+    atoms = Atoms("H16", positions=positions, cell=cell, pbc=[True, True, False])
+    expected = _pairs_ase(atoms, 3.0)
+    assert _pairs_ours(atoms, 3.0) == expected
+    _dists, i_idx, j_idx = build_distances(atoms, r_max=3.0)
+    assert {(int(i), int(j)) for i, j in zip(i_idx, j_idx, strict=True)} == {(i, j) for i, j in expected if j > i}
+
+
+def test_isolated_molecule_without_cell() -> None:
+    """A bare molecule (zero cell, pbc=False) finds its bonds instead of crashing or returning nothing."""
+    benzene = molecule("C6H6")
+    pairs = _pairs_ours(benzene, 1.6)
+    assert pairs == _pairs_ase(benzene, 1.6)
+    assert len(pairs) == 24  # 6 C-C + 6 C-H bonds, both directions
+
+
+def test_fully_periodic_degenerate_cell_raises() -> None:
+    """A zero-volume cell that claims to be periodic is rejected with a ValueError, not a numba SystemError."""
+    atoms = Atoms("H2", positions=[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], cell=np.diag([10.0, 10.0, 0.0]), pbc=True)
+    with pytest.raises(ValueError, match="degenerate"):
+        get_neighbors(atoms, cutoff=2.0)
+    with pytest.raises(ValueError, match="degenerate"):
+        build_distances(atoms, r_max=2.0)
+
+
+def test_nan_coordinates_raise() -> None:
+    """A NaN coordinate is rejected up front; under fastmath it would silently vanish from the kernels."""
+    positions = np.array([[0.0, 0.0, 0.0], [np.nan, 0.0, 0.0]])
+    atoms = Atoms("H2", positions=positions, cell=np.diag([10.0, 10.0, 10.0]), pbc=True)
+    with pytest.raises(ValueError, match="NaN"):
+        get_neighbors(atoms, cutoff=2.0)
+    with pytest.raises(ValueError, match="NaN"):
+        build_distances(atoms, r_max=2.0)
+
+
+@pytest.mark.parametrize("cell_name", ["orthogonal", "shear_c"])
+@pytest.mark.parametrize("use_numba", [True, False])
+def test_atoms_outside_box_along_nonperiodic_axis(cell_name: str, use_numba: bool) -> None:  # noqa: FBT001
+    """Unwrapped coordinates far outside the cell along a non-periodic vector are handled exactly."""
+    cell = _PBC_CELLS[cell_name]
+    atoms = _random_atoms(cell, [True, True, False], seed=3)
+    positions = atoms.get_positions()
+    positions[::3] -= 2.5 * cell[2]
+    positions[1::3] += 2.5 * cell[2]
+    atoms.set_positions(positions)
+    assert _pairs_ours(atoms, 3.2, use_numba) == _pairs_ase(atoms, 3.2)
+
+
+def test_monolayer_thinner_than_cutoff() -> None:
+    """A single layer in a cell far thinner than the cutoff is padded out, not wrapped onto itself."""
+    grid = np.arange(6) * 2.0
+    positions = np.array([[x, y, 0.2] for x in grid for y in grid])
+    atoms = Atoms("H36", positions=positions, cell=np.diag([12.0, 12.0, 0.5]), pbc=[True, True, False])
+    assert _pairs_ours(atoms, 3.0) == _pairs_ase(atoms, 3.0)
+
+
+def test_internal_vacuum_two_slabs() -> None:
+    """Two slabs separated by more than the cutoff along a non-periodic axis never bond across the gap."""
+    grid = np.arange(4) * 2.5
+    lower = np.array([[x, y, z] for x in grid for y in grid for z in (0.0, 2.0)])
+    upper = lower + np.array([0.0, 0.0, 12.0])
+    positions = np.vstack([lower, upper])
+    cell = np.diag([10.0, 10.0, 14.0])
+    atoms = Atoms(f"H{len(positions)}", positions=positions, cell=cell, pbc=[True, True, False])
+    pairs = _pairs_ours(atoms, 3.5)
+    assert pairs == _pairs_ase(atoms, 3.5)
+    assert all((positions[i, 2] < 5.0) == (positions[j, 2] < 5.0) for i, j in pairs), "a pair crosses the gap"
+
+
+@pytest.mark.parametrize("pbc", [pbc for pbc in _ALL_PBC if not all(pbc)], ids=_pbc_id)
+def test_pad_nonperiodic_invariants(pbc: tuple[bool, ...]) -> None:
+    """Padded heights are exactly E + 2 * cutoff, periodic heights are untouched, distances are preserved."""
+    rng = np.random.default_rng(5)
+    cell = np.array([[15.0, 0.0, 0.0], [4.0, 14.0, 0.0], [3.0, 5.0, 13.0]])
+    coords = (rng.random((150, 3)) @ cell) * 1.4 - 2.0  # spills outside the cell on purpose
+    pbc_arr = np.array(pbc)
+    cutoff = 3.0
+    heights_before = cell_perpendicular_heights(cell)
+    frac_before = coords @ np.linalg.inv(cell)
+    extent = (frac_before.max(axis=0) - frac_before.min(axis=0)) * heights_before
+
+    new_cell, new_coords = _pad_nonperiodic(cell, coords, pbc_arr, cutoff)
+    heights_after = cell_perpendicular_heights(new_cell)
+    frac_after = new_coords @ np.linalg.inv(new_cell)
+
+    np.testing.assert_allclose(heights_after[pbc_arr], heights_before[pbc_arr], rtol=1e-10)
+    np.testing.assert_allclose(heights_after[~pbc_arr] - extent[~pbc_arr], 2.0 * cutoff, rtol=1e-10)
+    assert np.all(frac_after[:, ~pbc_arr] >= -1e-12)
+    assert np.all(frac_after[:, ~pbc_arr] < 1.0)
+    np.testing.assert_allclose(
+        np.linalg.norm(new_coords[1:] - new_coords[0], axis=1),
+        np.linalg.norm(coords[1:] - coords[0], axis=1),
+        rtol=1e-10,
+    )
+
+
+def test_pad_nonperiodic_is_identity_when_fully_periodic() -> None:
+    """The fully periodic hot path returns the very same objects, untouched."""
+    cell = np.diag([10.0, 10.0, 10.0])
+    coords = np.random.default_rng(0).random((20, 3)) * 10.0
+    out_cell, out_coords = _pad_nonperiodic(cell, coords, np.ones(3, dtype=bool), 3.0)
+    assert out_cell is cell
+    assert out_coords is coords
+
+
+@pytest.mark.parametrize("n_atoms", [0, 1, 2])
+@pytest.mark.parametrize("pbc", [True, False])
+def test_tiny_systems(n_atoms: int, pbc: bool) -> None:  # noqa: FBT001
+    """0, 1 and 2 atoms run through both entry points, periodic or not, and agree with ASE."""
+    positions = np.array([[0.6 * k, 5.0, 5.0] for k in range(n_atoms)]).reshape(n_atoms, 3)
+    atoms = Atoms("H" * n_atoms, positions=positions, cell=np.diag([10.0, 10.0, 10.0]), pbc=pbc)
+    expected = _pairs_ase(atoms, 2.0) if n_atoms else set()
+
+    result = get_neighbors(atoms, cutoff=2.0)
+    assert len(result) == n_atoms
+    assert _pairs_ours(atoms, 2.0) == expected
+
+    dists, _i_idx, _j_idx = build_distances(atoms, r_max=2.0)
+    assert len(dists) == len(expected) // 2
+
+
+def test_pair_cutoffs_and_filters_on_slab() -> None:
+    """Per-pair cutoffs and type filters on a slab: numba and NumPy agree with an in-plane brute force."""
+    atoms = _random_atoms(np.diag([12.0, 12.0, 6.0]), [True, True, False], n_atoms=120, seed=7)
+    cutoff = {(8, 14): 2.2, (8, 8): 3.0, (14, 14): 3.4}
+    kwargs = {"cutoff": cutoff, "target_types": [14], "neighbor_types": [8, 14]}
+    numba_result = {cid: sorted(nn) for cid, nn in get_neighbors(atoms, use_numba=True, **kwargs)}
+    numpy_result = {cid: sorted(nn) for cid, nn in get_neighbors(atoms, use_numba=False, **kwargs)}
+    assert numba_result == numpy_result
+
+    positions = atoms.get_positions()
+    numbers = atoms.get_atomic_numbers()
+    box = np.diag(atoms.get_cell().array)
+    for cid, nn_ids in numba_result.items():
+        i = cid - 1
+        if numbers[i] != 14:
+            assert nn_ids == []
+            continue
+        expected = []
+        for j in range(len(atoms)):
+            if j == i:
+                continue
+            delta = positions[i] - positions[j]
+            delta[:2] -= box[:2] * np.round(delta[:2] / box[:2])  # in-plane minimum image only
+            pair = tuple(sorted((int(numbers[i]), int(numbers[j]))))
+            if np.linalg.norm(delta) <= cutoff[pair]:
+                expected.append(j + 1)
+        assert nn_ids == expected
+
+
+def test_build_distances_honours_pbc() -> None:
+    """build_distances half-pairs and distances match ASE on a cell that is non-periodic along b."""
+    atoms = _random_atoms(_PBC_CELLS["shear_c"], [True, False, True], seed=11)
+    dists, i_idx, j_idx = build_distances(atoms, r_max=3.2)
+    obtained = {(int(i), int(j)) for i, j in zip(i_idx, j_idx, strict=True)}
+    assert obtained == {(i, j) for i, j in _pairs_ase(atoms, 3.2) if j > i}
+
+    i_ase, j_ase, d_ase = neighbor_list("ijd", atoms, 3.2)
+    reference = {(int(i), int(j)): float(d) for i, j, d in zip(i_ase, j_ase, d_ase, strict=True)}
+    for d, i, j in zip(dists, i_idx, j_idx, strict=True):
+        assert d == pytest.approx(reference[(int(i), int(j))], abs=1e-9)
+
+
+@pytest.mark.parametrize("use_numba", [True, False])
+def test_return_vectors_match_ase_with_opposite_sign(use_numba: bool) -> None:  # noqa: FBT001
+    """Bond vectors are r_i - r_j, i.e. exactly -D from ASE, on a slab."""
+    atoms = _random_atoms(_PBC_CELLS["shear_b"], [True, True, False], seed=13)
+    i_ase, j_ase, d_ase = neighbor_list("ijD", atoms, 3.2)
+    reference = {(int(i), int(j)): vec for i, j, vec in zip(i_ase, j_ase, d_ase, strict=True)}
+    for central_id, nn_ids, vecs in get_neighbors(atoms, cutoff=3.2, return_vectors=True, use_numba=use_numba):
+        for neighbor_id, vec in zip(nn_ids, vecs, strict=True):
+            np.testing.assert_allclose(vec, -reference[(central_id - 1, neighbor_id - 1)], atol=1e-5)
+
+
+def test_get_neighbors_output_types_are_plain_python() -> None:
+    """Central ids are int and neighbour lists are list[int]: callers use them as dict keys and serialise them."""
+    result = get_neighbors(_glass_300(), cutoff=2.0, return_vectors=True)
+    for central_id, nn_ids, vecs in result:
+        assert type(central_id) is int
+        assert type(nn_ids) is list
+        assert all(type(neighbor_id) is int for neighbor_id in nn_ids)
+        assert vecs.dtype == np.float64
+        assert vecs.shape == (len(nn_ids), 3)
+
+
+def test_build_distances_numpy_branch_matches_numba(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With Numba disabled build_distances takes the shared NumPy fallback and agrees on a small box and a slab."""
+    small = _ortho_atoms()  # 6 Å box, r_max=4 → n_cells=1, the duplicate-pair regime
+    slab = _random_atoms(_PBC_CELLS["shear_c"], [True, True, False], seed=17)
+    types = slab.get_atomic_numbers()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        numba_small = build_distances(small, r_max=4.0)
+        numba_slab = build_distances(slab, r_max=3.2, types=types, unordered_pairs=[(8, 14)])
+        monkeypatch.setattr("amorphouspy.atoms.neighbors.NUMBA_AVAILABLE", False)
+        numpy_small = build_distances(small, r_max=4.0)
+        numpy_slab = build_distances(slab, r_max=3.2, types=types, unordered_pairs=[(8, 14)])
+
+    for (d_nb, i_nb, j_nb), (d_np, i_np, j_np) in ((numba_small, numpy_small), (numba_slab, numpy_slab)):
+        pairs_nb = {(int(i), int(j)): float(d) for d, i, j in zip(d_nb, i_nb, j_nb, strict=True)}
+        pairs_np = {(int(i), int(j)): float(d) for d, i, j in zip(d_np, i_np, j_np, strict=True)}
+        assert len(pairs_np) == len(d_np), "duplicate pairs in the NumPy branch"
+        assert pairs_nb.keys() == pairs_np.keys()
+        for key, d in pairs_nb.items():
+            assert pairs_np[key] == pytest.approx(d, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# Minimum-image warning criterion — shortest periodic lattice vector
+# ---------------------------------------------------------------------------
+
+
+def test_min_periodic_lattice_vector_uses_shortest_vector_not_height() -> None:
+    """For a=(10,0,0), c=(9,0,10) the perpendicular height is 7.43 Å but the shortest lattice vector is 10 Å."""
+    cell = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [9.0, 0.0, 10.0]])
+    assert cell_perpendicular_heights(cell).min() == pytest.approx(7.4329, abs=1e-3)
+    assert _min_periodic_lattice_vector(cell, np.array([True, True, True])) == pytest.approx(10.0)
+    assert _min_periodic_lattice_vector(cell, np.array([True, True, False])) == pytest.approx(10.0)
+    assert _min_periodic_lattice_vector(cell, np.array([False, False, True])) == pytest.approx(np.sqrt(181.0))
+    assert _min_periodic_lattice_vector(cell, np.array([False, False, False])) == np.inf
+
+
+def test_no_spurious_warning_for_skewed_cell_within_shortest_vector() -> None:
+    """A 4.5 Å cutoff is below half the shortest lattice vector (5 Å) though above half the height (3.7 Å)."""
+    cell = np.array([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [9.0, 0.0, 10.0]])
+    atoms = _random_atoms(cell, pbc=True, n_atoms=50)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        get_neighbors(atoms, cutoff=4.5)
+
+
+def test_slab_does_not_warn_about_nonperiodic_axis() -> None:
+    """A thin slab is judged on its in-plane lattice only; the padded axis never triggers the warning."""
+    atoms = _random_atoms(np.diag([20.0, 20.0, 4.0]), [True, True, False], n_atoms=60)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        get_neighbors(atoms, cutoff=3.5)
