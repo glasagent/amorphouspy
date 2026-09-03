@@ -892,7 +892,7 @@ def compute_guttmann_rings(
 def generate_bond_length_dict(
     atoms: Atoms,
     specific_cutoffs: dict[tuple[str, str], float] | None = None,
-    default_cutoff: float = -1.0,
+    default_cutoff: float = 0.0,
 ) -> dict[tuple[str, str], float]:
     """Generate all symmetric element pairs and assign bond length cutoffs.
 
@@ -902,7 +902,9 @@ def generate_bond_length_dict(
             pairs. Both orderings ``('A','B')`` and ``('B','A')`` are
             recognised.
         default_cutoff: Fallback bond length for pairs not in
-            ``specific_cutoffs``.
+            ``specific_cutoffs``. The default of 0.0 marks every unlisted
+            pair as never bonded, so only the pairs named in
+            ``specific_cutoffs`` can form a bond.
 
     Returns:
         Dictionary mapping every symmetric element pair to its cutoff.

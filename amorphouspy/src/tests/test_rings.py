@@ -150,6 +150,36 @@ def test_generate_bond_length_dict_n_pairs(si_o_atoms):
     assert len(result) == 3
 
 
+def test_generate_bond_length_dict_default_marks_pairs_unbonded(si_o_atoms):
+    """The default cutoff is 0.0, which get_neighbors reads as "this pair never bonds".
+
+    A negative default would be squared into a positive cutoff downstream, so the
+    value must stay non-positive and 0.0 is the physically meaningful choice: a zero
+    bonding radius.
+    """
+    result = generate_bond_length_dict(si_o_atoms, specific_cutoffs={("Si", "O"): 1.8})
+    assert result[("O", "Si")] == 1.8
+    assert result[("O", "O")] == 0.0
+    assert result[("Si", "Si")] == 0.0
+
+
+def test_rings_with_default_cutoff_excludes_unlisted_pairs(glass_structure):
+    """Rings run end to end with the default, which sends 0.0 cutoffs through get_neighbors.
+
+    Regression for the structure_characterization failure: the sentinel for "never
+    bonded" reached the per-pair cutoff parser and was rejected as a non-positive
+    distance.
+    """
+    bond_lengths = generate_bond_length_dict(glass_structure, specific_cutoffs={("Si", "O"): 2.0})
+    assert bond_lengths[("O", "Na")] == 0.0  # modifier pairs excluded by the default
+
+    histogram, mean_size = compute_guttmann_rings(glass_structure, bond_lengths=bond_lengths, max_size=10)
+    explicit, explicit_mean = compute_guttmann_rings(glass_structure, bond_lengths=SI_O_BONDS, max_size=10)
+    # Naming only the Si-O pair must match passing that pair alone.
+    assert histogram == explicit
+    assert mean_size == pytest.approx(explicit_mean)
+
+
 # ---------------------------------------------------------------------------
 # Ring search on hand-built topologies
 # ---------------------------------------------------------------------------

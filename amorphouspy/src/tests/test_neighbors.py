@@ -1268,11 +1268,41 @@ def test_parse_cutoff_non_positive_scalar_raises(bad_cutoff: float) -> None:
         _parse_cutoff(bad_cutoff, types)
 
 
-def test_parse_cutoff_non_positive_pair_raises() -> None:
-    """A non-positive per-pair cutoff names the offending pair."""
+def test_parse_cutoff_non_positive_pair_marks_pair_excluded() -> None:
+    """A non-positive per-pair cutoff means "never bonded", the convention generate_bond_length_dict uses.
+
+    Squaring -1.0 would turn it into a 1.0 A cutoff, which only looks like "no bond"
+    because no real pair sits that close, so the encoded value must stay negative.
+    """
     types = np.array([8, 14], dtype=np.int32)
-    with pytest.raises(ValueError, match=r"\(14, 8\)"):
-        _parse_cutoff({(14, 8): -2.0}, types)
+    max_cutoff, pair_types, pair_cutoffs_sq, use_pair_cutoffs = _parse_cutoff({(14, 8): 1.8, (8, 8): -1.0}, types)
+
+    assert use_pair_cutoffs is True
+    assert max_cutoff == pytest.approx(1.8)
+    rows = [tuple(row) for row in pair_types]
+    assert pair_cutoffs_sq[rows.index((8, 8))] < 0.0
+    assert pair_cutoffs_sq[rows.index((14, 8))] == pytest.approx(1.8**2)
+
+
+def test_parse_cutoff_all_pairs_excluded_raises() -> None:
+    """A dict with no positive cutoff can never produce a neighbour, so it is rejected."""
+    types = np.array([8, 14], dtype=np.int32)
+    with pytest.raises(ValueError, match="no pair in the cutoff dict has a positive distance"):
+        _parse_cutoff({(14, 8): -1.0, (8, 8): -1.0}, types)
+
+
+@pytest.mark.parametrize("use_numba", [True, False])
+def test_excluded_pair_never_bonds_even_when_atoms_overlap(use_numba: bool) -> None:  # noqa: FBT001
+    """An excluded pair stays unbonded at any separation, including below the 1 A the old squaring implied."""
+    atoms = Atoms(
+        numbers=[14, 8, 8],
+        positions=[[0.0, 0.0, 0.0], [5.0, 5.0, 5.0], [5.5, 5.0, 5.0]],
+        cell=np.diag([10.0, 10.0, 10.0]),
+        pbc=True,
+    )
+    cutoff = {(14, 8): 1.8, (8, 8): -1.0, (14, 14): -1.0}
+    neighbours = {central: sorted(nn) for central, nn in get_neighbors(atoms, cutoff, use_numba=use_numba)}
+    assert neighbours == {1: [], 2: [], 3: []}
 
 
 def test_normalize_type_filter_accepts_scalar() -> None:

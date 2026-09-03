@@ -56,6 +56,9 @@ _MIN_VOLUME: float = 1e-10
 # Cap on the cell-list grid. Beyond this the int32 flat cell ids would overflow
 # for large sparse systems; halving the grid keeps the stencil correct, only slower.
 _MAX_CELLS: int = 1_000_000
+# Squared cutoff standing in for "this pair never bonds". No squared distance is negative,
+# so `dist_sq <= _EXCLUDED_PAIR_SQ` is false for every pair, including coincident atoms.
+_EXCLUDED_PAIR_SQ: float = -1.0
 # Width of the neighbour-cell stencil along one dimension: offsets -1, 0, +1.
 _STENCIL_WIDTH: int = 3
 
@@ -82,14 +85,24 @@ def _parse_cutoff(
                 pair-specific cutoff in Angstrom. The dict is symmetric:
                 (8, 14) and (14, 8) are treated as the same pair.
                 Any pair not explicitly listed defaults to the maximum
-                cutoff value in the dict.
+                cutoff value in the dict. A non-positive per-pair value
+                marks that pair as never bonded (the convention used by
+                generate_bond_length_dict's default_cutoff=0.0); it is
+                encoded as a negative squared cutoff, which no squared
+                distance can satisfy — so an excluded pair stays unbonded
+                even for coincident atoms, which squaring the value would not.
         types:  Integer array of atomic numbers for all atoms.
 
     Returns:
         max_cutoff:       Largest cutoff across all pairs (used for cell-list).
         pair_types:       (M, 2) int32 array of unique type pairs.
-        pair_cutoffs_sq:  (M,) float64 array of squared cutoffs per pair.
+        pair_cutoffs_sq:  (M,) float64 array of squared cutoffs per pair;
+                          _EXCLUDED_PAIR_SQ for pairs marked as never bonded.
         use_pair_cutoffs: True when per-pair mode is active.
+
+    Raises:
+        ValueError: If a scalar cutoff is not positive, the dict is empty, or
+                    no pair in the dict has a positive cutoff.
     """
     if isinstance(cutoff, (int, float)):
         if float(cutoff) <= 0.0:
@@ -101,13 +114,14 @@ def _parse_cutoff(
         msg = "cutoff is an empty dict; pass a positive float or a non-empty {(Z_i, Z_j): r_c} mapping"
         raise ValueError(msg)
 
-    for pair, rc in cutoff.items():
-        if float(rc) <= 0.0:
-            msg = f"cutoff for pair {pair!r} must be a positive distance in Angstrom, got {float(rc)}"
-            raise ValueError(msg)
-
     unique_types = np.unique(types).tolist()
     max_cutoff = float(max(cutoff.values()))
+    if max_cutoff <= 0.0:
+        msg = (
+            "no pair in the cutoff dict has a positive distance, so no atom could ever be a neighbour; "
+            f"got {dict(cutoff)!r}"
+        )
+        raise ValueError(msg)
 
     # Build a dict covering all ordered pairs, defaulting to max_cutoff
     pair_dict: dict[tuple[int, int], float] = {}
@@ -121,7 +135,10 @@ def _parse_cutoff(
         pair_dict[(int(type_j), int(type_i))] = float(rc)
 
     pairs = list(pair_dict.keys())
-    per_pair_cutoffs_sq = [pair_dict[p] ** 2 for p in pairs]
+    # A non-positive cutoff means "these two species never bond". Squaring it would turn
+    # -1.0 A into a 1.0 A cutoff, which only looks like "no bond" because no real pair sits
+    # that close; _EXCLUDED_PAIR_SQ makes the exclusion exact.
+    per_pair_cutoffs_sq = [pair_dict[p] ** 2 if pair_dict[p] > 0.0 else _EXCLUDED_PAIR_SQ for p in pairs]
 
     pair_types = np.array(pairs, dtype=np.int32)
     pair_cutoffs_sq = np.array(per_pair_cutoffs_sq, dtype=np.float64)
