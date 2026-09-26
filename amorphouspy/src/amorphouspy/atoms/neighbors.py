@@ -679,7 +679,7 @@ def _build_nl_ortho_numba(
     Returns:
         neighbor_list:   (N, max_neighbors) int32 — neighbor array indices.
         neighbor_counts: (N,) int32 — actual neighbor count per atom.
-        vector_list:     (N, max_neighbors, 3) float32 — bond vectors i->j.
+        vector_list:     (N, max_neighbors, 3) float64 — bond vectors i->j.
                          All zeros when return_vectors=False.
     """
     n_atoms = len(coords)
@@ -691,9 +691,9 @@ def _build_nl_ortho_numba(
     neighbor_list = np.empty((n_atoms, max_neighbors), dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     if return_vectors:
-        vector_list = np.empty((n_atoms, max_neighbors, 3), dtype=np.float32)
+        vector_list = np.empty((n_atoms, max_neighbors, 3), dtype=np.float64)
     else:
-        vector_list = np.empty((0, 0, 3), dtype=np.float32)
+        vector_list = np.empty((0, 0, 3), dtype=np.float64)
 
     for i in prange(n_atoms):  # type: ignore[ty:not-iterable]
         type_i = types[i]
@@ -791,7 +791,7 @@ def _build_nl_tri_numba(  # noqa: PLR0915
     Returns:
         neighbor_list:   (N, max_neighbors) int32
         neighbor_counts: (N,) int32
-        vector_list:     (N, max_neighbors, 3) float32 — Cartesian bond vectors i->j.
+        vector_list:     (N, max_neighbors, 3) float64 — Cartesian bond vectors i->j.
     """
     n_atoms = len(coords_frac)
     n_cells_y = n_cells[1]
@@ -802,9 +802,9 @@ def _build_nl_tri_numba(  # noqa: PLR0915
     neighbor_list = np.empty((n_atoms, max_neighbors), dtype=np.int32)
     neighbor_counts = np.zeros(n_atoms, dtype=np.int32)
     if return_vectors:
-        vector_list = np.empty((n_atoms, max_neighbors, 3), dtype=np.float32)
+        vector_list = np.empty((n_atoms, max_neighbors, 3), dtype=np.float64)
     else:
-        vector_list = np.empty((0, 0, 3), dtype=np.float32)
+        vector_list = np.empty((0, 0, 3), dtype=np.float64)
 
     for i in prange(n_atoms):  # type: ignore[ty:not-iterable]
         type_i = types[i]
@@ -1226,7 +1226,7 @@ def _padded_to_csr(
     """Compact padded (N, max_neighbors) kernel buffers into flat CSR arrays (flat_j, flat_vecs)."""
     valid = _valid_slots(neighbor_counts, neighbor_list.shape[1])
     flat_j = neighbor_list[valid]
-    flat_vecs = vector_list[valid].astype(np.float64) if return_vectors else np.empty((0, 3), dtype=np.float64)
+    flat_vecs = vector_list[valid] if return_vectors else np.empty((0, 3), dtype=np.float64)
     return flat_j, flat_vecs
 
 
