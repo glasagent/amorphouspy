@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+from amorphouspy.properties.cte import temperature_scan_simulation
+from amorphouspy_api.models import JobSubmission
 from amorphouspy_api.pipeline import (
     _SUBMITTERS,
     ANALYSES,
@@ -17,6 +20,7 @@ from amorphouspy_api.pipeline import (
     _analysis_uses_lammps,
     _merge_results,
     _run_analysis,
+    _run_cte,
     _run_structural_analysis,
     submit_pipeline,
 )
@@ -245,6 +249,58 @@ class TestRunStructuralAnalysis:
         assert out["sampling_history"][0]["positions"] == [[[3.0]]]
         assert out["sampling_history"][0]["cells"] == [[[[3.0]]]]
         assert mock_run_structural_analysis.call_args.kwargs["n_jobs"] == 3
+
+
+# ---------------------------------------------------------------------------
+# _run_cte (temperature scan)
+# ---------------------------------------------------------------------------
+
+
+class TestRunCTETemperatureScan:
+    """Request parameters must reach ``temperature_scan_simulation`` unchanged."""
+
+    @staticmethod
+    def _run(cte_request: dict) -> dict:
+        """Parse *cte_request* like the API does and return kwargs passed to the core workflow."""
+        submission = JobSubmission.model_validate(
+            {"composition": {"SiO2": 100}, "simulation": {"n_atoms": 300}, "analyses": [cte_request]}
+        )
+        result = {
+            "melt_quench": {"final_structure": object()},
+            "structure_generation": {"potential": object()},
+        }
+        with (
+            patch("amorphouspy.properties.cte.temperature_scan_simulation", return_value={"data": {}}) as mock_scan,
+            patch("amorphouspy_api.pipeline.get_lammps_server_kwargs", return_value={}),
+        ):
+            _run_cte(submission, submission.analyses[0], result)
+        return mock_scan.call_args.kwargs
+
+    def test_pre_equilibration_settings_are_forwarded(self) -> None:
+        """Explicit pre-equilibration settings in the request override the core default."""
+        kwargs = self._run(
+            {
+                "type": "cte",
+                "method": "temperature_scan",
+                "temperatures": [300, 500],
+                "pre_equilibration_steps": 10_000,
+                "pre_equilibration_temperature": 800,
+            }
+        )
+        assert kwargs["pre_equilibration_steps"] == 10_000
+        assert kwargs["pre_equilibration_temperature"] == 800
+
+    def test_zero_disables_pre_equilibration(self) -> None:
+        """0 is a valid value and must not be swallowed by a falsy-default fallback."""
+        kwargs = self._run({"type": "cte", "method": "temperature_scan", "pre_equilibration_steps": 0})
+        assert kwargs["pre_equilibration_steps"] == 0
+
+    def test_api_defaults_match_core_workflow_defaults(self) -> None:
+        """Omitting the fields yields the same behavior as calling the core workflow directly."""
+        kwargs = self._run({"type": "cte", "method": "temperature_scan"})
+        core_defaults = inspect.signature(temperature_scan_simulation).parameters
+        for name in ("pre_equilibration_steps", "pre_equilibration_temperature"):
+            assert kwargs[name] == core_defaults[name].default, name
 
 
 # ---------------------------------------------------------------------------
