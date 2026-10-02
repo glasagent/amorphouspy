@@ -147,3 +147,19 @@ def test_cte_volume_temp_r2_below_one_for_noisy_data():
     V = 10.0 + 0.001 * T + rng.normal(0, 0.05, len(T))
     _, r2 = cte_from_volume_temperature_data(T, V)
     assert r2 < 1.0
+
+
+@pytest.mark.parametrize(
+    ("temperature", "volume", "kwargs", "match"),
+    [
+        ([[300.0, 400.0]], [10.0, 10.1], {}, "one-dimensional"),
+        ([300.0, 400.0, 500.0], [10.0, 10.1], {}, "same length"),
+        ([300.0], [10.0], {}, "At least 2"),
+        ([300.0, 400.0], [0.0, 0.1], {}, "non-zero"),
+        ([300.0, 400.0], [10.0, 10.1], {"reference_volume": 0.0}, "non-zero"),
+    ],
+)
+def test_cte_volume_temp_rejects_invalid_input(temperature, volume, kwargs, match):
+    """Malformed V-T data and a zero reference volume raise ValueError instead of returning nonsense."""
+    with pytest.raises(ValueError, match=match):
+        cte_from_volume_temperature_data(temperature, volume, **kwargs)

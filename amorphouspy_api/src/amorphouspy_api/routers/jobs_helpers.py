@@ -478,6 +478,27 @@ def _find_analysis_params(request_data: dict | None, analysis_type: str) -> dict
     return {}
 
 
+def _cte_caption_params(cp: dict) -> dict:
+    """Derive the CTE caption values (durations in ns) from the stored CTE request parameters."""
+    timestep = cp.get("timestep", 1.0)
+    temperatures = cp.get("temperatures")
+    # Jobs submitted before the API exposed this field ran with the core default of 500k steps.
+    pre_steps = cp.get("pre_equilibration_steps", 500_000)
+    pre_temp = cp.get("pre_equilibration_temperature")
+    if pre_temp is None and temperatures:
+        pre_temp = max(temperatures)
+    return {
+        "method": cp.get("method", "fluctuations"),
+        "temperature": cp.get("temperature"),
+        "temperatures": temperatures,
+        "production_ns": cp.get("production_steps", 200_000) * timestep / 1e6,
+        "equilibration_ns": cp.get("equilibration_steps", 100_000) * timestep / 1e6,
+        "pre_equilibration_ns": (pre_steps or 0) * timestep / 1e6,
+        "pre_equilibration_temperature": pre_temp,
+        "max_production_runs": cp.get("max_production_runs", 25),
+    }
+
+
 def _add_optional_analyses(context: dict, result_data: dict, request_data: dict | None = None) -> None:
     """Populate context with viscosity / CTE / elastic plots if available."""
     import json
@@ -521,15 +542,7 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
         if summary:
             context["cte_summary"] = json.dumps(summary)
         cp = _find_analysis_params(request_data, "cte")
-        c_timestep = cp.get("timestep", 1.0)
-        c_prod_steps = cp.get("production_steps", 200_000)
-        context["cte_params"] = {
-            "method": cp.get("method", "fluctuations"),
-            "temperature": cp.get("temperature"),
-            "temperatures": cp.get("temperatures"),
-            "production_ns": c_prod_steps * c_timestep / 1e6,
-            "max_production_runs": cp.get("max_production_runs", 25),
-        }
+        context["cte_params"] = _cte_caption_params(cp)
 
     elastic_data = result_data.get("elastic")
     if elastic_data:
@@ -582,22 +595,50 @@ def _extract_atomic_numbers(final_structure: dict[str, Any] | str | None) -> lis
     return None
 
 
-def _compute_total_md_steps(mq: dict) -> str:
-    """Estimate the total MD integration steps from melt-quench parameters."""
-    timestep_fs = mq.get("timestep", 1.0)
+def _melt_quench_stages(mq: dict, request_data: dict | None) -> list[dict] | None:
+    """Return the executed melt-quench stages, replaying the protocol for jobs that did not record them."""
+    from amorphouspy.fabrication.meltquench_protocols import protocol_stage_schedule
+
+    if mq.get("stages"):
+        return mq["stages"]
+    potential = (request_data or {}).get("potential")
     cooling_rate = mq.get("cooling_rate")
     t_high = mq.get("temperature_high")
-    t_low = mq.get("temperature_low", 300.0)
+    if not (potential and cooling_rate and t_high):
+        return None
+    simulation = (request_data or {}).get("simulation") or {}
+    try:
+        return protocol_stage_schedule(
+            potential,
+            temperature_high=t_high,
+            temperature_low=mq.get("temperature_low", 300.0),
+            cooling_rate=cooling_rate,
+            timestep=mq.get("timestep", 1.0),
+            equilibration_steps=simulation.get("equilibration_steps"),
+        )
+    except ValueError:
+        logger.warning("Cannot reconstruct melt-quench stages for potential %r", potential)
+        return None
 
-    if not all([cooling_rate, t_high]):
+
+def _compute_total_md_steps(stages: list[dict] | None) -> str:
+    """Total MD integration steps over all melt-quench stages."""
+    if not stages:
         return "N/A"
+    return f"{sum(s['n_steps'] for s in stages):,}"
 
-    seconds_to_fs = 1e15
-    delta_t = t_high - t_low
-    cooling_steps = int((delta_t / (timestep_fs * cooling_rate)) * seconds_to_fs)
-    # Fixed protocol stages: pre_equilibration(10k) + equil_high(10k) + pressure_release(10k) + long_equil(100k)
-    total = 10_000 + 10_000 + cooling_steps + 10_000 + 100_000
-    return f"{total:,}"
+
+def _format_stage_summary(stages: list[dict] | None, timestep_fs: float) -> str:
+    """One-line summary of the executed stages, e.g. ``0.01 ns at 5000 K → 0.0047 ns 5000→300 K``."""
+    if not stages:
+        return ""
+    parts = []
+    for s in stages:
+        duration = f"{s['n_steps'] * timestep_fs * 1e-6:.3g}\u2009ns"
+        t0, t1 = s["temperature_start"], s["temperature_end"]
+        temps = f"at {t0:.0f}\u2009K" if t0 == t1 else f"{t0:.0f}\u2009\u2192\u2009{t1:.0f}\u2009K"
+        parts.append(f"{duration} {temps}")
+    return "Stages run: " + "; ".join(parts) + "."
 
 
 def _format_actual_composition(mq: dict, result_data: dict) -> tuple[str, str]:
@@ -708,8 +749,9 @@ def build_visualization_context(
     oxide_order: list[str] | None = [item["oxide"] for item in composition_items] if composition_items else None
     actual_composition_items = _format_actual_composition_items(mq, result_data, oxide_order)
 
-    # Total MD steps from the T-t profile parameters
-    total_md_steps = _compute_total_md_steps(mq)
+    # Total MD steps from the executed (or replayed) protocol stages
+    stages = _melt_quench_stages(mq, request_data) if mq else None
+    total_md_steps = _compute_total_md_steps(stages)
 
     # Potential type
     potential_type = None
@@ -717,30 +759,38 @@ def build_visualization_context(
         potential_type = request_data.get("potential")
     potential_label = potential_type.upper() if potential_type else "N/A"
 
-    # Protocol description based on potential
+    # Qualitative protocol description; durations come from the executed stages below.
     _protocol_descriptions: dict[str, str] = {
         "pmmcs": (
             "PMMCS (Pedone-Menziani-Morse-Coulomb-Short) protocol: "
             "Langevin + nve/limit pre-equilibration at the melt temperature, "
-            "NVT melt equilibration (1\u2009ns), NVT cooling ramp, "
-            "and NPT pressure release at P\u2009=\u20090 (1\u2009ns)."
+            "NVT melt equilibration, NVT cooling ramp, "
+            "and NPT pressure release at P\u2009=\u20090."
         ),
         "bjp": (
             "BJP (Born-Mayer-Huggins) protocol: "
             "Langevin + nve/limit pre-equilibration at the melt temperature, "
-            "NPT melt equilibration at P\u2009=\u20090 (0.1\u2009ns), "
-            "NPT cooling ramp, and NPT pressure release (0.1\u2009ns)."
+            "NPT melt equilibration at P\u2009=\u20090, "
+            "NPT cooling ramp, and NPT pressure release."
         ),
         "shik": (
             "SHIK (Buckingham + r\u207b\u00b2\u2074 repulsion) protocol: "
             "Langevin + nve/limit pre-equilibration at the melt temperature, "
-            "NVT equilibration (~0.1\u2009ns), "
-            "NPT equilibration at 0.1\u2009GPa (~0.7\u2009ns), "
+            "NVT equilibration, "
+            "NPT equilibration at 0.1\u2009GPa, "
             "NPT cooling with pressure ramp 0.1\u2009\u2192\u20090\u2009GPa, "
-            "and NPT anneal at 0\u2009GPa (~0.1\u2009ns)."
+            "and NPT anneal at 0\u2009GPa."
         ),
     }
-    protocol_description = _protocol_descriptions.get(potential_type, "") if potential_type else ""
+    timestep_fs = mq.get("timestep", 1.0)
+    protocol_description = " ".join(
+        part
+        for part in (
+            _protocol_descriptions.get(potential_type, "") if potential_type else "",
+            _format_stage_summary(stages, timestep_fs),
+        )
+        if part
+    )
 
     context.update(
         {
@@ -761,8 +811,8 @@ def build_visualization_context(
         context.update(timing_ctx)
 
     # --- Temperature-time diagram ---
-    if mq:
-        tt_plot = build_temperature_time_plot(mq)
+    if stages:
+        tt_plot = build_temperature_time_plot(stages, timestep_fs=timestep_fs, cooling_rate=mq.get("cooling_rate"))
         if tt_plot:
             context["temperature_time_plot"] = tt_plot
 

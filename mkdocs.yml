@@ -55,7 +55,7 @@ nav:
     - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/ViscosityTutorial.ipynb
     - Self-Diffusion: notebooks/DiffusionTutorial.ipynb
-    - CTE: notebooks/CTE.ipynb
+    - CTE: notebooks/CTETutorial.ipynb
     # - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
   - Theory:
     - theory/index.md

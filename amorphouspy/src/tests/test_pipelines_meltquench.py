@@ -111,6 +111,7 @@ class TestRunMeltQuench:
             "temperature_trajectory",
             "steps_trajectory",
             "simulation_history",
+            "stages",
             "timestep",
             "cooling_rate",
             "temperature_high",

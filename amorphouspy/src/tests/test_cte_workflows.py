@@ -303,3 +303,58 @@ def test_temperature_scan_allows_none_n_dump(tmp_path, monkeypatch) -> None:
         assert "data" in result
     finally:
         _clean_logger_handlers()
+
+
+def _record_md_calls(monkeypatch) -> list[dict]:
+    """Patch _run_lammps_md with a recorder on top of the default mock."""
+    calls: list[dict] = []
+
+    def recorder(*args, **kwargs):
+        calls.append(kwargs)
+        return _mock_run_lammps_md(*args, **kwargs)
+
+    monkeypatch.setattr(cte_module, "_run_lammps_md", recorder)
+    return calls
+
+
+@pytest.mark.parametrize("pre_equilibration_steps", [0, None])
+def test_temperature_scan_without_pre_equilibration(tmp_path, monkeypatch, pre_equilibration_steps) -> None:
+    """0 or None skips the one-time pre-equilibration: only equilibration + production per temperature."""
+    monkeypatch.chdir(tmp_path)
+    calls = _record_md_calls(monkeypatch)
+    _clean_logger_handlers()
+    try:
+        temperature_scan_simulation(
+            structure=_make_structure(),
+            potential=_make_potential(),
+            temperature=[300, 400],
+            pre_equilibration_steps=pre_equilibration_steps,
+            equilibration_steps=1_000,
+            production_steps=100_000,
+        )
+    finally:
+        _clean_logger_handlers()
+    assert [c["temperature"] for c in calls] == [300, 300, 400, 400]
+
+
+@pytest.mark.parametrize(("pre_temperature", "expected"), [(None, 500), (800.0, 800.0)])
+def test_temperature_scan_pre_equilibration_settings(tmp_path, monkeypatch, pre_temperature, expected) -> None:
+    """Pre-equilibration runs first with the requested steps, at the given or the highest scan temperature."""
+    monkeypatch.chdir(tmp_path)
+    calls = _record_md_calls(monkeypatch)
+    _clean_logger_handlers()
+    try:
+        temperature_scan_simulation(
+            structure=_make_structure(),
+            potential=_make_potential(),
+            temperature=[300, 500],
+            pre_equilibration_steps=1_234,
+            pre_equilibration_temperature=pre_temperature,
+            production_steps=100_000,
+        )
+    finally:
+        _clean_logger_handlers()
+    assert len(calls) == 1 + 2 * 2
+    assert calls[0]["n_ionic_steps"] == 1_234
+    assert calls[0]["temperature"] == expected
+    assert calls[0]["initial_temperature"] == expected

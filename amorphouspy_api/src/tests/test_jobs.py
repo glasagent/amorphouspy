@@ -873,7 +873,7 @@ def test_submit_job_with_cte() -> None:
 def test_submit_job_with_cte_temperature_scan() -> None:
     """Test submitting a CTE job using the temperature_scan method."""
     result = _mock_result()
-    result["cte"] = {"01_300K": {"run01": {"CTE_V": 2.5e-5}}}
+    result["cte"] = {"data": {"T": [300.0, 400.0], "V": [1000.0, 1010.0]}}
 
     mock_future = MagicMock()
     mock_future.done.return_value = True

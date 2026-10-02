@@ -19,3 +19,4 @@ notebooks/tutorial_ensemble_cache/replica_*/
 notebooks/BMP.nb3b.harmonic
 notebooks/BMP.nb3b.shrm
 .github/instructions/local.instructions.md
+tmp*
