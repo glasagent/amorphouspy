@@ -205,6 +205,8 @@ def _run_cte(
         temperature=config.temperatures,
         pressure=config.pressure,
         timestep=config.timestep,
+        pre_equilibration_steps=config.pre_equilibration_steps,
+        pre_equilibration_temperature=config.pre_equilibration_temperature,
         equilibration_steps=config.equilibration_steps,
         production_steps=config.production_steps,
         server_kwargs=resource_dict,

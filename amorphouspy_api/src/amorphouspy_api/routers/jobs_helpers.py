@@ -478,6 +478,27 @@ def _find_analysis_params(request_data: dict | None, analysis_type: str) -> dict
     return {}
 
 
+def _cte_caption_params(cp: dict) -> dict:
+    """Derive the CTE caption values (durations in ns) from the stored CTE request parameters."""
+    timestep = cp.get("timestep", 1.0)
+    temperatures = cp.get("temperatures")
+    # Jobs submitted before the API exposed this field ran with the core default of 500k steps.
+    pre_steps = cp.get("pre_equilibration_steps", 500_000)
+    pre_temp = cp.get("pre_equilibration_temperature")
+    if pre_temp is None and temperatures:
+        pre_temp = max(temperatures)
+    return {
+        "method": cp.get("method", "fluctuations"),
+        "temperature": cp.get("temperature"),
+        "temperatures": temperatures,
+        "production_ns": cp.get("production_steps", 200_000) * timestep / 1e6,
+        "equilibration_ns": cp.get("equilibration_steps", 100_000) * timestep / 1e6,
+        "pre_equilibration_ns": (pre_steps or 0) * timestep / 1e6,
+        "pre_equilibration_temperature": pre_temp,
+        "max_production_runs": cp.get("max_production_runs", 25),
+    }
+
+
 def _add_optional_analyses(context: dict, result_data: dict, request_data: dict | None = None) -> None:
     """Populate context with viscosity / CTE / elastic plots if available."""
     import json
@@ -521,15 +542,7 @@ def _add_optional_analyses(context: dict, result_data: dict, request_data: dict 
         if summary:
             context["cte_summary"] = json.dumps(summary)
         cp = _find_analysis_params(request_data, "cte")
-        c_timestep = cp.get("timestep", 1.0)
-        c_prod_steps = cp.get("production_steps", 200_000)
-        context["cte_params"] = {
-            "method": cp.get("method", "fluctuations"),
-            "temperature": cp.get("temperature"),
-            "temperatures": cp.get("temperatures"),
-            "production_ns": c_prod_steps * c_timestep / 1e6,
-            "max_production_runs": cp.get("max_production_runs", 25),
-        }
+        context["cte_params"] = _cte_caption_params(cp)
 
     elastic_data = result_data.get("elastic")
     if elastic_data:

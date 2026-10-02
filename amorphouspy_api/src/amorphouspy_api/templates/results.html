@@ -291,10 +291,23 @@
                         {% if cte_plots.volume_temperature %}
                         {% if cte_plots.convergence %}Additionally, volume{% else %}Volume{% endif %}
                         vs. temperature data collected from NPT simulations
-                        {% if cte_params and cte_params.temperatures %}at {{ cte_params.temperatures | join(', ') }} K{%
-                        endif %}
-                        ({{ "%.2f" | format(cte_params.production_ns) }} ns each),
-                        enabling a linear fit of volumetric thermal expansion.
+                        {% if cte_params and cte_params.temperatures %}at {{ cte_params.temperatures | map('int') | join(', ') }} K{%
+                        endif %}.
+                        {% if cte_params %}
+                        {% if cte_params.pre_equilibration_ns > 0 %}
+                        Before the scan, a one-time NPT pre-equilibration of
+                        {{ "%.3g" | format(cte_params.pre_equilibration_ns) }} ns
+                        {% if cte_params.pre_equilibration_temperature %}at {{ cte_params.pre_equilibration_temperature | int }} K{% endif %}
+                        was performed.
+                        {% else %}
+                        No one-time pre-equilibration was performed before the scan.
+                        {% endif %}
+                        At each temperature, the structure was equilibrated for
+                        {{ "%.3g" | format(cte_params.equilibration_ns) }} ns, followed by a
+                        {{ "%.3g" | format(cte_params.production_ns) }} ns production run used for averaging.
+                        {% endif %}
+                        The dashed line is a linear fit; &alpha;<sub>V</sub> = slope / V(T<sub>min</sub>) and
+                        &alpha;<sub>L</sub> = &alpha;<sub>V</sub> / 3.
                         {% endif %}
                     </p>
                 </div>

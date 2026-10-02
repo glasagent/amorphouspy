@@ -331,6 +331,16 @@ class CTETemperatureScan(_CTEBase):
         default=[300, 400, 500, 600],
         description="Temperatures in K",
     )
+    pre_equilibration_steps: int = Field(
+        default=500_000,
+        ge=0,
+        description="One-time NPT pre-equilibration steps before the scan; 0 disables it",
+    )
+    pre_equilibration_temperature: float | None = Field(
+        default=None,
+        gt=0,
+        description="Pre-equilibration temperature in K; None = highest scan temperature",
+    )
 
 
 CTEAnalysis = Annotated[

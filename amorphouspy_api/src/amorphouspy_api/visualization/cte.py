@@ -5,6 +5,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from amorphouspy.properties.cte_analysis import cte_from_volume_temperature_data
+
+PPM = 1e6  # conversion factor 1/K -> ppm/K
+
 
 def _cumulative_mean_and_uncertainty(
     values: list[float],
@@ -60,7 +64,6 @@ def _build_cte_convergence_plot(data: dict[str, Any], metadata: dict[str, Any] |
         x_values = list(run_index)
         x_title = "Production Run"
 
-    PPM = 1e6  # conversion factor 1/K -> ppm/K
     color = "#7b2d8e"
 
     means, uncertainties = _cumulative_mean_and_uncertainty(values)
@@ -140,9 +143,9 @@ def _build_cte_summary_plot(summary: dict[str, Any]) -> dict[str, Any] | None:
     if x_mean is None or y_mean is None or z_mean is None:
         return None
 
-    mean_val = (x_mean + y_mean + z_mean) / 3.0
+    mean_val = (x_mean + y_mean + z_mean) / 3.0 * PPM
     # Propagate uncertainty: s_avg = sqrt(s_x^2 + s_y^2 + s_z^2) / 3
-    unc_val = (x_unc**2 + y_unc**2 + z_unc**2) ** 0.5 / 3.0
+    unc_val = (x_unc**2 + y_unc**2 + z_unc**2) ** 0.5 / 3.0 * PPM
 
     title = f"Linear CTE Summary (T = {temperature} K)" if temperature != "N/A" else "Linear CTE Summary"
 
@@ -154,14 +157,14 @@ def _build_cte_summary_plot(summary: dict[str, Any]) -> dict[str, Any] | None:
                 "type": "bar",
                 "error_y": {"type": "data", "array": [unc_val], "visible": True},
                 "marker": {"color": ["#7b2d8e"]},
-                "text": [f"{mean_val:.2e} \u00b1 {unc_val:.2e} 1/K"],
+                "text": [f"{mean_val:.1f} \u00b1 {unc_val:.1f} ppm/K"],
                 "textposition": "outside",
             }
         ],
         "layout": {
             "title": {"text": title, "font": {"size": 16}},
             "xaxis": {"title": ""},
-            "yaxis": {"title": {"text": "CTE (1/K)", "font": {"size": 14}}, "exponentformat": "e"},
+            "yaxis": {"title": {"text": "CTE (ppm/K)", "font": {"size": 14}}},
             "hovermode": "closest",
             "height": 450,
             "margin": {"l": 80, "r": 40, "t": 60, "b": 40},
@@ -172,48 +175,76 @@ def _build_cte_summary_plot(summary: dict[str, Any]) -> dict[str, Any] | None:
 def _build_cte_vt_plot(cte_data: dict[str, Any]) -> dict[str, Any] | None:
     """Build Plotly V-T scatter plot for the temperature-scan method.
 
-    Looks for per-temperature keys like ``01_300K`` in the result dict.
+    Expects ``cte_data["data"]`` to hold equal-length ``T`` and ``V`` arrays
+    with one (averaged) entry per scanned temperature.
     """
-    temperatures: list[float] = []
-    volumes: list[float] = []
-
-    for key in sorted(cte_data.keys()):
-        # Keys look like "01_300K"
-        if "_" not in key or "K" not in key:
-            continue
-        runs = cte_data[key]
-        if not isinstance(runs, dict):
-            continue
-        # Average V across runs at this temperature
-        v_vals = [r.get("V") for r in runs.values() if isinstance(r, dict) and r.get("V") is not None]
-        if not v_vals:
-            continue
-        # Parse temperature from key
-        try:
-            temp = float(key.split("_")[1].rstrip("K"))
-        except (IndexError, ValueError):
-            continue
-        temperatures.append(temp)
-        volumes.append(sum(v_vals) / len(v_vals))
-
-    if len(temperatures) < 2:
+    data = cte_data.get("data")
+    if not isinstance(data, dict):
+        return None
+    t_raw = data.get("T")
+    v_raw = data.get("V")
+    if t_raw is None or v_raw is None:
         return None
 
-    return {
-        "data": [
+    try:
+        pairs = sorted(
+            (float(t), float(v))
+            for t, v in zip(t_raw, v_raw, strict=True)
+            if math.isfinite(float(t)) and math.isfinite(float(v))
+        )
+    except (TypeError, ValueError):
+        return None
+
+    if len(pairs) < 2:
+        return None
+    temperatures = [t for t, _ in pairs]
+    volumes = [v for _, v in pairs]
+
+    traces: list[dict[str, Any]] = [
+        {
+            "x": temperatures,
+            "y": volumes,
+            "mode": "markers",
+            "marker": {"size": 9},
+            "name": "MD data",
+        }
+    ]
+
+    try:
+        cte_v, r2 = cte_from_volume_temperature_data(temperatures, volumes)
+    except ValueError:
+        cte_v, r2 = math.nan, math.nan
+    if math.isfinite(cte_v):
+        # cte_v = slope / V(T_min); a least-squares line passes through the data centroid.
+        slope = cte_v * volumes[0]
+        t_mean = sum(temperatures) / len(temperatures)
+        v_mean = sum(volumes) / len(volumes)
+        t_fit = [temperatures[0], temperatures[-1]]
+        r2_text = f"{r2:.4f}" if math.isfinite(r2) else "n/a"
+        traces.append(
             {
-                "x": temperatures,
-                "y": volumes,
-                "mode": "markers+lines",
-                "line": {"width": 2},
-                "name": "V vs T",
+                "x": t_fit,
+                "y": [v_mean + slope * (t - t_mean) for t in t_fit],
+                "mode": "lines",
+                "line": {"width": 2, "dash": "dash"},
+                "name": (
+                    f"Linear fit: \u03b1<sub>V</sub> = {cte_v * PPM:.2f} ppm/K, "
+                    f"\u03b1<sub>L</sub> = {cte_v / 3 * PPM:.2f} ppm/K (R\u00b2 = {r2_text})"
+                ),
             }
-        ],
+        )
+
+    return {
+        "data": traces,
         "layout": {
-            "title": "Volume vs Temperature",
-            "xaxis": {"title": "Temperature (K)"},
-            "yaxis": {"title": "Volume (\u00c5\u00b3)"},
+            "title": {"text": "Volume vs Temperature", "font": {"size": 16}},
+            "xaxis": {"title": {"text": "Temperature (K)", "font": {"size": 14}}},
+            "yaxis": {"title": {"text": "Volume (Å³)", "font": {"size": 14}}},
             "hovermode": "closest",
+            "showlegend": True,
+            "legend": {"x": 0.01, "y": 0.99, "xanchor": "left", "yanchor": "top"},
+            "height": 450,
+            "margin": {"l": 80, "r": 40, "t": 60, "b": 60},
         },
     }
 
@@ -241,7 +272,6 @@ def prepare_cte_plots(cte_data: dict[str, Any]) -> dict[str, str]:
         if summary_fig:
             plots["summary"] = json.dumps(summary_fig)
     else:
-        # Temperature scan method — top-level keys are "01_300K", etc.
         vt_fig = _build_cte_vt_plot(cte_data)
         if vt_fig:
             plots["volume_temperature"] = json.dumps(vt_fig)
