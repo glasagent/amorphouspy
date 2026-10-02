@@ -225,6 +225,20 @@ class TestBuildCTEVTPlot:
         assert slope == pytest.approx(0.028)
         assert fit["y"][0] + slope * (450.0 - 300.0) == pytest.approx(sum(vols) / 4)
 
+    def test_no_fit_when_cte_undefined(self) -> None:
+        """A zero reference volume makes the CTE undefined: data is still shown, but no fit line."""
+        fig = _build_cte_vt_plot({"data": {"T": [300.0, 400.0], "V": [0.0, 1.0]}})
+        assert [trace["name"] for trace in fig["data"]] == ["MD data"]
+
+    @pytest.mark.filterwarnings("ignore:invalid value encountered in divide:RuntimeWarning")
+    def test_constant_volume_reports_r2_unavailable(self) -> None:
+        """Zero thermal expansion gives a flat fit with an undefined R\u00b2 shown as n/a."""
+        fig = _build_cte_vt_plot({"data": {"T": [300.0, 400.0, 500.0], "V": [1000.0, 1000.0, 1000.0]}})
+        fit = fig["data"][1]
+        assert fit["y"] == pytest.approx([1000.0, 1000.0])
+        assert "0.00 ppm/K" in fit["name"]
+        assert "R\u00b2 = n/a" in fit["name"]
+
 
 # ---------------------------------------------------------------------------
 # prepare_cte_plots

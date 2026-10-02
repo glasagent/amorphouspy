@@ -21,6 +21,7 @@ from amorphouspy_api.pipeline import (
     _merge_results,
     _run_analysis,
     _run_cte,
+    _run_melt_quench,
     _run_structural_analysis,
     submit_pipeline,
 )
@@ -301,6 +302,95 @@ class TestRunCTETemperatureScan:
         core_defaults = inspect.signature(temperature_scan_simulation).parameters
         for name in ("pre_equilibration_steps", "pre_equilibration_temperature"):
             assert kwargs[name] == core_defaults[name].default, name
+
+    def test_metadata_is_attached(self) -> None:
+        """The temperature-scan result carries the metadata the visualization relies on."""
+        submission = JobSubmission.model_validate(
+            {
+                "composition": {"SiO2": 100},
+                "analyses": [{"type": "cte", "method": "temperature_scan", "temperatures": [300, 400]}],
+            }
+        )
+        result = {"melt_quench": {"final_structure": object()}, "structure_generation": {"potential": object()}}
+        with (
+            patch("amorphouspy.properties.cte.temperature_scan_simulation", return_value={"data": {}}),
+            patch("amorphouspy_api.pipeline.get_lammps_server_kwargs", return_value={}),
+        ):
+            out = _run_cte(submission, submission.analyses[0], result)
+        assert out["metadata"] == {"temperatures": [300.0, 400.0], "production_steps": 200_000, "timestep": 1.0}
+
+
+class TestRunCTEFluctuations:
+    """The fluctuations branch forwards its own parameter set and attaches metadata."""
+
+    def test_parameters_forwarded_and_metadata_attached(self) -> None:
+        """Request values reach ``cte_from_fluctuations_simulation`` and metadata reflects them."""
+        submission = JobSubmission.model_validate(
+            {
+                "composition": {"SiO2": 100},
+                "analyses": [
+                    {
+                        "type": "cte",
+                        "method": "fluctuations",
+                        "temperature": 450,
+                        "production_steps": 30_000,
+                        "max_production_runs": 7,
+                        "cte_uncertainty_criterion": 2e-6,
+                    }
+                ],
+            }
+        )
+        result = {"melt_quench": {"final_structure": "S"}, "structure_generation": {"potential": "P"}}
+        with (
+            patch(
+                "amorphouspy.properties.cte.cte_from_fluctuations_simulation", return_value={"summary": {}}
+            ) as mock_fluct,
+            patch("amorphouspy.properties.cte.temperature_scan_simulation") as mock_scan,
+            patch("amorphouspy_api.pipeline.get_lammps_server_kwargs", return_value={"cores": 4}),
+        ):
+            out = _run_cte(submission, submission.analyses[0], result)
+
+        mock_scan.assert_not_called()
+        kwargs = mock_fluct.call_args.kwargs
+        assert (kwargs["structure"], kwargs["potential"]) == ("S", "P")
+        assert kwargs["temperature"] == 450
+        assert kwargs["max_production_runs"] == 7
+        assert kwargs["CTE_uncertainty_criterion"] == 2e-6
+        assert kwargs["server_kwargs"] == {"cores": 4}
+        assert out["metadata"] == {"temperature": 450, "production_steps": 30_000, "timestep": 1.0}
+
+
+class TestRunMeltQuench:
+    """Melt-quench request settings must reach the core pipeline."""
+
+    def test_request_settings_forwarded(self) -> None:
+        """Quench rate, melt temperature and equilibration override are passed on; composition is attached."""
+        submission = JobSubmission.model_validate(
+            {
+                "composition": {"SiO2": 75, "Na2O": 25},
+                "simulation": {
+                    "n_atoms": 300,
+                    "quench_rate": 1e15,
+                    "melt_temperature": 4200,
+                    "equilibration_steps": 5000,
+                    "timestep": 2.0,
+                },
+            }
+        )
+        result = {"structure_generation": {"structure": "S", "potential": "P"}}
+        with (
+            patch("amorphouspy.pipelines.meltquench.run_melt_quench", return_value={"stages": []}) as mock_mq,
+            patch("amorphouspy_api.pipeline.get_lammps_server_kwargs", return_value={}),
+        ):
+            out = _run_melt_quench(submission, None, result)
+
+        kwargs = mock_mq.call_args.kwargs
+        assert kwargs["cooling_rate"] == 10**15
+        assert kwargs["temperature_high"] == 4200
+        assert kwargs["equilibration_steps"] == 5000
+        assert kwargs["timestep"] == 2.0
+        assert kwargs["potential_type"] == "pmmcs"
+        assert out["composition"] == submission.composition.root
 
 
 # ---------------------------------------------------------------------------

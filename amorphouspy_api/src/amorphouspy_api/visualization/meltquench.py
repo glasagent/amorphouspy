@@ -69,10 +69,7 @@ def build_temperature_time_plot(
             }
         ]
         if cooling_rate:
-            if cooling_rate >= 1e12:
-                rate_str = f"{cooling_rate / 1e12:.0f} \u00d7 10\u00b9\u00b2 K/s"
-            else:
-                rate_str = f"{cooling_rate:.1e} K/s"
+            rate_str = f"{cooling_rate / 1e12:g} \u00d7 10\u00b9\u00b2 K/s"
             layout["annotations"] = [
                 {
                     "x": (x0 + x1) / 2,
