@@ -7,11 +7,14 @@ import pandas as pd
 import pytest
 from amorphouspy.fabrication.meltquench import melt_quench_simulation
 from amorphouspy.fabrication.meltquench_protocols import (
+    PRE_EQUILIBRATION_STEPS,
     MeltQuenchParams,
     bjp_protocol,
     bmp_protocol,
     du_teter_protocol,
     pmmcs_protocol,
+    protocol_stage_schedule,
+    resolve_protocol_name,
     shik_protocol,
     yang2026_protocol,
 )
@@ -515,3 +518,66 @@ def test_melt_quench_simulation_bmp_variant_routing(mock_structure, variant):
         mq_module.PROTOCOL_MAP.update(original)
 
     assert called, f"{variant} was not routed to bmp protocol"
+
+
+# ---------------------------------------------------------------------------
+# Stage recording and dry-run schedule
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("potential_name", ["PMMCS", "BJP", "SHIK", "Du/Teter", "bmp-harmonic", "Yang2026"])
+@pytest.mark.parametrize(("equilibration_steps", "timestep"), [(None, 1.0), (77, 2.0)])
+def test_recorded_stages_match_executed_md_and_dry_run_schedule(
+    monkeypatch, mock_structure, potential_name, equilibration_steps, timestep
+):
+    """``stages`` mirrors every MD call, and protocol_stage_schedule predicts it without running MD."""
+    calls = []
+
+    def fake_md(**kwargs):
+        calls.append(kwargs)
+        return kwargs["structure"], {"generic": {}}
+
+    monkeypatch.setattr(mq_module, "_run_lammps_md", fake_md)
+    settings = {"temperature_high": 4500.0, "temperature_low": 300.0, "cooling_rate": 1e14, "timestep": timestep}
+    result = melt_quench_simulation(
+        mock_structure,
+        pd.DataFrame({"Name": [potential_name], "Config": [["line"]]}),
+        equilibration_steps=equilibration_steps,
+        **settings,
+    )
+
+    executed = [(c["n_ionic_steps"], c["temperature"], c.get("temperature_end") or c["temperature"]) for c in calls]
+    recorded = [(s["n_steps"], s["temperature_start"], s["temperature_end"]) for s in result["stages"]]
+    assert recorded == executed
+    assert result["stages"] == protocol_stage_schedule(
+        potential_name, equilibration_steps=equilibration_steps, **settings
+    )
+
+
+def test_dry_run_schedule_respects_pre_equilibrate_flag():
+    """Skipping pre-equilibration removes exactly that stage."""
+    kwargs = {"temperature_high": 5000.0, "temperature_low": 300.0, "cooling_rate": 1e15}
+    with_pre = protocol_stage_schedule("pmmcs", **kwargs)
+    without_pre = protocol_stage_schedule("pmmcs", pre_equilibrate=False, **kwargs)
+    assert with_pre[0]["n_steps"] == PRE_EQUILIBRATION_STEPS
+    assert without_pre == with_pre[1:]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("PMMCS", "pmmcs"),
+        ("bmp-screened-harmonic", "bmp"),
+        ("du_teter_dbx_generalized", "du/teter"),
+        ("Du/Teter", "du/teter"),
+    ],
+)
+def test_resolve_protocol_name(name, expected):
+    """LAMMPS potential names and API identifiers resolve to the same protocol key."""
+    assert resolve_protocol_name(name) == expected
+
+
+def test_resolve_protocol_name_rejects_unknown():
+    """Unknown potentials raise instead of silently picking a protocol."""
+    with pytest.raises(ValueError, match="Unknown potential"):
+        resolve_protocol_name("nope")
