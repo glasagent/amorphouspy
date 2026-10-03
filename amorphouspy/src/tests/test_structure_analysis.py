@@ -25,16 +25,20 @@ expected_NC = (4 * (1 - x) - 2 * x) / (1 - x)
 Reference: https://doi.org/10.1039/D4TB02414A
 """
 
+from collections import Counter
+
 import numpy as np
 import pytest
 from amorphouspy.properties.structural.averaging import average_over_frames
 from amorphouspy.properties.structural.qn import classify_oxygens, compute_qn_and_classify
+from ase import Atoms
 from ase.io import read
 
 from amorphouspy import (
     compute_coordination,
     compute_network_connectivity,
     compute_qn,
+    compute_qn_per_atom,
 )
 
 from . import DATA_DIR
@@ -359,3 +363,89 @@ def test_per_pair_cutoff_eliminates_false_free_oxygens():
     assert n_free_pair < n_free_short, (
         f"Per-pair cutoffs should reduce free oxygens: pair={n_free_pair}, short={n_free_short}"
     )
+
+
+# ---------------------------------------------------------------------------
+# compute_qn_per_atom
+# ---------------------------------------------------------------------------
+
+SI_O_BOND = 1.6
+QN_CUTOFF = 2.0
+
+
+def _si2o7_dimer() -> Atoms:
+    """Two Si sharing one bridging O, each with three terminal O, in a large box."""
+    si1 = np.array([10.0, 10.0, 10.0])
+    si2 = si1 + np.array([2 * SI_O_BOND, 0.0, 0.0])
+    bridging = si1 + np.array([SI_O_BOND, 0.0, 0.0])
+    terminals_1 = [si1 + d for d in ([-SI_O_BOND, 0, 0], [0, SI_O_BOND, 0], [0, 0, SI_O_BOND])]
+    terminals_2 = [si2 + d for d in ([SI_O_BOND, 0, 0], [0, SI_O_BOND, 0], [0, 0, SI_O_BOND])]
+    positions = [si1, si2, bridging, *terminals_1, *terminals_2]
+    return Atoms("Si2O7", positions=positions, cell=[30.0, 30.0, 30.0], pbc=True)
+
+
+def _sio4_unit(extra_si: bool = False) -> Atoms:  # noqa: FBT001
+    """Isolated SiO4 unit; optionally a lone Si far from any O."""
+    si = np.array([10.0, 10.0, 10.0])
+    offsets = ([SI_O_BOND, 0, 0], [-SI_O_BOND, 0, 0], [0, SI_O_BOND, 0], [0, 0, SI_O_BOND])
+    positions = [si, *(si + d for d in offsets)]
+    symbols = "SiO4"
+    if extra_si:
+        positions.append([22.0, 22.0, 22.0])
+        symbols = "SiO4Si"
+    return Atoms(symbols, positions=positions, cell=[30.0, 30.0, 30.0], pbc=True)
+
+
+def test_compute_qn_per_atom_si2o7_dimer():
+    """Both Si in an isolated Si2O7 dimer are Q1."""
+    assert compute_qn_per_atom(_si2o7_dimer(), QN_CUTOFF, [14], 8) == {1: 1, 2: 1}
+
+
+def test_compute_qn_per_atom_isolated_sio4():
+    """The Si of an isolated SiO4 unit is Q0."""
+    assert compute_qn_per_atom(_sio4_unit(), QN_CUTOFF, [14], 8) == {1: 0}
+
+
+def test_compute_qn_per_atom_former_without_oxygen():
+    """A former with no oxygen within the cutoff is still reported, with n = 0."""
+    assert compute_qn_per_atom(_sio4_unit(extra_si=True), QN_CUTOFF, [14], 8) == {1: 0, 6: 0}
+
+
+def test_compute_qn_per_atom_uses_id_array():
+    """Keys follow a custom "id" array when the structure carries one."""
+    atoms = _si2o7_dimer()
+    atoms.arrays["id"] = np.arange(101, 101 + len(atoms))
+    assert compute_qn_per_atom(atoms, QN_CUTOFF, [14], 8) == {101: 1, 102: 1}
+
+
+def test_compute_qn_per_atom_matches_histogram():
+    """Histogram of per-atom Qn equals compute_qn total and partial distributions."""
+    atoms = read(DATA_DIR / "SiO2_glass_300_atoms.xyz")
+    qn_per_atom = compute_qn_per_atom(atoms, QN_CUTOFF, [14], 8)
+    total_qn, partial_qn = compute_qn(atoms, QN_CUTOFF, [14], 8)
+
+    si_ids = {int(aid) for aid, z in zip(atoms.arrays["id"], atoms.get_atomic_numbers(), strict=True) if z == 14}
+    assert set(qn_per_atom) == si_ids
+
+    counts = Counter(qn_per_atom.values())
+    assert {n: float(counts.get(n, 0)) for n in range(7)} == total_qn
+    assert {n: float(counts.get(n, 0)) for n in range(7)} == partial_qn[14]
+
+
+def test_compute_qn_per_atom_matches_partial_per_former_type():
+    """Per former type, the histogram of per-atom Qn equals the partial distribution (B + Si glass)."""
+    atoms = read(DATA_DIR / "20Na2O-10B2O3-70SiO2.dump", format="lammps-dump-text")
+    z = np.array([0, 8, 14, 5, 11], dtype=int)[atoms.get_atomic_numbers()]
+    atoms.set_atomic_numbers(z)
+    pair_cutoff = {(5, 8): 1.9, (14, 8): 2.0}
+    former_types = [5, 14]
+
+    qn_per_atom = compute_qn_per_atom(atoms, pair_cutoff, former_types, 8)
+    _, partial_qn = compute_qn(atoms, pair_cutoff, former_types, 8)
+
+    assert "id" not in atoms.arrays  # keys fall back to 1-based indices
+    id_to_z = {i + 1: int(zi) for i, zi in enumerate(z)}
+    for f_type in former_types:
+        counts = Counter(n for aid, n in qn_per_atom.items() if id_to_z[aid] == f_type)
+        assert sum(counts.values()) == int(np.sum(z == f_type))
+        assert {n: float(counts.get(n, 0)) for n in range(7)} == partial_qn[f_type]
