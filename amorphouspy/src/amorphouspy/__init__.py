@@ -51,6 +51,7 @@ from amorphouspy.properties.structural.qn import (
     compute_network_connectivity,
     compute_qn,
     compute_qn_and_classify,
+    compute_qn_per_atom,
 )
 from amorphouspy.properties.structural.rdf import compute_coordination, compute_rdf
 from amorphouspy.properties.structural.rings import compute_guttmann_rings, generate_bond_length_dict
@@ -77,6 +78,7 @@ __all__ = [
     "compute_projected_rdf",
     "compute_qn",
     "compute_qn_and_classify",
+    "compute_qn_per_atom",
     "compute_rdf",
     "compute_structure_factor",
     "convert_frequency",
