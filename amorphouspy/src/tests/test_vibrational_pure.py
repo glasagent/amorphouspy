@@ -1,10 +1,17 @@
 """Tests for pure functions in amorphouspy.properties.vibrational."""
 
 import itertools
+from pathlib import Path
 
 import numpy as np
 import pytest
-from amorphouspy.properties.vibrational import convert_frequency
+from amorphouspy.properties.structural.qn import compute_qn
+from amorphouspy.properties.vibrational import classify_vibrational_groups, convert_frequency
+from ase import Atoms
+from ase.io import read
+
+DATA_DIR = Path(__file__).parent / "data"
+SI_O_BOND = 1.6
 
 UNITS = ["THz", "cm-1", "meV", "rad/ps"]
 
@@ -75,3 +82,109 @@ def test_convert_frequency_unknown_unit_raises(from_unit, to_unit):
     """An unknown unit raises ValueError naming the allowed units."""
     with pytest.raises(ValueError, match="allowed units"):
         convert_frequency(1.0, from_unit, to_unit)
+
+
+# ---------------------------------------------------------------------------
+# classify_vibrational_groups
+# ---------------------------------------------------------------------------
+
+
+def _si2o7_dimer() -> Atoms:
+    """Two Si sharing one bridging O (position 2), each with three terminal O, in a large box."""
+    si1 = np.array([10.0, 10.0, 10.0])
+    si2 = si1 + np.array([2 * SI_O_BOND, 0.0, 0.0])
+    bridging = si1 + np.array([SI_O_BOND, 0.0, 0.0])
+    terminals_1 = [si1 + d for d in ([-SI_O_BOND, 0, 0], [0, SI_O_BOND, 0], [0, 0, SI_O_BOND])]
+    terminals_2 = [si2 + d for d in ([SI_O_BOND, 0, 0], [0, SI_O_BOND, 0], [0, 0, SI_O_BOND])]
+    positions = [si1, si2, bridging, *terminals_1, *terminals_2]
+    return Atoms("Si2O7", positions=positions, cell=[30.0, 30.0, 30.0], pbc=True)
+
+
+def _assert_partition(groups: dict[str, np.ndarray], expected: np.ndarray) -> None:
+    """The groups are sorted int64 arrays that together hold every expected position exactly once."""
+    for idx in groups.values():
+        assert idx.dtype == np.int64
+        assert len(idx) > 0
+        np.testing.assert_array_equal(idx, np.sort(idx))
+    combined = np.concatenate(list(groups.values())) if groups else np.array([], dtype=np.int64)
+    np.testing.assert_array_equal(np.sort(combined), np.sort(expected))
+
+
+def _assert_all_partitions(atoms: Atoms, groups: dict[str, dict[str, np.ndarray]], former_types: list[int]) -> None:
+    numbers = atoms.get_atomic_numbers()
+    _assert_partition(groups["element"], np.arange(len(atoms)))
+    _assert_partition(groups["oxygen"], np.flatnonzero(numbers == 8))
+    _assert_partition(groups["qn"], np.flatnonzero(np.isin(numbers, former_types)))
+
+
+def test_classify_vibrational_groups_si2o7_dimer():
+    """Isolated Si2O7: one BO, six NBO, both Si are Q1."""
+    groups = classify_vibrational_groups(_si2o7_dimer(), cutoff=2.0, former_types=[14])
+    assert set(groups["element"]) == {"Si", "O"}
+    np.testing.assert_array_equal(groups["element"]["Si"], [0, 1])
+    np.testing.assert_array_equal(groups["element"]["O"], np.arange(2, 9))
+    assert set(groups["oxygen"]) == {"O_BO", "O_NBO"}
+    np.testing.assert_array_equal(groups["oxygen"]["O_BO"], [2])
+    np.testing.assert_array_equal(groups["oxygen"]["O_NBO"], [3, 4, 5, 6, 7, 8])
+    assert set(groups["qn"]) == {"Si_Q1"}
+    np.testing.assert_array_equal(groups["qn"]["Si_Q1"], [0, 1])
+    _assert_all_partitions(_si2o7_dimer(), groups, [14])
+
+
+def test_classify_vibrational_groups_sio2_glass_defaults_match_compute_qn():
+    """Default cutoffs and formers partition the glass and reproduce compute_qn's totals."""
+    atoms = read(DATA_DIR / "SiO2_glass_300_atoms.xyz")
+    groups = classify_vibrational_groups(atoms)
+    _assert_all_partitions(atoms, groups, [14])
+    assert set(groups["element"]) == {"Si", "O"}
+
+    # Same cutoff as the default derivation (first Si-O RDF minimum), checked for consistency below.
+    explicit = classify_vibrational_groups(atoms, cutoff={(14, 8): 1.816}, former_types=[14])
+    for key in ("oxygen", "qn"):
+        assert explicit[key].keys() == groups[key].keys()
+        for label in groups[key]:
+            np.testing.assert_array_equal(explicit[key][label], groups[key][label])
+
+    total_qn, _partial_qn = compute_qn(atoms, cutoff={(14, 8): 1.816}, former_types=[14], o_type=8)
+    sizes = {n: len(groups["qn"].get(f"Si_Q{n}", [])) for n in total_qn}
+    assert sizes == {n: int(count) for n, count in total_qn.items()}
+
+
+def test_classify_vibrational_groups_shuffled_ids_give_positions():
+    """A shuffled, non-contiguous "id" array still yields positions, not IDs."""
+    atoms = _si2o7_dimer()
+    reference = classify_vibrational_groups(atoms, cutoff=2.0, former_types=[14])
+    rng = np.random.default_rng(42)
+    atoms.arrays["id"] = rng.permutation(np.arange(1, len(atoms) + 1)) * 7 + 100
+    groups = classify_vibrational_groups(atoms, cutoff=2.0, former_types=[14])
+    for key in ("element", "oxygen", "qn"):
+        assert groups[key].keys() == reference[key].keys()
+        for label in reference[key]:
+            np.testing.assert_array_equal(groups[key][label], reference[key][label])
+
+
+def test_classify_vibrational_groups_duplicate_ids_raise():
+    """Duplicate IDs cannot be mapped to positions."""
+    atoms = _si2o7_dimer()
+    atoms.arrays["id"] = np.ones(len(atoms), dtype=np.int64)
+    with pytest.raises(ValueError, match="duplicate"):
+        classify_vibrational_groups(atoms, cutoff=2.0, former_types=[14])
+
+
+def test_classify_vibrational_groups_no_oxygen():
+    """Without oxygen only the element grouping is filled."""
+    atoms = Atoms("Si2Na", positions=[[1, 1, 1], [4, 4, 4], [7, 7, 7]], cell=[20, 20, 20], pbc=True)
+    groups = classify_vibrational_groups(atoms)
+    assert groups["oxygen"] == {}
+    assert groups["qn"] == {}
+    _assert_partition(groups["element"], np.arange(3))
+
+
+def test_classify_vibrational_groups_no_formers():
+    """With oxygen but no formers, qn is empty and every O is free."""
+    atoms = Atoms("Na2O", positions=[[5, 5, 5], [9, 5, 5], [7, 5, 5]], cell=[20, 20, 20], pbc=True)
+    groups = classify_vibrational_groups(atoms)
+    assert groups["qn"] == {}
+    assert set(groups["oxygen"]) == {"O_free"}
+    np.testing.assert_array_equal(groups["oxygen"]["O_free"], [2])
+    _assert_partition(groups["element"], np.arange(3))
