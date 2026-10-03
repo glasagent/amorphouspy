@@ -55,6 +55,7 @@ from amorphouspy.properties.structural.qn import (
 from amorphouspy.properties.structural.rdf import compute_coordination, compute_rdf
 from amorphouspy.properties.structural.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.properties.structural.structure_factor import compute_structure_factor
+from amorphouspy.properties.vibrational import convert_frequency
 from amorphouspy.properties.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
 
 __all__ = [
@@ -78,6 +79,7 @@ __all__ = [
     "compute_qn_and_classify",
     "compute_rdf",
     "compute_structure_factor",
+    "convert_frequency",
     "count_distribution",
     "create_random_atoms",
     "cte_from_fluctuations_simulation",
