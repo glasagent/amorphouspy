@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
+import numpy as np
 import pandas as pd
 from ase.atoms import Atoms
 from lammpsparser.compatibility.file import lammps_file_interface_function
@@ -106,6 +107,35 @@ def run_lammps_with_error_capture(working_directory: str, **kwargs: Any) -> dict
     return parsed_output
 
 
+def _nve_initial_temperature(
+    structure: Atoms, initial_temperature: float | None, *, uses_thermostat_or_barostat: bool
+) -> float:
+    """Validate the settings of an NVE run and return its initial temperature.
+
+    Args:
+        structure: The atomic structure to simulate.
+        initial_temperature: Requested initial temperature. None means 0, i.e. keep the velocities of ``structure``.
+        uses_thermostat_or_barostat: Whether a pressure, pressure ramp, temperature ramp or Langevin thermostat
+            was requested.
+
+    Returns:
+        The initial temperature to pass to the parser (0 keeps the velocities of ``structure``).
+
+    Raises:
+        ValueError: If ``uses_thermostat_or_barostat`` is True, or if the initial temperature is not positive and
+            ``structure`` carries no non-zero velocities.
+    """
+    if uses_thermostat_or_barostat:
+        msg = "nve cannot be combined with pressure, pressure_end, temperature_end or langevin."
+        raise ValueError(msg)
+    if initial_temperature is None:
+        initial_temperature = 0.0
+    if initial_temperature <= 0 and np.allclose(structure.get_velocities(), 0.0):
+        msg = "nve with initial_temperature 0 needs a structure that carries non-zero velocities."
+        raise ValueError(msg)
+    return initial_temperature
+
+
 def _run_lammps_md(
     structure: Atoms,
     potential: LammpsPotential,
@@ -122,6 +152,7 @@ def _run_lammps_md(
     n_print_thermo: int | None = None,
     input_control_file: dict[str, Any] | None = None,
     langevin: bool = False,
+    nve: bool = False,
     seed: int | None = 12345,
     tmp_working_directory: str | Path | None = None,
     dump_final_structure: bool = True,
@@ -132,12 +163,14 @@ def _run_lammps_md(
         structure: The atomic structure to simulate.
         potential: The potential file to be used for the simulation.
         temperature: Start temperature (or constant temperature when ``temperature_end`` is None).
+            Unused when ``nve`` is True.
         n_ionic_steps: Number of MD steps to run.
         timestep: Time step for integration in femtoseconds.
         initial_temperature: Initial temperature for velocity initialization. If None, the initial
             temperature will be twice the target temperature (which would go immediately down to the target temperature
             as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
             initial velocity given in structure will be used and seed to initialize velocities will be ignored).
+            When ``nve`` is True, None means 0, so the velocities carried by ``structure`` are kept.
         temperature_end: End temperature for a linear temperature ramp. If None, temperature is held constant.
         pressure: Start pressure in GPa for NPT simulations. If None, NVT is used.
             A scalar selects isotropic NPT. A six-element list selects anisotropic
@@ -153,6 +186,10 @@ def _run_lammps_md(
         input_control_file: Optional LAMMPS input overrides merged on top of the
             default generated controls.
         langevin: Whether to use Langevin dynamics for thermostats. Cannot be used in combination with ``pressure_end``.
+        nve: Whether to run an unthermostatted microcanonical (``fix nve``) simulation. No thermostat or barostat
+            is applied. The run starts from the velocities in ``structure`` unless a positive
+            ``initial_temperature`` is given, in which case velocities are created at that temperature first.
+            Cannot be combined with ``pressure``, ``pressure_end``, ``temperature_end`` or ``langevin``.
         seed: Random seed for velocity initialization (default is 12345). May be None
             when the backend should choose a random seed. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
@@ -172,7 +209,20 @@ def _run_lammps_md(
             - structure_final: The final atomic structure.
             - parsed_output: The parsed output dictionary.
 
+    Raises:
+        ValueError: If ``nve`` is combined with ``pressure``, ``pressure_end``, ``temperature_end`` or
+            ``langevin``; if ``nve`` is used with a non-positive ``initial_temperature`` and ``structure``
+            carries no non-zero velocities; if ``pressure_end`` is given without a scalar ``pressure``;
+            or if ``pressure_end`` is combined with ``langevin``.
+
     """
+    if nve:
+        uses_thermostat_or_barostat = (
+            pressure is not None or pressure_end is not None or temperature_end is not None or langevin
+        )
+        initial_temperature = _nve_initial_temperature(
+            structure, initial_temperature, uses_thermostat_or_barostat=uses_thermostat_or_barostat
+        )
     if pressure_end is not None and pressure is None:
         msg = "pressure must be set when pressure_end is specified."
         raise ValueError(msg)
@@ -229,11 +279,13 @@ def _run_lammps_md(
         # Sets up the LAMMPS simulations
         parsed_output = run_lammps_with_error_capture(
             working_directory=tmp_path,
-            structure=structure,
+            # lammpsparser rescales the velocities of the structure it receives in place (Å/fs -> Å/ps),
+            # so it gets a copy to keep the caller's velocities valid for a later run.
+            structure=structure.copy(),
             potential=cast("Any", potential),
             calc_mode="md",
             calc_kwargs={
-                "temperature": temp_setting,
+                "temperature": None if nve else temp_setting,
                 "n_ionic_steps": n_ionic_steps,
                 "time_step": timestep,
                 "n_print": effective_n_dump,

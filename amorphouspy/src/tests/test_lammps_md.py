@@ -76,9 +76,22 @@ def test_md_simulation_forwards_all_runtime_arguments(mock_run_md: MagicMock, tm
     assert kwargs["n_dump"] == 50
     assert kwargs["n_print_thermo"] == 10
     assert kwargs["langevin"] is True
+    assert kwargs["nve"] is False
     assert kwargs["seed"] == 987
     assert kwargs["server_kwargs"] == {"cores": 2}
     assert kwargs["tmp_working_directory"] == tmp_path
+
+
+@patch("amorphouspy.lammps.md._run_lammps_md")
+def test_md_simulation_forwards_nve(mock_run_md: MagicMock) -> None:
+    """nve=True is forwarded and initial_temperature is left to the runner (keep structure velocities)."""
+    mock_run_md.return_value = (Atoms("Si"), {"generic": {}})
+
+    md_simulation(structure=Atoms("Si"), potential=_potential(), temperature_sim=300.0, nve=True)
+
+    _, kwargs = mock_run_md.call_args
+    assert kwargs["nve"] is True
+    assert kwargs["initial_temperature"] is None
 
 
 @patch("amorphouspy.lammps.md._run_lammps_md")
