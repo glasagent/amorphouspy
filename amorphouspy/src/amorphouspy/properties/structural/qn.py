@@ -64,9 +64,10 @@ def _count_bridging_per_former(
     o_type: int,
     id_to_type: dict[int, int],
     bridging_o_ids: set[int],
-) -> tuple[dict[int, int], dict[int, dict[int, int]]]:
+) -> tuple[dict[int, int], dict[int, dict[int, int]], dict[int, int]]:
     total_qn_counts: dict[int, int] = defaultdict(int)
     partial_qn_counts = {f_type: defaultdict(int) for f_type in former_types}
+    qn_per_atom: dict[int, int] = {}
     for central_id, nn_ids in get_neighbors(
         structure,
         cutoff=cutoff,
@@ -77,11 +78,57 @@ def _count_bridging_per_former(
         if atom_type not in former_types:
             continue
         bridging_count = sum(1 for nid in nn_ids if nid in bridging_o_ids)
+        qn_per_atom[central_id] = bridging_count
         total_qn_counts[bridging_count] += 1
         partial_qn_counts[atom_type][bridging_count] += 1
     total_qn_norm = {n: total_qn_counts.get(n, 0) for n in range(7)}
     partial_plain = {f_type: {n: partial_qn_counts[f_type].get(n, 0) for n in range(7)} for f_type in former_types}
-    return total_qn_norm, partial_plain
+    return total_qn_norm, partial_plain, qn_per_atom
+
+
+def _qn_single_pass(
+    structure: Atoms,
+    cutoff: CutoffSpec,
+    former_types: list[int],
+    o_type: int,
+) -> tuple[dict[int, int], dict[int, dict[int, int]], dict[int, str], dict[int, int]]:
+    """Classify oxygens and count bridging oxygens per former in one pass.
+
+    Shared core of :func:`compute_qn_and_classify` and :func:`compute_qn_per_atom`.
+    Atom IDs are taken from the ``"id"`` array if present, else 1-based indices.
+
+    Args:
+        structure: The atomic structure as ASE object.
+        cutoff: Cutoff radius for former-O neighbor search (Å), either a
+            scalar or a per-pair dict ``{(z_i, z_j): r_cut}``.
+        former_types: Atom types (atomic numbers) considered as formers.
+        o_type: Atom type (atomic number) considered as oxygen.
+
+    Returns:
+        A 4-tuple containing:
+            total_qn: Total Qn histogram as integer counts for n in 0..6.
+            partial_qn: Partial Qn histogram per former type, same bins.
+            oxygen_classes: Mapping from real atom ID to oxygen class string.
+            qn_per_atom: Mapping from real former atom ID to its number of
+                bridging oxygens (not capped at 6).
+
+    Example:
+        >>> total_qn, partial_qn, o_classes, qn_per_atom = _qn_single_pass(
+        ...     atoms, cutoff=2.0, former_types=[14], o_type=8
+        ... )
+
+    """
+    types = structure.get_atomic_numbers()
+    if "id" in structure.arrays:
+        raw_ids = structure.arrays["id"].astype(np.int64)
+    else:
+        raw_ids = np.arange(1, len(structure) + 1, dtype=np.int64)
+    id_to_type = {int(aid): int(t) for aid, t in zip(raw_ids, types, strict=False)}
+    oxygen_classes, bridging_o_ids = _classify_oxygens_raw(structure, cutoff, former_types, o_type, id_to_type)
+    total_qn_norm, partial_plain, qn_per_atom = _count_bridging_per_former(
+        structure, cutoff, former_types, o_type, id_to_type, bridging_o_ids
+    )
+    return total_qn_norm, partial_plain, oxygen_classes, qn_per_atom
 
 
 def compute_qn(
@@ -150,15 +197,8 @@ def compute_qn_and_classify(
     """
     if isinstance(structure, list):
         structure = cast("Atoms", structure[0])
-    types = structure.get_atomic_numbers()
-    if "id" in structure.arrays:
-        raw_ids = structure.arrays["id"].astype(np.int64)
-    else:
-        raw_ids = np.arange(1, len(structure) + 1, dtype=np.int64)
-    id_to_type = {int(aid): int(t) for aid, t in zip(raw_ids, types, strict=False)}
-    oxygen_classes, bridging_o_ids = _classify_oxygens_raw(structure, cutoff, former_types, o_type, id_to_type)
-    total_qn_norm, partial_plain = _count_bridging_per_former(
-        structure, cutoff, former_types, o_type, id_to_type, bridging_o_ids
+    total_qn_norm, partial_plain, oxygen_classes, _qn_per_atom = _qn_single_pass(
+        structure, cutoff, former_types, o_type
     )
     total_qn_float: dict[int, float] = {n: float(v) for n, v in total_qn_norm.items()}
     partial_float: dict[int, dict[int, float]] = {
@@ -196,6 +236,39 @@ def classify_oxygens(
     """
     _total_qn, _partial_qn, o_classes = compute_qn_and_classify(structure, cutoff, former_types, o_type)
     return o_classes
+
+
+def compute_qn_per_atom(
+    structure: Atoms,
+    cutoff: CutoffSpec,
+    former_types: list[int],
+    o_type: int,
+) -> dict[int, int]:
+    """Return the Qn (number of bridging oxygens) of every network-former atom.
+
+    Uses the same neighbour search pass as :func:`compute_qn_and_classify`, so
+    the histogram of the returned values reproduces its Q^n distribution.
+
+    Args:
+        structure: The atomic structure as ASE object.
+        cutoff: Cutoff radius for former-O neighbor search (Å), either a
+            scalar or a per-pair dict ``{(z_i, z_j): r_cut}``.
+        former_types: Atom types (atomic numbers) considered as formers.
+        o_type: Atom type (atomic number) considered as oxygen.
+
+    Returns:
+        A mapping from real atom ID (the ``"id"`` array if present, else
+        1-based indices) to the number of bridging oxygens (``"BO"`` or
+        ``"tri"``) bonded to that former. Every former atom is included,
+        formers without oxygen neighbours as ``0``. Values are not capped,
+        so counts above 6 are returned as-is.
+
+    Example:
+        >>> qn_per_atom = compute_qn_per_atom(atoms, cutoff=2.0, former_types=[14], o_type=8)
+
+    """
+    _total_qn, _partial_qn, _o_classes, qn_per_atom = _qn_single_pass(structure, cutoff, former_types, o_type)
+    return qn_per_atom
 
 
 def compute_network_connectivity(qn_dist: dict[int, int | float]) -> float:
