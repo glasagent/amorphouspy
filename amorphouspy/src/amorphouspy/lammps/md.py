@@ -25,6 +25,7 @@ def md_simulation(
     pressure: float | None = None,
     pressure_end: float | None = None,
     langevin: bool = False,
+    nve: bool = False,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
     input_control_file: dict | None = None,
@@ -51,6 +52,10 @@ def md_simulation(
         pressure_end: End pressure in GPa for a linear pressure ramp. Requires ``pressure`` to be set.
             If None, pressure is held constant at ``pressure``.
         langevin: Whether to use Langevin dynamics.
+        nve: Whether to run an unthermostatted microcanonical (NVE) simulation. ``temperature_sim`` is then
+            unused and the run starts from the velocities carried by ``structure``, which must be non-zero
+            (e.g. the output structure of a previous NVT run). Cannot be combined with ``temperature_end``,
+            ``pressure``, ``pressure_end`` or ``langevin``.
         seed: Random seed for velocity initialization (default is 12345). Ignored if ``initial_temperature`` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
             Per default (None), the directory is located in the operating systems location for temporary files.
@@ -75,12 +80,13 @@ def md_simulation(
         temperature_end=temperature_end,
         n_ionic_steps=production_steps,
         timestep=timestep,
-        initial_temperature=temperature_sim,
+        initial_temperature=None if nve else temperature_sim,
         pressure=pressure,
         pressure_end=pressure_end,
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
         langevin=langevin,
+        nve=nve,
         seed=seed,
         server_kwargs=server_kwargs,
         input_control_file=input_control_file,
