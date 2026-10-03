@@ -110,6 +110,7 @@ def classify_vibrational_groups(
         ValueError: If the ``"id"`` array contains duplicate IDs.
 
     Example:
+        ```pycon
         >>> from ase import Atoms
         >>> d = 1.6
         >>> positions = [[10, 10, 10], [10 + 2 * d, 10, 10], [10 + d, 10, 10],
@@ -119,6 +120,8 @@ def classify_vibrational_groups(
         >>> groups = classify_vibrational_groups(dimer, cutoff=2.0, former_types=[14])
         >>> groups["element"]["Si"].tolist(), groups["oxygen"]["O_BO"].tolist(), groups["qn"]["Si_Q1"].tolist()
         ([0, 1], [2], [0, 1])
+
+        ```
     """
     n_atoms = len(structure)
     if "id" in structure.arrays:
