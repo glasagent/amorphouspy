@@ -568,6 +568,41 @@ def _build_cutoff_map(
     return cutoff_map
 
 
+def _network_former_types(type_map: dict[int, str], network_formers: set[str]) -> list[int]:
+    """Return the atomic numbers of the network formers, in ``type_map`` order.
+
+    Args:
+        type_map: Mapping from atomic number to element symbol.
+        network_formers: Set of network-former element symbols.
+
+    Returns:
+        Atomic numbers whose symbol is in ``network_formers``.
+
+    """
+    return [z for z, sym in type_map.items() if sym in network_formers]
+
+
+def _former_oxygen_pair_cutoffs(
+    former_types: list[int],
+    o_z: int,
+    type_map: dict[int, str],
+    cutoff_map: dict[str, float],
+) -> dict[tuple[int, int], float]:
+    """Build the per-pair former-O cutoff dict used for the Q^n analysis.
+
+    Args:
+        former_types: Atomic numbers of network formers.
+        o_z: Atomic number of oxygen.
+        type_map: Mapping from atomic number to element symbol.
+        cutoff_map: Element symbol → coordination cutoff (Å); missing formers fall back to 2.0 Å.
+
+    Returns:
+        Dict ``{(z_former, z_O): r_cut}`` in Å.
+
+    """
+    return {(f_z, o_z): cutoff_map.get(type_map[f_z], 2.0) for f_z in former_types}
+
+
 def _compute_coordination_data(
     atoms: Atoms,
     type_map: dict[int, str],
@@ -655,11 +690,8 @@ def _compute_network_data(
         # Build per-pair cutoff dict so each former-O pair uses the
         # correct cutoff rather than a single scalar derived from only
         # the first former's RDF.
-        pair_cutoffs: dict[tuple[int, int], float] = {}
         o_z = o_type[0]
-        for f_z in former_types:
-            f_sym = type_map[f_z]
-            pair_cutoffs[(f_z, o_z)] = cutoff_map.get(f_sym, 2.0)
+        pair_cutoffs = _former_oxygen_pair_cutoffs(former_types, o_z, type_map, cutoff_map)
 
         qn_dist_raw, qn_dist_partial_raw, o_classes = compute_qn_and_classify(atoms, pair_cutoffs, former_types, o_z)
         for aid, cls in o_classes.items():
@@ -852,7 +884,7 @@ def analyze_structure(
     unique_z = np.unique(atoms.get_atomic_numbers())
     density = _compute_density(atoms)
     type_map, network_formers, modifiers, _oxygen_present = _classify_elements(unique_z)
-    former_types = [z for z, sym in type_map.items() if sym in network_formers]
+    former_types = _network_former_types(type_map, network_formers)
     modifier_types = [z for z, sym in type_map.items() if sym in modifiers]
     o_type = [z for z, sym in type_map.items() if sym == "O"]
 
