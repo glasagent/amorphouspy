@@ -5,6 +5,7 @@ lmp_tmp_directory/
 tutorial_ensemble_cache/
 tmp_cte*/
 *.dat
+!data/Fossati2021_SiO2_VDOS_*.dat
 *.log
 *.h5
 .nfs*
