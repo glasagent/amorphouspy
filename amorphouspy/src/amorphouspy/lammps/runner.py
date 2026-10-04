@@ -198,7 +198,6 @@ def _run_lammps_md(
             With the specification of tmp_working_directory, a uniquely-named sub-directory is created inside
             it and left in place afterwards (the caller owns it and is responsible for removing it), so the run
             artefacts such as ``log.lammps`` remain available. tmp_working_directory needs to exist beforehand.
-            Data will be cleaned after the simulation is finished.
         dump_final_structure: Whether to dump the final structure to a file. If False, dumping happens as specified.
             If True, adds an additional dump command to ensure that the final structure is always dumped. Internal
             check avoids that the same structure is dumped twice if the final step is already a dump step. Defaults

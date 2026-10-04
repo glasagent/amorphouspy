@@ -58,10 +58,12 @@ def md_simulation(
             ``pressure``, ``pressure_end`` or ``langevin``.
         seed: Random seed for velocity initialization (default is 12345). Ignored if ``initial_temperature`` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
-            Per default (None), the directory is located in the operating systems location for temporary files.
-            With the specification of tmp_working_directory, the temporary directory is created in the specified
-            location. Therefore, tmp_working_directory needs to exist beforehand. Data will be cleaned after the
-            simulation is finished.
+            Per default (None), the directory is located in the operating systems location for temporary files
+            and is removed automatically once the run finishes.
+            With the specification of tmp_working_directory, a uniquely-named sub-directory is created inside
+            it and left in place afterwards (the caller owns it and is responsible for removing it), so the run
+            artefacts such as ``log.lammps`` and the dump files remain available. tmp_working_directory needs to
+            exist beforehand.
         input_control_file: Optional LAMMPS input overrides merged on top of the
             default generated controls.
 
