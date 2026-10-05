@@ -72,6 +72,7 @@ def test_diffusion_simulation_returns_log_linear_results():
             crossover_ps=10.0,
             points_per_decade=9,
             linear_interval_ps=2.0,
+            thermostat="nose_hoover",
         )
 
     assert mock_md.call_count == 3
@@ -85,6 +86,29 @@ def test_diffusion_simulation_returns_log_linear_results():
     assert set(out["diffusion"]["per_species"]) == {"Na", "Si", "O"}
 
 
+@pytest.mark.parametrize(
+    ("thermostat", "expected"),
+    [("nose_hoover", ["nvt_langevin", "nvt", "nvt"]), ("langevin", ["nvt_langevin", "nvt_langevin", "nvt_langevin"])],
+)
+def test_diffusion_simulation_stages_use_thermostat_ensembles(thermostat, expected):
+    """Stage 0 always thermalises with Langevin; the thermostat selects the equilibration and production ensemble."""
+    structure = _make_structure()
+    generic = _make_generic_block(structure, n_frames=len(_expected_schedule(60_000, 1.0, 10.0, 9, 2.0)))
+
+    with patch("amorphouspy.properties.diffusion._run_lammps_md", autospec=True) as mock_md:
+        mock_md.return_value = (structure, {"generic": generic})
+        diffusion_simulation(
+            structure,
+            _minimal_potential(),
+            production_steps=60_000,
+            crossover_ps=10.0,
+            linear_interval_ps=2.0,
+            thermostat=thermostat,
+        )
+
+    assert [c.kwargs["ensemble"] for c in mock_md.call_args_list] == expected
+
+
 def test_diffusion_simulation_injects_log_variable():
     """The production stage injects the decade-log dump variable, reset_timestep and sorted dump_modify."""
     structure = _make_structure()
@@ -94,7 +118,12 @@ def test_diffusion_simulation_injects_log_variable():
     with patch("amorphouspy.properties.diffusion._run_lammps_md", autospec=True) as mock_md:
         mock_md.return_value = (structure, {"generic": generic})
         diffusion_simulation(
-            structure, _minimal_potential(), production_steps=60_000, crossover_ps=10.0, linear_interval_ps=2.0
+            structure,
+            _minimal_potential(),
+            production_steps=60_000,
+            crossover_ps=10.0,
+            linear_interval_ps=2.0,
+            thermostat="nose_hoover",
         )
 
     production_call = mock_md.call_args_list[-1]
@@ -120,6 +149,7 @@ def test_diffusion_simulation_saves_trajectory(tmp_path):
             crossover_ps=10.0,
             linear_interval_ps=2.0,
             save_trajectory=path,
+            thermostat="nose_hoover",
         )
 
     assert out["trajectory_path"] == str(path)
@@ -137,4 +167,4 @@ def test_diffusion_simulation_empty_potential_raises():
     """An empty potential is rejected before any MD is launched."""
     structure = _make_structure()
     with pytest.raises(ValueError, match="No matching potential"):
-        diffusion_simulation(structure, pd.DataFrame())
+        diffusion_simulation(structure, pd.DataFrame(), thermostat="nose_hoover")

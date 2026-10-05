@@ -46,6 +46,7 @@ def test_glass_simulation() -> None:
             n_dump=None,
             n_print_thermo=100,
             server_kwargs=server_kwargs,
-            pressure=0,
+            ensemble="npt",
+            npt_pressure=0,
         )
         _ = delayed_future.result()

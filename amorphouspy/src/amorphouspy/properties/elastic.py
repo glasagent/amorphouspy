@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.lammps.runner import _run_lammps_md
+from amorphouspy.lammps.runner import Ensemble, _run_lammps_md
 
 
 # =========================
@@ -65,8 +65,8 @@ def _run_strained_md(structure: Atoms, strain_tensor: np.ndarray, base_kwargs: d
             - "n_dump" (int | None): Dump output frequency during the simulation.
             - "n_print_thermo" (int | None): Thermodynamic output frequency during the simulation.
             - "initial_temperature" (float): Initial temperature for the simulation.
-            - "pressure" (float | None): Target pressure for NPT simulations.
-            - "langevin" (bool): Whether to use Langevin dynamics.
+            - "npt_pressure" (float | None): Target pressure for NPT simulations.
+            - "ensemble" (str): Thermodynamic ensemble passed to ``_run_lammps_md``.
             - "seed" (int): Random seed for velocity initialization.
             - "server_kwargs" (dict | None): Additional keyword arguments for the server.
 
@@ -135,7 +135,7 @@ def elastic_simulation(
     structure: Atoms,
     potential: pd.DataFrame,
     temperature_sim: float = 300.0,
-    pressure: float | None = None,
+    npt_pressure: float | None = None,
     timestep: float = 1.0,
     equilibration_steps: int = 1_000_000,
     production_steps: int = 10_000,
@@ -144,7 +144,7 @@ def elastic_simulation(
     strain: float = 1e-3,
     server_kwargs: dict[str, Any] | None = None,
     *,
-    langevin: bool = False,
+    ensemble: Ensemble,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict[str, Any]:  # pylint: disable=too-many-positional-arguments
@@ -158,7 +158,8 @@ def elastic_simulation(
         structure: Input structure (assumed pre-equilibrated).
         potential: LAMMPS potential file.
         temperature_sim: Simulation temperature in Kelvin (default 300.0 K).
-        pressure: Target pressure for equilibration (default None, i.e., NVT).
+        npt_pressure: Target pressure in GPa. Required for the ``"npt"`` and ``"npt_langevin"`` ensembles,
+            not allowed otherwise.
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
         equilibration_steps: Number of steps for the initial equilibration phase (default 1,000,000).
         production_steps: Number of MD steps for the production run (default 10,000).
@@ -166,12 +167,16 @@ def elastic_simulation(
         n_print_thermo: Thermodynamic output frequency (default 1).
         strain: Magnitude of the strain applied for finite differences (default 1e-3).
         server_kwargs: Additional server configuration arguments.
-        langevin: Whether to use Langevin dynamics (default False).
+        ensemble: Ensemble of the equilibration and production runs, one of ``"nvt"``, ``"npt"``,
+            ``"nvt_langevin"`` or ``"npt_langevin"``.
         seed: Random seed for velocity initialization (default 12345).
         tmp_working_directory: Temporary directory for job execution.
 
     Returns:
         Dictionary containing the results. Key "result" contains the "Cij" 6x6 matrix.
+
+    Raises:
+        ValueError: If ``ensemble`` is ``"nve"``, or ``npt_pressure`` does not fit ``ensemble``.
 
     Notes:
         - The structure is first equilibrated (NPT/NVT).
@@ -185,10 +190,15 @@ def elastic_simulation(
         ...     structure=my_atoms,
         ...     potential=my_potential,
         ...     temperature_sim=300.0,
+        ...     ensemble="nvt",
         ...     strain=0.001
         ... )
 
     """
+    if ensemble == "nve":
+        msg = "elastic_simulation needs a thermostat; ensemble 'nve' is not supported."
+        raise ValueError(msg)
+
     # Stage 0: INITIAL EQUILIBRATION
     structure0, res = _run_lammps_md(
         structure=structure,
@@ -198,9 +208,9 @@ def elastic_simulation(
         n_ionic_steps=equilibration_steps,
         timestep=timestep,
         initial_temperature=temperature_sim,
-        pressure=pressure,
+        npt_pressure=npt_pressure,
         seed=seed,
-        langevin=langevin,
+        ensemble=ensemble,
         server_kwargs=server_kwargs,
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
@@ -226,8 +236,8 @@ def elastic_simulation(
         "n_ionic_steps": production_steps,
         "timestep": timestep,
         "initial_temperature": temperature_sim,
-        "pressure": pressure,
-        "langevin": langevin,
+        "npt_pressure": npt_pressure,
+        "ensemble": ensemble,
         "seed": seed,
         "server_kwargs": server_kwargs,
         "n_dump": n_dump,

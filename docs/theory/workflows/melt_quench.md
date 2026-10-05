@@ -39,6 +39,7 @@ result = melt_quench_simulation(
     cooling_rate=1e12,        # K/s
     timestep=1.0,             # fs
     # equilibration_steps=10_000,  # Override fixed stages (None → protocol defaults)
+    thermostat="nose_hoover",
 )
 
 glass = result["structure"]     # Quenched ASE Atoms
@@ -55,6 +56,7 @@ glass = result["structure"]     # Quenched ASE Atoms
 | `cooling_rate` | `float` | `1e12` | Cooling rate in K/s |
 | `equilibration_steps` | `int \| None` | `None` | Override for all fixed equilibration stages inside the protocol. If `None`, each protocol uses its own production defaults. |
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
+| `thermostat` | `str` | — (required) | `"nose_hoover"` or `"langevin"`; applies to every protocol stage after stage 0. Whether a stage runs NVT or NPT is fixed by the protocol |
 | `pre_equilibrate` | `bool` | `True` | Run the 10,000-step Langevin + `nve/limit` stage 0 at `temperature_high`. Needed for randomly placed structures; set `False` when the starting structure is already equilibrated (its history entry is then `None`). |
 
 **Returns:** A dictionary with:
@@ -78,6 +80,7 @@ from amorphouspy import melt_quench_simulation
 result = melt_quench_simulation(
     structure=atoms,
     potential=potential,  # potential name determines the protocol (pmmcs, bjp, shik, bmp-*)
+    thermostat="nose_hoover",
 )
 ```
 

@@ -66,6 +66,7 @@ out = diffusion_simulation(
     structure, potential, temperature_sim=3000.0,
     crossover_ps=100.0, linear_interval_ps=10.0,
     save_trajectory="trajectory.xyz.gz",
+    thermostat="nose_hoover",
 )
 D_na = out["diffusion"]["per_species"]["Na"]["diffusion_cm2_s"]
 
