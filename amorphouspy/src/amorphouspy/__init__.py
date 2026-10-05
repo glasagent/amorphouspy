@@ -56,7 +56,12 @@ from amorphouspy.properties.structural.qn import (
 from amorphouspy.properties.structural.rdf import compute_coordination, compute_rdf
 from amorphouspy.properties.structural.rings import compute_guttmann_rings, generate_bond_length_dict
 from amorphouspy.properties.structural.structure_factor import compute_structure_factor
-from amorphouspy.properties.vibrational import classify_vibrational_groups, convert_frequency
+from amorphouspy.properties.vibrational import (
+    classify_vibrational_groups,
+    compute_partial_vdos,
+    compute_vdos_from_velocities,
+    convert_frequency,
+)
 from amorphouspy.properties.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
 
 __all__ = [
@@ -76,12 +81,14 @@ __all__ = [
     "compute_guttmann_rings",
     "compute_msd",
     "compute_network_connectivity",
+    "compute_partial_vdos",
     "compute_projected_rdf",
     "compute_qn",
     "compute_qn_and_classify",
     "compute_qn_per_atom",
     "compute_rdf",
     "compute_structure_factor",
+    "compute_vdos_from_velocities",
     "convert_frequency",
     "count_distribution",
     "create_random_atoms",
