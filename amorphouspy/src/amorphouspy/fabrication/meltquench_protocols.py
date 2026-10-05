@@ -28,6 +28,8 @@ DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
     "yang2026": 4000.0,
 }
 
+PRE_EQUILIBRATION_STEPS = 10_000
+
 # Dump interval (in fs) for the structural-averaging sampling stage.
 # 1000 fs = 1 ps between frames -- well beyond the longest bond-vibration
 # periods in oxide glasses:
@@ -113,7 +115,7 @@ def _pre_equilibration_stage(
     structure, parsed = run(
         structure=params.structure,
         temperature=params.temperature_high,
-        n_ionic_steps=10_000,
+        n_ionic_steps=PRE_EQUILIBRATION_STEPS,
         initial_temperature=0,
         pressure=None,
         langevin=False,
@@ -590,3 +592,82 @@ PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, list[dict | None]]]] = {
     "bmp": bmp_protocol,  # Use the same protocol for both BMP variants, which only differ in the harmonic vs. SHRM
     "yang2026": yang2026_protocol,
 }
+
+
+def resolve_protocol_name(potential_name: str) -> str:
+    """Map a potential name (LAMMPS ``Name`` or API identifier) to its ``PROTOCOL_MAP`` key.
+
+    Raises:
+        ValueError: If no protocol exists for *potential_name*.
+    """
+    name = potential_name.lower()
+    if name in {"bmp-screened-harmonic", "bmp-harmonic"}:
+        return "bmp"
+    if name.startswith("du_teter"):
+        return "du/teter"
+    if name not in PROTOCOL_MAP:
+        available = ", ".join(PROTOCOL_MAP.keys())
+        msg = f"Unknown potential: {name}. Available protocols: {available}"
+        raise ValueError(msg)
+    return name
+
+
+def compute_cooling_steps(temperature_high: float, temperature_low: float, timestep: float, cooling_rate: float) -> int:
+    """Number of MD steps needed to cool from *temperature_high* to *temperature_low* at *cooling_rate* (K/s)."""
+    seconds_to_femtos = 1e15
+    return int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
+
+
+def recording_runner(stages: list[dict[str, Any]], runner: Callable[..., Any] | None) -> Callable[..., Any]:
+    """Wrap *runner* so every MD stage appends ``n_steps``/``temperature_start``/``temperature_end`` to *stages*.
+
+    With ``runner=None`` no MD is run and the input structure is passed through (dry run).
+    """
+
+    def run(**kwargs: Any) -> tuple[Atoms, dict]:  # noqa: ANN401
+        t_start = float(kwargs["temperature"])
+        t_end = kwargs.get("temperature_end")
+        stages.append(
+            {
+                "n_steps": int(kwargs["n_ionic_steps"]),
+                "temperature_start": t_start,
+                "temperature_end": t_start if t_end is None else float(t_end),
+            }
+        )
+        if runner is None:
+            return kwargs["structure"], {}
+        return runner(**kwargs)
+
+    return run
+
+
+def protocol_stage_schedule(
+    potential_name: str,
+    *,
+    temperature_high: float,
+    temperature_low: float,
+    cooling_rate: float,
+    timestep: float = 1.0,
+    equilibration_steps: int | None = None,
+    pre_equilibrate: bool = True,
+) -> list[dict[str, Any]]:
+    """Return the MD stages a melt-quench protocol runs, without running any MD.
+
+    The protocol function is replayed with a recording dry-run runner, so the
+    schedule always matches what :func:`melt_quench_simulation` executes.
+    """
+    params = MeltQuenchParams(
+        structure=Atoms(),
+        potential=pd.DataFrame(),
+        temperature_high=temperature_high,
+        temperature_low=temperature_low,
+        cooling_steps=compute_cooling_steps(temperature_high, temperature_low, timestep, cooling_rate),
+        timestep=timestep,
+        langevin=False,
+        seed=0,
+        equilibration_steps=equilibration_steps,
+        pre_equilibrate=pre_equilibrate,
+    )
+    stages: list[dict[str, Any]] = []
+    PROTOCOL_MAP[resolve_protocol_name(potential_name)](recording_runner(stages, None), params)
+    return stages

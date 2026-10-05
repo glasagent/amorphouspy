@@ -331,6 +331,16 @@ class CTETemperatureScan(_CTEBase):
         default=[300, 400, 500, 600],
         description="Temperatures in K",
     )
+    pre_equilibration_steps: int = Field(
+        default=500_000,
+        ge=0,
+        description="One-time NPT pre-equilibration steps before the scan; 0 disables it",
+    )
+    pre_equilibration_temperature: float | None = Field(
+        default=None,
+        gt=0,
+        description="Pre-equilibration temperature in K; None = highest scan temperature",
+    )
 
 
 CTEAnalysis = Annotated[
@@ -348,11 +358,11 @@ def _analysis_tag(v: dict[str, Any] | BaseModel) -> str:
     if isinstance(v, dict):
         t = str(v.get("type", ""))
         if t == "cte":
-            return f"cte_{v.get('method', 'fluctuations')}"
+            return f"cte_{v.get('method', 'temperature_scan')}"
         return t
     t = getattr(v, "type", "")
     if t == "cte":
-        return f"cte_{getattr(v, 'method', 'fluctuations')}"
+        return f"cte_{getattr(v, 'method', 'temperature_scan')}"
     return t
 
 
@@ -525,7 +535,7 @@ class JobSubmission(BaseModel):
     )
     simulation: MeltQuenchParams = Field(default_factory=MeltQuenchParams)
     analyses: list[Analysis] = Field(  # type: ignore[ty:invalid-assignment]
-        default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTEFluctuations(), ElasticAnalysis()],
+        default_factory=lambda: [StructureAnalysis(), ViscosityAnalysis(), CTETemperatureScan(), ElasticAnalysis()],
         description="Analyses to run; defaults to all available",
     )
     electrostatics: ElectrostaticsParams = Field(

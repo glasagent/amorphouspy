@@ -15,6 +15,9 @@ from amorphouspy.fabrication.meltquench_protocols import (
     DEFAULT_MELT_TEMPERATURES,
     PROTOCOL_MAP,
     MeltQuenchParams,
+    compute_cooling_steps,
+    recording_runner,
+    resolve_protocol_name,
 )
 from amorphouspy.lammps.runner import _run_lammps_md
 
@@ -69,7 +72,8 @@ def melt_quench_simulation(
             structures; set to False when the starting structure is already equilibrated.
 
     Returns:
-        A dictionary containing the simulation steps and temperature data.
+        A dictionary with the final ``structure``, the per-stage thermo ``result`` and
+        ``stages``: the executed MD stages (``n_steps``, ``temperature_start``, ``temperature_end``).
 
     Raises:
         ValueError: If the resolved `temperature_high` equals `temperature_low`
@@ -85,7 +89,6 @@ def melt_quench_simulation(
         ... )
 
     """
-    seconds_to_femtos = 1e15
     potential_name = str(potential.loc[0, "Name"]).lower()
 
     if temperature_high is None:
@@ -98,16 +101,8 @@ def melt_quench_simulation(
         )
         raise ValueError(msg)
 
-    cooling_steps = int(((temperature_high - temperature_low) / (timestep * cooling_rate)) * seconds_to_femtos)
-
-    if potential_name in {"bmp-screened-harmonic", "bmp-harmonic"}:
-        potential_name = "bmp"  # both variants share the same MD protocol
-
-    # Check if protocol exists
-    elif potential_name not in PROTOCOL_MAP:
-        available = ", ".join(PROTOCOL_MAP.keys())
-        msg = f"Unknown potential: {potential_name}. Available protocols: {available}"
-        raise ValueError(msg)
+    cooling_steps = compute_cooling_steps(temperature_high, temperature_low, timestep, cooling_rate)
+    potential_name = resolve_protocol_name(potential_name)
 
     # Create parameters dataclass
     params = MeltQuenchParams(
@@ -129,11 +124,13 @@ def melt_quench_simulation(
 
     # Run the protocol using the function-based approach
     protocol_func = PROTOCOL_MAP[potential_name]
-    structure_final, history = protocol_func(_run_lammps_md, params)
+    stages: list[dict[str, Any]] = []
+    structure_final, history = protocol_func(recording_runner(stages, _run_lammps_md), params)
 
     return {
         "structure": structure_final,
         "result": history,
+        "stages": stages,
     }
 
 

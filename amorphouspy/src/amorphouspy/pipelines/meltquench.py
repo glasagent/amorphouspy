@@ -142,6 +142,7 @@ def run_melt_quench(
         "temperature_trajectory": [float(t) for t in last_stage["temperature"]],
         "steps_trajectory": [int(s) for s in last_stage["steps"]],
         "simulation_history": mq["result"],
+        "stages": mq.get("stages", []),
         "timestep": timestep,
         "cooling_rate": int(cooling_rate),
         "temperature_high": temperature_high,

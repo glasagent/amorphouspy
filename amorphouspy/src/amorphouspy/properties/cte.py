@@ -317,6 +317,8 @@ def temperature_scan_simulation(
     temperature: list[int | float] | None = None,
     pressure: float = 1e-4,
     timestep: float = 1.0,
+    pre_equilibration_steps: int | None = 500_000,
+    pre_equilibration_temperature: float | None = None,
     equilibration_steps: int = 100_000,
     production_steps: int = 200_000,
     n_dump: int | None = None,
@@ -329,15 +331,23 @@ def temperature_scan_simulation(
 ) -> dict[Any, Any]:  # pylint: disable=too-many-positional-arguments
     """Perform a temperature scan and collect structural data.
 
-    This workflow performs a temperature scan at the given list of temperatures. For each temperature, it
-    equilibrates the structure at the target temperature and pressure and then performs a production MD
-    run to collect the average volume and box lengths, needed to compute the CTE via V-T data.
-    There differen CTEs often discussed, for example:
-    - CTE20-300: Computed between solely as the slope from the two datapoints at 20°C and 300°C.
-    - CTE20-600: Computed between solely as the slope from the two datapoints at 20°C and 600°C.
-    - CTE over other arbitrary temperature range
+    This workflow performs a temperature scan at the given list of temperatures. This is normally done by starting
+    from low to high temperatures. Based on the resulting volume-temperature data the CTE can be estimated.
+    However, depending on the previous history of the structure, it may be possible that further relaxation process
+    (e.g., shrinking simulation box volume) are activated during the temperature scan itself. This is undesired as
+    it influences the computed volume and may lead to inaccurate CTE calculations. Therefore, the workflow includes
+    an optional one-time pre-equilibration step that is applied before the actual temperature scan starts. The pre-
+    equilibration is designed to allow the structure to reach a more relaxed state such that the influence of
+    additional relaxations during the temperature scan are minimized. Because relaxation processes are faster at
+    higher temperatures, the one-time equilibration is typically performed at the highest temperature in the scan.
+    For the temperature scan itself, the workflows allows setting additional equilibration and production parameters
+    for each temperature. During the production step, the average volume and box lengths are collected.
+    There are different CTEs often discussed, for example:
+    - CTE20-300: Computed solely as the slope from the two datapoints at 20°C and 300°C.
+    - CTE20-600: Computed solely as the slope from the two datapoints at 20°C and 600°C.
+    - CTE over other arbitrary temperature ranges
     - CTE at a specific temperature based on the slope of the V-T curve at this temperature. This is often
-      doen by fitting a linear model or higher polynomials fit to the V-T data and then taking the derivative
+      done by fitting a linear model or higher polynomials to the V-T data and then taking the derivative
       at the temperature of interest.
     Because of the various options and methods to compute the CTE from V-T data, and because the actual CTE
     calculation is rather straightforward once the data is collected, we do not compute it directly in this
@@ -347,12 +357,18 @@ def temperature_scan_simulation(
     Args:
         structure: Input structure (assumed pre-equilibrated).
         potential: LAMMPS potential file.
-        temperature: Simulation temperature in Kelvin (default 300 K).
+        temperature: Simulation temperatures in Kelvin (default 300 K).
         pressure: Target pressure in GPa for NPT simulations.
             (default 10-4 GPa = 10^5 Pa = 1 bar).
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
-        equilibration_steps: Number of MD steps for the equilibration runs (default 100,000).
-        production_steps: Number of MD steps for the production runs (default 200,000).
+        pre_equilibration_steps: Number of MD steps for the one-time pre-equilibration before the temperature
+            scan starts (default 500,000). If None or 0, no pre-equilibration is performed.
+        pre_equilibration_temperature: Temperature in Kelvin at which the one-time pre-equilibration is
+            performed. If None, the highest temperature in the scan is used (default None).
+        equilibration_steps: Number of MD steps for the NPT equilibration runs that are performed at every
+            individual temperature step (default 100,000).
+        production_steps: Number of MD steps for the NPT production runs that are performed at every individual
+            temperature step (default 200,000).
         n_dump: Interval for structure dumping in MD steps for the production run. If set
             to None (default), only the last frame of the production run is dumped.
         n_print_thermo: Interval for writing thermodynamic data in MD steps (default 10).
@@ -386,10 +402,7 @@ def temperature_scan_simulation(
         }
 
     Notes:
-        - For every temperature, the structure is first pre-equilibrated with short (10 ps) NVT.
-        - Simulation settings for the NVT equilibration run are hard-coded.
-        - Temperatures are simulated sequentially. Alternatively, multiple jobs with independent
-          temperatures can be submitted to achieve parallelization.
+        - Temperatures are simulated sequentially.
 
     Example:
         >>> result = temperature_scan_simulation(
@@ -401,53 +414,59 @@ def temperature_scan_simulation(
 
     """
     # Logging setup
-    logger = _create_logger()
-
     if temperature is None:
         temperature = [300, 400, 500, 600]
+    logger = _create_logger()
 
     # Check input parameters
     _temperature_scan_input_checker(temperature, logger)
 
-    # Set pressure to lampps "aniso" if requested
+    # Set pressure to lammps "aniso" if requested
     sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
-
-    # initial structure used. Afterwards, it is updated after each temperature
-    structure0 = structure.copy()
 
     # Initialize results dictionary. CTE values will be calculated later
     results = _initialize_datadict(with_CTE_keys=False)
 
-    # Loop over all temperatures
-    for counter_run, T in enumerate(temperature, start=1):
-        # Stage 1: Short equilibration in NVT at T for 10,000 steps
-        nvt_equilibration_time = 10_000 / timestep / 1000
-        msg = f"Starting {nvt_equilibration_time:.1f} ps (10,000 steps hardcoded) NVT equilibration at {T:.2f} K."
+    # Initial one-time pre-equilibration (optionally)
+    if pre_equilibration_steps is not None and pre_equilibration_steps > 0:
+        pre_equilibration_time = pre_equilibration_steps / timestep / 1000
+        msg = (
+            f"Starting one-time pre-equilibration for {pre_equilibration_time:.1f} ps ({pre_equilibration_steps} steps)"
+        )
+        msg += f" at the highest temperature {max(temperature):.2f} K."
         logger.info(msg)
 
-        structure1, _ = _run_lammps_md(
-            structure=structure0,
+        structure0, _ = _run_lammps_md(
+            structure=structure,
             potential=potential,
             tmp_working_directory=tmp_working_directory,
-            temperature=T,
-            n_ionic_steps=10_000,
+            temperature=pre_equilibration_temperature
+            if pre_equilibration_temperature is not None
+            else max(temperature),
+            n_ionic_steps=pre_equilibration_steps,
             timestep=timestep,
             n_dump=None,
-            n_print_thermo=100,
+            n_print_thermo=n_print_thermo,
             input_control_file=CTE_INPUT_CONTROL_FILE,
-            initial_temperature=T,
-            langevin=False,
+            initial_temperature=pre_equilibration_temperature
+            if pre_equilibration_temperature is not None
+            else max(temperature),
+            langevin=True,
             seed=seed,
             server_kwargs=server_kwargs,
         )
+    else:
+        structure0 = structure
 
-        # Stage 2: NPT equilibration runs at T,p.
+    # Temperature scan: Looping over all temperatures
+    for counter_run, T in enumerate(temperature, start=1):
+        # Stage 1: NPT equilibration runs at T,p.
         equilibration_time = equilibration_steps / timestep / 1000
         msg = f"Starting {equilibration_time:.1f} ps NPT equilibration at {T:.2f} K and {pressure:.2e} GPa."
         logger.info(msg)
 
-        structure2, _ = _run_lammps_md(
-            structure=structure1,
+        structure1, _ = _run_lammps_md(
+            structure=structure0,
             potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=T,
@@ -462,13 +481,13 @@ def temperature_scan_simulation(
             server_kwargs=server_kwargs,
         )
 
-        # Stage 3: NPT production run
+        # Stage 2: NPT production run
         production_time = production_steps / timestep / 1000
         msg = f"Starting {production_time:.1f} ps NPT production run at {T:.2f} K and {pressure:.2e} GPa."
         logger.info(msg)
 
         structure_production, parsed_output = _run_lammps_md(
-            structure=structure2,
+            structure=structure1,
             potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=T,
@@ -494,6 +513,5 @@ def temperature_scan_simulation(
         # Use this structure as starting point for next temperature
         structure0 = structure_production
 
-    msg = "FINISHED SUCCESSFULLY."
-    logger.info(msg)
+    logger.info("FINISHED SUCCESSFULLY.")
     return {"data": results}
