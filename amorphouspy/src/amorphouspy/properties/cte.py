@@ -38,7 +38,7 @@ def cte_from_fluctuations_simulation(
     structure: Atoms,
     potential: pd.DataFrame,
     temperature: float = 300,
-    pressure: float = 1e-4,
+    npt_pressure: float = 1e-4,
     timestep: float = 1.0,
     equilibration_steps: int = 100_000,
     production_steps: int = 200_000,
@@ -69,7 +69,7 @@ def cte_from_fluctuations_simulation(
         structure: Input structure (assumed pre-equilibrated).
         potential: LAMMPS potential file.
         temperature: Simulation temperature in Kelvin (default 300 K).
-        pressure: Target pressure in GPa (use pyiron units here!) for NPT simulations
+        npt_pressure: Target pressure in GPa (use pyiron units here!) for NPT simulations
             (default: 10-4 GPa = 10^5 Pa = 1 bar).
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
         equilibration_steps: Number of MD steps for the equilibration run (default 100,000).
@@ -172,7 +172,7 @@ def cte_from_fluctuations_simulation(
     )
 
     # Set pressure to anisotropic if requested
-    sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
+    sim_pressure = [npt_pressure, npt_pressure, npt_pressure, None, None, None] if aniso else npt_pressure
 
     # initial structure used. Afterwards, it is updated after each temperature
     structure0 = structure
@@ -191,28 +191,30 @@ def cte_from_fluctuations_simulation(
         n_print_thermo=100,
         input_control_file=CTE_INPUT_CONTROL_FILE,
         initial_temperature=temperature,
-        langevin=False,
+        ensemble="nvt",
         seed=seed,
         server_kwargs=server_kwargs,
     )
 
     # Stage 2: NPT equilibration runs at T,p.
     equilibration_time = equilibration_steps / timestep / 1000
-    logger.info("Starting %.1f ps NPT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, pressure)
+    logger.info(
+        "Starting %.1f ps NPT equilibration at %.2f K and %.2e GPa.", equilibration_time, temperature, npt_pressure
+    )
 
     structure2, parsed_output = _run_lammps_md(
         structure=structure1,
         potential=potential,
         tmp_working_directory=tmp_working_directory,
         temperature=temperature,
-        pressure=sim_pressure,
+        npt_pressure=sim_pressure,
         n_ionic_steps=equilibration_steps,
         timestep=timestep,
         n_dump=equilibration_steps,
         n_print_thermo=n_print_thermo,
         input_control_file=CTE_INPUT_CONTROL_FILE,
         initial_temperature=0,
-        langevin=True,
+        ensemble="npt_langevin",
         server_kwargs=server_kwargs,
     )
 
@@ -233,7 +235,7 @@ def cte_from_fluctuations_simulation(
             production_time,
             counter_production_run,
             temperature,
-            pressure,
+            npt_pressure,
         )
 
         # actual production run
@@ -242,20 +244,20 @@ def cte_from_fluctuations_simulation(
             potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=temperature,
-            pressure=sim_pressure,
+            npt_pressure=sim_pressure,
             n_ionic_steps=production_steps,
             timestep=timestep,
             n_dump=n_dump,
             n_print_thermo=n_print_thermo,
             input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=0,
-            langevin=True,
+            ensemble="npt_langevin",
             server_kwargs=server_kwargs,
         )
 
         # parse and check the output of the production run
         _sim_data = _collect_sim_data(parsed_output, counter_production_run)
-        _sanity_check_sim_data(sim_data=_sim_data, T_target=temperature, p_target=pressure, logger=logger)
+        _sanity_check_sim_data(sim_data=_sim_data, T_target=temperature, p_target=npt_pressure, logger=logger)
 
         # Prepend the tail of the previous run (or equilibration) so that the running-mean
         # window can cover the boundary and no data is lost at the start of each production run.
@@ -265,7 +267,7 @@ def cte_from_fluctuations_simulation(
         _cte_results = _fluctuation_simulation_cte_calculation(
             sim_data=_sim_data_with_tail,
             temperature=temperature,
-            p=pressure,
+            p=npt_pressure,
             use_running_mean=True,
             N_points=N_for_averaging,
         )
@@ -315,7 +317,7 @@ def temperature_scan_simulation(
     structure: Atoms,
     potential: pd.DataFrame,
     temperature: list[int | float] | None = None,
-    pressure: float = 1e-4,
+    npt_pressure: float = 1e-4,
     timestep: float = 1.0,
     equilibration_steps: int = 100_000,
     production_steps: int = 200_000,
@@ -348,7 +350,7 @@ def temperature_scan_simulation(
         structure: Input structure (assumed pre-equilibrated).
         potential: LAMMPS potential file.
         temperature: Simulation temperature in Kelvin (default 300 K).
-        pressure: Target pressure in GPa for NPT simulations.
+        npt_pressure: Target pressure in GPa for NPT simulations.
             (default 10-4 GPa = 10^5 Pa = 1 bar).
         timestep: MD integration timestep in femtoseconds (default 1.0 fs).
         equilibration_steps: Number of MD steps for the equilibration runs (default 100,000).
@@ -410,7 +412,7 @@ def temperature_scan_simulation(
     _temperature_scan_input_checker(temperature, logger)
 
     # Set pressure to lampps "aniso" if requested
-    sim_pressure = [pressure, pressure, pressure, None, None, None] if aniso else pressure
+    sim_pressure = [npt_pressure, npt_pressure, npt_pressure, None, None, None] if aniso else npt_pressure
 
     # initial structure used. Afterwards, it is updated after each temperature
     structure0 = structure.copy()
@@ -436,14 +438,14 @@ def temperature_scan_simulation(
             n_print_thermo=100,
             input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=T,
-            langevin=False,
+            ensemble="nvt",
             seed=seed,
             server_kwargs=server_kwargs,
         )
 
         # Stage 2: NPT equilibration runs at T,p.
         equilibration_time = equilibration_steps / timestep / 1000
-        msg = f"Starting {equilibration_time:.1f} ps NPT equilibration at {T:.2f} K and {pressure:.2e} GPa."
+        msg = f"Starting {equilibration_time:.1f} ps NPT equilibration at {T:.2f} K and {npt_pressure:.2e} GPa."
         logger.info(msg)
 
         structure2, _ = _run_lammps_md(
@@ -451,20 +453,20 @@ def temperature_scan_simulation(
             potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=T,
-            pressure=sim_pressure,
+            npt_pressure=sim_pressure,
             n_ionic_steps=equilibration_steps,
             timestep=timestep,
             n_dump=None,
             n_print_thermo=n_print_thermo,
             input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=0,
-            langevin=True,
+            ensemble="npt_langevin",
             server_kwargs=server_kwargs,
         )
 
         # Stage 3: NPT production run
         production_time = production_steps / timestep / 1000
-        msg = f"Starting {production_time:.1f} ps NPT production run at {T:.2f} K and {pressure:.2e} GPa."
+        msg = f"Starting {production_time:.1f} ps NPT production run at {T:.2f} K and {npt_pressure:.2e} GPa."
         logger.info(msg)
 
         structure_production, parsed_output = _run_lammps_md(
@@ -472,21 +474,21 @@ def temperature_scan_simulation(
             potential=potential,
             tmp_working_directory=tmp_working_directory,
             temperature=T,
-            pressure=sim_pressure,
+            npt_pressure=sim_pressure,
             n_ionic_steps=production_steps,
             timestep=timestep,
             n_dump=n_dump,
             n_print_thermo=n_print_thermo,
             input_control_file=CTE_INPUT_CONTROL_FILE,
             initial_temperature=0,
-            langevin=True,
+            ensemble="npt_langevin",
             server_kwargs=server_kwargs,
         )
 
         # parse and check the output of the production run
         _sim_data = _collect_sim_data(parsed_output, counter_run)
 
-        _sanity_check_sim_data(sim_data=_sim_data, T_target=T, p_target=pressure, logger=logger)
+        _sanity_check_sim_data(sim_data=_sim_data, T_target=T, p_target=npt_pressure, logger=logger)
 
         # Collect results
         results = _temperature_scan_merge_results(previous_data=results, new_sim_data=_sim_data)

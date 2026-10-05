@@ -1,6 +1,6 @@
 # Molecular Dynamics Simulation
 
-The MD workflow provides a general-purpose interface for running NVT/NPT molecular dynamics simulations. It is used for equilibration, production runs, and as a building block for property calculations.
+The MD workflow provides a general-purpose interface for running NVE/NVT/NPT molecular dynamics simulations. It is used for equilibration, production runs, and as a building block for property calculations.
 
 ---
 
@@ -14,6 +14,7 @@ from amorphouspy import md_simulation
 result = md_simulation(
     structure=glass_structure,
     potential=potential,
+    ensemble="nvt",
     temperature_sim=300.0,    # K (start temperature)
     production_steps=10_000_000,
     timestep=1.0,             # fs
@@ -31,15 +32,15 @@ thermo = result["result"]
 |---|---|---|---|
 | `structure` | `Atoms` | — | Input atomic structure |
 | `potential` | `DataFrame` | — | Potential configuration |
-| `temperature_sim` | `float` | `5000.0` | Start temperature in K (constant if `temperature_end` is None) |
+| `ensemble` | `str` | — (required) | `"nve"`, `"nvt"`, `"npt"`, `"nvt_langevin"` or `"npt_langevin"` (see [Ensembles](#ensembles)) |
+| `temperature_sim` | `float \| None` | `None` | Start temperature in K (constant if `temperature_end` is None); required for every ensemble except `"nve"` |
 | `production_steps` | `int` | `10_000_000` | Number of MD steps |
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
 | `n_dump` | `int \| None` | `1000` | Trajectory dump frequency in steps |
 | `n_print_thermo` | `int \| None` | `None` | Thermodynamic output frequency in steps (defaults to `n_dump`) |
-| `temperature_end` | `float \| None` | `None` | End temperature for a linear ramp; None = constant temperature |
-| `pressure` | `float \| None` | `None` | Start pressure in GPa; None = NVT, float value = NPT |
-| `pressure_end` | `float \| None` | `None` | End pressure in GPa for a linear ramp; requires `pressure` to be set |
-| `langevin` | `bool` | `False` | Use Langevin dynamics instead of Nosé-Hoover |
+| `temperature_end` | `float \| None` | `None` | End temperature for a linear ramp; None = constant temperature. Not allowed for `"nve"` |
+| `npt_pressure` | `float \| None` | `None` | Start pressure in GPa; required for `"npt"`/`"npt_langevin"`, not allowed otherwise |
+| `npt_pressure_end` | `float \| None` | `None` | End pressure in GPa for a linear ramp; `"npt"` only |
 | `seed` | `int` | `12345` | Random seed for velocity initialization |
 | `server_kwargs` | `dict \| None` | `None` | Additional arguments passed to the LAMMPS server |
 | `tmp_working_directory` | `str \| Path \| None` | `None` | Directory for temporary simulation files |
@@ -55,10 +56,17 @@ thermo = result["result"]
 
 ## Ensembles
 
-Ensemble selection is controlled by the `pressure` parameter:
+The ensemble is always chosen explicitly with the `ensemble` parameter. Arguments that only make sense for one
+ensemble carry its name as a prefix (`npt_pressure`, `npt_pressure_end`); passing them with another ensemble raises
+a `ValueError`.
 
-- **NVT** (constant volume): leave `pressure=None` (the default)
-- **NPT** (constant pressure): set `pressure` to a float value in GPa, e.g. `pressure=0.0`
+| `ensemble` | LAMMPS fixes | Required | Not allowed |
+|---|---|---|---|
+| `"nve"` | `fix nve` | non-zero velocities in `structure` | `temperature_sim`, `temperature_end`, `npt_*` |
+| `"nvt"` | `fix nvt` (Nosé-Hoover) | `temperature_sim` | `npt_*` |
+| `"nvt_langevin"` | `fix nve` + `fix langevin` | `temperature_sim` | `npt_*` |
+| `"npt"` | `fix npt` (Nosé-Hoover) | `temperature_sim`, `npt_pressure` | — |
+| `"npt_langevin"` | `fix nph` + `fix langevin` | `temperature_sim`, `npt_pressure` | `npt_pressure_end` |
 
 ### NVT example
 
@@ -66,6 +74,7 @@ Ensemble selection is controlled by the `pressure` parameter:
 result = md_simulation(
     structure=glass_structure,
     potential=potential,
+    ensemble="nvt",
     temperature_sim=300.0,
     production_steps=50_000,
 )
@@ -79,13 +88,30 @@ Use NVT for equilibration at a fixed density, structural analysis, or property c
 result = md_simulation(
     structure=glass_structure,
     potential=potential,
+    ensemble="npt",
     temperature_sim=300.0,
     production_steps=100_000,
-    pressure=0.0,    # GPa — ambient pressure
+    npt_pressure=0.0,    # GPa — ambient pressure
 )
 ```
 
 Use NPT for density relaxation, pressure equilibration after quenching, or CTE calculations.
+
+### NVE example
+
+```python
+equilibrated = md_simulation(
+    structure=glass_structure, potential=potential, ensemble="nvt", temperature_sim=300.0, production_steps=50_000
+)
+result = md_simulation(
+    structure=equilibrated["structure"],  # carries the velocities of the NVT run
+    potential=potential,
+    ensemble="nve",
+    production_steps=100_000,
+)
+```
+
+Use NVE for unperturbed dynamics, e.g. velocity autocorrelation functions or the vibrational density of states.
 
 ---
 
@@ -98,15 +124,16 @@ Linear ramps are supported for both temperature and pressure:
 result = md_simulation(
     structure=glass_structure,
     potential=potential,
+    ensemble="npt",
     temperature_sim=3000.0,
     temperature_end=300.0,
     production_steps=500_000,
-    pressure=5.0,
-    pressure_end=0.0,
+    npt_pressure=5.0,
+    npt_pressure_end=0.0,
 )
 ```
 
-`pressure_end` requires `pressure` to be set; omitting it holds pressure constant.
+Omitting `npt_pressure_end` holds the pressure constant. Pressure ramps are not available with `"npt_langevin"`.
 
 ---
 

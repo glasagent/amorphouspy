@@ -56,6 +56,7 @@ result = elastic_simulation(
     production_steps=10_000,    # MD steps per strain state
     equilibration_steps=1_000_000, # Initial equilibration
     timestep=1.0,               # fs
+    ensemble="nvt",
 )
 
 # Results are in result['moduli']
@@ -73,6 +74,8 @@ print(f"Poisson's ratio ν = {moduli['nu']:.3f}")
 | `structure` | `Atoms` | — | Equilibrated glass structure |
 | `potential` | `str` | — | Path to LAMMPS potential file |
 | `temperature_sim` | `float` | `300.0` | Temperature (K) |
+| `ensemble` | `str` | — (required) | `"nvt"`, `"npt"`, `"nvt_langevin"` or `"npt_langevin"` for the equilibration and strained runs |
+| `npt_pressure` | `float \| None` | `None` | Target pressure (GPa); required for the npt ensembles, not allowed otherwise |
 | `strain` | `float` | `1e-3` | Strain magnitude (dimensionless) |
 | `production_steps` | `int` | `10_000` | Steps per deformed state for stress averaging |
 | `equilibration_steps` | `int` | `1_000_000` | Initial equilibration phase steps |

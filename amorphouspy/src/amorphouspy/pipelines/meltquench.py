@@ -125,7 +125,7 @@ def run_melt_quench(
         temperature_high=temperature_high,
         temperature_low=temperature_low,
         equilibration_steps=equilibration_steps,
-        langevin=False,
+        thermostat="nose_hoover",
         server_kwargs=server_kwargs,
         pre_equilibrate=pre_equilibrate,
     )

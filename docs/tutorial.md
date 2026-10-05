@@ -80,6 +80,7 @@ result = melt_quench_simulation(
     temperature_high=5000.0,   # Melt at 5000 K
     temperature_low=300.0,     # Quench to 300 K
     cooling_rate=1e12,         # K/s (typical for MD)
+    thermostat="nose_hoover",
 )
 
 glass_structure = result["structure"]  # Quenched glass
@@ -150,6 +151,7 @@ elastic_result = elastic_simulation(
     temperature_sim=300.0,
     strain=1e-3,
     production_steps=10_000,
+    ensemble="nvt",
 )
 
 print(f"Young's modulus: {elastic_result['E']:.1f} GPa")
@@ -190,6 +192,7 @@ with SingleNodeExecutor() as exe:
         melt_quench_simulation,
         structure=structure_future,
         potential=potential_future,
+        thermostat="nose_hoover",
     )
 
     # Block until the result is ready

@@ -68,7 +68,7 @@ def _run_single_viscosity(
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
         equilibration_steps=equilibration_steps,
-        langevin=False,
+        thermostat="nose_hoover",
         server_kwargs=server_kwargs,
     )
     cooled_structure = mq_result["structure"]
@@ -81,7 +81,7 @@ def _run_single_viscosity(
         initial_production_steps=int(n_timesteps),
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
         server_kwargs=server_kwargs,
     )

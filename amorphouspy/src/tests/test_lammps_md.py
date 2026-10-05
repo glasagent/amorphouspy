@@ -24,6 +24,8 @@ def test_md_simulation_raises_on_empty_potential() -> None:
         md_simulation(
             structure=Atoms("Si"),
             potential=pd.DataFrame(columns=["Name", "Config"]),
+            ensemble="nvt",
+            temperature_sim=300.0,
         )
 
 
@@ -35,7 +37,7 @@ def test_md_simulation_passes_potential_config_unchanged(mock_run_md: MagicMock)
     config = ["pair_style table spline 500", "pair_modify shift yes"]
     potential = _potential(name="shik", config=list(config))
 
-    md_simulation(structure=Atoms("Si"), potential=potential)
+    md_simulation(structure=Atoms("Si"), potential=potential, ensemble="nvt", temperature_sim=300.0)
 
     _, kwargs = mock_run_md.call_args
     assert kwargs["potential"].loc[0, "Config"] == config
@@ -58,9 +60,9 @@ def test_md_simulation_forwards_all_runtime_arguments(mock_run_md: MagicMock, tm
         n_print_thermo=10,
         server_kwargs={"cores": 2},
         temperature_end=1800.0,
-        pressure=0.1,
-        pressure_end=0.2,
-        langevin=True,
+        ensemble="npt",
+        npt_pressure=0.1,
+        npt_pressure_end=0.2,
         seed=987,
         tmp_working_directory=tmp_path,
     )
@@ -71,12 +73,11 @@ def test_md_simulation_forwards_all_runtime_arguments(mock_run_md: MagicMock, tm
     assert kwargs["n_ionic_steps"] == 1234
     assert kwargs["timestep"] == 2.0
     assert kwargs["initial_temperature"] == 2200.0
-    assert kwargs["pressure"] == 0.1
-    assert kwargs["pressure_end"] == 0.2
+    assert kwargs["npt_pressure"] == 0.1
+    assert kwargs["npt_pressure_end"] == 0.2
     assert kwargs["n_dump"] == 50
     assert kwargs["n_print_thermo"] == 10
-    assert kwargs["langevin"] is True
-    assert kwargs["nve"] is False
+    assert kwargs["ensemble"] == "npt"
     assert kwargs["seed"] == 987
     assert kwargs["server_kwargs"] == {"cores": 2}
     assert kwargs["tmp_working_directory"] == tmp_path
@@ -84,14 +85,21 @@ def test_md_simulation_forwards_all_runtime_arguments(mock_run_md: MagicMock, tm
 
 @patch("amorphouspy.lammps.md._run_lammps_md")
 def test_md_simulation_forwards_nve(mock_run_md: MagicMock) -> None:
-    """nve=True is forwarded and initial_temperature is left to the runner (keep structure velocities)."""
+    """ensemble="nve" is forwarded and initial_temperature is left to the runner (keep structure velocities)."""
     mock_run_md.return_value = (Atoms("Si"), {"generic": {}})
 
-    md_simulation(structure=Atoms("Si"), potential=_potential(), temperature_sim=300.0, nve=True)
+    md_simulation(structure=Atoms("Si"), potential=_potential(), ensemble="nve")
 
     _, kwargs = mock_run_md.call_args
-    assert kwargs["nve"] is True
+    assert kwargs["ensemble"] == "nve"
+    assert kwargs["temperature"] is None
     assert kwargs["initial_temperature"] is None
+
+
+def test_md_simulation_requires_ensemble() -> None:
+    """The ensemble has no default and must be chosen explicitly."""
+    with pytest.raises(TypeError, match="ensemble"):
+        md_simulation(structure=Atoms("Si"), potential=_potential(), temperature_sim=300.0)  # ty: ignore[missing-argument]
 
 
 @patch("amorphouspy.lammps.md._run_lammps_md")
@@ -101,7 +109,7 @@ def test_md_simulation_returns_structure_and_generic_result(mock_run_md: MagicMo
     parsed = {"generic": {"steps": [0, 1, 2]}, "lammps": {}}
     mock_run_md.return_value = (final_structure, parsed)
 
-    out = md_simulation(structure=Atoms("Si"), potential=_potential())
+    out = md_simulation(structure=Atoms("Si"), potential=_potential(), ensemble="nvt", temperature_sim=300.0)
 
     assert out["structure"] is final_structure
     assert out["result"] == {"steps": [0, 1, 2]}

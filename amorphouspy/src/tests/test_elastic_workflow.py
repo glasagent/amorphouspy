@@ -54,6 +54,7 @@ def test_elastic_simulation_uses_central_difference_stress_path(mock_run_lammps_
         equilibration_steps=4,
         production_steps=4,
         strain=strain,
+        ensemble="nvt",
     )
 
     expected = -1.0 / (2.0 * strain)
@@ -96,6 +97,7 @@ def test_elastic_simulation_warns_when_c11_c22_c33_differ(
             equilibration_steps=10,
             production_steps=10,
             strain=strain,
+            ensemble="nvt",
         )
 
 
@@ -130,6 +132,7 @@ def test_elastic_simulation_warns_when_c44_c55_c66_differ(
             equilibration_steps=10,
             production_steps=10,
             strain=strain,
+            ensemble="nvt",
         )
 
 
@@ -151,6 +154,43 @@ def test_elastic_simulation_passes_potential_config_unchanged(
         potential=potential,
         equilibration_steps=10,
         production_steps=10,
+        ensemble="nvt",
     )
 
     assert mock_run_lammps_md.call_args.kwargs["potential"].loc[0, "Config"] == config
+
+
+@patch("amorphouspy.properties.elastic._run_strained_md")
+@patch("amorphouspy.properties.elastic._run_lammps_md")
+def test_elastic_simulation_forwards_ensemble_and_npt_pressure(
+    mock_run_lammps_md: MagicMock,
+    mock_run_strained_md: MagicMock,
+) -> None:
+    """The chosen ensemble and npt_pressure reach the equilibration and every strained production run."""
+    mock_run_lammps_md.return_value = (_structure(), {"generic": {"volume": [125.0] * 4}})
+    mock_run_strained_md.return_value = np.zeros((3, 3))
+
+    elastic_module.elastic_simulation(
+        structure=_structure(),
+        potential=_potential(),
+        equilibration_steps=10,
+        production_steps=10,
+        ensemble="npt_langevin",
+        npt_pressure=0.1,
+    )
+
+    assert mock_run_lammps_md.call_args.kwargs["ensemble"] == "npt_langevin"
+    assert mock_run_lammps_md.call_args.kwargs["npt_pressure"] == 0.1
+    assert mock_run_strained_md.call_count == 6
+    for call in mock_run_strained_md.call_args_list:
+        base_kwargs = call.args[2]
+        assert base_kwargs["ensemble"] == "npt_langevin"
+        assert base_kwargs["npt_pressure"] == 0.1
+
+
+@patch("amorphouspy.properties.elastic._run_lammps_md")
+def test_elastic_simulation_rejects_nve(mock_run_lammps_md: MagicMock) -> None:
+    """Elastic constants at finite temperature need a thermostat, so ensemble 'nve' is rejected."""
+    with pytest.raises(ValueError, match="'nve' is not supported"):
+        elastic_module.elastic_simulation(structure=_structure(), potential=_potential(), ensemble="nve")
+    mock_run_lammps_md.assert_not_called()

@@ -100,7 +100,7 @@ def test_fluctuations_simulation_returns_summary_and_data(tmp_path, monkeypatch)
             structure=_make_structure(),
             potential=_make_potential(),
             temperature=300.0,
-            pressure=1e-4,
+            npt_pressure=1e-4,
             timestep=1.0,
             equilibration_steps=100_000,
             production_steps=100_000,

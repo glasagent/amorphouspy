@@ -33,7 +33,7 @@ from numpy.typing import NDArray
 
 from amorphouspy.atoms.shared import type_to_dict
 from amorphouspy.lammps.io import frames_from_melt_quench_result
-from amorphouspy.lammps.runner import _run_lammps_md
+from amorphouspy.lammps.runner import Thermostat, _run_lammps_md, thermostat_ensembles
 
 # Physical constants (CODATA 2018).
 _KB_EV = 8.617333262e-5  # Boltzmann constant, eV/K
@@ -234,7 +234,7 @@ def compute_msd(
     Example:
         ```pycon
         >>> from amorphouspy import diffusion_simulation  # doctest: +SKIP
-        >>> out = diffusion_simulation(structure, potential)  # doctest: +SKIP
+        >>> out = diffusion_simulation(structure, potential, thermostat="nose_hoover")  # doctest: +SKIP
         >>> msd = compute_msd(out["frames"], timestep=1.0, output_frequency=100)  # doctest: +SKIP
         >>> msd["msd_total"][0]  # doctest: +SKIP
         0.0
@@ -452,7 +452,7 @@ def diffusion_simulation(
     server_kwargs: dict[str, Any] | None = None,
     *,
     equilibration_steps: int = 100_000,
-    langevin: bool = False,
+    thermostat: Thermostat,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
     max_lag: int | None = None,
@@ -483,7 +483,7 @@ def diffusion_simulation(
         server_kwargs: Additional arguments for the LAMMPS server (e.g. ``{"cores": 4}``).
         equilibration_steps: Length of the constant-volume equilibration stage in MD steps
             (use a small value for quick demos, the default for production-quality runs).
-        langevin: Use Langevin dynamics during equilibration/production.
+        thermostat: Thermostat of the equilibration and production runs, ``"nose_hoover"`` or ``"langevin"``.
         seed: Random seed for velocity initialization.
         tmp_working_directory: Directory for temporary simulation files.
         max_lag: Largest lag (frames) reported in the MSD.
@@ -501,7 +501,9 @@ def diffusion_simulation(
 
     Example:
         ```pycon
-        >>> out = diffusion_simulation(structure, potential, temperature_sim=3000.0)  # doctest: +SKIP
+        >>> out = diffusion_simulation(  # doctest: +SKIP
+        ...     structure, potential, temperature_sim=3000.0, thermostat="nose_hoover"
+        ... )
         >>> out["diffusion"]["per_species"]["Na"]["diffusion_cm2_s"]  # doctest: +SKIP
 
         ```
@@ -510,6 +512,7 @@ def diffusion_simulation(
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
 
+    nvt_ensemble, _ = thermostat_ensembles(thermostat)
     structure0, _ = _run_lammps_md(
         structure=structure,
         potential=potential,
@@ -519,7 +522,7 @@ def diffusion_simulation(
         timestep=timestep,
         n_print_thermo=1000,
         initial_temperature=temperature_sim,
-        langevin=True,
+        ensemble="nvt_langevin",
         seed=seed,
         server_kwargs=server_kwargs,
     )
@@ -537,7 +540,7 @@ def diffusion_simulation(
         timestep=timestep,
         n_print_thermo=1000,
         initial_temperature=temperature_sim,
-        langevin=langevin,
+        ensemble=nvt_ensemble,
         seed=seed,
         server_kwargs=server_kwargs,
     )
@@ -567,7 +570,7 @@ def diffusion_simulation(
         timestep=timestep,
         n_print_thermo=n_print_thermo,
         initial_temperature=0,
-        langevin=langevin,
+        ensemble=nvt_ensemble,
         server_kwargs=server_kwargs,
         input_control_file={"dump_modify": "1 every v_amx_dump first yes sort id"},
     )

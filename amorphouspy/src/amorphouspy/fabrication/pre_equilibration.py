@@ -19,8 +19,8 @@ def pre_equilibration_fix_override(melt_temperature: float) -> str:
     Passing ``{"fix": pre_equilibration_fix_override(T)}`` as the runner's
     ``input_control_file`` replaces the generated integrator fix with the
     Langevin + nve/limit pair, so the block runs as its own MD stage with a
-    clean potential Config. Requires the runner call to use ``langevin=False``
-    and ``pressure=None`` (exactly one generated fix line to replace).
+    clean potential Config. Requires the runner call to use ``ensemble="nvt"``
+    (exactly one generated fix line to replace).
 
     Args:
         melt_temperature: Target temperature (K) for the Langevin thermostat.
