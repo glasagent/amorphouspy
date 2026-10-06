@@ -45,7 +45,7 @@ def test_mcp_excludes_human_facing_endpoints() -> None:
 def test_mcp_tools_are_all_async() -> None:
     """Every registered MCP tool must run asynchronously.
 
-    FastMCP executes synchronous tool functions inline on the event loop, so a
+    MCPServer executes synchronous tool functions inline on the event loop, so a
     blocking call inside one would freeze the whole single-worker server. The
     ``_offload_sync`` wrapper converts our synchronous FastAPI endpoints into
     coroutines that run in a worker thread. This test fails if any tool is
