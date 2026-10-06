@@ -468,6 +468,16 @@ def _vdos_invalid_cases() -> list:
             np.zeros((10, 2, 3)), masses, DT_FS, {"remove_com": False}, "all velocities are zero", id="all-zero-no-com"
         ),
         pytest.param(good, masses, DT_FS, {"normalization": "per-atom"}, "Unknown normalization", id="normalization"),
+        pytest.param(good, masses, DT_FS, {"window": "kaiser"}, "Unknown window", id="window"),
+        pytest.param(good, masses, DT_FS, {"window": "gaussian"}, "Unknown window", id="window-gaussian-no-std"),
+        pytest.param(good, masses, DT_FS, {"window": ("gaussian",)}, "Unknown window", id="window-gaussian-short"),
+        pytest.param(good, masses, DT_FS, {"window": ("gaussian", 0.0)}, "Unknown window", id="window-gaussian-zero"),
+        pytest.param(
+            good, masses, DT_FS, {"window": ("gaussian", -1.0)}, "Unknown window", id="window-gaussian-negative"
+        ),
+        pytest.param(good, masses, DT_FS, {"window": ("gaussian", np.nan)}, "Unknown window", id="window-gaussian-nan"),
+        pytest.param(good, masses, DT_FS, {"window": ("gaussian", True)}, "Unknown window", id="window-gaussian-bool"),
+        pytest.param(good, masses, DT_FS, {"window": ("hann", 3.0)}, "Unknown window", id="window-hann-tuple"),
         pytest.param(good, masses, DT_FS, {"indices": np.array([], dtype=int)}, "non-empty", id="indices-empty"),
         pytest.param(good, masses, DT_FS, {"indices": np.array([[0]])}, "1-D", id="indices-2d"),
         pytest.param(good, masses, DT_FS, {"indices": np.array([0.0])}, "integer", id="indices-float"),
@@ -512,3 +522,200 @@ def test_vdos_input_unchanged(dtype):
     compute_partial_vdos(velocities, masses, DT_FS, {"g": {"a": np.array([1])}})
     np.testing.assert_array_equal(velocities, velocities_before)
     np.testing.assert_array_equal(masses, masses_before)
+
+
+# ---------------------------------------------------------------------------
+# Windows
+# ---------------------------------------------------------------------------
+
+# Gaussian std of 8 frames is about n_frames / 8 for the short test trajectories.
+WINDOWS = ["hann", "hamming", "blackmanharris", ("gaussian", 8.0)]
+# Cosine-sum coefficients a_j of w_t = sum_j (-1)^j a_j cos(2 pi j t / N).
+COSINE_SUM_COEFFICIENTS = {
+    "hann": [0.5, 0.5],
+    "hamming": [0.54, 0.46],
+    "blackmanharris": [0.35875, 0.48829, 0.14128, 0.01168],
+}
+
+
+def _explicit_window(window: str | tuple, n_frames: int) -> np.ndarray:
+    """Periodic windows written out from their definitions."""
+    t = np.arange(n_frames)
+    if isinstance(window, tuple):
+        return np.exp(-0.5 * ((t - n_frames / 2) / window[1]) ** 2)
+    coefficients = COSINE_SUM_COEFFICIENTS[window]
+    return sum((-1) ** j * a * np.cos(2 * np.pi * j * t / n_frames) for j, a in enumerate(coefficients))
+
+
+@pytest.mark.parametrize("normalization", ["unit", "3N", "none"])
+@pytest.mark.parametrize("remove_com", [True, False])
+def test_vdos_window_none_is_default(normalization, remove_com):
+    """window=None is bit-identical to omitting it: total, float32, indices and compute_partial_vdos."""
+    velocities, masses = _random_system(65, 6, seed=20)
+    groups = {"a": {"x": np.array([0, 3]), "y": np.array([1, 2, 4, 5])}}
+    kwargs = {"normalization": normalization, "remove_com": remove_com}
+    for data in (velocities, velocities.astype(np.float32)):
+        _, default = compute_vdos_from_velocities(data, masses, DT_FS, **kwargs)
+        _, explicit = compute_vdos_from_velocities(data, masses, DT_FS, window=None, **kwargs)
+        np.testing.assert_array_equal(explicit, default)
+    _, default = compute_vdos_from_velocities(velocities, masses, DT_FS, indices=np.array([4, 1]), **kwargs)
+    _, explicit = compute_vdos_from_velocities(
+        velocities, masses, DT_FS, indices=np.array([4, 1]), window=None, **kwargs
+    )
+    np.testing.assert_array_equal(explicit, default)
+    _, default = compute_partial_vdos(velocities, masses, DT_FS, groups, **kwargs)
+    _, explicit = compute_partial_vdos(velocities, masses, DT_FS, groups, window=None, **kwargs)
+    for label in groups["a"]:
+        np.testing.assert_array_equal(explicit["a"][label], default["a"][label])
+
+
+def test_vdos_window_none_is_default_memmap(tmp_path):
+    """window=None is bit-identical to omitting it for a memory-mapped trajectory."""
+    velocities, masses = _random_system(40, 6, seed=21)
+    np.save(tmp_path / "v.npy", velocities)
+    mapped = np.load(tmp_path / "v.npy", mmap_mode="r")
+    _, default = compute_vdos_from_velocities(mapped, masses, DT_FS)
+    _, explicit = compute_vdos_from_velocities(mapped, masses, DT_FS, window=None)
+    np.testing.assert_array_equal(explicit, default)
+
+
+def test_vdos_hann_on_grid_cosine():
+    """A cosine on the grid spreads over exactly three bins with Hann: the neighbours hold 1/4 of the peak power."""
+    n_frames, k = 400, 60
+    _, vdos = compute_vdos_from_velocities(
+        _pair_velocities(n_frames, _grid_frequency(n_frames, k)), np.full(2, M_SI), DT_FS, window="hann"
+    )
+    assert np.argmax(vdos) == k
+    assert vdos[k - 1] / vdos[k] == pytest.approx(0.25, rel=1e-10)
+    assert vdos[k + 1] / vdos[k] == pytest.approx(0.25, rel=1e-10)
+    assert np.abs(np.delete(vdos, [k - 1, k, k + 1])).max() < 1e-20 * vdos[k]
+
+
+@pytest.mark.parametrize("window", list(COSINE_SUM_COEFFICIENTS))
+def test_vdos_cosine_sum_window_on_grid_cosine(window):
+    """An on-grid cosine spreads over bins k +- j with power (a_j / (2 a_0))^2 of the peak, and nothing else."""
+    n_frames, k = 400, 60
+    _, vdos = compute_vdos_from_velocities(
+        _pair_velocities(n_frames, _grid_frequency(n_frames, k)), np.full(2, M_SI), DT_FS, window=window
+    )
+    coefficients = COSINE_SUM_COEFFICIENTS[window]
+    assert np.argmax(vdos) == k
+    for j, a in enumerate(coefficients[1:], start=1):
+        expected = (a / (2 * coefficients[0])) ** 2
+        assert vdos[k - j] / vdos[k] == pytest.approx(expected, rel=1e-10)
+        assert vdos[k + j] / vdos[k] == pytest.approx(expected, rel=1e-10)
+    spread = np.arange(k - len(coefficients) + 1, k + len(coefficients))
+    assert np.abs(np.delete(vdos, spread)).max() < 1e-20 * vdos[k]
+
+
+@pytest.mark.parametrize(
+    ("window", "bound"),
+    [("hann", 1e-6), ("hamming", 1e-4), ("blackmanharris", 1e-10), (("gaussian", 50.0), 1e-8)],
+)
+def test_vdos_window_suppresses_leakage(window, bound):
+    """A cosine half-way between two bins leaks 20 bins away without a window; each window reduces that leakage."""
+    n_frames, k = 400, 60
+    velocities = _pair_velocities(n_frames, _grid_frequency(n_frames, k + 0.5))
+    masses = np.full(2, M_SI)
+    _, plain = compute_vdos_from_velocities(velocities, masses, DT_FS)
+    _, windowed = compute_vdos_from_velocities(velocities, masses, DT_FS, window=window)
+    assert plain[k + 20] / plain.max() > 1e-4
+    assert windowed[k + 20] / windowed.max() < bound
+
+
+@pytest.mark.parametrize("window", WINDOWS)
+@pytest.mark.parametrize("n_frames", [64, 65])
+@pytest.mark.parametrize("remove_com", [True, False])
+def test_vdos_window_normalisations(window, n_frames, remove_com):
+    """With a window, 'unit' integrates to 1 and '3N' to 3 n_atoms, for even and odd n_frames."""
+    velocities, masses = _random_system(n_frames, 7, seed=22)
+    kwargs = {"remove_com": remove_com, "window": window}
+    freqs, unit = compute_vdos_from_velocities(velocities, masses, DT_FS, **kwargs)
+    _, dof = compute_vdos_from_velocities(velocities, masses, DT_FS, normalization="3N", **kwargs)
+    assert np.trapezoid(unit, freqs) == pytest.approx(1.0, rel=1e-12)
+    assert np.trapezoid(dof, freqs) == pytest.approx(21.0, rel=1e-12)
+
+
+@pytest.mark.parametrize("window", WINDOWS)
+@pytest.mark.parametrize("remove_com", [True, False])
+def test_vdos_window_none_integral_is_weighted_kinetic_average(window, remove_com):
+    """With a window, the 'none' integral is the w^2-weighted time average of sum_i m_i |v_i|^2 (even n_frames)."""
+    n_frames = 64
+    velocities, masses = _random_system(n_frames, 7, seed=23)
+    freqs, psd = compute_vdos_from_velocities(
+        velocities, masses, DT_FS, normalization="none", remove_com=remove_com, window=window
+    )
+    if remove_com:
+        velocities = velocities - (np.einsum("tia,i->ta", velocities, masses) / masses.sum())[:, None, :]
+    kinetic = np.einsum("tia,tia,i->t", velocities, velocities, masses)
+    window_sq = _explicit_window(window, n_frames) ** 2
+    assert np.trapezoid(psd, freqs) == pytest.approx(window_sq @ kinetic / window_sq.sum(), rel=1e-12)
+
+
+@pytest.mark.parametrize("window", WINDOWS)
+@pytest.mark.parametrize("n_frames", [64, 65])
+@pytest.mark.parametrize("normalization", ["unit", "3N", "none"])
+def test_partial_vdos_window_sums_to_total(window, n_frames, normalization):
+    """With a window, partials over a partition sum to the windowed total, via compute_partial_vdos and indices."""
+    velocities, masses = _random_system(n_frames, 9, seed=24)
+    groups = {"element": {"A": np.array([0, 4, 8]), "B": np.array([1, 2, 3]), "C": np.array([5, 6, 7])}}
+    kwargs = {"normalization": normalization, "window": window}
+    _, total = compute_vdos_from_velocities(velocities, masses, DT_FS, **kwargs)
+    _, partial = compute_partial_vdos(velocities, masses, DT_FS, groups, **kwargs)
+    from_indices = [
+        compute_vdos_from_velocities(velocities, masses, DT_FS, indices=indices, **kwargs)[1]
+        for indices in groups["element"].values()
+    ]
+    np.testing.assert_allclose(sum(partial["element"].values()), total, rtol=1e-12, atol=1e-14 * total.max())
+    np.testing.assert_allclose(sum(from_indices), total, rtol=1e-12, atol=1e-14 * total.max())
+
+
+@pytest.mark.parametrize("window", WINDOWS)
+@pytest.mark.parametrize("dtype", [np.float64, np.float32])
+def test_vdos_window_input_unchanged_without_com_removal(window, dtype):
+    """With a window and remove_com=False, contiguous selections (views of the input) leave the input unchanged."""
+    velocities = np.random.default_rng(25).normal(size=(32, 4, 3)).astype(dtype)
+    velocities_before = velocities.copy()
+    masses = np.array([M_SI, M_O, M_O, M_SI])
+    kwargs = {"remove_com": False, "window": window}
+    compute_vdos_from_velocities(velocities, masses, DT_FS, **kwargs)
+    compute_vdos_from_velocities(velocities, masses, DT_FS, indices=np.array([1, 2]), **kwargs)
+    compute_partial_vdos(velocities, masses, DT_FS, {"g": {"a": np.array([0, 1]), "b": np.array([2, 3])}}, **kwargs)
+    np.testing.assert_array_equal(velocities, velocities_before)
+
+
+@pytest.mark.parametrize("window", WINDOWS)
+@pytest.mark.parametrize("dtype", [np.float64, np.float32])
+def test_vdos_window_memmap_unchanged_without_com_removal(tmp_path, window, dtype):
+    """A writable memory map is not modified by the windowed transform of a contiguous selection."""
+    velocities = np.random.default_rng(26).normal(size=(32, 4, 3)).astype(dtype)
+    np.save(tmp_path / "v.npy", velocities)
+    mapped = np.load(tmp_path / "v.npy", mmap_mode="r+")
+    masses = np.array([M_SI, M_O, M_O, M_SI])
+    kwargs = {"remove_com": False, "window": window}
+    _, from_map = compute_vdos_from_velocities(mapped, masses, DT_FS, **kwargs)
+    compute_vdos_from_velocities(mapped, masses, DT_FS, indices=np.array([1, 2]), **kwargs)
+    _, from_array = compute_vdos_from_velocities(velocities, masses, DT_FS, **kwargs)
+    np.testing.assert_array_equal(np.asarray(mapped), velocities)
+    np.testing.assert_array_equal(from_map, from_array)
+    del mapped
+
+
+@pytest.mark.parametrize("window", WINDOWS)
+@pytest.mark.parametrize("chunk_bytes", [1, 5000, 2**40])
+@pytest.mark.parametrize("n_frames", [50, 51])
+@pytest.mark.parametrize("remove_com", [True, False])
+def test_vdos_window_chunking_matches_single_chunk(monkeypatch, window, chunk_bytes, n_frames, remove_com):
+    """With a window, total and partial results do not depend on how atoms are split into chunks."""
+    velocities, masses = _random_system(n_frames, 7, seed=27)
+    groups = {"a": {"odd": np.array([1, 3, 5]), "first": np.array([0, 1, 2])}}
+    kwargs = {"remove_com": remove_com, "window": window}
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 2**40)
+    _, reference = compute_vdos_from_velocities(velocities, masses, DT_FS, **kwargs)
+    _, reference_partial = compute_partial_vdos(velocities, masses, DT_FS, groups, **kwargs)
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", chunk_bytes)
+    _, vdos = compute_vdos_from_velocities(velocities, masses, DT_FS, **kwargs)
+    _, partial = compute_partial_vdos(velocities, masses, DT_FS, groups, **kwargs)
+    np.testing.assert_allclose(vdos, reference, rtol=1e-12)
+    for label in groups["a"]:
+        np.testing.assert_allclose(partial["a"][label], reference_partial["a"][label], rtol=1e-12)
