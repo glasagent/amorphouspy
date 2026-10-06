@@ -1,6 +1,6 @@
 """MCP server — exposes amorphouspy API tools to LLM clients.
 
-Uses the ``mcp`` SDK's :class:`~mcp.server.fastmcp.FastMCP` to register the
+Uses the ``mcp`` SDK's :class:`~mcp.server.mcpserver.MCPServer` to register the
 existing FastAPI endpoint functions as MCP tools. Synchronous endpoints are
 wrapped by :func:`_offload_sync` so their (potentially blocking) IO runs in a
 worker thread instead of on the event loop.
@@ -15,7 +15,7 @@ import functools
 import inspect
 from typing import TYPE_CHECKING, Any
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from starlette.concurrency import run_in_threadpool
 
 from .config import MCP_HOST
@@ -43,18 +43,16 @@ Typical workflow:
 6. `list_glasses` / `lookup_glass` — browse available compositions.
 """
 
-mcp = FastMCP(
+mcp = MCPServer(
     "amorphouspy",
     instructions=MCP_INSTRUCTIONS,
-    stateless_http=True,
-    host=MCP_HOST,
 )
 
 
 def _offload_sync(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Wrap a synchronous endpoint so MCP runs it in a worker thread.
 
-    FastMCP executes synchronous tool functions inline on the asyncio event
+    MCPServer executes synchronous tool functions inline on the asyncio event
     loop (``func_metadata.call_fn_with_arg_validation`` calls ``fn(...)``
     directly when the function is not a coroutine). Any blocking IO inside such
     a tool — e.g. reading executorlib HDF5 caches — would therefore freeze the
@@ -62,7 +60,7 @@ def _offload_sync(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     Wrapping the function in an ``async`` shim that offloads to Starlette's
     worker-thread pool keeps the event loop responsive. ``functools.wraps``
-    preserves ``__wrapped__`` so ``inspect.signature`` (used by FastMCP to build
+    preserves ``__wrapped__`` so ``inspect.signature`` (used by MCPServer to build
     the tool schema) still resolves the original signature and annotations.
     """
     if inspect.iscoroutinefunction(fn):
@@ -143,7 +141,7 @@ class MCPRouteMiddleware:
 
     def __init__(self, app) -> None:  # noqa: D107
         self.app = app
-        self.mcp_app = mcp.streamable_http_app()
+        self.mcp_app = mcp.streamable_http_app(stateless_http=True, host=MCP_HOST)
 
     async def __call__(self, scope, receive, send) -> None:
         """Route ``/mcp`` to the MCP app, everything else to the wrapped app."""
