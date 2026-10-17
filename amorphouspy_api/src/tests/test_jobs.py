@@ -525,6 +525,113 @@ def test_search_jobs_date_range() -> None:
     assert ids == {"j-date-new"}
 
 
+def test_search_jobs_refreshes_running_status_by_default() -> None:
+    """search_jobs should refresh running jobs unless explicitly disabled."""
+    _insert_running_job("j-running-refresh-default")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        store = get_job_store()
+
+        def _mark_completed(job: Job) -> None:
+            store.update_job(
+                job.job_id,
+                status="completed",
+                progress={
+                    "structure_generation": "completed",
+                    "melt_quench": "completed",
+                    "structure_characterization": "completed",
+                },
+                completed_at=datetime(2026, 8, 21, tzinfo=UTC),
+            )
+
+        mock_refresh.side_effect = _mark_completed
+
+        resp = client.post(
+            "/jobs:search",
+            json={"composition": {"SiO2": 100}},
+        )
+
+    assert resp.status_code == 200
+    match = next(m for m in resp.json()["matches"] if m["job_id"] == "j-running-refresh-default")
+    assert match["status"] == "completed"
+    mock_refresh.assert_called_once()
+
+
+def test_search_jobs_keeps_original_record_when_refresh_returns_no_latest_job() -> None:
+    """If the cache refresh yields no updated record, fall back to the DB snapshot."""
+    _insert_running_job("j-running-refresh-missing")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        store = get_job_store()
+        original_get_job = store.get_job
+
+        def _get_job_missing(job_id: str) -> Job | None:
+            if job_id == "j-running-refresh-missing":
+                return None
+            return original_get_job(job_id)
+
+        with patch.object(store, "get_job", side_effect=_get_job_missing):
+            resp = client.post(
+                "/jobs:search",
+                json={"composition": {"SiO2": 100}},
+            )
+
+    assert resp.status_code == 200
+    match = next(m for m in resp.json()["matches"] if m["job_id"] == "j-running-refresh-missing")
+    assert match["status"] == "running"
+    mock_refresh.assert_called_once()
+
+
+def test_search_jobs_can_skip_status_refresh() -> None:
+    """refresh_status=false keeps snapshot semantics and does not touch cache."""
+    _insert_running_job("j-running-refresh-off")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        resp = client.post(
+            "/jobs:search",
+            json={"composition": {"SiO2": 100}, "refresh_status": False},
+        )
+
+    assert resp.status_code == 200
+    match = next(m for m in resp.json()["matches"] if m["job_id"] == "j-running-refresh-off")
+    assert match["status"] == "running"
+    mock_refresh.assert_not_called()
+
+
+def test_search_jobs_applies_status_filter_after_refresh() -> None:
+    """A refreshed status change should still obey the requested statuses filter."""
+    _insert_running_job("j-running-refresh-status-filter")
+
+    with patch("amorphouspy_api.routers.jobs.refresh_job_from_cache") as mock_refresh:
+        store = get_job_store()
+
+        def _mark_completed(job: Job) -> None:
+            store.update_job(
+                job.job_id,
+                status="completed",
+                progress={
+                    "structure_generation": "completed",
+                    "melt_quench": "completed",
+                    "structure_characterization": "completed",
+                },
+                completed_at=datetime(2026, 8, 21, tzinfo=UTC),
+            )
+
+        mock_refresh.side_effect = _mark_completed
+
+        # Query asks for running jobs; refreshed job flips to completed and
+        # must be filtered out.
+        resp = client.post(
+            "/jobs:search",
+            json={"composition": {"SiO2": 100}, "statuses": ["running"]},
+        )
+
+    assert resp.status_code == 200
+    ids = {m["job_id"] for m in resp.json()["matches"]}
+    assert "j-running-refresh-status-filter" not in ids
+    mock_refresh.assert_called_once()
+
+
 def test_search_glasses_close_match() -> None:
     """A nearby composition should appear as a close match via glasses:search."""
     _insert_completed_job("j-close-1", composition="Al2O3 15 - CaO 25 - SiO2 60")

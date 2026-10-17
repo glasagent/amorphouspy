@@ -661,11 +661,22 @@ class JobSearchRequest(BaseModel):
     analyses: list[str] | None = None
     tags: list[str] | None = Field(
         default=None,
-        description="Filter to jobs with all specified tags",
+        description="Filter to jobs that contain all specified tags (logical AND).",
     )
     statuses: list[JobStatus] | None = Field(
         default=None,
-        description=("Filter to jobs with these statuses. If not provided, all statuses are included."),
+        description=(
+            "Filter to jobs with these statuses. If not provided, all statuses are included. "
+            "Status values are read from stored job records (snapshot semantics). "
+            "For live per-job refresh, call GET /jobs/{job_id}."
+        ),
+    )
+    refresh_status: bool = Field(
+        default=True,
+        description=(
+            "If true (default), refresh jobs currently marked running against executor cache "
+            "before returning results. Set to false for snapshot-only DB reads."
+        ),
     )
     created_after: datetime | None = Field(
         default=None,
