@@ -126,7 +126,7 @@ amorphouspy/
 │   ├── qn_network_connectivity.py        # Qⁿ distribution and network connectivity
 │   ├── bond_angle_distribution.py        # O-X-O and X-O-X bond angle histograms
 │   ├── rings.py                          # Guttman ring statistics (via sovapy)
-│   ├── cavities.py                       # Void/cavity volume analysis (via sovapy)
+│   ├── cavities.py                       # Void/cavity volume analysis (pyMolDyn-style domains)
 │   └── cte.py                            # CTE from NPT fluctuations
 └── workflows/
     ├── meltquench.py           # Core melt-quench simulation logic
