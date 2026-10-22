@@ -76,6 +76,7 @@ result = viscosity_simulation(
     max_iterations=40,              # extension iterations
     eta_rel_tol=0.05,               # 5 % relative-change tolerance
     eta_stable_iters=3,             # stable iterations required
+    thermostat="nose_hoover",
 )
 
 print(f"Viscosity : {result['viscosity_data']['viscosity']:.3e} Pa·s")
@@ -113,6 +114,7 @@ out = viscosity_ensemble(
     initial_production_steps=1_000_000,
     server_kwargs={"cores": 4},     # MPI cores per replica
     parallel=False,                 # set True to run all replicas simultaneously
+    thermostat="nose_hoover",
 )
 
 print(f"η = {out['viscosity']:.3e} ± {out['viscosity_sem']:.3e} Pa·s")
@@ -125,7 +127,7 @@ Replicas can also be dispatched to an HPC cluster via an
 from executorlib import SlurmJobExecutor
 
 with SlurmJobExecutor(max_workers=12) as exe:
-    out = viscosity_ensemble(..., executor=exe)
+    out = viscosity_ensemble(..., executor=exe, thermostat="nose_hoover")
 ```
 
 **Return keys:**

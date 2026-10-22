@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast, get_args
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,8 @@ from amorphouspy.lammps.io import structure_from_parsed_output
 
 LammpsPotential = str | pd.DataFrame | dict[str, Any]
 LammpsPressure = int | float | list[int | float | None] | None
+Ensemble = Literal["nve", "nvt", "npt", "nvt_langevin", "npt_langevin"]
+Thermostat = Literal["nose_hoover", "langevin"]
 
 
 @contextmanager
@@ -107,31 +109,96 @@ def run_lammps_with_error_capture(working_directory: str, **kwargs: Any) -> dict
     return parsed_output
 
 
-def _nve_initial_temperature(
-    structure: Atoms, initial_temperature: float | None, *, uses_thermostat_or_barostat: bool
-) -> float:
-    """Validate the settings of an NVE run and return its initial temperature.
+def thermostat_ensembles(thermostat: Thermostat) -> tuple[Ensemble, Ensemble]:
+    """Return the NVT and NPT ensemble names for a thermostat.
+
+    Args:
+        thermostat: ``"nose_hoover"`` or ``"langevin"``.
+
+    Returns:
+        ``("nvt", "npt")`` for ``"nose_hoover"``, ``("nvt_langevin", "npt_langevin")`` for ``"langevin"``.
+
+    Raises:
+        ValueError: If ``thermostat`` is unknown.
+
+    """
+    if thermostat == "nose_hoover":
+        return "nvt", "npt"
+    if thermostat == "langevin":
+        return "nvt_langevin", "npt_langevin"
+    msg = f"thermostat must be one of {get_args(Thermostat)}, got {thermostat!r}."
+    raise ValueError(msg)
+
+
+def _validate_npt_pressure(ensemble: str, npt_pressure: LammpsPressure, npt_pressure_end: float | None) -> None:
+    """Check that the pressure arguments of an MD run are consistent with its ensemble.
+
+    Args:
+        ensemble: Name of the thermodynamic ensemble.
+        npt_pressure: Target (start) pressure in GPa.
+        npt_pressure_end: End pressure in GPa for a linear pressure ramp.
+
+    Raises:
+        ValueError: If a pressure is given for a non-npt ensemble, missing for an npt ensemble, or the
+            pressure ramp is combined with an anisotropic pressure or a Langevin thermostat.
+    """
+    is_npt = ensemble.startswith("npt")
+    if not is_npt and (npt_pressure is not None or npt_pressure_end is not None):
+        msg = f"npt_pressure and npt_pressure_end can only be used with an npt ensemble, got {ensemble!r}."
+        raise ValueError(msg)
+    if is_npt and npt_pressure is None:
+        msg = f"npt_pressure must be set for ensemble {ensemble!r}."
+        raise ValueError(msg)
+    if npt_pressure_end is not None and isinstance(npt_pressure, list):
+        msg = "npt_pressure must be a scalar when npt_pressure_end is specified."
+        raise ValueError(msg)
+    if npt_pressure_end is not None and ensemble == "npt_langevin":
+        msg = "npt_pressure_end (pressure ramp) cannot be used with ensemble 'npt_langevin'."
+        raise ValueError(msg)
+
+
+def _validate_ensemble(
+    structure: Atoms,
+    ensemble: str,
+    temperature: float | None,
+    temperature_end: float | None,
+    npt_pressure: LammpsPressure,
+    npt_pressure_end: float | None,
+    initial_temperature: float | None,
+) -> float | None:
+    """Check that the arguments of an MD run are consistent with its ensemble.
 
     Args:
         structure: The atomic structure to simulate.
-        initial_temperature: Requested initial temperature. None means 0, i.e. keep the velocities of ``structure``.
-        uses_thermostat_or_barostat: Whether a pressure, pressure ramp, temperature ramp or Langevin thermostat
-            was requested.
+        ensemble: One of ``"nve"``, ``"nvt"``, ``"npt"``, ``"nvt_langevin"`` or ``"npt_langevin"``.
+        temperature: Target (start) temperature in K.
+        temperature_end: End temperature in K for a linear temperature ramp.
+        npt_pressure: Target (start) pressure in GPa.
+        npt_pressure_end: End pressure in GPa for a linear pressure ramp.
+        initial_temperature: Requested temperature for velocity initialization.
 
     Returns:
-        The initial temperature to pass to the parser (0 keeps the velocities of ``structure``).
+        The initial temperature to pass on. For ``"nve"``, None becomes 0, i.e. keep the velocities of ``structure``.
 
     Raises:
-        ValueError: If ``uses_thermostat_or_barostat`` is True, or if the initial temperature is not positive and
-            ``structure`` carries no non-zero velocities.
+        ValueError: If ``ensemble`` is unknown or any argument does not fit it.
     """
-    if uses_thermostat_or_barostat:
-        msg = "nve cannot be combined with pressure, pressure_end, temperature_end or langevin."
+    if ensemble not in get_args(Ensemble):
+        msg = f"ensemble must be one of {get_args(Ensemble)}, got {ensemble!r}."
+        raise ValueError(msg)
+    _validate_npt_pressure(ensemble, npt_pressure, npt_pressure_end)
+    if ensemble != "nve":
+        if temperature is None:
+            msg = f"temperature must be set for ensemble {ensemble!r}."
+            raise ValueError(msg)
+        return initial_temperature
+    if temperature is not None or temperature_end is not None:
+        msg = "temperature and temperature_end cannot be used with ensemble 'nve'."
         raise ValueError(msg)
     if initial_temperature is None:
         initial_temperature = 0.0
     if initial_temperature <= 0 and np.allclose(structure.get_velocities(), 0.0):
-        msg = "nve with initial_temperature 0 needs a structure that carries non-zero velocities."
+        msg = "ensemble 'nve' with initial_temperature 0 needs a structure that carries non-zero velocities."
         raise ValueError(msg)
     return initial_temperature
 
@@ -139,20 +206,19 @@ def _nve_initial_temperature(
 def _run_lammps_md(
     structure: Atoms,
     potential: LammpsPotential,
-    temperature: float,
     n_ionic_steps: int,
     timestep: float,
+    temperature: float | None = None,
     initial_temperature: float | None = None,
     temperature_end: float | None = None,
-    pressure: LammpsPressure = None,
-    pressure_end: float | None = None,
+    npt_pressure: LammpsPressure = None,
+    npt_pressure_end: float | None = None,
     server_kwargs: dict[str, Any] | None = None,
     *,
+    ensemble: Ensemble,
     n_dump: int | None = None,
     n_print_thermo: int | None = None,
     input_control_file: dict[str, Any] | None = None,
-    langevin: bool = False,
-    nve: bool = False,
     seed: int | None = 12345,
     tmp_working_directory: str | Path | None = None,
     dump_final_structure: bool = True,
@@ -162,22 +228,23 @@ def _run_lammps_md(
     Args:
         structure: The atomic structure to simulate.
         potential: The potential file to be used for the simulation.
-        temperature: Start temperature (or constant temperature when ``temperature_end`` is None).
-            Unused when ``nve`` is True.
         n_ionic_steps: Number of MD steps to run.
         timestep: Time step for integration in femtoseconds.
+        temperature: Start temperature (or constant temperature when ``temperature_end`` is None).
+            Required for every ensemble except ``"nve"``, where it must be None.
         initial_temperature: Initial temperature for velocity initialization. If None, the initial
             temperature will be twice the target temperature (which would go immediately down to the target temperature
             as described in equipartition theorem). If 0, the velocity field is not initialized (in which case the
             initial velocity given in structure will be used and seed to initialize velocities will be ignored).
-            When ``nve`` is True, None means 0, so the velocities carried by ``structure`` are kept.
+            For ``ensemble="nve"``, None means 0, so the velocities carried by ``structure`` are kept.
         temperature_end: End temperature for a linear temperature ramp. If None, temperature is held constant.
-        pressure: Start pressure in GPa for NPT simulations. If None, NVT is used.
-            A scalar selects isotropic NPT. A six-element list selects anisotropic
+            Not allowed for ``ensemble="nve"``.
+        npt_pressure: Start pressure in GPa. Required for the ``"npt"`` and ``"npt_langevin"`` ensembles and not
+            allowed otherwise. A scalar selects isotropic NPT. A six-element list selects anisotropic
             or triclinic NPT.
-        pressure_end: End pressure in GPa for a linear pressure ramp. Requires ``pressure`` to be set.
+        npt_pressure_end: End pressure in GPa for a linear pressure ramp. Requires a scalar ``npt_pressure``.
             The pressure ramp is injected as a custom LAMMPS ``fix npt`` command because the parser does not
-            support pressure ramps natively. Does not work in combination with ``langevin``.
+            support pressure ramps natively. Only allowed for ``ensemble="npt"``.
         server_kwargs: Additional keyword arguments for the server.
         n_dump: Dump frequency of structural output in simulation steps. If None,
             falls back to ``n_ionic_steps``.
@@ -185,11 +252,10 @@ def _run_lammps_md(
             falls back to ``n_dump``.
         input_control_file: Optional LAMMPS input overrides merged on top of the
             default generated controls.
-        langevin: Whether to use Langevin dynamics for thermostats. Cannot be used in combination with ``pressure_end``.
-        nve: Whether to run an unthermostatted microcanonical (``fix nve``) simulation. No thermostat or barostat
-            is applied. The run starts from the velocities in ``structure`` unless a positive
-            ``initial_temperature`` is given, in which case velocities are created at that temperature first.
-            Cannot be combined with ``pressure``, ``pressure_end``, ``temperature_end`` or ``langevin``.
+        ensemble: Thermodynamic ensemble. ``"nve"`` runs unthermostatted microcanonical dynamics (``fix nve``)
+            starting from the velocities in ``structure`` unless a positive ``initial_temperature`` is given.
+            ``"nvt"`` and ``"npt"`` use Nosé-Hoover thermostat/barostat. ``"nvt_langevin"`` uses ``fix nve``
+            with a Langevin thermostat, ``"npt_langevin"`` uses ``fix nph`` with a Langevin thermostat.
         seed: Random seed for velocity initialization (default is 12345). May be None
             when the backend should choose a random seed. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
@@ -209,33 +275,21 @@ def _run_lammps_md(
             - parsed_output: The parsed output dictionary.
 
     Raises:
-        ValueError: If ``nve`` is combined with ``pressure``, ``pressure_end``, ``temperature_end`` or
-            ``langevin``; if ``nve`` is used with a non-positive ``initial_temperature`` and ``structure``
-            carries no non-zero velocities; if ``pressure_end`` is given without a scalar ``pressure``;
-            or if ``pressure_end`` is combined with ``langevin``.
+        ValueError: If ``ensemble`` is unknown or the temperature/pressure arguments do not fit it (see
+            ``_validate_ensemble``).
 
     """
-    if nve:
-        uses_thermostat_or_barostat = (
-            pressure is not None or pressure_end is not None or temperature_end is not None or langevin
-        )
-        initial_temperature = _nve_initial_temperature(
-            structure, initial_temperature, uses_thermostat_or_barostat=uses_thermostat_or_barostat
-        )
-    if pressure_end is not None and pressure is None:
-        msg = "pressure must be set when pressure_end is specified."
-        raise ValueError(msg)
-    if pressure_end is not None and isinstance(pressure, list):
-        msg = "pressure must be a scalar when pressure_end is specified."
-        raise ValueError(msg)
+    initial_temperature = _validate_ensemble(
+        structure, ensemble, temperature, temperature_end, npt_pressure, npt_pressure_end, initial_temperature
+    )
 
     # Creates a working directory for the simulation (auto-cleaned when
     # tmp_working_directory is None; caller-owned otherwise).
     with simulation_working_directory(tmp_working_directory) as tmpdir:
         tmp_path = str(Path(tmpdir))
 
-        temp_setting: float | list[float] = (
-            [temperature, temperature_end] if temperature_end is not None else temperature
+        temp_setting: float | list[float] | None = (
+            [temperature, temperature_end] if temperature is not None and temperature_end is not None else temperature
         )
         t_start = temperature
         t_end = temperature_end if temperature_end is not None else temperature
@@ -257,22 +311,17 @@ def _run_lammps_md(
 
         # Pressure ramp: the parser cannot express [P_start → P_end] natively, so inject a
         # custom fix npt command that overrides whatever the parser would generate.
-        if pressure_end is not None:
-            if langevin:
-                msg = "langevin cannot be used in combination with pressure ramps via ``pressure_end``."
-                raise ValueError(msg)
-            assert isinstance(pressure, int | float), "pressure must be a scalar when pressure_end is given"
-            p_start_bar = pressure * 10_000  # GPa → bar (LAMMPS metal units)
-            p_end_bar = pressure_end * 10_000
+        if npt_pressure_end is not None:
+            assert isinstance(npt_pressure, int | float), "npt_pressure must be a scalar when npt_pressure_end is given"
+            p_start_bar = npt_pressure * 10_000  # GPa → bar (LAMMPS metal units)
+            p_end_bar = npt_pressure_end * 10_000
             input_control["fix"] = f"ensemble all npt temp {t_start} {t_end} 0.1 iso {p_start_bar} {p_end_bar} 1.0"
-            passed_pressure: LammpsPressure = pressure  # scalar to put parser in NPT mode
-        else:
-            passed_pressure = pressure
 
         if input_control_file is not None:
             input_control.update(input_control_file)
 
         if initial_temperature is None:
+            assert temperature is not None, "temperature is validated for every ensemble except nve"
             initial_temperature = 2 * temperature
 
         # Sets up the LAMMPS simulations
@@ -284,14 +333,14 @@ def _run_lammps_md(
             potential=cast("Any", potential),
             calc_mode="md",
             calc_kwargs={
-                "temperature": None if nve else temp_setting,
+                "temperature": temp_setting,
                 "n_ionic_steps": n_ionic_steps,
                 "time_step": timestep,
                 "n_print": effective_n_dump,
                 "initial_temperature": initial_temperature,
                 "seed": seed,
-                "pressure": passed_pressure,
-                "langevin": langevin,
+                "pressure": npt_pressure,
+                "langevin": ensemble.endswith("_langevin"),
             },
             units="metal",
             write_restart_file=False,

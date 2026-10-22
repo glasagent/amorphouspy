@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 from amorphouspy_api.pipeline import (
     _SUBMITTERS,
     ANALYSES,
@@ -17,6 +18,7 @@ from amorphouspy_api.pipeline import (
     _analysis_uses_lammps,
     _merge_results,
     _run_analysis,
+    _run_elastic,
     _run_structural_analysis,
     submit_pipeline,
 )
@@ -399,3 +401,19 @@ class TestSubmitPipelineResources:
 
         structure_call = next(c for c in executor.calls if c["kwargs"].get("step_name") == "structure_characterization")
         assert structure_call["kwargs"]["resource_dict"]["threads_per_core"] == 24
+
+
+@pytest.mark.parametrize(("pressure", "ensemble"), [(None, "nvt"), (0.1, "npt")])
+def test_run_elastic_maps_config_pressure_to_ensemble(pressure: float | None, ensemble: str) -> None:
+    """The API keeps pressure=None for NVT and translates it into an explicit ensemble for elastic_simulation."""
+    from amorphouspy_api.models import ElasticAnalysis
+
+    submission = SimpleNamespace(potential="pmmcs", simulation=SimpleNamespace(n_atoms=300, cores=1))
+    result = {"melt_quench": {"final_structure": object()}, "structure_generation": {"potential": object()}}
+
+    with patch("amorphouspy.properties.elastic.elastic_simulation", return_value={"Cij": None}) as mock_elastic:
+        _run_elastic(submission, ElasticAnalysis(pressure=pressure), result)  # ty: ignore[invalid-argument-type]
+
+    kwargs = mock_elastic.call_args.kwargs
+    assert kwargs["ensemble"] == ensemble
+    assert kwargs["npt_pressure"] == pressure

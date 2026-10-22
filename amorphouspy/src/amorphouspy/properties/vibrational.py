@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import scipy.fft
+import scipy.signal
 from numpy.typing import NDArray
 from scipy.constants import c, e, h
 
@@ -167,6 +168,7 @@ def classify_vibrational_groups(
 
 
 VdosNormalization = Literal["unit", "3N", "none"]
+VdosWindow = Literal["hann", "hamming", "blackmanharris"] | tuple[Literal["gaussian"], float] | None
 
 # Target size of one chunk of velocities; the complex spectrum of a chunk is about the same size.
 _CHUNK_BYTES = 64 * 2**20
@@ -176,6 +178,8 @@ _MIN_FRAMES = 2
 # Internal (centre-of-mass-free) kinetic sum at or below this fraction of the uncentred one counts as no internal
 # motion. It sits well above the rounding noise of removing the centre of mass from a uniform translation.
 _ZERO_SPECTRUM_RTOL = 1e-10
+_WINDOWS = ("hann", "hamming", "blackmanharris")
+_GAUSSIAN_LEN = 2  # ("gaussian", std)
 
 
 def _atoms_per_chunk(n_frames: int, itemsize: int) -> int:
@@ -183,7 +187,7 @@ def _atoms_per_chunk(n_frames: int, itemsize: int) -> int:
 
 
 def _validate_vdos_inputs(
-    velocities: NDArray, masses: NDArray, dt_fs: float, normalization: str
+    velocities: NDArray, masses: NDArray, dt_fs: float, normalization: str, window: object
 ) -> tuple[NDArray, NDArray[np.float64]]:
     velocities = np.asarray(velocities)
     masses = np.asarray(masses, dtype=np.float64)
@@ -206,6 +210,21 @@ def _validate_vdos_inputs(
     if normalization not in ("unit", "3N", "none"):
         msg = f"Unknown normalization {normalization!r}; allowed values are 'unit', '3N' and 'none'."
         raise ValueError(msg)
+    gaussian = (
+        isinstance(window, tuple)
+        and len(window) == _GAUSSIAN_LEN
+        and window[0] == "gaussian"
+        and isinstance(window[1], int | float | np.integer | np.floating)
+        and not isinstance(window[1], bool)
+        and np.isfinite(window[1])
+        and window[1] > 0
+    )
+    if not (gaussian or window is None or (isinstance(window, str) and window in _WINDOWS)):
+        msg = (
+            f"Unknown window {window!r}; allowed values are 'hann', 'hamming', 'blackmanharris', "
+            "('gaussian', std) with std > 0 in frames, and None."
+        )
+        raise ValueError(msg)
     return velocities, masses
 
 
@@ -224,15 +243,16 @@ def _validate_selection(indices: NDArray, n_atoms: int, name: str) -> NDArray[np
 
 
 def _trajectory_statistics(
-    velocities: NDArray, masses: NDArray[np.float64], *, remove_com: bool
+    velocities: NDArray, masses: NDArray[np.float64], weights: NDArray[np.float64] | None, *, remove_com: bool
 ) -> tuple[NDArray[np.float64] | None, float]:
     """One read of all atoms: centre-of-mass velocity per frame and the trapezoid integral of the total spectrum.
 
-    The integral of sum_i m_i |rfft(v_i)|^2 over the rfft grid follows from Parseval's theorem without any FFT:
-    (dnu / 2) * (n_frames * K - K_top), with K = sum_t sum_i m_i |v_i(t)|^2 and K_top the mass-weighted power of the
-    last frequency bin, which only enters for an odd number of frames. With centre-of-mass removal both sums are
-    reduced by the centre-of-mass term, since sum_i m_i (v_i - v_com) = 0. Non-finite velocities make K non-finite,
-    so the finiteness check costs nothing extra.
+    The integral of sum_i m_i |rfft(w v_i)|^2 over the rfft grid follows from Parseval's theorem without any FFT:
+    (dnu / 2) * (n_frames * K - K_top), with K = sum_t w_t^2 sum_i m_i |v_i(t)|^2 and K_top the mass-weighted power
+    of the last frequency bin of the windowed signal, which only enters for an odd number of frames. ``weights=None``
+    means w = 1. With centre-of-mass removal both sums are reduced by the centre-of-mass term, since
+    sum_i m_i (v_i - v_com) = 0. Non-finite velocities make the unwindowed sum non-finite, so the finiteness check
+    costs nothing extra; the finiteness and zero-spectrum checks use the unwindowed sums.
 
     Returns:
         The centre-of-mass velocity ``(n_frames, 3)`` (``None`` without removal) and the integral divided by dnu / 2.
@@ -242,6 +262,9 @@ def _trajectory_statistics(
     odd = n_frames % 2 == 1
     phase = np.arange(n_frames) * (2 * np.pi * ((n_frames - 1) // 2) / n_frames)
     cos_t, sin_t = np.cos(phase), np.sin(phase)
+    if weights is not None:
+        cos_t, sin_t = cos_t * weights, sin_t * weights
+        kinetic = np.zeros(n_frames)  # sum_i m_i |v_i(t)|^2 per frame
     momentum = np.zeros((n_frames, _N_COMPONENTS))
     top_momentum = np.zeros((2, _N_COMPONENTS))
     raw_sq = 0.0
@@ -249,7 +272,12 @@ def _trajectory_statistics(
     for start in range(0, n_atoms, chunk):
         block = velocities[:, start : start + chunk]
         block_masses = masses[start : start + chunk]
-        block_sq = float(np.einsum("tia,tia->i", block, block, dtype=np.float64) @ block_masses)
+        if weights is None:
+            block_sq = float(np.einsum("tia,tia->i", block, block, dtype=np.float64) @ block_masses)
+        else:
+            frame_sq = np.einsum("tia,tia->ti", block, block, dtype=np.float64) @ block_masses
+            block_sq = float(frame_sq.sum())
+            kinetic += frame_sq
         if not np.isfinite(block_sq):
             msg = "velocities contain NaN or inf (or values too large to square)."
             raise ValueError(msg)
@@ -267,26 +295,35 @@ def _trajectory_statistics(
     if not raw_sq > 0:
         msg = "The velocity spectrum is zero (all velocities are zero)."
         raise ValueError(msg)
+    window_sq = None if weights is None else weights**2
     if not remove_com:
-        return None, n_frames * raw_sq - top_sq
+        weighted_sq = raw_sq if window_sq is None else float(window_sq @ kinetic)
+        return None, n_frames * weighted_sq - top_sq
     total_mass = masses.sum()
     com_velocity = momentum / total_mass
     centred_sq = raw_sq - total_mass * float(np.sum(com_velocity**2))
     if centred_sq <= _ZERO_SPECTRUM_RTOL * raw_sq:
         msg = "The velocity spectrum is zero after removing the centre-of-mass velocity (no internal motion)."
         raise ValueError(msg)
+    if window_sq is not None:
+        centred_sq = float(window_sq @ kinetic) - total_mass * float(window_sq @ np.sum(com_velocity**2, axis=1))
     return com_velocity, n_frames * centred_sq - (top_sq - float(np.sum(top_momentum**2)) / total_mass)
 
 
 def _accumulate_power(
-    velocities: NDArray, masses: NDArray[np.float64], com_velocity: NDArray[np.float64] | None, membership: NDArray
+    velocities: NDArray,
+    masses: NDArray[np.float64],
+    com_velocity: NDArray[np.float64] | None,
+    membership: NDArray,
+    weights: NDArray[np.float64] | None,
 ) -> NDArray[np.float64]:
-    """Sum m_i * sum_a |rfft(v_ia - v_com,a)|^2 over the atoms of each column of ``membership`` (n_atoms, n_cols).
+    """Sum m_i * sum_a |rfft(w * (v_ia - v_com,a))|^2 over the atoms of each column of ``membership`` (n_atoms, n_cols).
 
     Only atoms that belong to at least one column are transformed. A contiguous range of atoms is sliced as a view;
     other selections are gathered chunk by chunk. float32 velocities are transformed in single precision (complex64)
     and float64 or other input in double precision, with the same forward, unnormalised DFT as ``np.fft.rfft``;
-    per-atom powers are combined in float64.
+    per-atom powers are combined in float64. The window ``weights`` (``None`` for none) is applied per chunk in the
+    working precision, never in place on a view of the input.
     """
     n_frames = velocities.shape[0]
     work = np.float32 if velocities.dtype == np.float32 else np.float64
@@ -294,19 +331,28 @@ def _accumulate_power(
     contiguous = needed[-1] - needed[0] + 1 == needed.size
     chunk = _atoms_per_chunk(n_frames, np.dtype(work).itemsize)
     com_work = None if com_velocity is None else com_velocity.astype(work)[:, None, :]
+    window_work = None if weights is None else weights.astype(work)[:, None, None]
     power = np.zeros((n_frames // 2 + 1, membership.shape[1]))
     for start in range(0, needed.size, chunk):
         atoms = needed[start : start + chunk]
+        is_view = False
         if contiguous:
             block = velocities[:, atoms[0] : atoms[-1] + 1]
             if com_work is not None:
                 block = np.subtract(block, com_work, dtype=work)
             elif block.dtype != work:
                 block = block.astype(work)
+            else:
+                is_view = True
         else:
             block = velocities[:, atoms].astype(work, copy=False)
             if com_work is not None:
                 block -= com_work
+        if window_work is not None:
+            if is_view:
+                block = block * window_work
+            else:
+                block *= window_work
         # scipy.fft transforms float32 natively; np.fft computes in double internally and needs ~3x the memory.
         spectrum = np.ascontiguousarray(scipy.fft.rfft(block, axis=0))
         del block
@@ -326,9 +372,10 @@ def _vdos_columns(
     normalization: str,
     *,
     remove_com: bool,
+    window: VdosWindow,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Shared implementation: VDOS of the whole system (``selections=None``) or of each named selection, as columns."""
-    velocities, masses = _validate_vdos_inputs(velocities, masses, dt_fs, normalization)
+    velocities, masses = _validate_vdos_inputs(velocities, masses, dt_fs, normalization, window)
     n_frames, n_atoms, _ = velocities.shape
     if selections is None:
         membership = np.ones((n_atoms, 1))
@@ -336,13 +383,17 @@ def _vdos_columns(
         membership = np.zeros((n_atoms, len(selections)))
         for column, (name, indices) in enumerate(selections.items()):
             membership[_validate_selection(indices, n_atoms, name), column] = 1.0
-    com_velocity, parseval_sum = _trajectory_statistics(velocities, masses, remove_com=remove_com)
-    power = _accumulate_power(velocities, masses, com_velocity, membership)
+    # get_window builds the periodic (DFT-even) form of each window.
+    weights = None if window is None else np.asarray(scipy.signal.get_window(window, n_frames), dtype=np.float64)
+    com_velocity, parseval_sum = _trajectory_statistics(velocities, masses, weights, remove_com=remove_com)
+    power = _accumulate_power(velocities, masses, com_velocity, membership, weights)
 
     dt_ps = dt_fs * 1e-3
     frequencies_thz = np.asarray(np.fft.rfftfreq(n_frames, d=dt_ps), dtype=np.float64)
     if normalization == "none":
-        return frequencies_thz, power * (2 * dt_ps / n_frames)
+        if weights is None:
+            return frequencies_thz, power * (2 * dt_ps / n_frames)
+        return frequencies_thz, power * (2 * dt_ps / float(np.sum(weights**2)))
     reference_integral = 0.5 * float(frequencies_thz[1]) * parseval_sum
     scale = 1.0 if normalization == "unit" else 3.0 * n_atoms
     return frequencies_thz, power * (scale / reference_integral)
@@ -356,6 +407,7 @@ def compute_vdos_from_velocities(
     indices: NDArray | None = None,
     normalization: VdosNormalization = "unit",
     remove_com: bool = True,
+    window: VdosWindow = None,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     r"""Compute the vibrational density of states from an MD velocity trajectory.
 
@@ -367,8 +419,28 @@ def compute_vdos_from_velocities(
     the unnormalised forward DFT along time (the ``np.fft.rfft`` convention; computed with ``scipy.fft.rfft``), on the
     one-sided grid
     $\nu_k = k / (N \Delta t)$, $k = 0, \dots, \lfloor N/2 \rfloor$, in THz. The frequency resolution is
-    $1 / (N \Delta t)$ and the highest frequency is the Nyquist frequency $1 / (2 \Delta t)$. No window, zero padding
-    or per-atom mean subtraction is applied.
+    $1 / (N \Delta t)$ and the highest frequency is the Nyquist frequency $1 / (2 \Delta t)$. No zero padding or
+    per-atom mean subtraction is applied, and no window unless ``window`` is set.
+
+    With a window, the (centre-of-mass-free) velocities are multiplied by $w_t$, $t = 0, \dots, N-1$, before the
+    transform. All windows are periodic (``scipy.signal.get_window(window, N)``):
+
+    - ``"hann"``: $w_t = \tfrac{1}{2}\left(1 - \cos(2\pi t / N)\right)$.
+    - ``"hamming"``: $w_t = 0.54 - 0.46 \cos(2\pi t / N)$. Lower first sidelobe than Hann, but the edges are not
+      zero (0.08), so leakage far from a peak decays more slowly.
+    - ``"blackmanharris"``: the 4-term Blackman-Harris window $w_t = \sum_{j=0}^{3} (-1)^j a_j \cos(2\pi j t / N)$,
+      $a = (0.35875, 0.48829, 0.14128, 0.01168)$, with sidelobes below $-92$ dB.
+    - ``("gaussian", std)``: $w_t = \exp\left(-\tfrac{1}{2}\left((t - N/2) / \sigma\right)^2\right)$ with
+      $\sigma$ = ``std`` in frames, so its width relative to the block depends on $N$. It is truncated at the edges
+      (edge value $e^{-8} \approx 3 \times 10^{-4}$ for $\sigma = N/8$). A narrow window ($\sigma \ll N/8$) widens
+      every peak and can spread power further than no window at all.
+
+    A window suppresses spectral leakage from the finite trajectory length at the cost of resolution. The effective
+    resolution is $\mathrm{ENBW} / (N \Delta t)$ with the equivalent noise bandwidth
+    $\mathrm{ENBW} = N \sum_t w_t^2 / (\sum_t w_t)^2$ bins: 1.5 (Hann), 1.36 (Hamming), 2.0 (Blackman-Harris) and
+    about $N / (2 \sqrt{\pi} \sigma)$ (Gaussian, $\sigma \ll N$). For 10 ps blocks that is 0.15, 0.14 and 0.20 THz,
+    and 0.23 THz for a Gaussian with $\sigma = N/8$. With ``window=None`` (default) the full $1 / (N \Delta t)$
+    resolution is kept, and a peak between grid points leaks into distant bins.
 
     With ``remove_com=True`` (default), the instantaneous mass-weighted centre-of-mass velocity of the whole system,
     $\mathbf{v}_\mathrm{COM}(t) = \sum_i m_i \mathbf{v}_i(t) / \sum_i m_i$, is subtracted from every atom in every
@@ -383,7 +455,13 @@ def compute_vdos_from_velocities(
     - ``"none"``: the power spectral density $S(\nu_k) = (2 \Delta t / N) \sum_i m_i \sum_\alpha |V_{i\alpha}|^2$ in
       amu (velocity unit)$^2$ ps. For an even number of frames its integral equals the time average of
       $\sum_i m_i |\mathbf{v}_i|^2$ (twice the mean kinetic energy) exactly, by Parseval's theorem; for an odd number
-      it is lower by half the last bin.
+      it is lower by half the last bin. With a window, $V_{i\alpha}$ is the transform of the windowed velocities and
+      the prefactor is $2 \Delta t / \sum_t w_t^2$ instead of $2 \Delta t / N$; the integral is then the
+      $w^2$-weighted time average $\sum_t w_t^2 \sum_i m_i |\mathbf{v}_i(t)|^2 / \sum_t w_t^2$ (exact for an even
+      number of frames).
+
+    With a window, ``"unit"`` and ``"3N"`` are applied to the windowed total VDOS, which still integrates to exactly 1
+    and ``3 * n_atoms``.
 
     A partial VDOS (``indices`` given) is the same spectrum summed over the selected atoms only and is scaled by the
     total VDOS's normalisation, so partials over disjoint selections add up to the total. Its integral is the
@@ -406,6 +484,8 @@ def compute_vdos_from_velocities(
             :func:`classify_vibrational_groups`. ``None`` (default) gives the total VDOS.
         normalization: ``"unit"``, ``"3N"`` or ``"none"``, see above.
         remove_com: Subtract the centre-of-mass velocity of the whole system from every frame.
+        window: ``"hann"``, ``"hamming"``, ``"blackmanharris"``, ``("gaussian", std)`` with ``std > 0`` in frames,
+            or ``None`` (default) for no window, see above.
 
     Returns:
         A tuple ``(frequencies_thz, vdos)`` of float64 arrays of length ``n_frames // 2 + 1``: the frequencies in THz
@@ -415,9 +495,9 @@ def compute_vdos_from_velocities(
     Raises:
         ValueError: If ``velocities`` is not ``(n_frames, n_atoms, 3)`` with at least one atom, ``masses`` does not
             have shape ``(n_atoms,)``, there are fewer than 2 frames, ``dt_fs <= 0``, any mass is not positive and
-            finite, ``velocities`` contains NaN or inf, ``normalization`` is unknown, ``indices`` is empty, not 1-D
-            integer, out of range or has duplicates, or the spectrum vanishes (all velocities zero, or no motion left
-            after centre-of-mass removal, e.g. every atom moves with the same velocity).
+            finite, ``velocities`` contains NaN or inf, ``normalization`` or ``window`` is unknown, ``indices`` is
+            empty, not 1-D integer, out of range or has duplicates, or the spectrum vanishes (all velocities zero, or
+            no motion left after centre-of-mass removal, e.g. every atom moves with the same velocity).
 
     Example:
         ```pycon
@@ -438,12 +518,15 @@ def compute_vdos_from_velocities(
         ... )
         >>> round(float(np.trapezoid(partial, frequencies_thz)), 6)
         3.0
+        >>> _, vdos_hann = compute_vdos_from_velocities(velocities, masses, dt_fs, window="hann")
+        >>> float(frequencies_thz[np.argmax(vdos_hann)]), round(float(np.trapezoid(vdos_hann, frequencies_thz)), 6)
+        (10.0, 1.0)
 
         ```
     """
     selections = None if indices is None else {"indices": indices}
     frequencies_thz, columns = _vdos_columns(
-        velocities, masses, dt_fs, selections, normalization, remove_com=remove_com
+        velocities, masses, dt_fs, selections, normalization, remove_com=remove_com, window=window
     )
     return frequencies_thz, np.ascontiguousarray(columns[:, 0])
 
@@ -456,14 +539,15 @@ def compute_partial_vdos(
     *,
     normalization: VdosNormalization = "unit",
     remove_com: bool = True,
+    window: VdosWindow = None,
 ) -> tuple[NDArray[np.float64], dict[str, dict[str, NDArray[np.float64]]]]:
     """Compute partial VDOS for many atom groups with one transform per atom.
 
     Each partial is exactly what :func:`compute_vdos_from_velocities` returns with ``indices`` set to the group
-    (same centre-of-mass treatment, normalisation and units), but every atom is transformed once, however many groups
-    it belongs to. ``groups`` has the layout returned by :func:`classify_vibrational_groups`: classify once, then
+    (same centre-of-mass treatment, window, normalisation and units), but every atom is transformed once, however many
+    groups it belongs to. ``groups`` has the layout returned by :func:`classify_vibrational_groups`: classify once, then
     reuse the indices for any number of trajectories or blocks. Within one grouping that covers every atom once (e.g.
-    ``"element"``), the partials add up to the total VDOS.
+    ``"element"``), the partials add up to the total VDOS computed with the same window and normalisation.
 
     Args:
         velocities: Velocities of shape ``(n_frames, n_atoms, 3)`` in any unit.
@@ -473,13 +557,16 @@ def compute_partial_vdos(
             :func:`classify_vibrational_groups`. Atoms may appear in several groupings.
         normalization: ``"unit"``, ``"3N"`` or ``"none"``, as in :func:`compute_vdos_from_velocities`.
         remove_com: Subtract the centre-of-mass velocity of the whole system from every frame.
+        window: ``"hann"``, ``"hamming"``, ``"blackmanharris"``, ``("gaussian", std)`` or ``None`` (default), as in
+            :func:`compute_vdos_from_velocities`.
 
     Returns:
         A tuple ``(frequencies_thz, partial)``: the frequencies in THz and ``{grouping: {label: vdos}}`` with the
         same keys as ``groups``, each a float64 array of length ``n_frames // 2 + 1``.
 
     Raises:
-        ValueError: As :func:`compute_vdos_from_velocities`, for any group's indices, or if ``groups`` has no labels.
+        ValueError: As :func:`compute_vdos_from_velocities` (including an unknown ``window``), for any group's
+            indices, or if ``groups`` has no labels.
 
     Example:
         ```pycon
@@ -500,7 +587,7 @@ def compute_partial_vdos(
         raise ValueError(msg)
     selections = {f"groups[{g!r}][{label!r}]": groups[g][label] for g, label in keys}
     frequencies_thz, columns = _vdos_columns(
-        velocities, masses, dt_fs, selections, normalization, remove_com=remove_com
+        velocities, masses, dt_fs, selections, normalization, remove_com=remove_com, window=window
     )
     partial: dict[str, dict[str, NDArray[np.float64]]] = {grouping: {} for grouping in groups}
     for column, (grouping, label) in enumerate(keys):

@@ -16,7 +16,7 @@ from amorphouspy.fabrication.meltquench_protocols import (
     PROTOCOL_MAP,
     MeltQuenchParams,
 )
-from amorphouspy.lammps.runner import _run_lammps_md
+from amorphouspy.lammps.runner import Thermostat, _run_lammps_md
 
 
 def melt_quench_simulation(
@@ -31,7 +31,7 @@ def melt_quench_simulation(
     equilibration_steps: int | None = None,
     *,
     server_kwargs: dict | None = None,
-    langevin: bool = False,
+    thermostat: Thermostat,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
     pre_equilibrate: bool = True,
@@ -61,7 +61,7 @@ def melt_quench_simulation(
         equilibration_steps: Override for all fixed equilibration stages inside the protocol.
             If None, each protocol uses its own hardcoded defaults.
         server_kwargs: Additional keyword arguments for the server.
-        langevin: Whether to use Langevin dynamics.
+        thermostat: Thermostat of all protocol stages, ``"nose_hoover"`` or ``"langevin"``.
         seed: Random seed for velocity initialization. Ignored if `initial_temperature` is 0.
         tmp_working_directory: Specifies the location of the temporary directory to run the simulations.
         pre_equilibrate: Run a Langevin + nve/limit pre-equilibration block at
@@ -81,7 +81,8 @@ def melt_quench_simulation(
         ...     potential=my_potential,
         ...     temperature_high=5000.0,
         ...     temperature_low=300.0,
-        ...     cooling_rate=1e12
+        ...     cooling_rate=1e12,
+        ...     thermostat="nose_hoover",
         ... )
 
     """
@@ -119,7 +120,7 @@ def melt_quench_simulation(
         timestep=timestep,
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
-        langevin=langevin,
+        thermostat=thermostat,
         seed=seed,
         server_kwargs=server_kwargs,
         tmp_working_directory=tmp_working_directory,

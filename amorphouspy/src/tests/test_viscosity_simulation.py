@@ -89,6 +89,7 @@ def test_viscosity_simulation_budget_exhausted(mock_sim: MagicMock) -> None:
         # max_total_time_ns so small that max_steps == initial_production_steps
         max_total_time_ns=n * 1e-6,
         max_iterations=10,
+        thermostat="nose_hoover",
     )
 
     assert "viscosity_data" in result
@@ -111,6 +112,7 @@ def test_viscosity_simulation_returns_structure(mock_sim: MagicMock) -> None:
         initial_production_steps=n,
         max_total_time_ns=n * 1e-6,
         max_iterations=5,
+        thermostat="nose_hoover",
     )
 
     assert "structure" in result
@@ -139,6 +141,7 @@ def test_viscosity_simulation_extension_step(mock_sim: MagicMock, mock_lammps: M
         max_iterations=3,
         eta_stable_iters=10,  # never converge via stability
         eta_rel_tol=0.0,
+        thermostat="nose_hoover",
     )
 
     assert result["total_production_steps"] >= n
@@ -156,6 +159,7 @@ def test_viscosity_simulation_empty_potential_raises() -> None:
             structure=MagicMock(),
             potential=pd.DataFrame(columns=["Name", "Config"]),
             temperature_sim=1000.0,
+            thermostat="nose_hoover",
         )
 
 
@@ -174,6 +178,7 @@ def test_viscosity_ensemble_sequential_runs_n_replicas(mock_sim: MagicMock) -> N
         potential=_minimal_potential(),
         n_replicas=3,
         temperature_sim=1000.0,
+        thermostat="nose_hoover",
     )
 
     assert mock_sim.call_count == 3
@@ -190,6 +195,7 @@ def test_viscosity_ensemble_output_keys(mock_sim: MagicMock) -> None:
         structure=MagicMock(),
         potential=_minimal_potential(),
         n_replicas=2,
+        thermostat="nose_hoover",
     )
 
     expected_keys = {
@@ -219,6 +225,7 @@ def test_viscosity_ensemble_single_replica_zero_std(mock_sim: MagicMock) -> None
         structure=MagicMock(),
         potential=_minimal_potential(),
         n_replicas=1,
+        thermostat="nose_hoover",
     )
 
     assert result["viscosity_fit_residual"] == 0.0
@@ -241,6 +248,7 @@ def test_viscosity_ensemble_explicit_seeds(mock_sim: MagicMock) -> None:
         potential=_minimal_potential(),
         n_replicas=3,
         seeds=seeds,
+        thermostat="nose_hoover",
     )
 
     assert result["seeds"] == seeds
@@ -254,6 +262,7 @@ def test_viscosity_ensemble_seed_count_mismatch_raises() -> None:
             potential=_minimal_potential(),
             n_replicas=3,
             seeds=[1, 2],
+            thermostat="nose_hoover",
         )
 
 
@@ -272,6 +281,7 @@ def test_viscosity_ensemble_parallel(mock_sim: MagicMock) -> None:
         potential=_minimal_potential(),
         n_replicas=2,
         parallel=True,
+        thermostat="nose_hoover",
     )
 
     assert result["n_replicas"] == 2
@@ -293,6 +303,7 @@ def test_viscosity_ensemble_saves_seed_file(mock_sim: MagicMock, tmp_path) -> No
         potential=_minimal_potential(),
         n_replicas=2,
         tmp_working_directory=str(tmp_path),
+        thermostat="nose_hoover",
     )
 
     seed_file = tmp_path / "viscosity_ensemble_seeds.json"
@@ -319,7 +330,7 @@ def test_viscosity_stages_receive_potential_unchanged(mock_lammps: MagicMock, tm
     potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
     original = list(potential.loc[0, "Config"])
 
-    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0, thermostat="nose_hoover")
 
     assert mock_lammps.call_count == 3
     for call in mock_lammps.call_args_list:
@@ -333,7 +344,7 @@ def test_viscosity_simulation_does_not_mutate_potential(mock_lammps: MagicMock, 
     potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
     before = list(potential.loc[0, "Config"])
 
-    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0, thermostat="nose_hoover")
 
     assert potential.loc[0, "Config"] == before
 
@@ -344,12 +355,38 @@ def test_viscosity_equilibration_pressure_shik(mock_lammps: MagicMock, tmp_path)
     mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
     potential = generate_shik_potential(_sio2_atoms_dict(), output_dir=tmp_path)
 
-    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0, thermostat="nose_hoover")
 
     stage0, stage1, stage2 = mock_lammps.call_args_list
-    assert "pressure" not in stage0.kwargs
-    assert stage1.kwargs["pressure"] == 0.1
-    assert "pressure" not in stage2.kwargs
+    assert "npt_pressure" not in stage0.kwargs
+    assert stage1.kwargs["npt_pressure"] == 0.1
+    assert stage1.kwargs["ensemble"] == "npt"
+    assert "npt_pressure" not in stage2.kwargs
+
+
+@pytest.mark.parametrize(
+    ("thermostat", "expected"),
+    [
+        ("nose_hoover", ["nvt_langevin", "npt", "nvt"]),
+        ("langevin", ["nvt_langevin", "npt_langevin", "nvt_langevin"]),
+    ],
+)
+@patch("amorphouspy.properties.viscosity._run_lammps_md")
+def test_viscosity_stages_use_thermostat_ensembles(
+    mock_lammps: MagicMock, thermostat: str, expected: list[str]
+) -> None:
+    """Stage 0 always thermalises with Langevin; the thermostat selects the NPT and production ensembles."""
+    mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
+    potential = generate_pmmcs_potential(_sio2_atoms_dict())
+
+    _viscosity_simulation(
+        structure=MagicMock(),
+        potential=potential,
+        temperature_sim=2000.0,
+        thermostat=thermostat,  # ty: ignore[invalid-argument-type]
+    )
+
+    assert [c.kwargs["ensemble"] for c in mock_lammps.call_args_list] == expected
 
 
 @patch("amorphouspy.properties.viscosity._run_lammps_md")
@@ -358,10 +395,10 @@ def test_viscosity_equilibration_pressure_non_shik(mock_lammps: MagicMock) -> No
     mock_lammps.return_value = (MagicMock(), {"generic": _make_pressure_block(100)})
     potential = generate_pmmcs_potential(_sio2_atoms_dict())
 
-    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0)
+    _viscosity_simulation(structure=MagicMock(), potential=potential, temperature_sim=2000.0, thermostat="nose_hoover")
 
     stage1 = mock_lammps.call_args_list[1]
-    assert stage1.kwargs["pressure"] == 0.0
+    assert stage1.kwargs["npt_pressure"] == 0.0
 
 
 @patch("amorphouspy.properties.viscosity._run_lammps_md")
@@ -382,6 +419,7 @@ def test_viscosity_extension_uses_potential_unchanged(mock_sim: MagicMock, mock_
         max_iterations=3,
         eta_stable_iters=10,  # never converge via stability
         eta_rel_tol=0.0,
+        thermostat="nose_hoover",
     )
 
     assert mock_lammps.call_count >= 1

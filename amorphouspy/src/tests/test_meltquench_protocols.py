@@ -54,7 +54,7 @@ def test_meltquench_params_creation(mock_structure, mock_potential):
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
     )
 
@@ -65,7 +65,7 @@ def test_meltquench_params_creation(mock_structure, mock_potential):
     assert params.cooling_steps == 100_000
     assert params.timestep == 1.0
     assert params.n_dump == 1000
-    assert params.langevin is False
+    assert params.thermostat == "nose_hoover"
     assert params.seed == 12345
     assert params.server_kwargs is None
     assert params.tmp_working_directory is None
@@ -81,7 +81,7 @@ def test_meltquench_params_with_optional_values(mock_structure, mock_potential, 
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=True,
+        thermostat="langevin",
         seed=12345,
         server_kwargs={"cores": 4},
         tmp_working_directory=str(tmp_path),
@@ -101,7 +101,7 @@ def test_pmmcs_protocol_accepts_dataclass(mock_runner, mock_structure, mock_pote
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
     )
 
@@ -122,7 +122,7 @@ def test_bjp_protocol_accepts_dataclass(mock_runner, mock_structure, mock_potent
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
     )
 
@@ -150,7 +150,7 @@ def test_shik_protocol_accepts_dataclass(mock_runner, mock_structure):
         cooling_steps=100_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
     )
 
@@ -171,7 +171,7 @@ def test_pmmcs_protocol_calls_runner_correctly(mock_runner, mock_structure, mock
         cooling_steps=200_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=True,
+        thermostat="langevin",
         seed=12345,
     )
 
@@ -191,7 +191,7 @@ def test_bjp_protocol_calls_runner_correctly(mock_runner, mock_structure, mock_p
         cooling_steps=200_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=True,
+        thermostat="langevin",
         seed=12345,
     )
 
@@ -218,7 +218,7 @@ def test_shik_protocol_calls_runner_correctly(mock_runner, mock_structure):
         cooling_steps=200_000,
         timestep=1.0,
         n_dump=1000,
-        langevin=True,
+        thermostat="langevin",
         seed=12345,
     )
 
@@ -237,7 +237,7 @@ def _make_params(structure, potential, **kwargs):
         "cooling_steps": 100_000,
         "timestep": 1.0,
         "n_dump": 1000,
-        "langevin": False,
+        "thermostat": "nose_hoover",
         "seed": 12345,
     }
     defaults.update(kwargs)
@@ -347,12 +347,24 @@ def test_protocol_stage0_uses_fix_override(name, mock_runner, mock_structure, mo
     stage0 = mock_runner.call_args_list[0].kwargs
     assert stage0["n_ionic_steps"] == 10_000
     assert stage0["initial_temperature"] == 0
-    assert stage0["langevin"] is False
+    assert stage0["ensemble"] == "nvt"
     override = stage0["input_control_file"]["fix"]
     assert "langevin 4321 4321 0.01 48279" in override
     assert "nve/limit 0.5" in override
     for c in mock_runner.call_args_list:
         assert c.kwargs["potential"]["Config"].iloc[0] == ["line1", "line2"]
+
+
+@pytest.mark.parametrize("thermostat", ["nose_hoover", "langevin"])
+def test_pmmcs_protocol_selects_ensemble_per_stage(thermostat, mock_runner, mock_structure, mock_potential):
+    """Stages choose NVT or NPT explicitly; the thermostat selects the Langevin variants, stage 0 stays nvt."""
+    params = _make_params(mock_structure, mock_potential, thermostat=thermostat)
+    pmmcs_protocol(mock_runner, params)
+
+    suffix = "_langevin" if thermostat == "langevin" else ""
+    ensembles = [c.kwargs["ensemble"] for c in mock_runner.call_args_list]
+    assert ensembles == ["nvt", f"nvt{suffix}", f"nvt{suffix}", f"npt{suffix}"]
+    assert mock_runner.call_args_list[3].kwargs["npt_pressure"] == 0.0
 
 
 @pytest.mark.parametrize("name", list(_ALL_PROTOCOLS))
@@ -392,7 +404,7 @@ def test_bmp_protocol_equilibration_steps_override(mock_runner, mock_structure, 
         cooling_steps=50,
         timestep=1.0,
         n_dump=1000,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
         equilibration_steps=999,
     )
@@ -418,14 +430,15 @@ def test_yang2026_protocol_high_pressure_melt_stage(mock_runner, mock_structure,
         cooling_steps=100,
         timestep=1.0,
         n_dump=1000,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
         equilibration_steps=10,
     )
     yang2026_protocol(mock_runner, params)
     # Stage 3 is call index 3 (0-indexed): NPT at T_high with positive pressure
     stage3_kwargs = mock_runner.call_args_list[3].kwargs
-    assert stage3_kwargs["pressure"] > 0
+    assert stage3_kwargs["npt_pressure"] > 0
+    assert stage3_kwargs["ensemble"] == "npt"
     assert stage3_kwargs["temperature"] == 4000.0
 
 
@@ -439,7 +452,7 @@ def test_yang2026_protocol_equilibration_steps_override(mock_runner, mock_struct
         cooling_steps=50,
         timestep=1.0,
         n_dump=1000,
-        langevin=False,
+        thermostat="nose_hoover",
         seed=12345,
         equilibration_steps=77,
     )
@@ -476,6 +489,7 @@ def test_melt_quench_simulation_cooling_step_count(mock_structure):
             temperature_low=300.0,
             cooling_rate=1e12,
             timestep=1.0,
+            thermostat="nose_hoover",
         )
     finally:
         mq_module.PROTOCOL_MAP.update(original)
@@ -483,18 +497,41 @@ def test_melt_quench_simulation_cooling_step_count(mock_structure):
     assert captured["cooling_steps"] == 4_000_000
 
 
+def test_melt_quench_simulation_forwards_thermostat(mock_structure):
+    """The thermostat reaches the protocol parameters unchanged."""
+    potential = pd.DataFrame({"Name": ["pmmcs"], "Config": [["line"]]})
+    captured = {}
+
+    def fake_protocol(_runner, params):
+        captured["thermostat"] = params.thermostat
+        return mock_structure, []
+
+    original = mq_module.PROTOCOL_MAP.copy()
+    mq_module.PROTOCOL_MAP["pmmcs"] = fake_protocol
+    try:
+        melt_quench_simulation(mock_structure, potential, temperature_high=4300.0, thermostat="langevin")
+    finally:
+        mq_module.PROTOCOL_MAP.update(original)
+
+    assert captured["thermostat"] == "langevin"
+
+
 def test_melt_quench_simulation_rejects_equal_temperatures(mock_structure):
     """temperature_high == temperature_low raises before any protocol stage runs (zero cooling steps)."""
     potential = pd.DataFrame({"Name": ["pmmcs"], "Config": [["line"]]})
     with pytest.raises(ValueError, match="must differ"):
-        melt_quench_simulation(mock_structure, potential, temperature_high=3000.0, temperature_low=3000.0)
+        melt_quench_simulation(
+            mock_structure, potential, temperature_high=3000.0, temperature_low=3000.0, thermostat="nose_hoover"
+        )
 
 
 def test_melt_quench_simulation_rejects_default_high_equal_to_low(mock_structure):
     """temperature_high=None resolving to the potential default still triggers the guard if equal to temperature_low."""
     potential = pd.DataFrame({"Name": ["shik"], "Config": [["line"]]})
     with pytest.raises(ValueError, match="must differ"):
-        melt_quench_simulation(mock_structure, potential, temperature_high=None, temperature_low=4000.0)
+        melt_quench_simulation(
+            mock_structure, potential, temperature_high=None, temperature_low=4000.0, thermostat="nose_hoover"
+        )
 
 
 @pytest.mark.parametrize("variant", ["bmp-screened-harmonic", "bmp-harmonic"])
@@ -510,7 +547,7 @@ def test_melt_quench_simulation_bmp_variant_routing(mock_structure, variant):
     original = mq_module.PROTOCOL_MAP.copy()
     mq_module.PROTOCOL_MAP["bmp"] = fake_protocol
     try:
-        melt_quench_simulation(mock_structure, potential, temperature_high=4000.0)
+        melt_quench_simulation(mock_structure, potential, temperature_high=4000.0, thermostat="nose_hoover")
     finally:
         mq_module.PROTOCOL_MAP.update(original)
 

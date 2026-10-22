@@ -17,6 +17,7 @@ import pandas as pd
 from ase.atoms import Atoms
 
 from amorphouspy.fabrication.pre_equilibration import pre_equilibration_fix_override
+from amorphouspy.lammps.runner import Thermostat, thermostat_ensembles
 
 # Default melt temperatures per protocol (K)
 DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
@@ -51,7 +52,7 @@ class MeltQuenchParams:
         n_dump: Dump frequency in MD steps.
         n_print_thermo: Thermodynamic print frequency in MD steps. If None,
             defaults to n_dump.
-        langevin: Whether to use Langevin dynamics.
+        thermostat: Thermostat of all stages except the pre-equilibration, ``"nose_hoover"`` or ``"langevin"``.
         seed: Random seed.
         server_kwargs: Server configuration.
         tmp_working_directory: Temporary directory path.
@@ -70,7 +71,7 @@ class MeltQuenchParams:
     temperature_low: float
     cooling_steps: int
     timestep: float
-    langevin: bool
+    thermostat: Thermostat
     seed: int
     n_dump: int | None = None
     n_print_thermo: int | None = None
@@ -92,8 +93,8 @@ def _pre_equilibration_stage(
     replaced via the input-control override (same pathway as the pressure
     ramp), so the potential Config stays untouched. ``initial_temperature=0``
     keeps the velocity field uninitialized: atoms start at rest and the
-    Langevin thermostat heats them. ``langevin=False`` is required so exactly
-    one generated fix line exists to be replaced. When ``pre_equilibrate`` is
+    Langevin thermostat heats them. The stage runs with ``ensemble="nvt"`` so
+    exactly one generated fix line exists to be replaced. When ``pre_equilibrate`` is
     False the stage is skipped and a ``None`` placeholder is appended so stage
     indices stay stable.
 
@@ -115,9 +116,8 @@ def _pre_equilibration_stage(
         temperature=params.temperature_high,
         n_ionic_steps=10_000,
         initial_temperature=0,
-        pressure=None,
-        langevin=False,
         input_control_file={"fix": pre_equilibration_fix_override(params.temperature_high)},
+        ensemble="nvt",
     )
     history.append(parsed.get("generic", None))
     return structure
@@ -146,10 +146,10 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         timestep=params.timestep,
         n_dump=params.n_dump,
         n_print_thermo=params.n_print_thermo,
-        langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
 
+    nvt_ensemble, npt_ensemble = thermostat_ensembles(params.thermostat)
     history: list[dict | None] = []
 
     # Stage 0: Pre-equilibration of the random structure at high T
@@ -162,6 +162,7 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=params.temperature_high,
         seed=params.seed,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -172,6 +173,7 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         temperature_end=params.temperature_low,
         n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -181,7 +183,8 @@ def pmmcs_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tupl
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -211,10 +214,10 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         timestep=params.timestep,
         n_dump=params.n_dump,
         n_print_thermo=params.n_print_thermo,
-        langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
 
+    nvt_ensemble, npt_ensemble = thermostat_ensembles(params.thermostat)
     history: list[dict | None] = []
 
     # Stage 0: Pre-equilibration of the random structure at high T
@@ -227,6 +230,7 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=params.temperature_high,
         seed=params.seed,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -237,6 +241,7 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         temperature_end=params.temperature_low,
         n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -246,7 +251,8 @@ def bmp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -276,10 +282,10 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         timestep=params.timestep,
         n_dump=params.n_dump,
         n_print_thermo=params.n_print_thermo,
-        langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
 
+    _, npt_ensemble = thermostat_ensembles(params.thermostat)
     history: list[dict | None] = []
 
     # Stage 0: Pre-equilibration of the random structure at high T
@@ -291,8 +297,9 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         temperature=params.temperature_high,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
         initial_temperature=params.temperature_high,
-        pressure=0.0,
+        npt_pressure=0.0,
         seed=params.seed,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -303,7 +310,8 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         temperature_end=params.temperature_low,
         n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -313,7 +321,8 @@ def bjp_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 100_000,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -344,10 +353,10 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         timestep=params.timestep,
         n_dump=params.n_dump,
         n_print_thermo=params.n_print_thermo,
-        langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
 
+    nvt_ensemble, npt_ensemble = thermostat_ensembles(params.thermostat)
     history: list[dict | None] = []
 
     # Stage 0: Pre-equilibration of the random structure at high T
@@ -361,8 +370,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         if params.equilibration_steps is not None
         else int(100_000 / params.timestep),  # 100 ps / (1 fs timestep) = 1e5 steps
         initial_temperature=params.temperature_high,
-        pressure=None,  # NVT ensemble
         seed=params.seed,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -374,7 +383,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         if params.equilibration_steps is not None
         else int(700_000 / params.timestep),  # 700 ps
         initial_temperature=0,
-        pressure=0.1,  # GPa
+        npt_pressure=0.1,  # GPa
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -385,8 +395,9 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         temperature_end=params.temperature_low,
         n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
-        pressure=0.1,
-        pressure_end=0.0,  # ramp pressure from 0.1 -> 0 GPa
+        npt_pressure=0.1,
+        npt_pressure_end=0.0,  # ramp pressure from 0.1 -> 0 GPa
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -398,7 +409,8 @@ def shik_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple
         if params.equilibration_steps is not None
         else int(100_000 / params.timestep),  # 100 ps
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -428,10 +440,10 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         timestep=params.timestep,
         n_dump=params.n_dump,
         n_print_thermo=params.n_print_thermo,
-        langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
 
+    nvt_ensemble, npt_ensemble = thermostat_ensembles(params.thermostat)
     history: list[dict | None] = []
 
     # Stage 0: Pre-equilibration of the random structure at high T
@@ -444,6 +456,7 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=params.temperature_high,
         seed=params.seed,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -454,6 +467,7 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature_end=params.temperature_low,
         n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -463,7 +477,8 @@ def du_teter_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature=params.temperature_low,
         n_ionic_steps=params.equilibration_steps if params.equilibration_steps is not None else 1_000_000,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -503,10 +518,10 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         timestep=params.timestep,
         n_dump=params.n_dump,
         n_print_thermo=params.n_print_thermo,
-        langevin=params.langevin,
         server_kwargs=params.server_kwargs,
     )
 
+    nvt_ensemble, npt_ensemble = thermostat_ensembles(params.thermostat)
     history: list[dict | None] = []
 
     # Stage 0: Pre-equilibration of the random structure at high T
@@ -522,8 +537,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature=params.temperature_low,
         n_ionic_steps=steps_20ps,
         initial_temperature=params.temperature_low,
-        pressure=None,
         seed=params.seed,
+        ensemble=nvt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -533,7 +548,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature=params.temperature_low,
         n_ionic_steps=steps_20ps,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -543,7 +559,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature=params.temperature_high,
         n_ionic_steps=steps_100ps,
         initial_temperature=0,
-        pressure=_YANG_MELT_PRESSURE_GPA,
+        npt_pressure=_YANG_MELT_PRESSURE_GPA,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -553,7 +570,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature=params.temperature_high,
         n_ionic_steps=steps_100ps,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -564,7 +582,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature_end=params.temperature_low,
         n_ionic_steps=params.cooling_steps,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 
@@ -574,7 +593,8 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
         temperature=params.temperature_low,
         n_ionic_steps=steps_100ps,
         initial_temperature=0,
-        pressure=0.0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
     )
     history.append(parsed.get("generic", None))
 

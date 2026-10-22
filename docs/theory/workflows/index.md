@@ -9,7 +9,7 @@ All simulation workflows use LAMMPS as the MD engine via `lammpsparser`. Each wo
 | Workflow | Function | Purpose |
 |---|---|---|
 | [**Melt-Quench**](melt_quench.md) | `melt_quench_simulation()` | Generate realistic glass structures from random initial configs |
-| [**Molecular Dynamics**](md.md) | `md_simulation()` | Run NVT/NPT equilibration or production simulations |
+| [**Molecular Dynamics**](md.md) | `md_simulation()` | Run NVE/NVT/NPT equilibration or production simulations |
 | [**Elastic Moduli**](elastic.md) | `elastic_simulation()` | Calculate $C_{11}$, $C_{12}$, $C_{44}$ via stress-strain |
 | [**Viscosity**](viscosity.md) | `viscosity_simulation()` | Compute viscosity via Green-Kubo (SACF) |
 | [**CTE**](cte.md) | `cte_simulation()` | Coefficient of thermal expansion from NPT |

@@ -21,7 +21,7 @@ from ase.atoms import Atoms
 from numpy.typing import ArrayLike, NDArray
 from scipy.optimize import curve_fit
 
-from amorphouspy.lammps.runner import _run_lammps_md
+from amorphouspy.lammps.runner import Thermostat, _run_lammps_md, thermostat_ensembles
 
 NPOINTS = 2
 
@@ -40,7 +40,7 @@ def _viscosity_simulation(
     n_print_thermo: int | None = 1,
     server_kwargs: dict[str, Any] | None = None,
     *,
-    langevin: bool = False,
+    thermostat: Thermostat,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict[str, Any]:  # pylint: disable=too-many-positional-arguments
@@ -59,7 +59,7 @@ def _viscosity_simulation(
         n_dump: Dump frequency.
         n_print_thermo: Thermodynamic output frequency. If None, uses ``n_dump``.
         server_kwargs: Additional server arguments.
-        langevin: Whether to use Langevin dynamics.
+        thermostat: Thermostat of the equilibration and production runs, ``"nose_hoover"`` or ``"langevin"``.
         seed: Random seed for velocity initialization.
         tmp_working_directory: Temporary directory.
 
@@ -74,7 +74,8 @@ def _viscosity_simulation(
         ...     structure=my_atoms,
         ...     potential=my_potential_df,
         ...     temperature_sim=2000.0,
-        ...     production_steps=1000000
+        ...     production_steps=1000000,
+        ...     thermostat="nose_hoover",
         ... )
 
     """
@@ -86,6 +87,8 @@ def _viscosity_simulation(
     # (compensates the DSF pressure deficit the potential was parameterized with).
     equil_pressure = 0.1 if str(potential.loc[0, "Name"]).lower() == "shik" else 0.0
 
+    nvt_ensemble, npt_ensemble = thermostat_ensembles(thermostat)
+
     # Stage 0: Langevin dynamics at T
     structure0, _ = _run_lammps_md(
         structure=structure,
@@ -95,7 +98,7 @@ def _viscosity_simulation(
         n_ionic_steps=10_000,
         timestep=timestep,
         initial_temperature=temperature_sim,
-        langevin=True,
+        ensemble="nvt_langevin",
         seed=seed,
         server_kwargs=server_kwargs,
         n_dump=n_dump,
@@ -110,9 +113,9 @@ def _viscosity_simulation(
         temperature=temperature_sim,
         n_ionic_steps=100_000,
         timestep=timestep,
-        pressure=equil_pressure,
+        npt_pressure=equil_pressure,
         initial_temperature=temperature_sim,
-        langevin=langevin,
+        ensemble=npt_ensemble,
         seed=seed,
         server_kwargs=server_kwargs,
         n_dump=n_dump,
@@ -128,7 +131,7 @@ def _viscosity_simulation(
         n_ionic_steps=production_steps,
         timestep=timestep,
         initial_temperature=0,
-        langevin=langevin,
+        ensemble=nvt_ensemble,
         server_kwargs=server_kwargs,
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
@@ -727,9 +730,10 @@ def _extend_viscosity_production_and_accumulate(
     n_print_thermo: int | None,
     tmp_working_directory: str | Path | None,
     *,
-    langevin: bool,
+    thermostat: Thermostat,
 ) -> Atoms:
     """Run one production extension segment and append parsed arrays to accumulators."""
+    nvt_ensemble, _ = thermostat_ensembles(thermostat)
     current_structure, ext_parsed = _run_lammps_md(
         structure=current_structure,
         potential=potential,
@@ -738,7 +742,7 @@ def _extend_viscosity_production_and_accumulate(
         n_ionic_steps=extension_steps,
         timestep=timestep,
         initial_temperature=temperature_sim,
-        langevin=langevin,
+        ensemble=nvt_ensemble,
         server_kwargs=server_kwargs,
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
@@ -767,7 +771,7 @@ def viscosity_simulation(
     eta_stable_iters: int = 3,
     server_kwargs: dict[str, Any] | None = None,
     *,
-    langevin: bool = False,
+    thermostat: Thermostat,
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -806,7 +810,7 @@ def viscosity_simulation(
         eta_stable_iters: Consecutive stable iterations required.
             Default 3.
         server_kwargs: Additional server arguments forwarded to LAMMPS.
-        langevin: Whether to use Langevin dynamics.
+        thermostat: Thermostat of the equilibration and production runs, ``"nose_hoover"`` or ``"langevin"``.
         seed: Random seed for velocity initialization.
         tmp_working_directory: Temporary directory for LAMMPS runs.
 
@@ -827,6 +831,7 @@ def viscosity_simulation(
         ...     structure=my_atoms,
         ...     potential=my_potential_df,
         ...     temperature_sim=3000.0,
+        ...     thermostat="nose_hoover",
         ... )
         >>> converged = result["converged"]
         >>> print(converged)
@@ -851,7 +856,7 @@ def viscosity_simulation(
         n_dump=n_dump,
         n_print_thermo=n_print_thermo,
         server_kwargs=server_kwargs,
-        langevin=langevin,
+        thermostat=thermostat,
         seed=seed,
         tmp_working_directory=tmp_working_directory,
     )
@@ -946,7 +951,7 @@ def viscosity_simulation(
             extension_steps=_ext,
             temperature_sim=temperature_sim,
             timestep=timestep,
-            langevin=langevin,
+            thermostat=thermostat,
             server_kwargs=server_kwargs,
             n_dump=n_dump,
             n_print_thermo=n_print_thermo,
@@ -989,7 +994,7 @@ def viscosity_ensemble(  # noqa: C901
     eta_stable_iters: int = 3,
     server_kwargs: dict[str, Any] | None = None,
     *,
-    langevin: bool = False,
+    thermostat: Thermostat,
     parallel: bool = False,
     executor: Executor | None = None,
     tmp_working_directory: str | Path | None = None,
@@ -1035,7 +1040,7 @@ def viscosity_ensemble(  # noqa: C901
         eta_stable_iters: Consecutive stable iterations required per replica.
         server_kwargs: Additional server arguments forwarded to LAMMPS (e.g.
             ``{"cores": 6}`` sets the MPI process count per replica).
-        langevin: Whether to use Langevin dynamics.
+        thermostat: Thermostat of the equilibration and production runs, ``"nose_hoover"`` or ``"langevin"``.
         parallel: If ``True``, run all replicas simultaneously using threads.
             Requires enough cores for all replicas at once. Default ``False``.
             Ignored when ``executor`` is provided.
@@ -1073,6 +1078,7 @@ def viscosity_ensemble(  # noqa: C901
         ...     temperature_sim=4000.0,
         ...     n_print_thermo=10,
         ...     server_kwargs={"cores": 4},
+        ...     thermostat="nose_hoover",
         ... )
         >>> print(out["viscosity"], "±", out["viscosity_sem"], "Pa·s")
 
@@ -1119,7 +1125,7 @@ def viscosity_ensemble(  # noqa: C901
             eta_rel_tol=eta_rel_tol,
             eta_stable_iters=eta_stable_iters,
             server_kwargs=server_kwargs,
-            langevin=langevin,
+            thermostat=thermostat,
             seed=int(seed),
             tmp_working_directory=replica_workdir,
         )

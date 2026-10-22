@@ -1519,10 +1519,10 @@ def run_structural_analysis(
             n_ionic_steps=n_ionic_steps,
             timestep=timestep,
             initial_temperature=temperature,  # Reset velocities for equilibration
-            pressure=None,  # NVT ensemble
             n_dump=dump_interval,
             n_print_thermo=dump_interval,
             server_kwargs=server_kwargs or {},
+            ensemble="nvt",
         )
 
         trajectory_output = parsed_output.get("generic", parsed_output)

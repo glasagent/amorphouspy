@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-from amorphouspy.lammps.runner import _run_lammps_md, get_lammps_command
+from amorphouspy.lammps.runner import _run_lammps_md, get_lammps_command, thermostat_ensembles
 from ase import Atoms
 
 if TYPE_CHECKING:
@@ -24,34 +24,86 @@ def _structure_with_velocities() -> Atoms:
     return structure
 
 
-def test_run_lammps_md_requires_pressure_with_pressure_end() -> None:
-    """pressure_end requires pressure to be specified."""
-    with pytest.raises(ValueError, match="pressure must be set"):
+@pytest.mark.parametrize(
+    ("ensemble", "extra", "match"),
+    [
+        ("nvp", {"temperature": 300.0}, "ensemble must be one of"),
+        ("nvt", {"temperature": 300.0, "npt_pressure": 0.1}, "can only be used with an npt ensemble"),
+        ("nvt_langevin", {"temperature": 300.0, "npt_pressure_end": 0.1}, "can only be used with an npt ensemble"),
+        ("npt", {"temperature": 300.0}, "npt_pressure must be set"),
+        ("npt", {"temperature": 300.0, "npt_pressure_end": 0.1}, "npt_pressure must be set"),
+        (
+            "npt",
+            {"temperature": 300.0, "npt_pressure": [0.1, 0.1, 0.1, None, None, None], "npt_pressure_end": 0.2},
+            "npt_pressure must be a scalar",
+        ),
+        ("npt_langevin", {"temperature": 300.0, "npt_pressure": 0.1, "npt_pressure_end": 0.0}, "pressure ramp"),
+        ("nvt", {}, "temperature must be set"),
+        ("npt", {"npt_pressure": 0.1}, "temperature must be set"),
+        ("nve", {"temperature": 300.0}, "cannot be used with ensemble 'nve'"),
+        ("nve", {"temperature_end": 500.0}, "cannot be used with ensemble 'nve'"),
+        ("nve", {"npt_pressure": 0.1}, "can only be used with an npt ensemble"),
+    ],
+)
+@patch("amorphouspy.lammps.runner.run_lammps_with_error_capture")
+def test_run_lammps_md_rejects_arguments_that_do_not_fit_the_ensemble(
+    mock_run_capture: MagicMock, ensemble: str, extra: dict, match: str
+) -> None:
+    """Every ensemble-specific argument is validated against the chosen ensemble before LAMMPS runs."""
+    with pytest.raises(ValueError, match=match):
         _run_lammps_md(
-            structure=_structure(),
+            structure=_structure_with_velocities(),
             potential="dummy",
-            temperature=300.0,
             n_ionic_steps=10,
             timestep=1.0,
-            initial_temperature=300.0,
-            pressure=None,
-            pressure_end=0.1,
+            ensemble=ensemble,  # ty: ignore[invalid-argument-type]
+            **extra,
         )
+    mock_run_capture.assert_not_called()
 
 
-def test_run_lammps_md_requires_scalar_pressure_for_ramp() -> None:
-    """pressure_end does not accept a 6-component pressure list."""
-    with pytest.raises(ValueError, match="pressure must be a scalar"):
-        _run_lammps_md(
-            structure=_structure(),
-            potential="dummy",
-            temperature=300.0,
-            n_ionic_steps=10,
-            timestep=1.0,
-            initial_temperature=300.0,
-            pressure=[0.1, 0.1, 0.1, None, None, None],
-            pressure_end=0.2,
-        )
+@pytest.mark.parametrize(
+    ("ensemble", "extra", "temperature", "pressure", "langevin"),
+    [
+        ("nvt", {"temperature": 300.0}, 300.0, None, False),
+        ("nvt_langevin", {"temperature": 300.0}, 300.0, None, True),
+        ("npt", {"temperature": 300.0, "npt_pressure": 0.1}, 300.0, 0.1, False),
+        ("npt_langevin", {"temperature": 300.0, "npt_pressure": 0.1}, 300.0, 0.1, True),
+        ("nve", {}, None, None, False),
+    ],
+)
+@patch("amorphouspy.lammps.runner.structure_from_parsed_output")
+@patch("amorphouspy.lammps.runner.run_lammps_with_error_capture")
+def test_run_lammps_md_maps_ensemble_to_parser_kwargs(
+    mock_run_capture: MagicMock,
+    mock_structure_from_output: MagicMock,
+    tmp_path: Path,
+    ensemble: str,
+    extra: dict,
+    temperature: float | None,
+    pressure: float | None,
+    langevin: bool,  # noqa: FBT001
+) -> None:
+    """Each ensemble selects the parser's temperature, pressure and langevin settings."""
+    structure = _structure_with_velocities()
+    mock_run_capture.return_value = {"generic": {}, "lammps": {}}
+    mock_structure_from_output.return_value = structure
+
+    _run_lammps_md(
+        structure=structure,
+        potential="dummy",
+        n_ionic_steps=20,
+        timestep=1.0,
+        ensemble=ensemble,  # ty: ignore[invalid-argument-type]
+        tmp_working_directory=tmp_path,
+        **extra,
+    )
+
+    kwargs = mock_run_capture.call_args.kwargs
+    assert kwargs["calc_kwargs"]["temperature"] == temperature
+    assert kwargs["calc_kwargs"]["pressure"] == pressure
+    assert kwargs["calc_kwargs"]["langevin"] is langevin
+    assert "fix" not in kwargs["input_control_file"]
 
 
 @patch("amorphouspy.lammps.runner.structure_from_parsed_output")
@@ -75,8 +127,9 @@ def test_run_lammps_md_injects_pressure_ramp_and_clamps_output_frequency(
         n_ionic_steps=50,
         timestep=1.0,
         initial_temperature=300.0,
-        pressure=0.5,
-        pressure_end=1.0,
+        ensemble="npt",
+        npt_pressure=0.5,
+        npt_pressure_end=1.0,
         n_dump=100,
         n_print_thermo=200,
         tmp_working_directory=tmp_path,
@@ -103,7 +156,7 @@ def test_run_lammps_md_without_pressure_ramp_uses_passed_pressure(
     mock_structure_from_output: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """Without pressure_end, pressure is forwarded unchanged and no custom fix is injected."""
+    """Without npt_pressure_end, npt_pressure is forwarded unchanged and no custom fix is injected."""
     structure = _structure()
     parsed_output = {"generic": {}, "lammps": {}}
     mock_run_capture.return_value = parsed_output
@@ -117,7 +170,8 @@ def test_run_lammps_md_without_pressure_ramp_uses_passed_pressure(
         n_ionic_steps=20,
         timestep=1.0,
         initial_temperature=300.0,
-        pressure=pressure,
+        ensemble="npt",
+        npt_pressure=pressure,
         n_dump=None,
         n_print_thermo=None,
         tmp_working_directory=tmp_path,
@@ -153,6 +207,7 @@ def test_run_lammps_md_merges_input_control_overrides(
         n_ionic_steps=20,
         timestep=1.0,
         initial_temperature=300.0,
+        ensemble="nvt",
         input_control_file={"thermo": "7", "thermo_style": "custom step temp"},
         tmp_working_directory=tmp_path,
     )
@@ -169,12 +224,12 @@ def test_run_lammps_md_default_calc_kwargs_unchanged(
     mock_structure_from_output: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """The default (thermostatted) path sends the same calc_kwargs and controls as before the nve option."""
+    """The nvt path sends the same calc_kwargs and controls as the former pressure=None, langevin=False default."""
     structure = _structure()
     mock_run_capture.return_value = {"generic": {}, "lammps": {}}
     mock_structure_from_output.return_value = structure
 
-    _run_lammps_md(structure, "dummy", 300.0, 20, 1.0, tmp_working_directory=tmp_path)
+    _run_lammps_md(structure, "dummy", 20, 1.0, 300.0, ensemble="nvt", tmp_working_directory=tmp_path)
 
     kwargs = mock_run_capture.call_args.kwargs
     assert kwargs["calc_kwargs"] == {
@@ -197,24 +252,21 @@ def test_run_lammps_md_default_calc_kwargs_unchanged(
 
 @patch("amorphouspy.lammps.runner.structure_from_parsed_output")
 @patch("amorphouspy.lammps.runner.run_lammps_with_error_capture")
-def test_run_lammps_md_nve_sends_none_temperature_and_zero_initial_temperature(
+def test_run_lammps_md_nve_keeps_structure_velocities(
     mock_run_capture: MagicMock,
     mock_structure_from_output: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """nve=True passes temperature=None (fix nve) and keeps the structure's velocities."""
+    """ensemble="nve" without initial_temperature sends initial_temperature=0 (keep the structure's velocities)."""
     structure = _structure_with_velocities()
     mock_run_capture.return_value = {"generic": {}, "lammps": {}}
     mock_structure_from_output.return_value = structure
 
-    _run_lammps_md(structure, "dummy", 300.0, 20, 1.0, nve=True, tmp_working_directory=tmp_path)
+    _run_lammps_md(structure, "dummy", 20, 1.0, ensemble="nve", tmp_working_directory=tmp_path)
 
-    kwargs = mock_run_capture.call_args.kwargs
-    assert kwargs["calc_kwargs"]["temperature"] is None
-    assert kwargs["calc_kwargs"]["initial_temperature"] == 0
-    assert kwargs["calc_kwargs"]["pressure"] is None
-    assert kwargs["calc_kwargs"]["langevin"] is False
-    assert "fix" not in kwargs["input_control_file"]
+    calc_kwargs = mock_run_capture.call_args.kwargs["calc_kwargs"]
+    assert calc_kwargs["temperature"] is None
+    assert calc_kwargs["initial_temperature"] == 0
 
 
 @patch("amorphouspy.lammps.runner.structure_from_parsed_output")
@@ -230,7 +282,7 @@ def test_run_lammps_md_nve_passes_explicit_initial_temperature(
     mock_structure_from_output.return_value = structure
 
     _run_lammps_md(
-        structure, "dummy", 300.0, 20, 1.0, initial_temperature=500.0, nve=True, tmp_working_directory=tmp_path
+        structure, "dummy", 20, 1.0, initial_temperature=500.0, ensemble="nve", tmp_working_directory=tmp_path
     )
 
     calc_kwargs = mock_run_capture.call_args.kwargs["calc_kwargs"]
@@ -238,31 +290,16 @@ def test_run_lammps_md_nve_passes_explicit_initial_temperature(
     assert calc_kwargs["initial_temperature"] == 500.0
 
 
-@pytest.mark.parametrize(
-    "extra",
-    [{"pressure": 0.1}, {"pressure_end": 0.2}, {"temperature_end": 500.0}, {"langevin": True}],
-)
-@patch("amorphouspy.lammps.runner.run_lammps_with_error_capture")
-def test_run_lammps_md_nve_rejects_thermostat_or_barostat_options(
-    mock_run_capture: MagicMock,
-    extra: dict,
-) -> None:
-    """The nve option cannot be combined with pressure control, temperature ramps or Langevin."""
-    with pytest.raises(ValueError, match="nve cannot be combined"):
-        _run_lammps_md(_structure_with_velocities(), "dummy", 300.0, 20, 1.0, nve=True, **extra)
-    mock_run_capture.assert_not_called()
-
-
 @pytest.mark.parametrize("velocities", ["absent", "zero"])
 @patch("amorphouspy.lammps.runner.run_lammps_with_error_capture")
 def test_run_lammps_md_nve_requires_velocities(mock_run_capture: MagicMock, velocities: str) -> None:
-    """The nve option without initial_temperature fails when the structure has no (or only zero) velocities."""
+    """ensemble="nve" without initial_temperature fails when the structure has no (or only zero) velocities."""
     structure = _structure()
     if velocities == "zero":
         structure.set_velocities([[0.0, 0.0, 0.0]])
     assert structure.has("momenta") is (velocities == "zero")
     with pytest.raises(ValueError, match="non-zero velocities"):
-        _run_lammps_md(structure, "dummy", 300.0, 20, 1.0, nve=True)
+        _run_lammps_md(structure, "dummy", 20, 1.0, ensemble="nve")
     mock_run_capture.assert_not_called()
 
 
@@ -284,9 +321,17 @@ def test_run_lammps_md_does_not_modify_input_velocities(
     mock_run_capture.side_effect = rescale_velocities_in_place
     mock_structure_from_output.return_value = structure
 
-    _run_lammps_md(structure, "dummy", 300.0, 20, 1.0, nve=True, tmp_working_directory=tmp_path)
+    _run_lammps_md(structure, "dummy", 20, 1.0, ensemble="nve", tmp_working_directory=tmp_path)
 
     np.testing.assert_allclose(structure.get_velocities(), [[0.01, 0.0, 0.0]])
+
+
+def test_thermostat_ensembles() -> None:
+    """Each thermostat maps to its NVT and NPT ensemble; unknown names are rejected."""
+    assert thermostat_ensembles("nose_hoover") == ("nvt", "npt")
+    assert thermostat_ensembles("langevin") == ("nvt_langevin", "npt_langevin")
+    with pytest.raises(ValueError, match="thermostat must be one of"):
+        thermostat_ensembles("berendsen")  # ty: ignore[invalid-argument-type]
 
 
 def test_get_lammps_command_defaults_to_single_core() -> None:

@@ -130,7 +130,7 @@ def frames_from_melt_quench_result(
         (forces, velocities, unwrapped positions) in ``atoms.arrays``.
 
     Example:
-        >>> result = melt_quench_simulation(atoms, potential)
+        >>> result = melt_quench_simulation(atoms, potential, thermostat="nose_hoover")
         >>> frames = frames_from_melt_quench_result(result, atoms)
         >>> (r, rdfs_mean, cumcn_mean, rdfs_sem, cumcn_sem), _ = average_over_frames(
         ...     compute_rdf, frames, r_max=8.0

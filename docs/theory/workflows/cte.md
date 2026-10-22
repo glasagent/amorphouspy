@@ -50,7 +50,7 @@ result = cte_from_fluctuations_simulation(
     production_steps=200_000,    # Default production steps
     equilibration_steps=100_000, # Default equilibration steps
     timestep=1.0,                # fs
-    pressure=1e-4,               # 1 bar in GPa
+    npt_pressure=1e-4,               # 1 bar in GPa
 )
 
 # Extract results from nested summary
@@ -66,7 +66,7 @@ print(f"Linear CTE: {summary['CTE_x_mean']:.2e} K⁻¹")
 | `structure` | `Atoms` | — | Equilibrated glass structure |
 | `potential` | `str` | — | Path to LAMMPS potential file |
 | `temperature` | `float` | `300.0` | Simulation temperature (K) |
-| `pressure` | `float` | `1e-4` | Target pressure (GPa) |
+| `npt_pressure` | `float` | `1e-4` | Target pressure (GPa) of the NPT stages |
 | `production_steps` | `int` | `200_000` | Steps for individual production runs |
 | `equilibration_steps` | `int` | `100_000` | Equilibration steps |
 | `timestep` | `float` | `1.0` | MD timestep (fs) |

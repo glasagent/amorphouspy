@@ -38,6 +38,7 @@ def _run_melt_quench_with_fake_runner(monkeypatch, **kwargs):
         temperature_high=4500.0,
         temperature_low=300.0,
         cooling_rate=1e15,
+        thermostat="nose_hoover",
         **kwargs,
     )
     return captured
@@ -50,7 +51,7 @@ def test_melt_quench_simulation_runs_pre_equilibration_as_stage0(monkeypatch):
     stage0 = captured[0]
     assert stage0["input_control_file"]["fix"] == pre_equilibration_fix_override(4500.0)
     assert stage0["n_ionic_steps"] == 10_000
-    assert stage0["langevin"] is False
+    assert stage0["ensemble"] == "nvt"
     for stage in captured[1:]:
         assert "input_control_file" not in stage
     for stage in captured:
