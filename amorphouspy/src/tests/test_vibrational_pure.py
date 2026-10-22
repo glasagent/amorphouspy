@@ -10,7 +10,9 @@ from amorphouspy.properties import vibrational
 from amorphouspy.properties.structural.qn import compute_qn
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
+    compute_partial_vacf,
     compute_partial_vdos,
+    compute_vacf_from_velocities,
     compute_vdos_from_velocities,
     convert_frequency,
 )
@@ -719,3 +721,232 @@ def test_vdos_window_chunking_matches_single_chunk(monkeypatch, window, chunk_by
     np.testing.assert_allclose(vdos, reference, rtol=1e-12)
     for label in groups["a"]:
         np.testing.assert_allclose(partial["a"][label], reference_partial["a"][label], rtol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# compute_vacf_from_velocities and compute_partial_vacf
+# ---------------------------------------------------------------------------
+
+
+def _brute_force_vacf(
+    velocities: np.ndarray, masses: np.ndarray, indices: np.ndarray | None, *, remove_com: bool, normalization: str
+) -> np.ndarray:
+    """Direct double loop over lags and time origins (no FFT); 'unit' divides by the total lag-0 value."""
+    if remove_com:
+        velocities = velocities - (np.einsum("tia,i->ta", velocities, masses) / masses.sum())[:, None, :]
+    n_frames = velocities.shape[0]
+    selected = np.arange(velocities.shape[1]) if indices is None else indices
+    vacf = np.zeros(n_frames)
+    for k in range(n_frames):
+        for t in range(n_frames - k):
+            vacf[k] += np.sum(masses[selected, None] * velocities[t, selected] * velocities[t + k, selected])
+        vacf[k] /= n_frames - k
+    if normalization == "unit":
+        vacf /= np.einsum("tia,tia,i->", velocities, velocities, masses) / n_frames
+    return vacf
+
+
+@pytest.mark.parametrize("n_frames", [36, 37])
+@pytest.mark.parametrize("normalization", ["unit", "none"])
+@pytest.mark.parametrize("remove_com", [True, False])
+def test_vacf_matches_brute_force(n_frames, normalization, remove_com):
+    """Total and partial VACF equal a direct sum over all time origins at every lag (this includes lag 0)."""
+    velocities, masses = _random_system(n_frames, 5, seed=30)
+    velocities += np.array([0.4, -0.3, 0.2])  # a drift, so that remove_com matters
+    kwargs = {"max_lag_frames": n_frames - 1, "normalization": normalization, "remove_com": remove_com}
+    scale = abs(_brute_force_vacf(velocities, masses, None, remove_com=remove_com, normalization=normalization)[0])
+    for indices in (None, np.array([3, 0])):
+        expected = _brute_force_vacf(velocities, masses, indices, remove_com=remove_com, normalization=normalization)
+        lag_ps, vacf = compute_vacf_from_velocities(velocities, masses, DT_FS, indices=indices, **kwargs)
+        assert vacf.shape == lag_ps.shape == (n_frames,)
+        # FFT round-off is absolute (relative to the lag-0 value), hence the atol for lags where C(t) is near zero.
+        np.testing.assert_allclose(vacf, expected, rtol=1e-12, atol=1e-14 * scale)
+
+
+def test_vacf_unit_lag_zero_is_one_and_partial_is_kinetic_share():
+    """With 'unit' the total C(0) is 1 and a partial's C(0) is its share of the centred kinetic sum."""
+    velocities, masses = _random_system(64, 6, seed=31)
+    indices = np.array([5, 0, 2])
+    _, total = compute_vacf_from_velocities(velocities, masses, DT_FS)
+    _, partial = compute_vacf_from_velocities(velocities, masses, DT_FS, indices=indices)
+    com = np.einsum("tia,i->ta", velocities, masses) / masses.sum()
+    centred = velocities - com[:, None, :]
+    share = np.einsum("tia,tia,i->", centred[:, indices], centred[:, indices], masses[indices]) / np.einsum(
+        "tia,tia,i->", centred, centred, masses
+    )
+    assert total[0] == pytest.approx(1.0, rel=1e-12)
+    assert partial[0] == pytest.approx(share, rel=1e-12)
+
+
+@pytest.mark.parametrize("normalization", ["unit", "none"])
+def test_partial_vacf_sums_to_total(normalization):
+    """Partials over a partition of the atoms add up to the total, through groups and through indices."""
+    velocities, masses = _random_system(64, 9, seed=32)
+    groups = {"element": {"A": np.array([0, 4, 8]), "B": np.array([1, 2, 3]), "C": np.array([5, 6, 7])}}
+    lag_ps, total = compute_vacf_from_velocities(velocities, masses, DT_FS, normalization=normalization)
+    lag_partial, partial = compute_partial_vacf(velocities, masses, DT_FS, groups, normalization=normalization)
+    np.testing.assert_array_equal(lag_partial, lag_ps)
+    atol = 1e-14 * abs(total[0])
+    np.testing.assert_allclose(sum(partial["element"].values()), total, rtol=1e-12, atol=atol)
+    for label, indices in groups["element"].items():
+        _, single = compute_vacf_from_velocities(
+            velocities, masses, DT_FS, indices=indices, normalization=normalization
+        )
+        np.testing.assert_allclose(partial["element"][label], single, rtol=1e-12, atol=atol)
+
+
+def test_vacf_uniform_translation_removed():
+    """A uniform translation added to every atom leaves the total and partial VACF unchanged."""
+    velocities, masses = _random_system(60, 5, seed=34)
+    for indices in (None, np.array([1, 3])):
+        _, vacf = compute_vacf_from_velocities(velocities, masses, DT_FS, indices=indices)
+        _, vacf_drift = compute_vacf_from_velocities(
+            velocities + np.array([0.3, -0.2, 0.7]), masses, DT_FS, indices=indices
+        )
+        np.testing.assert_allclose(vacf_drift, vacf, rtol=0, atol=1e-12 * abs(vacf[0]))
+
+
+def test_vacf_single_pair_follows_cosine():
+    """An opposite-velocity pair oscillating at f0 gives C(t) = cos(2 pi f0 t) within the estimator's finite-N error."""
+    n_frames, f0 = 2000, 7.37
+    lag_ps, vacf = compute_vacf_from_velocities(_pair_velocities(n_frames, f0), np.full(2, M_SI), DT_FS)
+    # The unbiased estimate of <cos(w t) cos(w (t + k))> is cos(w k) / 2 + E_k / (2 (N - k)), with
+    # E_k = sum_{t < N - k} cos(w (2 t + k)) a geometric sum bounded by b = 1 / |sin w| (w: phase per frame).
+    # Dividing by the lag-0 value 1/2 + E_0 / (2 N) gives |C(k) - cos(w k)| <= (b / (N - k) + b / N) / (1 - b / N),
+    # at most about 0.007 here. The estimator is exact only for an infinite trajectory.
+    omega = 2 * np.pi * f0 * DT_FS * 1e-3
+    b = 1 / abs(np.sin(omega))
+    k = np.arange(vacf.size)
+    bound = (b / (n_frames - k) + b / n_frames) / (1 - b / n_frames)
+    deviation = np.abs(vacf - np.cos(2 * np.pi * f0 * lag_ps))
+    assert np.all(deviation <= bound + 1e-12)
+    assert deviation.max() < 0.01
+
+
+def test_vacf_max_lag_frames():
+    """Lags run to n_frames // 2 by default; a shorter max_lag_frames returns the first lags of the full result."""
+    velocities, masses = _random_system(37, 4, seed=35)
+    lag_ps, vacf = compute_vacf_from_velocities(velocities, masses, DT_FS)
+    assert lag_ps.shape == vacf.shape == (19,)
+    assert lag_ps.dtype == vacf.dtype == np.float64
+    np.testing.assert_array_equal(lag_ps, np.arange(19) * DT_FS * 1e-3)
+    _, full = compute_vacf_from_velocities(velocities, masses, DT_FS, max_lag_frames=36)
+    _, short = compute_vacf_from_velocities(velocities, masses, DT_FS, max_lag_frames=np.int64(10))
+    np.testing.assert_array_equal(short, full[:11])
+
+
+def test_vacf_transform_matches_vdos_psd():
+    """The 'none' VDOS is the triangle-weighted cosine transform of the 'none' VACF over all lags."""
+    n_frames = 37
+    velocities, masses = _random_system(n_frames, 5, seed=37)
+    freqs, psd = compute_vdos_from_velocities(velocities, masses, DT_FS, normalization="none")
+    _, vacf = compute_vacf_from_velocities(velocities, masses, DT_FS, max_lag_frames=n_frames - 1, normalization="none")
+    k = np.arange(1, n_frames)
+    cosines = np.cos(2 * np.pi * np.outer(np.arange(freqs.size), k) / n_frames)
+    expected = 2 * DT_FS * 1e-3 * (vacf[0] + 2 * cosines @ ((1 - k / n_frames) * vacf[1:]))
+    np.testing.assert_allclose(psd, expected, rtol=1e-10, atol=1e-12 * psd.max())
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 5000])
+@pytest.mark.parametrize("remove_com", [True, False])
+def test_vacf_chunking_matches_single_chunk(monkeypatch, chunk_bytes, remove_com):
+    """Total and partial VACFs do not depend on how atoms are split into chunks."""
+    velocities, masses = _random_system(50, 7, seed=38)
+    groups = {"a": {"odd": np.array([1, 3, 5]), "first": np.array([0, 1, 2])}}
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 2**40)
+    _, reference = compute_vacf_from_velocities(velocities, masses, DT_FS, remove_com=remove_com)
+    _, reference_partial = compute_partial_vacf(velocities, masses, DT_FS, groups, remove_com=remove_com)
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", chunk_bytes)
+    _, vacf = compute_vacf_from_velocities(velocities, masses, DT_FS, remove_com=remove_com)
+    _, partial = compute_partial_vacf(velocities, masses, DT_FS, groups, remove_com=remove_com)
+    np.testing.assert_allclose(vacf, reference, rtol=1e-12, atol=1e-14)
+    for label in groups["a"]:
+        np.testing.assert_allclose(partial["a"][label], reference_partial["a"][label], rtol=1e-12, atol=1e-14)
+
+
+def test_vacf_float32_input_close_to_float64():
+    """float32 input is transformed in single precision and agrees with float64 input to single precision."""
+    velocities, masses = _random_system(200, 6, seed=39)
+    _, vacf64 = compute_vacf_from_velocities(velocities, masses, DT_FS)
+    _, vacf32 = compute_vacf_from_velocities(velocities.astype(np.float32), masses, DT_FS)
+    assert vacf32.dtype == np.float64
+    np.testing.assert_allclose(vacf32, vacf64, rtol=0, atol=1e-5)
+
+
+def test_vacf_memmap_input(tmp_path):
+    """A read-only memory-mapped trajectory gives the same result as the in-memory array."""
+    velocities, masses = _random_system(40, 6, seed=40)
+    np.save(tmp_path / "v.npy", velocities)
+    mapped = np.load(tmp_path / "v.npy", mmap_mode="r")
+    for indices in (None, np.array([0, 2, 5])):
+        _, expected = compute_vacf_from_velocities(velocities, masses, DT_FS, indices=indices)
+        _, vacf = compute_vacf_from_velocities(mapped, masses, DT_FS, indices=indices)
+        np.testing.assert_array_equal(vacf, expected)
+
+
+@pytest.mark.parametrize("dtype", [np.float64, np.float32])
+@pytest.mark.parametrize("remove_com", [True, False])
+def test_vacf_input_unchanged(dtype, remove_com):
+    """The velocity and mass arrays are not modified, for the total, contiguous and scattered indices, and groups."""
+    velocities = np.random.default_rng(42).normal(size=(32, 4, 3)).astype(dtype)
+    masses = np.array([M_SI, M_O, M_O, M_SI])
+    velocities_before, masses_before = velocities.copy(), masses.copy()
+    compute_vacf_from_velocities(velocities, masses, DT_FS, remove_com=remove_com)
+    compute_vacf_from_velocities(velocities, masses, DT_FS, indices=np.array([1, 2]), remove_com=remove_com)
+    compute_vacf_from_velocities(velocities, masses, DT_FS, indices=np.array([3, 0]), remove_com=remove_com)
+    compute_partial_vacf(
+        velocities, masses, DT_FS, {"g": {"a": np.array([0, 1]), "b": np.array([2, 3])}}, remove_com=remove_com
+    )
+    np.testing.assert_array_equal(velocities, velocities_before)
+    np.testing.assert_array_equal(masses, masses_before)
+
+
+# One case per shared validator is enough to show the VACF uses it; the VDOS tests cover each validator in full.
+_SHARED_INVALID_IDS = {
+    "2d-velocities",
+    "masses-length",
+    "one-frame",
+    "dt-nan",
+    "mass-negative",
+    "velocity-nan",
+    "uniform-translation",
+    "all-zero",
+    "indices-range",
+}
+
+
+def _vacf_invalid_cases() -> list:
+    good = np.random.default_rng(3).normal(size=(10, 2, 3))
+    masses = np.array([M_SI, M_O])
+    shared = [case for case in _vdos_invalid_cases() if case.id in _SHARED_INVALID_IDS]
+    return [
+        *shared,
+        pytest.param(
+            good,
+            masses,
+            DT_FS,
+            {"normalization": "3N"},
+            r"Unknown normalization '3N'; allowed values are 'unit' and 'none'",
+            id="normalization-3n",
+        ),
+        pytest.param(good, masses, DT_FS, {"max_lag_frames": 0}, "max_lag_frames", id="max-lag-zero"),
+        pytest.param(good, masses, DT_FS, {"max_lag_frames": -1}, "max_lag_frames", id="max-lag-negative"),
+        pytest.param(good, masses, DT_FS, {"max_lag_frames": 10}, r"in \[1, 9\]", id="max-lag-n-frames"),
+        pytest.param(good, masses, DT_FS, {"max_lag_frames": 2.5}, "max_lag_frames", id="max-lag-float"),
+    ]
+
+
+@pytest.mark.parametrize(("velocities", "masses", "dt_fs", "kwargs", "match"), _vacf_invalid_cases())
+def test_vacf_invalid_input_raises(velocities, masses, dt_fs, kwargs, match):
+    """Every invalid input raises ValueError with the same message as for the VDOS."""
+    with pytest.raises(ValueError, match=match):
+        compute_vacf_from_velocities(velocities, masses, dt_fs, **kwargs)
+
+
+def test_partial_vacf_invalid_groups_raise():
+    """Empty groups and invalid group indices raise ValueError naming the group."""
+    velocities, masses = _random_system(10, 3, seed=12)
+    with pytest.raises(ValueError, match="no labels"):
+        compute_partial_vacf(velocities, masses, DT_FS, {"element": {}})
+    with pytest.raises(ValueError, match=r"groups\['element'\]\['O'\] contains positions outside"):
+        compute_partial_vacf(velocities, masses, DT_FS, {"element": {"O": np.array([3])}})
