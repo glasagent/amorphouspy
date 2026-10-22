@@ -964,23 +964,21 @@ def compute_cavities(
         probe_radius: Radius in A of a probe sphere (default 0, no probe).
 
     Returns:
-        Dictionary with the following keys, each mapping to a 1D array with one
-        entry per detected cavity:
-
-        - ``'volumes'``: cavity volumes in A^3 (per cell for percolating ones).
-        - ``'surface_areas'``: cavity surface areas in A^2 (per cell for
-          percolating ones): exposed atom-sphere area bounding the cavity.
-          Totals are within 0.1 % of analytic values for overlapping-sphere
-          test geometries; small cavities carry point-sampling noise
-          (about 7 % at the 90th percentile for 2-10 A^2 cavities).
-        - ``'asphericities'``: asphericity eta in [0, 1] (NaN if percolating).
-        - ``'acylindricities'``: acylindricity c in [0, 1] (NaN if percolating).
-        - ``'anisotropies'``: relative shape anisotropy kappa in [0, 1]
-          (NaN if percolating).
-        - ``'percolating'``: bool, True for cavities that wrap around the cell.
-        - ``'max_inscribed_radii'``: radius in A of the largest sphere centred
-          on a cavity voxel that touches no atom (largest included sphere),
-          sampled at voxel centres, so low by up to half a voxel diagonal.
+        Dictionary of 1D arrays, one entry per detected cavity, with keys:
+            - ``'volumes'``: cavity volumes in A^3 (per cell for percolating ones).
+            - ``'surface_areas'``: cavity surface areas in A^2 (per cell for
+              percolating ones): exposed atom-sphere area bounding the cavity.
+              Totals are within 0.1 % of analytic values for overlapping-sphere
+              test geometries; small cavities carry point-sampling noise
+              (about 7 % at the 90th percentile for 2-10 A^2 cavities).
+            - ``'asphericities'``: asphericity eta in [0, 1] (NaN if percolating).
+            - ``'acylindricities'``: acylindricity c in [0, 1] (NaN if percolating).
+            - ``'anisotropies'``: relative shape anisotropy kappa in [0, 1]
+              (NaN if percolating).
+            - ``'percolating'``: bool, True for cavities that wrap around the cell.
+            - ``'max_inscribed_radii'``: radius in A of the largest sphere centred
+              on a cavity voxel that touches no atom (largest included sphere),
+              sampled at voxel centres, so low by up to half a voxel diagonal.
 
     Raises:
         TypeError: If ``cutoff_radii`` is a bool.
