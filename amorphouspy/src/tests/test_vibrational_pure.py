@@ -1,5 +1,6 @@
 """Tests for pure functions in amorphouspy.properties.vibrational."""
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -15,11 +16,13 @@ from amorphouspy.properties.vibrational import (
     compute_reduced_vdos,
     compute_vacf_from_velocities,
     compute_vdos_from_velocities,
+    compute_vibrational_thermodynamics,
     convert_frequency,
 )
 from ase import Atoms
 from ase.io import read
-from scipy.constants import atomic_mass
+from scipy.constants import Boltzmann, atomic_mass, e, h
+from scipy.integrate import quad
 
 DATA_DIR = Path(__file__).parent / "data"
 SI_O_BOND = 1.6
@@ -957,3 +960,147 @@ def test_reduced_vdos_invalid_input_raises(freqs, vdos, kwargs, match):
     """Invalid spectra and peak ranges raise ValueError."""
     with pytest.raises(ValueError, match=match):
         compute_reduced_vdos(freqs, vdos, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# compute_vibrational_thermodynamics
+# ---------------------------------------------------------------------------
+
+THZ_TO_K = h * 1e12 / Boltzmann
+THZ_TO_MEV = h * 1e12 / e * 1e3
+KB_MEV = Boltzmann / e * 1e3
+DEBYE_THZ = 10.0
+DEBYE_GRID_THZ = np.linspace(0.0, DEBYE_THZ, 4001)
+DEBYE_VDOS = 3 * DEBYE_GRID_THZ**2 / DEBYE_THZ**3
+# Steps of 0.1 THz from -1 THz, with nu = 0 exactly on the grid.
+SIGNED_GRID_THZ = np.arange(-10, 301) * 0.1
+THERMO_ARRAYS = (
+    "heat_capacity_kb_per_atom",
+    "entropy_kb_per_atom",
+    "internal_energy_mev_per_atom",
+    "free_energy_mev_per_atom",
+)
+
+
+def test_thermodynamics_einstein_solid():
+    """A narrow peak at nu_E gives the Einstein heat capacity, entropy and energy, and ZPE = 3 h nu_E / 2."""
+    nu_e, sigma = 10.0, 0.05
+    freqs = np.linspace(0.0, 20.0, 20001)
+    vdos = np.exp(-0.5 * ((freqs - nu_e) / sigma) ** 2)
+    vdos /= np.trapezoid(vdos, freqs)
+    temps = np.array([100.0, 300.0, 1000.0])
+    result = compute_vibrational_thermodynamics(freqs, vdos, temps)
+    x = nu_e * THZ_TO_K / temps
+    # Averaging over the Gaussian shifts each quantity by about q'' sigma^2 / 2, a relative deviation of order
+    # (x sigma / nu_E)^2 <= 6e-4 here (x <= 4.8); the largest measured is 2e-4 (entropy at 100 K).
+    rtol = 1e-3
+    np.testing.assert_allclose(result["heat_capacity_kb_per_atom"], 3 * x**2 * np.exp(x) / np.expm1(x) ** 2, rtol=rtol)
+    np.testing.assert_allclose(result["entropy_kb_per_atom"], 3 * (x / np.expm1(x) - np.log(1 - np.exp(-x))), rtol=rtol)
+    np.testing.assert_allclose(
+        result["internal_energy_mev_per_atom"], 3 * nu_e * THZ_TO_MEV * (0.5 + 1 / np.expm1(x)), rtol=rtol
+    )
+    assert result["zero_point_energy_mev_per_atom"] == pytest.approx(1.5 * nu_e * THZ_TO_MEV, rel=1e-12)
+
+
+def test_thermodynamics_debye_solid():
+    """A Debye VDOS gives the Debye heat capacity at low, intermediate and high temperature."""
+    theta_d = DEBYE_THZ * THZ_TO_K
+    temps = theta_d * np.array([0.05, 0.5, 5.0])
+    result = compute_vibrational_thermodynamics(DEBYE_GRID_THZ, DEBYE_VDOS, temps)
+    expected = [
+        9 * (t / theta_d) ** 3 * quad(lambda y: y**4 * np.exp(y) / np.expm1(y) ** 2, 0.0, theta_d / t)[0] for t in temps
+    ]
+    # The trapezoid rule overestimates the normalisation of this grid by 3e-8.
+    np.testing.assert_allclose(result["heat_capacity_kb_per_atom"], expected, rtol=1e-7)
+
+
+def test_thermodynamics_limits_and_free_energy():
+    """T = 0 gives the exact limits, high T the classical 3 k_B, F = U - T S throughout, and nothing overflows."""
+    temps = np.array([0.0, 1e-3, 300.0, 1e6])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_vibrational_thermodynamics(DEBYE_GRID_THZ, DEBYE_VDOS, temps)
+        scalar = compute_vibrational_thermodynamics(DEBYE_GRID_THZ, DEBYE_VDOS, 300.0)
+    zpe = result["zero_point_energy_mev_per_atom"]
+    cv, s = result["heat_capacity_kb_per_atom"], result["entropy_kb_per_atom"]
+    u, f = result["internal_energy_mev_per_atom"], result["free_energy_mev_per_atom"]
+    assert (cv[0], s[0], u[0], f[0]) == (0.0, 0.0, zpe, zpe)
+    np.testing.assert_allclose([cv[1], s[1], u[1] - zpe, f[1] - zpe], 0.0, atol=1e-12)
+    assert cv[-1] == pytest.approx(3.0, rel=1e-6)
+    np.testing.assert_allclose(f, u - temps * s * KB_MEV, rtol=1e-12)
+    for key in ("temperatures_k", "reliable", *THERMO_ARRAYS):
+        np.testing.assert_array_equal(scalar[key], result[key][2:3])
+
+
+def test_partial_thermodynamics_sum_to_total():
+    """Every quantity of partial spectra sums to that of the total, including the excluded weight."""
+    rng = np.random.default_rng(0)
+    partials = rng.random((2, SIGNED_GRID_THZ.size))
+    temps = [0.0, 50.0, 300.0, 1500.0]
+    total = compute_vibrational_thermodynamics(SIGNED_GRID_THZ, partials.sum(axis=0), temps)
+    parts = [compute_vibrational_thermodynamics(SIGNED_GRID_THZ, p, temps) for p in partials]
+    for key in (*THERMO_ARRAYS, "zero_point_energy_mev_per_atom", "vdos_integral", "excluded_weight"):
+        np.testing.assert_allclose(parts[0][key] + parts[1][key], total[key], rtol=1e-12)
+
+
+def test_thermodynamics_weight_at_and_below_zero_frequency():
+    """Weight at nu <= 0 is reported as excluded_weight and leaves the results finite and unchanged."""
+    freqs = np.arange(-2, 101) * 0.1
+    level = 0.1
+    temps = [0.0, 300.0]
+    result = compute_vibrational_thermodynamics(freqs, np.full(freqs.size, level), temps)
+    cut = compute_vibrational_thermodynamics(freqs, np.where(freqs > 0, level, 0.0), temps)
+    # The two bins below 0 and half of the bin at 0 are excluded.
+    assert result["excluded_weight"] == pytest.approx(level * 2.5 * 0.1, rel=1e-12)
+    assert result["vdos_integral"] == pytest.approx(level * 10.2, rel=1e-12)
+    assert cut["excluded_weight"] == 0.0
+    for key in THERMO_ARRAYS:
+        assert np.all(np.isfinite(result[key]))
+        np.testing.assert_allclose(result[key], cut[key], rtol=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("lowest", "nu_low", "source"),
+    [
+        pytest.param(None, 0.1, "grid", id="grid"),  # the first positive frequency, not the first grid point
+        pytest.param(2.0, 2.0, "caller", id="caller"),
+    ],
+)
+def test_thermodynamics_temperature_bound(lowest, nu_low, source):
+    """T_min = h nu_low / k_B; temperatures below it are flagged, not removed, and T_min itself is reliable."""
+    bound = nu_low * THZ_TO_K
+    temps = np.array([0.0, bound / 2, bound, 2 * bound])
+    result = compute_vibrational_thermodynamics(
+        SIGNED_GRID_THZ, np.ones(SIGNED_GRID_THZ.size), temps, lowest_frequency_thz=lowest
+    )
+    assert result["lowest_frequency_thz"] == nu_low
+    assert result["lowest_frequency_source"] == source
+    assert result["temperature_bound_k"] == bound
+    np.testing.assert_array_equal(result["reliable"], [False, False, True, True])
+    np.testing.assert_array_equal(result["temperatures_k"], temps)
+    assert result["heat_capacity_kb_per_atom"].shape == temps.shape
+
+
+def _thermodynamics_invalid_cases() -> list:
+    freqs = DEBYE_GRID_THZ
+    nan_vdos = DEBYE_VDOS.copy()
+    nan_vdos[5] = np.nan
+    negative_vdos = DEBYE_VDOS.copy()
+    negative_vdos[5] = -1e-3
+    return [
+        pytest.param(freqs, DEBYE_VDOS[:-1], 300.0, {}, "1-D arrays of the same length", id="length-mismatch"),
+        pytest.param([1.0], [1.0], 300.0, {}, "At least 2", id="too-few-points"),
+        pytest.param(freqs, nan_vdos, 300.0, {}, "NaN or inf", id="vdos-nan"),
+        pytest.param(freqs, negative_vdos, 300.0, {}, "must not be negative", id="vdos-negative"),
+        pytest.param(freqs[::-1], DEBYE_VDOS, 300.0, {}, "strictly increasing", id="unsorted"),
+        pytest.param([-1.0, 0.0], [1.0, 1.0], 300.0, {}, "above 0 THz", id="no-positive-frequency"),
+        pytest.param(freqs, DEBYE_VDOS, [-1.0, 300.0], {}, "non-negative", id="temperature-negative"),
+        pytest.param(freqs, DEBYE_VDOS, 300.0, {"lowest_frequency_thz": 0.0}, "positive and finite", id="lowest-zero"),
+    ]
+
+
+@pytest.mark.parametrize(("freqs", "vdos", "temps", "kwargs", "match"), _thermodynamics_invalid_cases())
+def test_thermodynamics_invalid_input_raises(freqs, vdos, temps, kwargs, match):
+    """Invalid spectra, temperatures and lowest frequencies raise ValueError."""
+    with pytest.raises(ValueError, match=match):
+        compute_vibrational_thermodynamics(freqs, vdos, temps, **kwargs)

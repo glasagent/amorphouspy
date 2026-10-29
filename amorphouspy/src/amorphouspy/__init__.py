@@ -64,6 +64,7 @@ from amorphouspy.properties.vibrational import (
     compute_reduced_vdos,
     compute_vacf_from_velocities,
     compute_vdos_from_velocities,
+    compute_vibrational_thermodynamics,
     convert_frequency,
 )
 from amorphouspy.properties.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
@@ -97,6 +98,7 @@ __all__ = [
     "compute_structure_factor",
     "compute_vacf_from_velocities",
     "compute_vdos_from_velocities",
+    "compute_vibrational_thermodynamics",
     "convert_frequency",
     "count_distribution",
     "create_random_atoms",
