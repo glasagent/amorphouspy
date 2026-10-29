@@ -58,8 +58,10 @@ from amorphouspy.properties.structural.rings import compute_guttmann_rings, gene
 from amorphouspy.properties.structural.structure_factor import compute_structure_factor
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
+    compute_debye_level,
     compute_partial_vacf,
     compute_partial_vdos,
+    compute_reduced_vdos,
     compute_vacf_from_velocities,
     compute_vdos_from_velocities,
     convert_frequency,
@@ -80,6 +82,7 @@ __all__ = [
     "compute_angles",
     "compute_cavities",
     "compute_coordination",
+    "compute_debye_level",
     "compute_guttmann_rings",
     "compute_msd",
     "compute_network_connectivity",
@@ -90,6 +93,7 @@ __all__ = [
     "compute_qn_and_classify",
     "compute_qn_per_atom",
     "compute_rdf",
+    "compute_reduced_vdos",
     "compute_structure_factor",
     "compute_vacf_from_velocities",
     "compute_vdos_from_velocities",

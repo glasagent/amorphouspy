@@ -9,14 +9,17 @@ from amorphouspy.properties import vibrational
 from amorphouspy.properties.structural.qn import compute_qn
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
+    compute_debye_level,
     compute_partial_vacf,
     compute_partial_vdos,
+    compute_reduced_vdos,
     compute_vacf_from_velocities,
     compute_vdos_from_velocities,
     convert_frequency,
 )
 from ase import Atoms
 from ase.io import read
+from scipy.constants import atomic_mass
 
 DATA_DIR = Path(__file__).parent / "data"
 SI_O_BOND = 1.6
@@ -817,3 +820,140 @@ def test_partial_vacf_invalid_groups_raise():
         compute_partial_vacf(velocities, masses, DT_FS, {"element": {}})
     with pytest.raises(ValueError, match=r"groups\['element'\]\['O'\] contains positions outside"):
         compute_partial_vacf(velocities, masses, DT_FS, {"element": {"O": np.array([3])}})
+
+
+# ---------------------------------------------------------------------------
+# compute_debye_level and compute_reduced_vdos
+# ---------------------------------------------------------------------------
+
+# Approximate literature values for fused silica: B and G in GPa, density in g/cm^3.
+SILICA_BULK_GPA, SILICA_SHEAR_GPA, SILICA_DENSITY = 36.7, 31.2, 2.2
+# 1.5 THz lies between bin 21 (1.47 THz) and bin 22 (1.54 THz).
+GRID_THZ = np.arange(201) * 0.07
+# The ends of the default 0.5-5 THz range are exactly bins 8 and 80.
+SIXTEENTH_GRID_THZ = np.arange(161) / 16
+SHEARED_CELL = np.array([[12.0, 0.0, 0.0], [8.0, 10.0, 0.0], [0.0, 0.0, 11.0]])
+
+
+def _silica(shape: np.ndarray, n_units: int) -> Atoms:
+    """n_units SiO2 at 2.2 g/cm^3 in a cell of the given shape (positions are irrelevant to the Debye level)."""
+    atoms = Atoms(f"Si{n_units}O{2 * n_units}", pbc=True)
+    volume_a3 = atoms.get_masses().sum() * atomic_mass * 1e3 / SILICA_DENSITY * 1e24
+    atoms.set_cell(shape * (volume_a3 / abs(np.linalg.det(shape))) ** (1 / 3))
+    return atoms
+
+
+def _reduced_bump(freqs: np.ndarray) -> np.ndarray:
+    """A VDOS whose reduced VDOS is a flat level plus a Gaussian excess centred at 1.5 THz."""
+    return freqs**2 * (1.0 + np.exp(-0.5 * ((freqs - 1.5) / 0.5) ** 2))
+
+
+def test_debye_level_fused_silica():
+    """Fused-silica moduli and density give its sound velocities and Debye temperature."""
+    atoms = _silica(np.eye(3), 1)
+    debye = compute_debye_level(atoms, SILICA_BULK_GPA, SILICA_SHEAR_GPA)
+    # Approximate literature values for fused silica.
+    assert debye["longitudinal_velocity_m_s"] == pytest.approx(5950.0, rel=0.03)
+    assert debye["transverse_velocity_m_s"] == pytest.approx(3770.0, rel=0.03)
+    assert debye["debye_temperature_k"] == pytest.approx(495.0, rel=0.03)
+    assert debye["density_g_cm3"] == pytest.approx(SILICA_DENSITY, rel=1e-12)
+    assert debye["number_density_per_a3"] == pytest.approx(3 / atoms.get_volume(), rel=1e-12)
+
+
+@pytest.mark.parametrize("normalization", ["unit", "3N"])
+def test_reduced_vdos_of_debye_spectrum_is_flat(normalization):
+    """A Debye VDOS has a flat reduced VDOS at the Debye level, NaN at nu = 0, and no point is dropped."""
+    atoms = _silica(np.eye(3), 1)
+    debye = compute_debye_level(atoms, SILICA_BULK_GPA, SILICA_SHEAR_GPA, normalization=normalization)
+    nu_d = debye["debye_frequency_thz"]
+    scale = 1.0 if normalization == "unit" else 3.0 * len(atoms)
+    freqs = np.linspace(0.0, nu_d, 301)
+    result = compute_reduced_vdos(freqs, scale * 3 * freqs**2 / nu_d**3, debye=debye)
+    reduced = result["reduced_vdos"]
+    assert reduced.shape == freqs.shape
+    assert np.isnan(reduced[0])
+    np.testing.assert_allclose(reduced[1:], scale * 3 / nu_d**3, rtol=1e-12)
+    assert result["debye_level_thz-3"] == pytest.approx(scale * 3 / nu_d**3, rel=1e-12)
+    assert result["boson_peak_over_debye"] == pytest.approx(1.0, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("freqs", "vdos", "peak_bin", "at_edge"),
+    [
+        pytest.param(GRID_THZ, _reduced_bump(GRID_THZ), 21, False, id="bump"),
+        pytest.param(SIXTEENTH_GRID_THZ, SIXTEENTH_GRID_THZ, 8, True, id="decreasing"),
+        pytest.param(SIXTEENTH_GRID_THZ, SIXTEENTH_GRID_THZ**3, 80, True, id="increasing"),
+    ],
+)
+def test_reduced_vdos_boson_peak(freqs, vdos, peak_bin, at_edge):
+    """The peak is the raw maximum within the range, ends included; a monotonic reduced VDOS peaks on a range edge."""
+    result = compute_reduced_vdos(freqs, vdos)
+    assert result["boson_peak_thz"] == freqs[peak_bin]
+    assert result["boson_peak_height"] == result["reduced_vdos"][peak_bin]
+    assert result["peak_at_range_edge"] is at_edge
+    assert set(result) == {"reduced_vdos", "boson_peak_thz", "boson_peak_height", "peak_at_range_edge"}
+
+
+@pytest.mark.parametrize(
+    ("shape", "n_units", "peak_below"),
+    [
+        pytest.param(np.eye(3), 27, True, id="small-cubic"),  # L = 10.7 A, nu_min = 3.5 THz
+        pytest.param(SHEARED_CELL, 1000, False, id="large-sheared"),  # largest height 35.8 A, nu_min = 1.05 THz
+    ],
+)
+def test_reduced_vdos_box_limit(shape, n_units, peak_below):
+    """The lowest box frequency is v_T over the largest perpendicular height; frequencies below it are unreliable."""
+    atoms = _silica(shape, n_units)
+    # c is perpendicular to a and b, so the height along c is cell[2, 2]. In the sheared cell it is the largest height,
+    # while the longest edge (b) and the largest diagonal element (a) are longer.
+    l_max = atoms.cell[2, 2]  # in A
+    v_t = np.sqrt(SILICA_SHEAR_GPA / SILICA_DENSITY * 1e6)
+    debye = compute_debye_level(atoms, SILICA_BULK_GPA, SILICA_SHEAR_GPA)
+    assert debye["lowest_box_frequency_thz"] == pytest.approx(v_t / (l_max * 1e-10) * 1e-12, rel=1e-12)
+    # The lowest box frequency itself is on the grid and counts as reliable.
+    freqs = np.union1d(GRID_THZ, debye["lowest_box_frequency_thz"])
+    result = compute_reduced_vdos(freqs, _reduced_bump(freqs), debye=debye)
+    np.testing.assert_array_equal(result["reliable"], debye["lowest_box_frequency_thz"] <= freqs)
+    assert result["peak_below_box_limit"] is peak_below
+
+
+def _debye_invalid_cases() -> list:
+    silica = _silica(np.eye(3), 1)
+    open_cell = silica.copy()
+    open_cell.pbc = [True, True, False]
+    b, g = SILICA_BULK_GPA, SILICA_SHEAR_GPA
+    return [
+        pytest.param(silica, 0.0, g, {}, "bulk_modulus_gpa must be positive", id="bulk-zero"),
+        pytest.param(Atoms(cell=[10.0, 10.0, 10.0], pbc=True), b, g, {}, "no atoms", id="empty"),
+        pytest.param(open_cell, b, g, {}, "periodic in all three", id="non-periodic"),
+        pytest.param(Atoms("SiO2", pbc=True), b, g, {}, "positive volume", id="zero-volume"),
+        pytest.param(silica, b, g, {"normalization": "none"}, "no Debye level", id="normalization-none"),
+    ]
+
+
+@pytest.mark.parametrize(("structure", "bulk", "shear", "kwargs", "match"), _debye_invalid_cases())
+def test_debye_level_invalid_input_raises(structure, bulk, shear, kwargs, match):
+    """Invalid moduli, structures and normalisations raise ValueError."""
+    with pytest.raises(ValueError, match=match):
+        compute_debye_level(structure, bulk, shear, **kwargs)
+
+
+def _reduced_invalid_cases() -> list:
+    vdos = GRID_THZ**2
+    nan_vdos = vdos.copy()
+    nan_vdos[5] = np.nan
+    return [
+        pytest.param(GRID_THZ, vdos[:-1], {}, "1-D arrays of the same length", id="length-mismatch"),
+        pytest.param(GRID_THZ, nan_vdos, {}, "NaN or inf", id="vdos-nan"),
+        pytest.param(GRID_THZ - 0.07, vdos, {}, "negative", id="negative-frequency"),
+        pytest.param(GRID_THZ[::-1], vdos, {}, "strictly increasing", id="unsorted"),
+        pytest.param(GRID_THZ, vdos, {"peak_range_thz": (2.0, 2.0)}, "low < high", id="range-low-equals-high"),
+        pytest.param(GRID_THZ, vdos, {"peak_range_thz": (1.48, 1.53)}, "no frequency bins", id="range-without-bins"),
+    ]
+
+
+@pytest.mark.parametrize(("freqs", "vdos", "kwargs", "match"), _reduced_invalid_cases())
+def test_reduced_vdos_invalid_input_raises(freqs, vdos, kwargs, match):
+    """Invalid spectra and peak ranges raise ValueError."""
+    with pytest.raises(ValueError, match=match):
+        compute_reduced_vdos(freqs, vdos, **kwargs)
