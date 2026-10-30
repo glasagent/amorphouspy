@@ -5,15 +5,19 @@ Frequencies in this module are ordinary frequencies in THz (not angular frequenc
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+import math
+import warnings
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
+import pandas as pd
 import scipy.fft
 import scipy.signal
 from numpy.typing import ArrayLike, NDArray
 from scipy.constants import Boltzmann, atomic_mass, c, e, h
 
 from amorphouspy.atoms.neighbors import cell_perpendicular_heights
+from amorphouspy.lammps.runner import Thermostat, _run_lammps_md, thermostat_ensembles
 from amorphouspy.properties.structural.all import (
     _build_cutoff_map,
     _classify_elements,
@@ -24,6 +28,8 @@ from amorphouspy.properties.structural.qn import CutoffSpec, compute_qn_and_clas
 from amorphouspy.properties.structural.rdf import compute_rdf
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from ase import Atoms
 
 FrequencyUnit = Literal["THz", "cm-1", "meV", "rad/ps"]
@@ -210,13 +216,7 @@ def _validate_trajectory(velocities: NDArray, masses: NDArray, dt_fs: float) -> 
     return velocities, masses
 
 
-def _validate_vdos_inputs(
-    velocities: NDArray, masses: NDArray, dt_fs: float, normalization: str, window: object
-) -> tuple[NDArray, NDArray[np.float64]]:
-    velocities, masses = _validate_trajectory(velocities, masses, dt_fs)
-    if normalization not in ("unit", "3N", "none"):
-        msg = f"Unknown normalization {normalization!r}; allowed values are 'unit', '3N' and 'none'."
-        raise ValueError(msg)
+def _validate_window(window: object) -> None:
     gaussian = (
         isinstance(window, tuple)
         and len(window) == _GAUSSIAN_LEN
@@ -232,6 +232,16 @@ def _validate_vdos_inputs(
             "('gaussian', std) with std > 0 in frames, and None."
         )
         raise ValueError(msg)
+
+
+def _validate_vdos_inputs(
+    velocities: NDArray, masses: NDArray, dt_fs: float, normalization: str, window: object
+) -> tuple[NDArray, NDArray[np.float64]]:
+    velocities, masses = _validate_trajectory(velocities, masses, dt_fs)
+    if normalization not in ("unit", "3N", "none"):
+        msg = f"Unknown normalization {normalization!r}; allowed values are 'unit', '3N' and 'none'."
+        raise ValueError(msg)
+    _validate_window(window)
     return velocities, masses
 
 
@@ -1244,4 +1254,278 @@ def compute_vibrational_thermodynamics(
         "lowest_frequency_source": source,
         "vdos_integral": vdos_integral,
         "excluded_weight": vdos_integral - positive_integral,
+    }
+
+
+# Spectra of silicate glasses reach about 40 THz; a lower Nyquist frequency cuts and aliases the highest modes.
+_MIN_NYQUIST_THZ = 50.0
+
+
+def _vdos_simulation_settings(
+    potential: pd.DataFrame,
+    temperature_sim: float,
+    timestep: float,
+    block_ps: float,
+    dump_every: int,
+    equilibration_steps: int,
+    normalization: str,
+    window: object,
+) -> tuple[int, int, float]:
+    """Validate the arguments of :func:`vdos_simulation` and return ``(block_steps, block_frames, dt_fs)``."""
+    if potential.empty:
+        msg = "No matching potential found for the given configuration."
+        raise ValueError(msg)
+    for name, value in (("temperature_sim", temperature_sim), ("timestep", timestep), ("block_ps", block_ps)):
+        if not (np.isfinite(value) and value > 0):
+            msg = f"{name} must be positive and finite, got {value}."
+            raise ValueError(msg)
+    if isinstance(dump_every, bool) or not isinstance(dump_every, int | np.integer) or dump_every < 1:
+        msg = f"dump_every must be a positive integer, got {dump_every!r}."
+        raise ValueError(msg)
+    if equilibration_steps < 0:
+        msg = f"equilibration_steps must not be negative, got {equilibration_steps}."
+        raise ValueError(msg)
+    if normalization not in ("unit", "3N"):
+        msg = f"Unknown normalization {normalization!r}; allowed values are 'unit' and '3N'."
+        raise ValueError(msg)
+    _validate_window(window)
+    steps = block_ps * 1000 / timestep
+    block_steps = round(steps)
+    if not math.isclose(steps, block_steps, rel_tol=1e-9):
+        msg = f"block_ps={block_ps} ps is not a whole number of {timestep} fs timesteps ({steps:g} steps)."
+        raise ValueError(msg)
+    if block_steps % dump_every:
+        msg = f"The block of {block_steps} steps is not a multiple of dump_every={dump_every}."
+        raise ValueError(msg)
+    block_frames = block_steps // dump_every
+    if block_frames < _MIN_FRAMES:
+        msg = f"A block needs at least 2 frames, got {block_frames} ({block_steps} steps, dump_every={dump_every})."
+        raise ValueError(msg)
+    return block_steps, block_frames, timestep * dump_every
+
+
+def _split_total(partial: dict[str, dict[str, NDArray[np.float64]]]) -> dict[str, Any]:
+    """Move the all-atoms group of :func:`vdos_simulation` to a top-level ``"total"`` entry."""
+    return {"total": partial["total"]["all"], **{name: labels for name, labels in partial.items() if name != "total"}}
+
+
+def vdos_simulation(
+    structure: "Atoms",
+    potential: pd.DataFrame,
+    temperature_sim: float = 300.0,
+    timestep: float = 1.0,
+    server_kwargs: dict[str, Any] | None = None,
+    *,
+    thermostat: Thermostat,
+    equilibration_steps: int = 100_000,
+    block_ps: float = 10.0,
+    dump_every: int = 5,
+    normalization: Literal["unit", "3N"] = "unit",
+    window: VdosWindow = "hann",
+    cutoff: CutoffSpec | None = None,
+    former_types: list[int] | None = None,
+    o_type: int = 8,
+    seed: int = 12345,
+    tmp_working_directory: "str | Path | None" = None,
+) -> dict[str, Any]:
+    r"""Equilibrate a structure, run one NVE block and compute its VDOS and VACF, total and per atom group.
+
+    Three MD stages run in LAMMPS at the constant volume of the input cell:
+
+    1. Langevin thermalisation at ``temperature_sim`` for 10,000 steps, with velocities created at ``temperature_sim``
+       (as in :func:`diffusion_simulation`).
+    2. NVT equilibration with ``thermostat`` for ``equilibration_steps`` steps, with velocities created again at
+       ``temperature_sim``. ``equilibration_steps=0`` skips this stage.
+    3. NVE production of one block of ``block_ps``, i.e. ``block_steps = block_ps * 1000 / timestep`` steps, starting
+       from the velocities of the previous stage, with velocities and thermo output every ``dump_every`` steps.
+
+    The production is microcanonical because a thermostat perturbs the velocities and distorts the spectrum. LAMMPS
+    also writes the frame of step 0, which is the end state of the previous stage. It is dropped, so the block holds
+    ``n_frames = block_steps // dump_every`` frames spaced by ``dt_fs = timestep * dump_every`` fs, and the frequency
+    resolution is exactly ``1 / block_ps`` THz. If the parsed output does not hold ``n_frames + 1`` frames, a
+    ``RuntimeError`` is raised; no frame is trimmed silently. The Nyquist frequency is ``1 / (2 dt_fs)``: 100 THz for
+    the defaults (1 fs, every 5 steps).
+
+    From the kept frames (velocities in Å/fs, masses from ``structure.get_masses()`` in amu) the function computes:
+
+    - The VDOS without a window and, unless ``window`` is ``None``, with ``window`` (Hann by default), both with
+      :func:`compute_partial_vdos`, the given ``normalization`` and one shared frequency axis. The total is computed
+      as the partial VDOS of a group of all atoms, so it is the total VDOS of :func:`compute_vdos_from_velocities`
+      and integrates to 1 (``"unit"``) or ``3 * n_atoms`` (``"3N"``); within each grouping the partials add up to it.
+    - The VACF with :func:`compute_partial_vacf`, unwindowed, normalised so that the total $C(0) = 1$, with lags up to
+      half the block.
+
+    The centre-of-mass velocity of the whole system is removed from every frame in both.
+
+    The atom groups (element, oxygen class, $\mathrm{Q}^n$) come from :func:`classify_vibrational_groups` on the input
+    ``structure``, before any MD, so thermal motion of bonds near the cutoff cannot change them. They stay fixed for
+    the block.
+
+    This is a single block, so the spectrum is noisy: every frequency bin comes from one short trajectory. Averaging
+    over several blocks, with a standard error, is not done here.
+
+    Memory: the velocities of one block take ``n_frames * n_atoms * 3 * 8`` bytes as float64, e.g. 0.29 GB for 2000
+    frames (10 ps at 5 fs) of 6000 atoms. The parsed LAMMPS output holds three more arrays of that size (positions,
+    unwrapped positions and forces), so the peak is at least four times that.
+
+    Args:
+        structure: Input structure, e.g. a quenched glass. Its cell sets the volume of every stage, and the atom
+            groups and masses are taken from it.
+        potential: LAMMPS potential as a pandas DataFrame.
+        temperature_sim: Temperature of the Langevin and NVT stages in K.
+        timestep: MD timestep in fs.
+        server_kwargs: Additional arguments for the LAMMPS server (e.g. ``{"cores": 4}``).
+        thermostat: Thermostat of the NVT stage, ``"nose_hoover"`` or ``"langevin"``.
+        equilibration_steps: Length of the NVT stage in MD steps; 0 skips it. Use a small value for quick demos and
+            the default for production-quality runs.
+        block_ps: Length of the NVE block in ps, a whole number of timesteps. It sets the resolution 1 / ``block_ps``
+            THz.
+        dump_every: Interval between dumped frames in MD steps, a positive integer that divides the block.
+        normalization: ``"unit"`` (the total VDOS integrates to 1, in 1/THz) or ``"3N"`` (to ``3 * n_atoms``). The
+            VACF is always normalised to $C(0) = 1$.
+        window: Window of the second VDOS, as in :func:`compute_partial_vdos`: ``"hann"`` (default), ``"hamming"``,
+            ``"blackmanharris"``, ``("gaussian", std)`` with ``std > 0`` in frames (``dt_fs`` apart, so 250 frames
+            are 1.25 ps at the defaults), or ``None`` to compute only the unwindowed VDOS.
+        cutoff: Former-O cutoff in Å for the groups, as in :func:`classify_vibrational_groups`. Derived from the RDF
+            if ``None``.
+        former_types: Atomic numbers of the network formers. Derived from the composition if ``None``.
+        o_type: Atomic number of oxygen.
+        seed: Random seed for the velocities created in the Langevin and NVT stages.
+        tmp_working_directory: Directory for temporary simulation files.
+
+    Returns:
+        A dict with:
+            ``"frequencies_thz"``: frequency axis in THz, length ``n_frames // 2 + 1``, shared by both VDOS.
+            ``"vdos"``: ``{"no_window": ..., "windowed": ...}`` (no ``"windowed"`` entry for ``window=None``), each
+            ``{"total": array, "element": {...}, "oxygen": {...}, "qn": {...}}`` with the labels of ``"groups"``, in
+            1/THz.
+            ``"lag_ps"``: VACF lags in ps, length ``n_frames // 2 + 1``.
+            ``"vacf"``: ``{"total": array, "element": {...}, "oxygen": {...}, "qn": {...}}``, dimensionless.
+            ``"groups"``: the output of :func:`classify_vibrational_groups` on the input structure.
+            ``"structure"``: the final structure of the NVE block.
+            ``"temperature"``: thermo temperature in K of each kept frame, as parsed.
+            ``"energy_tot"``: total energy in eV of each kept frame, as parsed.
+            ``"dt_fs"``: time between frames in fs.
+            ``"n_frames"``: number of kept frames.
+            ``"resolution_thz"``: 1 / ``block_ps``.
+            ``"nyquist_thz"``: 1 / (2 ``dt_fs``) in THz.
+            ``"normalization"``: the VDOS normalisation.
+            ``"window"``: the window of ``vdos["windowed"]``, as passed.
+
+    Raises:
+        ValueError: Before any MD, if the potential is empty, ``temperature_sim``, ``timestep`` or ``block_ps`` is not
+            positive and finite, ``dump_every`` is not a positive integer, ``equilibration_steps`` is negative,
+            ``normalization`` is not ``"unit"`` or ``"3N"``, ``window`` is unknown, ``block_ps`` is not a whole number
+            of timesteps, the block is not a multiple of ``dump_every`` or holds fewer than 2 frames, or ``thermostat``
+            is unknown.
+        RuntimeError: If the NVE output does not hold ``n_frames + 1`` frames of velocities, temperature and total
+            energy.
+
+    Warns:
+        UserWarning: If the Nyquist frequency is below 50 THz.
+
+    Example:
+        ```pycon
+        >>> out = vdos_simulation(structure, potential, thermostat="nose_hoover")  # doctest: +SKIP
+        >>> out["n_frames"], out["resolution_thz"], out["nyquist_thz"]  # doctest: +SKIP
+        (2000, 0.1, 100.0)
+        >>> out["vdos"]["windowed"]["element"]["Si"]  # doctest: +SKIP
+
+        ```
+    """
+    block_steps, block_frames, dt_fs = _vdos_simulation_settings(
+        potential, temperature_sim, timestep, block_ps, dump_every, equilibration_steps, normalization, window
+    )
+    nyquist_thz = 500.0 / dt_fs
+    if nyquist_thz < _MIN_NYQUIST_THZ:
+        warnings.warn(
+            f"The Nyquist frequency is {nyquist_thz:g} THz (timestep {timestep} fs, dump_every {dump_every}), below "
+            f"{_MIN_NYQUIST_THZ:g} THz; silicate spectra reach about 40 THz, so the highest modes are cut and aliased.",
+            UserWarning,
+            stacklevel=2,
+        )
+    nvt_ensemble, _ = thermostat_ensembles(thermostat)
+    groups = classify_vibrational_groups(structure, cutoff, former_types, o_type)
+    masses = structure.get_masses()
+
+    equilibrated, _ = _run_lammps_md(
+        structure=structure,
+        potential=potential,
+        tmp_working_directory=tmp_working_directory,
+        temperature=temperature_sim,
+        n_ionic_steps=10_000,
+        timestep=timestep,
+        n_print_thermo=1000,
+        initial_temperature=temperature_sim,
+        ensemble="nvt_langevin",
+        seed=seed,
+        server_kwargs=server_kwargs,
+    )
+    if equilibration_steps > 0:
+        equilibrated, _ = _run_lammps_md(
+            structure=equilibrated,
+            potential=potential,
+            tmp_working_directory=tmp_working_directory,
+            temperature=temperature_sim,
+            n_ionic_steps=equilibration_steps,
+            timestep=timestep,
+            n_print_thermo=1000,
+            initial_temperature=temperature_sim,
+            ensemble=nvt_ensemble,
+            seed=seed,
+            server_kwargs=server_kwargs,
+        )
+    # No temperature and no initial temperature: plain fix nve from the velocities of the previous stage.
+    structure_final, parsed_output = _run_lammps_md(
+        structure=equilibrated,
+        potential=potential,
+        tmp_working_directory=tmp_working_directory,
+        temperature=None,
+        initial_temperature=None,
+        n_ionic_steps=block_steps,
+        timestep=timestep,
+        n_dump=dump_every,
+        ensemble="nve",
+        seed=seed,
+        server_kwargs=server_kwargs,
+    )
+
+    # LAMMPS also dumps step 0 (the end state of the previous stage); it is dropped below.
+    generic = parsed_output["generic"]
+    for key in ("velocities", "temperature", "energy_tot"):
+        if len(generic[key]) != block_frames + 1:
+            msg = (
+                f"The NVE block returned {len(generic[key])} frames of {key!r}, expected {block_frames + 1} "
+                f"({block_frames} plus the step-0 frame)."
+            )
+            raise RuntimeError(msg)
+    velocities = np.asarray(generic["velocities"])[1:]
+
+    spectral_groups = {"total": {"all": np.arange(len(structure))}, **groups}
+    frequencies_thz, no_window = compute_partial_vdos(
+        velocities, masses, dt_fs, spectral_groups, normalization=normalization
+    )
+    vdos = {"no_window": _split_total(no_window)}
+    if window is not None:
+        _, windowed = compute_partial_vdos(
+            velocities, masses, dt_fs, spectral_groups, normalization=normalization, window=window
+        )
+        vdos["windowed"] = _split_total(windowed)
+    lag_ps, vacf = compute_partial_vacf(velocities, masses, dt_fs, spectral_groups)
+
+    return {
+        "frequencies_thz": frequencies_thz,
+        "vdos": vdos,
+        "lag_ps": lag_ps,
+        "vacf": _split_total(vacf),
+        "groups": groups,
+        "structure": structure_final,
+        "temperature": np.asarray(generic["temperature"])[1:],
+        "energy_tot": np.asarray(generic["energy_tot"])[1:],
+        "dt_fs": dt_fs,
+        "n_frames": block_frames,
+        "resolution_thz": 1.0 / block_ps,
+        "nyquist_thz": nyquist_thz,
+        "normalization": normalization,
+        "window": window,
     }
