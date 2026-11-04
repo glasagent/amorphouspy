@@ -5,6 +5,7 @@ and spectra) is exercised without a real LAMMPS installation.
 """
 
 import warnings
+import weakref
 from unittest.mock import patch
 
 import numpy as np
@@ -20,9 +21,9 @@ from ase import Atoms
 
 SI_O_BOND = 1.6
 GROUP_KWARGS = {"cutoff": 2.0, "former_types": [14]}
-# 0.2 ps at the default 1 fs timestep, dumped every 5 steps: 200 steps, 40 kept frames plus the step-0 frame,
-# 5 fs between frames, 5 THz resolution and a 100 THz Nyquist frequency.
-BLOCK = {"block_ps": 0.2}
+# One block of 0.2 ps at the default 1 fs timestep, dumped every 5 steps: 200 steps, 40 kept frames plus the step-0
+# frame, 5 fs between frames, 5 THz resolution and a 100 THz Nyquist frequency.
+BLOCK = {"block_ps": 0.2, "production_ps": 0.2}
 N_FRAMES = 40
 DT_FS = 5.0
 
@@ -49,6 +50,27 @@ def _generic(n_atoms, n_frames=N_FRAMES + 1, seed=1):
     }
 
 
+def _outlier_blocks(n_atoms, n_blocks):
+    """Parsed outputs of consecutive blocks with different velocities and thermo, and an outlier in each frame 0."""
+    generics = [_generic(n_atoms, seed=block + 1) for block in range(n_blocks)]
+    for block, generic in enumerate(generics):
+        generic["velocities"][0] = 1e6
+        generic["temperature"] += 100.0 * block
+        generic["energy_tot"] += 100.0 * block
+    return generics
+
+
+def _cosine_velocities(structure):
+    """Velocities of an on-grid cosine: 20 THz is bin 4 of the 5 THz grid, and 4 whole periods fit in the block."""
+    masses = structure.get_masses()
+    amplitudes = np.random.default_rng(2).normal(size=len(structure))
+    amplitudes -= masses @ amplitudes / masses.sum()  # no centre-of-mass motion
+    t_ps = np.arange(N_FRAMES + 1) * DT_FS * 1e-3
+    velocities = np.zeros((N_FRAMES + 1, len(structure), 3))
+    velocities[:, :, 0] = np.cos(2 * np.pi * 20.0 * t_ps)[:, None] * amplitudes
+    return velocities
+
+
 def _potential():
     """Return a minimal non-empty potential DataFrame."""
     return pd.DataFrame({"Name": ["pmmcs"], "Config": [["pair_style buck/coul/long 8.0"]]})
@@ -62,6 +84,12 @@ def _run(structure, generic, *, potential=None, side_effect=None, **kwargs):
         mock_md.side_effect = side_effect
         out = vdos_simulation(structure, _potential() if potential is None else potential, **arguments)
     return out, mock_md
+
+
+def _run_blocks(structure, generics, **kwargs):
+    """Call vdos_simulation for ``len(generics)`` blocks, each returning its own parsed output."""
+    outputs = [(structure, {"generic": generic}) for generic in [generics[0], generics[0], *generics]]
+    return _run(structure, None, side_effect=outputs, production_ps=0.2 * len(generics), **kwargs)[0]
 
 
 def _assert_layout(result, partial):
@@ -81,20 +109,39 @@ def _same_groups(a, b):
     )
 
 
+def _leaves(curves):
+    """Yield the arrays of nested dicts of curves, in order."""
+    for value in curves.values():
+        if isinstance(value, dict):
+            yield from _leaves(value)
+        else:
+            yield value
+
+
+def _over_blocks(blocks, statistic):
+    """Apply ``statistic`` to each curve of a list of library outputs that have the all-atoms group."""
+    return {
+        group: {label: statistic(np.array([block[group][label] for block in blocks])) for label in blocks[0][group]}
+        for group in blocks[0]
+    }
+
+
 @pytest.mark.parametrize(
     ("thermostat", "equilibration_steps", "ensembles", "steps"),
     [
         ("nose_hoover", 50, ["nvt_langevin", "nvt", "nve"], [10_000, 50, 200]),
         ("langevin", 50, ["nvt_langevin", "nvt_langevin", "nve"], [10_000, 50, 200]),
         ("nose_hoover", 0, ["nvt_langevin", "nve"], [10_000, 200]),
+        ("nose_hoover", 50, ["nvt_langevin", "nvt", "nve", "nve", "nve"], [10_000, 50, 200, 200, 200]),
     ],
 )
 def test_vdos_simulation_stages(thermostat, equilibration_steps, ensembles, steps, tmp_path):
-    """Langevin, NVT (skipped for 0 steps) and NVE run in order, each on the output structure of the stage before."""
+    """Langevin, NVT (skipped for 0 steps) and the NVE blocks run in order, each on the output of the stage before."""
     structure = _si2o7_dimer()
     outputs = [_si2o7_dimer() for _ in ensembles]
     generic = _generic(len(structure))
     potential = _potential()
+    n_blocks = ensembles.count("nve")
     out, mock_md = _run(
         structure,
         generic,
@@ -102,11 +149,13 @@ def test_vdos_simulation_stages(thermostat, equilibration_steps, ensembles, step
         side_effect=[(output, {"generic": generic}) for output in outputs],
         thermostat=thermostat,
         equilibration_steps=equilibration_steps,
+        production_ps=0.2 * n_blocks,
         seed=7,
         server_kwargs={"cores": 2},
         tmp_working_directory=tmp_path,
     )
 
+    assert mock_md.call_count == (2 if equilibration_steps else 1) + n_blocks
     calls = [c.kwargs for c in mock_md.call_args_list]
     assert [c["ensemble"] for c in calls] == ensembles
     assert [c["n_ionic_steps"] for c in calls] == steps
@@ -114,20 +163,21 @@ def test_vdos_simulation_stages(thermostat, equilibration_steps, ensembles, step
         assert c["structure"] is previous
         assert c["potential"] is potential
         assert (c["seed"], c["server_kwargs"], c["tmp_working_directory"]) == (7, {"cores": 2}, tmp_path)
-    for c in calls[:-1]:
+    for c in calls[:-n_blocks]:
         assert (c["temperature"], c["initial_temperature"]) == (300.0, 300.0)
-    nve = {key: value for key, value in calls[-1].items() if key not in ("structure", "potential")}
-    assert nve == {
-        "tmp_working_directory": tmp_path,
-        "temperature": None,
-        "initial_temperature": None,
-        "n_ionic_steps": 200,
-        "timestep": 1.0,
-        "n_dump": 5,
-        "ensemble": "nve",
-        "seed": 7,
-        "server_kwargs": {"cores": 2},
-    }
+    for c in calls[-n_blocks:]:
+        nve = {key: value for key, value in c.items() if key not in ("structure", "potential")}
+        assert nve == {
+            "tmp_working_directory": tmp_path,
+            "temperature": None,
+            "initial_temperature": None,
+            "n_ionic_steps": 200,
+            "timestep": 1.0,
+            "n_dump": 5,
+            "ensemble": "nve",
+            "seed": 7,
+            "server_kwargs": {"cores": 2},
+        }
     assert out["structure"] is outputs[-1]
 
 
@@ -168,13 +218,16 @@ def test_vdos_simulation_drops_first_frame(kwargs, window, integral):
     assert set(out) == {
         "frequencies_thz",
         "vdos",
+        "vdos_sem",
         "lag_ps",
         "vacf",
+        "vacf_sem",
         "groups",
         "structure",
         "temperature",
         "energy_tot",
         "dt_fs",
+        "n_blocks",
         "n_frames",
         "resolution_thz",
         "nyquist_thz",
@@ -195,15 +248,93 @@ def test_vdos_simulation_drops_first_frame(kwargs, window, integral):
     assert out["nyquist_thz"] == pytest.approx(out["frequencies_thz"][-1])
 
 
+@pytest.mark.parametrize("window", ["hann", None], ids=["hann", "no-window-only"])
+def test_vdos_simulation_block_statistics(window):
+    """Every curve is the mean and the standard error over blocks of the library output on frames 1 to N of a block."""
+    structure = _si2o7_dimer()
+    generics = _outlier_blocks(len(structure), 3)
+    out = _run_blocks(structure, generics, window=window)
+
+    masses = structure.get_masses()
+    groups = classify_vibrational_groups(structure, **GROUP_KWARGS)
+    spectral_groups = {"total": {"all": np.arange(len(structure))}, **groups}
+    kept = [generic["velocities"][1:] for generic in generics]
+
+    def mean(curves):
+        return np.mean(curves, axis=0)
+
+    def sem(curves):
+        return np.std(curves, axis=0, ddof=1) / np.sqrt(3)
+
+    windows = {"no_window": None} if window is None else {"no_window": None, "windowed": window}
+    assert list(out["vdos"]) == list(windows)
+    assert list(out["vdos_sem"]) == list(windows)
+    for key, key_window in windows.items():
+        blocks = [compute_partial_vdos(v, masses, DT_FS, spectral_groups, window=key_window)[1] for v in kept]
+        _assert_layout(out["vdos"][key], _over_blocks(blocks, mean))
+        _assert_layout(out["vdos_sem"][key], _over_blocks(blocks, sem))
+        total = out["vdos"][key]["total"]
+        assert np.trapezoid(total, out["frequencies_thz"]) == pytest.approx(1.0, rel=1e-12)
+        np.testing.assert_allclose(sum(out["vdos"][key]["element"].values()), total, atol=1e-12)
+    blocks = [compute_partial_vacf(v, masses, DT_FS, spectral_groups)[1] for v in kept]
+    _assert_layout(out["vacf"], _over_blocks(blocks, mean))
+    _assert_layout(out["vacf_sem"], _over_blocks(blocks, sem))
+    assert out["vacf"]["total"][0] == pytest.approx(1.0, rel=1e-12)
+
+    np.testing.assert_array_equal(out["temperature"], np.concatenate([g["temperature"][1:] for g in generics]))
+    np.testing.assert_array_equal(out["energy_tot"], np.concatenate([g["energy_tot"][1:] for g in generics]))
+    assert (out["n_blocks"], out["n_frames"], len(out["temperature"])) == (3, N_FRAMES, 3 * N_FRAMES)
+
+
+def test_vdos_simulation_stationary_signal():
+    """Identical blocks of an on-grid cosine give the single-block result, with a standard error at rounding level."""
+    structure = _si2o7_dimer()
+    generic = {**_generic(len(structure)), "velocities": _cosine_velocities(structure)}
+    single, _ = _run(structure, generic)
+    out = _run_blocks(structure, [generic] * 3)
+
+    for key in ("vdos", "vacf"):
+        for mean, one, sem in zip(_leaves(out[key]), _leaves(single[key]), _leaves(out[f"{key}_sem"]), strict=True):
+            rounding = 1e-12 * np.abs(one).max()
+            np.testing.assert_allclose(mean, one, rtol=0.0, atol=rounding)
+            assert np.isfinite(sem).all()
+            assert sem.max() <= rounding
+
+
+def test_vdos_simulation_one_block_sem_is_nan():
+    """With one block the standard error is NaN in the layout of the curves, without any warning."""
+    structure = _si2o7_dimer()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        out, _ = _run(structure, _generic(len(structure)))
+
+    for key in ("vdos", "vacf"):
+        assert out[f"{key}_sem"].keys() == out[key].keys()
+        for curve, sem in zip(_leaves(out[key]), _leaves(out[f"{key}_sem"]), strict=True):
+            assert sem.shape == curve.shape
+            assert np.isnan(sem).all()
+
+
+def test_vdos_simulation_frees_each_block_before_the_next():
+    """The velocities of a block are dead when the next block is launched, not only after the function returns."""
+    structure = _si2o7_dimer()
+    block_velocities = []
+
+    def run_md(**kwargs):
+        generic = _generic(len(structure))
+        if kwargs["ensemble"] == "nve":
+            assert all(velocities() is None for velocities in block_velocities)
+            block_velocities.append(weakref.ref(generic["velocities"]))
+        return structure, {"generic": generic}
+
+    _run(structure, None, side_effect=run_md, production_ps=0.6)
+    assert len(block_velocities) == 3
+
+
 def test_vdos_simulation_cosine_peak():
     """A cosine at an on-grid frequency (20 THz, bin 4 of the 5 THz grid) peaks there with and without the window."""
     structure = _si2o7_dimer()
-    masses = structure.get_masses()
-    amplitudes = np.random.default_rng(2).normal(size=len(structure))
-    amplitudes -= masses @ amplitudes / masses.sum()  # no centre-of-mass motion
-    t_ps = np.arange(N_FRAMES + 1) * DT_FS * 1e-3
-    velocities = np.zeros((N_FRAMES + 1, len(structure), 3))
-    velocities[:, :, 0] = np.cos(2 * np.pi * 20.0 * t_ps)[:, None] * amplitudes
+    velocities = _cosine_velocities(structure)
     out, _ = _run(structure, {**_generic(len(structure)), "velocities": velocities})
 
     for key in ("no_window", "windowed"):
@@ -230,6 +361,16 @@ def test_vdos_simulation_frame_count_mismatch_raises(key, n_parsed):
     generic[key] = _generic(len(structure), n_frames=n_parsed)[key]
     with pytest.raises(RuntimeError, match=rf"{n_parsed} frames of '{key}', expected {N_FRAMES + 1}"):
         _run(structure, generic)
+
+
+def test_vdos_simulation_frame_count_mismatch_stops_at_named_block():
+    """A wrong frame count in block 2 of 3 names that block, and no third block is launched."""
+    structure = _si2o7_dimer()
+    good, short = _generic(len(structure)), _generic(len(structure), n_frames=N_FRAMES)
+    outputs = iter([(structure, {"generic": generic}) for generic in (good, good, good, short, good)])
+    with pytest.raises(RuntimeError, match=rf"block 2 of 3 returned {N_FRAMES} frames of 'velocities', expected 41"):
+        _run(structure, None, side_effect=outputs, production_ps=0.6)
+    assert len(list(outputs)) == 1
 
 
 def test_vdos_simulation_nyquist_warning():
@@ -259,6 +400,10 @@ def test_vdos_simulation_nyquist_warning():
         ({"timestep": 3.0}, "not a whole number of 3.0 fs timesteps"),
         ({"dump_every": 3}, "not a multiple of dump_every=3"),
         ({"block_ps": 0.005}, "at least 2 frames"),
+        ({"production_ps": float("inf")}, "production_ps must be positive and finite"),
+        ({"production_ps": 0.2005}, "production_ps=0.2005 ps is not a whole number of 1.0 fs timesteps"),
+        ({"production_ps": 0.5}, "production of 500 steps is not a multiple of the block of 200 steps"),
+        ({"production_ps": 0.1}, "production of 100 steps is not a multiple of the block of 200 steps"),
     ],
     ids=[
         "potential-empty",
@@ -274,6 +419,10 @@ def test_vdos_simulation_nyquist_warning():
         "block-not-whole-steps",
         "block-not-multiple",
         "block-one-frame",
+        "production-inf",
+        "production-not-whole-steps",
+        "production-not-multiple",
+        "production-shorter-than-block",
     ],
 )
 def test_vdos_simulation_invalid_inputs_raise(kwargs, match):
