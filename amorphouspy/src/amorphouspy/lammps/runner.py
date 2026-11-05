@@ -4,8 +4,10 @@ This module contains shared functionality which is reused in the individual work
 """
 
 import re
+import shutil
 import subprocess
 import tempfile
+import time
 import warnings
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -26,6 +28,8 @@ Thermostat = Literal["nose_hoover", "langevin"]
 MinStyle = Literal["cg", "sd", "hftn", "fire"]
 
 _CONVERGED_CRITERIA = ("energy tolerance", "force tolerance")
+_DYNAMICAL_MATRIX_STYLE = "regular"
+_DYNAMICAL_MATRIX_FILE = "dynamical_matrix.bin"
 
 
 @contextmanager
@@ -687,6 +691,170 @@ def _run_lammps_relax(
             )
             summaries.append({"min_style": min_style, "pressure_target_gpa": stage_pressure, **summary})
     return current, parsed_output, summaries
+
+
+def _run_lammps_dynamical_matrix(
+    structure: Atoms,
+    potential: LammpsPotential,
+    matrix_path: str | Path,
+    *,
+    displacement: float = 1e-5,
+    minimize: bool = True,
+    minimize_kwargs: dict[str, Any] | None = None,
+    server_kwargs: dict[str, Any] | None = None,
+    tmp_working_directory: str | Path | None = None,
+) -> tuple[Atoms, dict[str, Any]]:
+    """Compute the finite-difference dynamical matrix of a structure with LAMMPS and save it to a file.
+
+    Two LAMMPS runs. With ``minimize=True`` the structure is first minimised by ``_run_lammps_minimize``; the matrix
+    is then computed on the returned structure in a separate ``"static"`` run (``run 0``) that issues
+    ``dynamical_matrix`` before ``run 0``. One run cannot do both: lammpsparser writes extra input lines before the
+    ``minimize`` command, so the matrix would be computed before the minimisation. The static run also dumps the
+    forces of step 0, i.e. of exactly the structure that was differentiated. The design relies on lammpsparser
+    (0.0.10) placing unknown ``input_control_file`` keys before ``run 0`` in static mode and writing a value
+    verbatim: ``dynamical_matrix`` needs an atom map, and ``atom_modify map array`` is only accepted before
+    ``read_data``, so it is injected by replacing the ``units`` line with ``units metal`` plus a second line.
+    The mocked tests cannot detect a change of either behaviour in lammpsparser; a real run can.
+
+    The style is LAMMPS ``regular``: the mass-weighted matrix D = Φ / sqrt(m_i m_j) in eV/Å²/amu (metal units), so
+    an eigenvalue of 1 eV/Å²/amu is a frequency of 15.633 THz. Verified on two atoms (Si, O) at the minimum of a
+    Morse pair (D = 1 eV, alpha = 2 Å⁻¹, r0 = 1.6 Å) along a skewed bond: the 6x6 matrix matches Φ / sqrt(m_i m_j)
+    with longitudinal force constant 2 D alpha² to 7e-11 eV/Å²/amu, and its one nonzero eigenvalue k (1/m1 + 1/m2)
+    to 1e-10 (``eskm`` is the same matrix times 9648.5, in 10 J/mol/Å²/(g/mol)). Row and column order follow the
+    atom id, which lammpsparser sets to the position in the structure plus one; 1 and 2 MPI ranks gave bitwise
+    identical matrices.
+
+    The file is written with ``binary yes``: the dense 3N x 3N matrix as raw float64 in native byte order, no header,
+    so exactly 9 N² x 8 bytes (``np.fromfile(path).reshape(3 * N, 3 * N)``). Rows and columns run over atoms, then
+    x, y, z. It matches the text output read row by row; whether the rows are the displaced or the force degrees of
+    freedom cannot be told from a matrix that is symmetric to the finite-difference error, and does not matter after
+    symmetrisation. The file is checked against that size and then moved to ``matrix_path``.
+
+    Cost: 6N force evaluations (central differences, two per degree of freedom). Disk, and memory once the matrix is
+    read: 9 N² x 8 bytes, 2.6 GB at 6000 atoms and 7.2 GB at 10,000. The default displacement of 1e-5 Å lies far
+    below the table spacing of the tabulated potentials (about 0.002-0.003 Å at a Si-O bond), so each difference
+    samples one spline interval. A pair closer than ``displacement`` to a cutoff where the force jumps (an
+    energy-shifted pair style, e.g. the PMMCS ``pedone`` term at 5.5 Å) gets a spurious term of about
+    jump / (2 displacement) in its entries; on a 300-atom PMMCS silica glass, 1e-4 Å caught two Si-O pairs at the
+    cutoff and gave two spurious imaginary modes. The asymmetry of the raw matrix shows such hits.
+
+    Args:
+        structure: The atomic structure. It is not modified.
+        potential: The LAMMPS potential, as for ``_run_lammps_md``.
+        matrix_path: Destination file for the binary matrix. It must not exist; its parent directory must.
+        displacement: Finite-difference displacement in Å (LAMMPS ``gamma``).
+        minimize: Minimise the structure first. With False the structure is used as given, so the caller vouches
+            that it is at a minimum.
+        minimize_kwargs: Keyword arguments for ``_run_lammps_minimize``, except ``server_kwargs`` and
+            ``tmp_working_directory``, which are taken from this function. Only allowed with ``minimize=True``.
+        server_kwargs: Additional keyword arguments for the server, for example ``{"cores": 2}``, used by both runs.
+        tmp_working_directory: Parent of the run directories, as for ``_run_lammps_md``. None uses temporary
+            directories that are removed after each run.
+
+    Returns:
+        A tuple containing:
+            - structure: The structure the matrix was computed on: the minimised structure, or with
+              ``minimize=False`` the input structure itself.
+            - summary: A dictionary with ``"matrix_path"`` (absolute Path), ``"matrix_bytes"``, ``"n_atoms"``,
+              ``"displacement_a"``, ``"style"`` (``"regular"``, eV/Å²/amu, mass-weighted), ``"max_force_ev_per_a"``
+              (largest per-atom force) and ``"force_norm_ev_per_a"`` (global 2-norm), both from step 0 of the static
+              run, ``"minimization"`` (the ``_run_lammps_minimize`` summary, or None) and ``"wall_time_s"`` (the
+              static run, including LAMMPS start-up).
+
+    Raises:
+        ValueError: Before any run, if ``displacement`` is not positive and finite, ``matrix_path`` exists or its
+            parent directory does not, ``minimize_kwargs`` is given with ``minimize=False``, or it contains
+            ``server_kwargs`` or ``tmp_working_directory``.
+        RuntimeError: If a LAMMPS run fails, or the matrix file is missing or not 9 N² x 8 bytes.
+
+    Example:
+        ```pycon
+        >>> minimised, summary = _run_lammps_dynamical_matrix(glass, potential, "dynmat.bin")  # doctest: +SKIP
+        >>> n = 3 * summary["n_atoms"]  # doctest: +SKIP
+        >>> matrix = np.fromfile(summary["matrix_path"]).reshape(n, n)  # doctest: +SKIP
+        ```
+
+    """
+    if not np.isfinite(displacement) or displacement <= 0:
+        msg = f"displacement must be positive and finite (Å), got {displacement!r}."
+        raise ValueError(msg)
+    matrix_path = Path(matrix_path).resolve()
+    if matrix_path.exists():
+        msg = f"matrix_path {matrix_path} already exists; it is not overwritten."
+        raise ValueError(msg)
+    if not matrix_path.parent.is_dir():
+        msg = f"The parent directory of matrix_path does not exist: {matrix_path.parent}."
+        raise ValueError(msg)
+    if minimize_kwargs is not None:
+        if not minimize:
+            msg = "minimize_kwargs is given with minimize=False, so it would be ignored."
+            raise ValueError(msg)
+        reserved = sorted({"server_kwargs", "tmp_working_directory"} & set(minimize_kwargs))
+        if reserved:
+            msg = f"minimize_kwargs must not contain {reserved}: they are taken from this function's arguments."
+            raise ValueError(msg)
+
+    target = structure
+    minimization = None
+    if minimize:
+        target, _, minimization = _run_lammps_minimize(
+            structure,
+            potential,
+            server_kwargs=server_kwargs,
+            tmp_working_directory=tmp_working_directory,
+            **(minimize_kwargs or {}),
+        )
+
+    n_atoms = len(target)
+    expected_bytes = 9 * n_atoms**2 * 8
+    with simulation_working_directory(tmp_working_directory) as tmpdir:
+        start = time.perf_counter()
+        parsed_output = run_lammps_with_error_capture(
+            working_directory=tmpdir,
+            structure=target.copy(),
+            potential=cast("Any", potential),
+            calc_mode="static",
+            units="metal",
+            write_restart_file=False,
+            read_restart_file=False,
+            restart_file="restart.out",
+            input_control_file={
+                "units": "metal\natom_modify map array",
+                "dynamical_matrix": (
+                    f"all {_DYNAMICAL_MATRIX_STYLE} {displacement} file {_DYNAMICAL_MATRIX_FILE} binary yes"
+                ),
+            },
+            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
+            dump_final_structure=False,
+        )
+        wall_time_s = time.perf_counter() - start
+        written = Path(tmpdir) / _DYNAMICAL_MATRIX_FILE
+        if not written.is_file():
+            msg = f"LAMMPS did not write the dynamical matrix file {written}."
+            raise RuntimeError(msg)
+        matrix_bytes = written.stat().st_size
+        if matrix_bytes != expected_bytes:
+            msg = (
+                f"The dynamical matrix file has {matrix_bytes} bytes, expected {expected_bytes} "
+                f"(9 N² x 8 for N = {n_atoms})."
+            )
+            raise RuntimeError(msg)
+        # Moved before the context exits: a temporary working directory is removed on exit.
+        shutil.move(written, matrix_path)
+
+    forces = np.asarray(parsed_output["generic"]["forces"][0], dtype=float)
+    summary = {
+        "matrix_path": matrix_path,
+        "matrix_bytes": matrix_bytes,
+        "n_atoms": n_atoms,
+        "displacement_a": displacement,
+        "style": _DYNAMICAL_MATRIX_STYLE,
+        "max_force_ev_per_a": float(np.linalg.norm(forces, axis=1).max()),
+        "force_norm_ev_per_a": float(np.linalg.norm(forces)),
+        "minimization": minimization,
+        "wall_time_s": wall_time_s,
+    }
+    return target, summary
 
 
 def get_lammps_command(server_kwargs: dict | None = None) -> str:
