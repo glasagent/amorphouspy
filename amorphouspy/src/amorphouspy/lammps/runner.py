@@ -3,6 +3,7 @@
 This module contains shared functionality which is reused in the individual workflows.
 """
 
+import re
 import subprocess
 import tempfile
 import warnings
@@ -22,6 +23,9 @@ LammpsPotential = str | pd.DataFrame | dict[str, Any]
 LammpsPressure = int | float | list[int | float | None] | None
 Ensemble = Literal["nve", "nvt", "npt", "nvt_langevin", "npt_langevin"]
 Thermostat = Literal["nose_hoover", "langevin"]
+MinStyle = Literal["cg", "sd", "hftn", "fire"]
+
+_CONVERGED_CRITERIA = ("energy tolerance", "force tolerance")
 
 
 @contextmanager
@@ -355,6 +359,334 @@ def _run_lammps_md(
         new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
 
     return new_structure, parsed_output
+
+
+def _is_positive_int(value: object) -> bool:
+    """Return True for a positive integer (Python or numpy), rejecting bool."""
+    return isinstance(value, int | np.integer) and not isinstance(value, bool) and bool(value > 0)
+
+
+def _validate_minimize_arguments(
+    force_tolerance: float,
+    energy_tolerance: float,
+    max_iter: int,
+    min_style: str,
+    pressure: float | None,
+    n_print: int,
+) -> None:
+    """Check the arguments of a LAMMPS minimisation before anything runs.
+
+    Args:
+        force_tolerance: LAMMPS ``ftol`` in eV/Å.
+        energy_tolerance: LAMMPS ``etol`` (relative energy change, dimensionless).
+        max_iter: Maximum number of minimiser iterations.
+        min_style: LAMMPS ``min_style``.
+        pressure: Target pressure in GPa for ``fix box/relax``, or None for a fixed cell.
+        n_print: Thermo and dump interval in iterations.
+
+    Raises:
+        ValueError: If a tolerance is negative or non-finite, both tolerances are 0, ``max_iter`` or ``n_print`` is
+            not a positive integer, ``min_style`` is unknown, ``pressure`` is not a finite scalar, or ``"fire"`` is
+            combined with a pressure.
+    """
+    for name, tolerance in (("force_tolerance", force_tolerance), ("energy_tolerance", energy_tolerance)):
+        if not np.isfinite(tolerance) or tolerance < 0:
+            msg = f"{name} must be finite and non-negative, got {tolerance!r}."
+            raise ValueError(msg)
+    if force_tolerance == 0 and energy_tolerance == 0:
+        msg = "force_tolerance and energy_tolerance cannot both be 0: the minimisation would never converge."
+        raise ValueError(msg)
+    for name, value in (("max_iter", max_iter), ("n_print", n_print)):
+        if not _is_positive_int(value):
+            msg = f"{name} must be a positive integer, got {value!r}."
+            raise ValueError(msg)
+    if min_style not in get_args(MinStyle):
+        msg = f"min_style must be one of {get_args(MinStyle)}, got {min_style!r}."
+        raise ValueError(msg)
+    if pressure is not None:
+        is_real_scalar = isinstance(pressure, int | float | np.integer | np.floating) and not isinstance(pressure, bool)
+        if not is_real_scalar or not np.isfinite(pressure):
+            msg = f"pressure must be None or a finite scalar in GPa, got {pressure!r}."
+            raise ValueError(msg)
+        if min_style == "fire":
+            msg = "min_style 'fire' cannot be combined with a pressure: LAMMPS rejects damped dynamics with box/relax."
+            raise ValueError(msg)
+
+
+def _parse_minimize_log(log_text: str) -> tuple[str, int, int]:
+    """Read the minimisation statistics from the text of ``log.lammps``.
+
+    Args:
+        log_text: Full content of ``log.lammps``.
+
+    Returns:
+        The stopping criterion, the number of iterations and the number of force evaluations of the last
+        ``minimize`` command.
+
+    Raises:
+        RuntimeError: If the ``Stopping criterion`` or ``Iterations, force evaluations`` line is missing.
+    """
+    criteria = re.findall(r"Stopping criterion = (.+)", log_text)
+    counts = re.findall(r"Iterations, force evaluations = (\d+) (\d+)", log_text)
+    if not criteria or not counts:
+        msg = "log.lammps lacks the minimisation statistics ('Stopping criterion', 'Iterations, force evaluations')."
+        raise RuntimeError(msg)
+    n_iterations, n_force_evaluations = counts[-1]
+    return criteria[-1].strip(), int(n_iterations), int(n_force_evaluations)
+
+
+def _last_dump_step(dump_file: Path) -> int | None:
+    """Return the timestep of the last frame in a LAMMPS text dump, or None if it has no frame."""
+    last_step = None
+    with dump_file.open() as f:
+        for line in f:
+            if line.startswith("ITEM: TIMESTEP"):
+                last_step = int(next(f))
+    return last_step
+
+
+def _minimize_summary(
+    parsed_output: dict[str, Any], stopping_criterion: str, n_iterations: int, n_force_evaluations: int
+) -> dict[str, Any]:
+    """Summarise a parsed LAMMPS minimisation (see ``_run_lammps_minimize`` for the keys)."""
+    generic = parsed_output["generic"]
+    forces = np.asarray(generic["forces"][-1], dtype=float)
+    energy_pot = np.asarray(generic["energy_pot"], dtype=float)
+    volume = np.asarray(generic["volume"], dtype=float)
+    pressure = np.asarray(generic["pressures"][-1], dtype=float)
+    return {
+        "stopping_criterion": stopping_criterion,
+        "converged": stopping_criterion in _CONVERGED_CRITERIA,
+        "n_iterations": n_iterations,
+        "n_force_evaluations": n_force_evaluations,
+        "energy_initial_ev": float(energy_pot[0]),
+        "energy_final_ev": float(energy_pot[-1]),
+        "energy_change_mev_per_atom": float(1e3 * (energy_pot[-1] - energy_pot[0]) / len(forces)),
+        "force_norm_ev_per_a": float(np.linalg.norm(forces)),
+        "max_force_ev_per_a": float(np.linalg.norm(forces, axis=1).max()),
+        "pressure_gpa": pressure,
+        "mean_pressure_gpa": float(np.trace(pressure) / 3),
+        "volume_initial_a3": float(volume[0]),
+        "volume_final_a3": float(volume[-1]),
+    }
+
+
+def _run_lammps_minimize(
+    structure: Atoms,
+    potential: LammpsPotential,
+    *,
+    force_tolerance: float = 1e-4,
+    energy_tolerance: float = 0.0,
+    max_iter: int = 100_000,
+    min_style: MinStyle = "cg",
+    pressure: float | None = None,
+    n_print: int = 100,
+    server_kwargs: dict[str, Any] | None = None,
+    tmp_working_directory: str | Path | None = None,
+    input_control_file: dict[str, Any] | None = None,
+) -> tuple[Atoms, dict[str, Any], dict[str, Any]]:
+    """Minimise the potential energy of a structure with LAMMPS and return the final structure and a summary.
+
+    With ``pressure=None`` (the default) the cell is fixed and only the atoms move. With a scalar ``pressure`` the
+    cell also relaxes isotropically under ``fix box/relax iso`` towards that pressure (GPa, converted to bar by
+    lammpsparser); ``box/relax`` acts on the virial pressure only.
+
+    The force tolerance is LAMMPS ``ftol`` with the default ``min_modify norm two``: the 2-norm of the global force
+    vector over all 3N components (eV/Å), not a per-atom maximum. With ``box/relax`` that vector also contains the box
+    degrees of freedom. A 2-norm below ``ftol`` still allows single atoms with a large force in a big system, so the
+    summary also reports the largest per-atom force. The energy tolerance is LAMMPS ``etol``, the energy change
+    between iterations relative to the energy magnitude (dimensionless). lammpsparser caps the force evaluations at
+    ``100 * max_iter``.
+
+    ``"fire"`` is damped dynamics with the LAMMPS metal default timestep (0.001 ps); LAMMPS forbids it together with
+    ``box/relax``. Its final thermo pressure contains the kinetic term of FIRE's residual velocities.
+
+    The structure is sent to LAMMPS with zero velocities, so the reported pressure is the static (virial) pressure,
+    and the returned structure also carries zero velocities. lammpsparser writes the dump and thermo output with
+    ``%20.15g``, so the returned positions and energies keep 15 significant digits.
+
+    Args:
+        structure: The atomic structure to minimise. It is not modified.
+        potential: The LAMMPS potential, as for ``_run_lammps_md``.
+        force_tolerance: LAMMPS ``ftol`` in eV/Å (2-norm of the global force vector).
+        energy_tolerance: LAMMPS ``etol`` (relative energy change, dimensionless). Both tolerances 0 is rejected.
+        max_iter: Maximum number of minimiser iterations.
+        min_style: LAMMPS ``min_style``: ``"cg"``, ``"sd"``, ``"hftn"`` or ``"fire"`` (fixed cell only).
+        pressure: Target pressure in GPa for an isotropic ``fix box/relax``, or None for a fixed cell.
+        n_print: Thermo and dump interval in iterations. It should divide ``max_iter``: on the ``max iterations``
+            stop LAMMPS dumps the last step only if it is a multiple of ``n_print``.
+        server_kwargs: Additional keyword arguments for the server, for example ``{"cores": 2}``.
+        tmp_working_directory: Parent of the run directory, as for ``_run_lammps_md``. None uses a temporary
+            directory that is removed after the run.
+        input_control_file: LAMMPS input overrides forwarded unchanged to lammpsparser. A ``"dump_modify"`` or
+            ``"thermo_modify"`` key replaces the 15-digit output formats and loses precision.
+
+    Returns:
+        A tuple containing:
+            - structure_final: The minimised structure with zero velocities.
+            - parsed_output: The parsed output dictionary.
+            - summary: A dictionary with ``"stopping_criterion"`` (LAMMPS text), ``"converged"`` (True for
+              ``"energy tolerance"`` or ``"force tolerance"``), ``"n_iterations"``, ``"n_force_evaluations"``,
+              ``"energy_initial_ev"``, ``"energy_final_ev"``, ``"energy_change_mev_per_atom"``,
+              ``"force_norm_ev_per_a"`` (global 2-norm of the final atomic forces), ``"max_force_ev_per_a"`` (largest
+              per-atom force), ``"pressure_gpa"`` (final 3x3 tensor), ``"mean_pressure_gpa"`` (trace / 3),
+              ``"volume_initial_a3"`` and ``"volume_final_a3"``.
+
+    Raises:
+        ValueError: If an argument is invalid (see ``_validate_minimize_arguments``).
+        RuntimeError: If LAMMPS fails, ``log.lammps`` lacks the minimisation statistics, or the last dumped step
+            differs from the last thermo step or the iteration count.
+
+    Warns:
+        UserWarning: If ``n_print`` does not divide ``max_iter``, or if the minimisation stopped on a criterion other
+            than the energy or force tolerance.
+
+    Example:
+        ```pycon
+        >>> relaxed, parsed, summary = _run_lammps_minimize(glass, potential, force_tolerance=1e-6)  # doctest: +SKIP
+        >>> summary["converged"], summary["max_force_ev_per_a"]  # doctest: +SKIP
+        ```
+
+    """
+    _validate_minimize_arguments(force_tolerance, energy_tolerance, max_iter, min_style, pressure, n_print)
+    if max_iter % n_print != 0:
+        warnings.warn(
+            f"n_print={n_print} does not divide max_iter={max_iter}: a minimisation that stops on 'max iterations' "
+            "does not dump its last step and raises RuntimeError.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    lammps_structure = structure.copy()
+    lammps_structure.set_velocities(np.zeros((len(structure), 3)))
+
+    with simulation_working_directory(tmp_working_directory) as tmpdir:
+        parsed_output = run_lammps_with_error_capture(
+            working_directory=tmpdir,
+            structure=lammps_structure,
+            potential=cast("Any", potential),
+            calc_mode="minimize",
+            calc_kwargs={
+                "ionic_force_tolerance": force_tolerance,
+                "ionic_energy_tolerance": energy_tolerance,
+                "max_iter": max_iter,
+                "pressure": pressure,
+                "n_print": n_print,
+                "style": min_style,
+            },
+            units="metal",
+            write_restart_file=False,
+            read_restart_file=False,
+            restart_file="restart.out",
+            input_control_file=input_control_file,
+            lmp_command=get_lammps_command(server_kwargs=server_kwargs),
+            dump_final_structure=False,
+        )
+        # Read inside the context: a temporary working directory is removed on exit.
+        log_text = (Path(tmpdir) / "log.lammps").read_text()
+        last_dump_step = _last_dump_step(Path(tmpdir) / "dump.out")
+
+    stopping_criterion, n_iterations, n_force_evaluations = _parse_minimize_log(log_text)
+    last_thermo_step = int(parsed_output["generic"]["steps"][-1])
+    if not last_dump_step == last_thermo_step == n_iterations:
+        msg = (
+            f"The last dumped step ({last_dump_step}) does not match the last thermo step ({last_thermo_step}) and "
+            f"the iteration count ({n_iterations}); stopping criterion: {stopping_criterion!r}. The final structure "
+            "was not dumped; choose n_print dividing max_iter."
+        )
+        raise RuntimeError(msg)
+
+    summary = _minimize_summary(parsed_output, stopping_criterion, n_iterations, n_force_evaluations)
+    if not summary["converged"]:
+        warnings.warn(
+            f"Minimisation stopped on {stopping_criterion!r}, not on a tolerance; "
+            f"largest per-atom force {summary['max_force_ev_per_a']:.3g} eV/Å.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    new_structure = structure_from_parsed_output(initial_structure=structure, parsed_output=parsed_output)
+    new_structure.set_velocities(np.zeros((len(new_structure), 3)))
+    return new_structure, parsed_output, summary
+
+
+def _run_lammps_relax(
+    structure: Atoms,
+    potential: LammpsPotential,
+    *,
+    n_cycles: int = 2,
+    pressure: float | None = 0.0,
+    force_tolerance: float = 1e-4,
+    energy_tolerance: float = 0.0,
+    max_iter: int = 100_000,
+    n_print: int = 100,
+    server_kwargs: dict[str, Any] | None = None,
+    tmp_working_directory: str | Path | None = None,
+    input_control_file: dict[str, Any] | None = None,
+) -> tuple[Atoms, dict[str, Any], list[dict[str, Any]]]:
+    """Relax a structure by cycles of conjugate gradient with ``fix box/relax`` followed by FIRE at fixed cell.
+
+    Each cycle runs two separate LAMMPS minimisations through ``_run_lammps_minimize``: ``"cg"`` with ``pressure``
+    (cell and atoms relax), then ``"fire"`` with the cell fixed. Each stage starts from the previous stage's final
+    structure. All stages share the tolerances, ``max_iter`` and ``n_print``. A stage that does not converge warns
+    and the protocol continues.
+
+    Args:
+        structure: The atomic structure to relax. It is not modified.
+        potential: The LAMMPS potential, as for ``_run_lammps_md``.
+        n_cycles: Number of cg + FIRE cycles.
+        pressure: Target pressure in GPa of the ``box/relax`` stages, or None to keep the cell fixed throughout.
+        force_tolerance: LAMMPS ``ftol`` in eV/Å for every stage.
+        energy_tolerance: LAMMPS ``etol`` (dimensionless) for every stage.
+        max_iter: Maximum number of iterations per stage.
+        n_print: Thermo and dump interval in iterations per stage.
+        server_kwargs: Additional keyword arguments for the server, for example ``{"cores": 2}``.
+        tmp_working_directory: Parent of the run directories, as for ``_run_lammps_md``.
+        input_control_file: LAMMPS input overrides forwarded to every stage (see ``_run_lammps_minimize``).
+
+    Returns:
+        A tuple containing:
+            - structure_final: The relaxed structure with zero velocities.
+            - parsed_output: The parsed output of the last stage.
+            - summaries: One summary per stage in run order, as returned by ``_run_lammps_minimize``, with
+              ``"min_style"`` and ``"pressure_target_gpa"`` (None for a fixed cell) added.
+
+    Raises:
+        ValueError: If ``n_cycles`` is not a positive integer or another argument is invalid.
+        RuntimeError: If a stage fails (see ``_run_lammps_minimize``).
+
+    Example:
+        ```pycon
+        >>> relaxed, parsed, summaries = _run_lammps_relax(glass, potential, pressure=0.0)  # doctest: +SKIP
+        >>> [s["stopping_criterion"] for s in summaries]  # doctest: +SKIP
+        ```
+
+    """
+    if not _is_positive_int(n_cycles):
+        msg = f"n_cycles must be a positive integer, got {n_cycles!r}."
+        raise ValueError(msg)
+    _validate_minimize_arguments(force_tolerance, energy_tolerance, max_iter, "cg", pressure, n_print)
+
+    current = structure
+    parsed_output: dict[str, Any] = {}
+    summaries: list[dict[str, Any]] = []
+    for _ in range(n_cycles):
+        for min_style, stage_pressure in (("cg", pressure), ("fire", None)):
+            current, parsed_output, summary = _run_lammps_minimize(
+                current,
+                potential,
+                force_tolerance=force_tolerance,
+                energy_tolerance=energy_tolerance,
+                max_iter=max_iter,
+                min_style=min_style,
+                pressure=stage_pressure,
+                n_print=n_print,
+                server_kwargs=server_kwargs,
+                tmp_working_directory=tmp_working_directory,
+                input_control_file=input_control_file,
+            )
+            summaries.append({"min_style": min_style, "pressure_target_gpa": stage_pressure, **summary})
+    return current, parsed_output, summaries
 
 
 def get_lammps_command(server_kwargs: dict | None = None) -> str:
