@@ -18,10 +18,11 @@ from amorphouspy.properties.vibrational import (
     compute_vdos_from_velocities,
     compute_vibrational_thermodynamics,
     convert_frequency,
+    read_dynamical_matrix,
 )
 from ase import Atoms
 from ase.io import read
-from scipy.constants import Boltzmann, atomic_mass, e, h
+from scipy.constants import N_A, Boltzmann, atomic_mass, e, h
 from scipy.integrate import quad
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -1104,3 +1105,113 @@ def test_thermodynamics_invalid_input_raises(freqs, vdos, temps, kwargs, match):
     """Invalid spectra, temperatures and lowest frequencies raise ValueError."""
     with pytest.raises(ValueError, match=match):
         compute_vibrational_thermodynamics(freqs, vdos, temps, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# read_dynamical_matrix
+# ---------------------------------------------------------------------------
+
+# data/morse_si_o_dynmat.{bin,txt}: LAMMPS 29 Aug 2024 (lmp_mpi, 1 rank), one Si (type 1) and one O (type 2) at the
+# minimum of a Morse pair, bond skewed along (1, 2, 3)/sqrt(14). Data file: box 0-20 Å on each axis, masses below,
+#   1 1 10 10 10
+#   2 2 10.427617987059879 10.855235974119758 11.282853961179637
+# Input (the text file uses "file dynmat.txt binary no"):
+#   units metal / atom_style atomic / atom_modify map array / boundary f f f / read_data data.pair
+#   pair_style morse 5.0 / pair_coeff * * 1.0 2.0 1.6
+#   dynamical_matrix all regular 1e-5 file dynmat.bin binary yes
+# Text layout: 3 values per line in %.8f, each matrix row spans N lines, no header.
+MORSE_MASSES = (28.0855, 15.9994)
+# eskm / regular measured on LAMMPS 29 Aug 2024 (exact to 2e-16); CODATA e N_A / 10 is 3.4e-6 higher.
+LAMMPS_ESKM_PER_REGULAR = 9648.5
+
+
+def _morse_dynamical_matrix():
+    u = np.array([1.0, 2.0, 3.0]) / np.sqrt(14.0)
+    block = 2 * 1.0 * 2.0**2 * np.outer(u, u)  # k = 2 D alpha² along the bond
+    phi = np.block([[block, -block], [-block, block]])
+    masses = np.repeat(MORSE_MASSES, 3)
+    return phi / np.sqrt(np.outer(masses, masses))
+
+
+@pytest.mark.parametrize(
+    ("name", "binary", "atol"),
+    [
+        pytest.param("morse_si_o_dynmat.bin", True, 1e-9, id="binary"),
+        # %.8f text: rounding to 8 decimals limits the precision to 5e-9.
+        pytest.param("morse_si_o_dynmat.txt", False, 5.1e-9, id="text"),
+    ],
+)
+def test_read_dynamical_matrix_lammps_fixture(name, binary, atol):
+    """The LAMMPS files read back as Phi / sqrt(m_i m_j) of the Morse pair, Si block first."""
+    matrix = read_dynamical_matrix(DATA_DIR / name, 2, binary=binary)
+    np.testing.assert_allclose(matrix, _morse_dynamical_matrix(), rtol=0, atol=atol)
+
+
+def test_read_dynamical_matrix_round_trip(tmp_path):
+    """A non-symmetric matrix reads back bitwise equal as a writable, C-contiguous float64 array."""
+    original = np.random.default_rng(7).normal(size=(12, 12))
+    original.tofile(tmp_path / "dynmat.bin")
+    matrix = read_dynamical_matrix(tmp_path / "dynmat.bin", 4)
+    np.testing.assert_array_equal(matrix, original)
+    assert matrix.dtype == np.float64
+    assert matrix.flags.c_contiguous
+    assert matrix.flags.writeable
+
+
+def test_read_dynamical_matrix_eskm(tmp_path):
+    """An eskm file (regular x 9648.5, as LAMMPS writes it) reads back as the regular matrix."""
+    assert abs(LAMMPS_ESKM_PER_REGULAR / (e * N_A / 10) - 1) < 4e-6
+    regular = np.random.default_rng(8).normal(size=(6, 6))
+    (regular * LAMMPS_ESKM_PER_REGULAR).tofile(tmp_path / "dynmat.bin")
+    matrix = read_dynamical_matrix(tmp_path / "dynmat.bin", 2, style="eskm")
+    np.testing.assert_allclose(matrix, regular, rtol=1e-12)
+
+
+def _matrix_with(row, column, value):
+    matrix = np.ones((12, 12))
+    matrix[row, column] = value
+    return matrix
+
+
+def _write_binary(values):
+    return lambda path: np.asarray(values, dtype=np.float64).tofile(path)
+
+
+def _write_text(values):
+    return lambda path: np.savetxt(path, np.reshape(values, (-1, 3)), fmt="%.8f")
+
+
+def _read_dynamical_matrix_invalid_cases():
+    good = _write_binary(np.ones(36))
+    return [
+        pytest.param(good, 3, {}, ValueError, r"36 values, expected 9 N² = 81 .*imply n_atoms=2", id="size-binary"),
+        pytest.param(
+            lambda path: path.write_bytes(np.ones(36).tobytes() + b"abc"),
+            2,
+            {},
+            ValueError,
+            "291 bytes, not a whole number",
+            id="size-partial-value",
+        ),
+        pytest.param(_write_text(np.ones(33)), 2, {"binary": False}, ValueError, r"33 values, .*=2\.$", id="size-text"),
+        pytest.param(_write_binary(_matrix_with(11, 5, np.nan)), 4, {}, ValueError, "rows 11 to 11", id="nan-binary"),
+        pytest.param(
+            _write_text(_matrix_with(10, 0, -np.inf)), 4, {"binary": False}, ValueError, "rows 10 to 10", id="inf-text"
+        ),
+        pytest.param(good, 0, {}, ValueError, "positive integer", id="n-atoms-zero"),
+        pytest.param(good, True, {}, ValueError, "positive integer", id="n-atoms-bool"),
+        pytest.param(good, 2.0, {}, ValueError, "positive integer", id="n-atoms-float"),
+        pytest.param(good, 2, {"style": "Regular"}, ValueError, "Unknown style", id="style"),
+        pytest.param(None, 2, {}, FileNotFoundError, "dynmat", id="missing-file"),
+    ]
+
+
+@pytest.mark.parametrize(("write", "n_atoms", "kwargs", "error", "match"), _read_dynamical_matrix_invalid_cases())
+def test_read_dynamical_matrix_invalid_raises(monkeypatch, tmp_path, write, n_atoms, kwargs, error, match):
+    """Wrong sizes, non-finite values in a late row block, bad n_atoms or style, and a missing file raise."""
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)  # one row per chunk
+    path = tmp_path / "dynmat"
+    if write is not None:
+        write(path)
+    with pytest.raises(error, match=match):
+        read_dynamical_matrix(path, n_atoms, **kwargs)

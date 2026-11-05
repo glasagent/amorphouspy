@@ -66,6 +66,7 @@ from amorphouspy.properties.vibrational import (
     compute_vdos_from_velocities,
     compute_vibrational_thermodynamics,
     convert_frequency,
+    read_dynamical_matrix,
     vdos_simulation,
 )
 from amorphouspy.properties.viscosity import fit_vft, get_viscosity, viscosity_ensemble, viscosity_simulation
@@ -133,6 +134,7 @@ __all__ = [
     "parse_formula",
     "plan_system",
     "plot_analysis_results_plotly",
+    "read_dynamical_matrix",
     "run_melt_quench",
     "run_structural_analysis",
     "running_mean",
