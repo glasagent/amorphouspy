@@ -6,7 +6,9 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 import math
+import tempfile
 import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -28,8 +30,6 @@ from amorphouspy.properties.structural.qn import CutoffSpec, compute_qn_and_clas
 from amorphouspy.properties.structural.rdf import compute_rdf
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from ase import Atoms
 
 FrequencyUnit = Literal["THz", "cm-1", "meV", "rad/ps"]
@@ -207,8 +207,8 @@ def _validate_trajectory(velocities: NDArray, masses: NDArray, dt_fs: float) -> 
     if n_frames < _MIN_FRAMES:
         msg = f"At least 2 frames are needed, got {n_frames}."
         raise ValueError(msg)
-    if not dt_fs > 0:
-        msg = f"dt_fs must be positive, got {dt_fs}."
+    if not np.isfinite(dt_fs) or dt_fs <= 0:
+        msg = f"dt_fs must be positive and finite, got {dt_fs}."
         raise ValueError(msg)
     if not np.all(np.isfinite(masses) & (masses > 0)):
         msg = "All masses must be positive and finite."
@@ -1259,6 +1259,8 @@ def compute_vibrational_thermodynamics(
 
 # Spectra of silicate glasses reach about 40 THz; a lower Nyquist frequency cuts and aliases the highest modes.
 _MIN_NYQUIST_THZ = 50.0
+# Name of the text dump written by lammpsparser in each run directory.
+_DUMP_FILE = "dump.out"
 
 
 def _whole_steps(name: str, duration_ps: float, timestep: float) -> int:
@@ -1336,13 +1338,19 @@ def _nve_block(
     spectral_groups: dict[str, dict[str, NDArray]],
     normalization: Literal["unit", "3N"],
     window: VdosWindow,
-) -> tuple["Atoms", dict[str, Any], NDArray[np.float64], NDArray[np.float64]]:
-    """Run NVE block number ``block`` (1-based); return ``(final structure, spectra, temperature, energy_tot)``.
+    block_dir: str | None,
+    *,
+    keep_trajectory: bool,
+) -> tuple["Atoms", dict[str, Any], NDArray[np.float64], NDArray[np.float64], float]:
+    """Run NVE block number ``block`` (1-based) in ``block_dir``.
+
+    Return ``(final structure, spectra, temperature, energy_tot, step-0 energy_tot)``. Unless ``block_dir`` is None
+    or ``keep_trajectory`` is True, the block's dump is deleted once its spectra and thermo are extracted.
 
     The parsed output is local to this function, so its trajectory arrays are freed on return, before the next block
     is launched. Nothing returned here may hold a view of them.
     """
-    structure_final, parsed_output = _run_lammps_md(structure=structure, **nve_kwargs)
+    structure_final, parsed_output = _run_lammps_md(structure=structure, **nve_kwargs, tmp_working_directory=block_dir)
 
     # LAMMPS also dumps step 0 (the end state of the previous stage); it is dropped below.
     generic = parsed_output["generic"]
@@ -1352,6 +1360,9 @@ def _nve_block(
                 f"NVE block {block} of {n_blocks} returned {len(generic[key])} frames of {key!r}, expected "
                 f"{block_frames + 1} ({block_frames} plus the step-0 frame)."
             )
+            if block_dir is not None:
+                dumps = [str(dump) for dump in sorted(Path(block_dir).rglob(_DUMP_FILE))] or [block_dir]
+                msg += f" Its dump is kept in {', '.join(dumps)}."
             raise RuntimeError(msg)
     velocities = np.asarray(generic["velocities"])[1:]
 
@@ -1367,7 +1378,51 @@ def _nve_block(
     lag_ps, vacf = compute_partial_vacf(velocities, masses, dt_fs, spectral_groups)
 
     spectra = {"frequencies_thz": frequencies_thz, "lag_ps": lag_ps, "vdos": vdos, "vacf": _split_total(vacf)}
-    return structure_final, spectra, np.asarray(generic["temperature"])[1:], np.asarray(generic["energy_tot"])[1:]
+    temperature, energy_tot = np.asarray(generic["temperature"]), np.asarray(generic["energy_tot"])
+
+    if block_dir is not None and not keep_trajectory:
+        dumps = sorted(Path(block_dir).rglob(_DUMP_FILE))
+        if not dumps:
+            warnings.warn(
+                f"No {_DUMP_FILE} found under {block_dir} for NVE block {block}; nothing was deleted.",
+                UserWarning,
+                stacklevel=3,
+            )
+        for dump in dumps:
+            dump.unlink()
+    return structure_final, spectra, temperature[1:], energy_tot[1:], float(energy_tot[0])
+
+
+def _slope(x: ArrayLike, y: ArrayLike) -> float:
+    """Return the least-squares slope of ``y`` against ``x``."""
+    x_array, y_array = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+    x_centred, y_centred = x_array - x_array.mean(), y_array - y_array.mean()
+    return float(x_centred @ y_centred / (x_centred @ x_centred))
+
+
+def _nve_drift(
+    temperature: NDArray[np.float64],
+    energy_tot: NDArray[np.float64],
+    step0_energies: list[float],
+    n_atoms: int,
+    dt_fs: float,
+) -> dict[str, Any]:
+    """Return the energy and temperature drift of the concatenated kept NVE frames; see :func:`vdos_simulation`."""
+    n_blocks = len(step0_energies)
+    energy_mev = energy_tot * 1e3 / n_atoms
+    time_ps = (np.arange(len(energy_tot)) + 1) * dt_fs * 1e-3
+    block_energy, block_time = energy_mev.reshape(n_blocks, -1), time_ps.reshape(n_blocks, -1)
+    return {
+        "energy_drift_mev_per_atom_ps": _slope(time_ps, energy_mev),
+        "block_energy_drift_mev_per_atom_ps": np.array(
+            [_slope(t, e) for t, e in zip(block_time, block_energy, strict=True)]
+        ),
+        "boundary_energy_jump_mev_per_atom": np.asarray(step0_energies[1:]) * 1e3 / n_atoms - block_energy[:-1, -1],
+        "max_energy_deviation_mev_per_atom": float(np.max(np.abs(energy_mev - energy_mev[0]))),
+        "temperature_mean_k": float(np.mean(temperature)),
+        "temperature_std_k": float(np.std(temperature)),
+        "temperature_drift_k_per_ps": _slope(time_ps, temperature),
+    }
 
 
 def _block_statistics(blocks: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -1403,7 +1458,8 @@ def vdos_simulation(
     former_types: list[int] | None = None,
     o_type: int = 8,
     seed: int = 12345,
-    tmp_working_directory: "str | Path | None" = None,
+    tmp_working_directory: str | Path | None = None,
+    keep_trajectory: bool = False,
 ) -> dict[str, Any]:
     r"""Equilibrate a structure, run consecutive NVE blocks and average their VDOS and VACF, total and per atom group.
 
@@ -1469,9 +1525,22 @@ def vdos_simulation(
     Not all freed memory goes back to the system, though: over 8 blocks of 2 ps the resident size levelled off at 1.7
     times the peak of the first block (measured on macOS).
 
-    Disk: with ``tmp_working_directory=None`` every run removes its files. A caller-supplied directory keeps a
-    sub-directory per run, so the dump of every block stays there until the caller removes it (20 dumps for the
-    defaults), each of 88 bytes per atom per frame (measured): 0.47 MB per frame at 5400 atoms, 0.95 GB per 10 ps block.
+    Disk: with ``tmp_working_directory=None`` every run removes its files. In a caller-supplied directory every run
+    keeps a sub-directory, and each NVE block runs in its own ``vdos_nve_block_<block>_<random>`` directory. Its dump
+    (``dump.out``, 88 bytes per atom per frame, measured: 0.47 MB per frame and 0.95 GB per 10 ps block at 5400 atoms)
+    is deleted once the block's spectra and thermo output are extracted, before the next block starts, so at most one
+    dump is on disk at a time. ``log.lammps``, the input script and the data file stay, as do all files of the Langevin
+    and NVT stages. ``keep_trajectory=True`` keeps every dump (20 for the defaults). A block that fails keeps its dump,
+    and the error names it. If no dump is found to delete, a warning is raised and the result is still returned.
+
+    Drift: ``"nve_drift"`` reports the energy and temperature of the kept NVE frames, frame ``k`` (0-based over all
+    blocks) at ``t = (k + 1) * dt_fs`` fs. Each block restarts from the positions and velocities of the previous
+    block's dump, written with 6 significant digits, so the total energy can jump at a block boundary. The jump is
+    measured between the last kept frame of a block and the step-0 frame of the next, which hold the same state, so it
+    is the restart loss alone. The thermo output has 8 significant digits, so energies are resolved to about
+    ``|E_tot| / N * 1e-5`` meV/atom, one unit in the last digit (measured for $\mathrm{SiO_2}$ with PMMCS: 3.3e-4
+    meV/atom at 300 atoms, 1.9e-4 at 5400). In those runs (300 K, blocks of 2 and 10 ps) every jump was within two
+    such units, at most 6.7e-4 meV/atom, and smaller than the drift within any block over the block length.
 
     Args:
         structure: Input structure, e.g. a quenched glass. Its cell sets the volume of every stage, and the atom
@@ -1498,7 +1567,9 @@ def vdos_simulation(
         former_types: Atomic numbers of the network formers. Derived from the composition if ``None``.
         o_type: Atomic number of oxygen.
         seed: Random seed for the velocities created in the Langevin and NVT stages.
-        tmp_working_directory: Directory for temporary simulation files.
+        tmp_working_directory: Directory for temporary simulation files. If None, every run removes its files.
+        keep_trajectory: Keep the dump of every NVE block in ``tmp_working_directory`` instead of deleting it once its
+            spectra are computed. Requires ``tmp_working_directory``.
 
     Returns:
         A dict with:
@@ -1517,6 +1588,14 @@ def vdos_simulation(
             ``n_blocks * n_frames``.
             ``"energy_tot"``: total energy in eV of each kept frame of all blocks, as parsed, length
             ``n_blocks * n_frames``.
+            ``"nve_drift"``: a dict over all kept NVE frames, energies per atom (``N`` atoms):
+            ``"energy_drift_mev_per_atom_ps"``, the least-squares slope of ``E_tot / N`` in meV/atom/ps over all
+            blocks, boundary jumps included; ``"block_energy_drift_mev_per_atom_ps"``, the same slope within each
+            block, array of length ``n_blocks``; ``"boundary_energy_jump_mev_per_atom"``, ``E_tot / N`` of the step-0
+            frame of block ``b + 1`` minus that of the last kept frame of block ``b`` in meV/atom, array of length
+            ``n_blocks - 1``; ``"max_energy_deviation_mev_per_atom"``, the largest ``|E_tot - E_tot[0]| / N`` in
+            meV/atom from the first kept frame; ``"temperature_mean_k"`` and ``"temperature_std_k"`` (population
+            standard deviation, ddof=0) in K; and ``"temperature_drift_k_per_ps"``, the least-squares slope in K/ps.
             ``"dt_fs"``: time between frames in fs.
             ``"n_blocks"``: number of NVE blocks.
             ``"n_frames"``: number of kept frames per block.
@@ -1530,13 +1609,14 @@ def vdos_simulation(
             ``production_ps`` is not positive and finite, ``dump_every`` is not a positive integer,
             ``equilibration_steps`` is negative, ``normalization`` is not ``"unit"`` or ``"3N"``, ``window`` is
             unknown, ``block_ps`` or ``production_ps`` is not a whole number of timesteps, the block is not a multiple
-            of ``dump_every`` or holds fewer than 2 frames, the production is not a multiple of the block, or
-            ``thermostat`` is unknown.
+            of ``dump_every`` or holds fewer than 2 frames, the production is not a multiple of the block,
+            ``thermostat`` is unknown, or ``keep_trajectory`` is True without a ``tmp_working_directory``.
         RuntimeError: If the output of an NVE block does not hold ``n_frames + 1`` frames of velocities, temperature
-            and total energy. The message names the block; no later block is run.
+            and total energy. The message names the block and, with a ``tmp_working_directory``, its kept dump; no
+            later block is run.
 
     Warns:
-        UserWarning: If the Nyquist frequency is below 50 THz.
+        UserWarning: If the Nyquist frequency is below 50 THz, or if no dump of a block is found to delete.
 
     Example:
         ```pycon
@@ -1545,9 +1625,13 @@ def vdos_simulation(
         (20, 2000, 0.1, 100.0)
         >>> out["vdos"]["windowed"]["element"]["Si"]  # doctest: +SKIP
         >>> out["vdos_sem"]["windowed"]["element"]["Si"]  # doctest: +SKIP
+        >>> out["nve_drift"]["energy_drift_mev_per_atom_ps"]  # doctest: +SKIP
 
         ```
     """
+    if keep_trajectory and tmp_working_directory is None:
+        msg = "keep_trajectory=True needs a tmp_working_directory; without one every run removes its files."
+        raise ValueError(msg)
     block_steps, block_frames, n_blocks, dt_fs = _vdos_simulation_settings(
         potential,
         temperature_sim,
@@ -1601,7 +1685,6 @@ def vdos_simulation(
     # No temperature and no initial temperature: plain fix nve from the velocities of the previous stage.
     nve_kwargs = {
         "potential": potential,
-        "tmp_working_directory": tmp_working_directory,
         "temperature": None,
         "initial_temperature": None,
         "n_ionic_steps": block_steps,
@@ -1613,9 +1696,15 @@ def vdos_simulation(
     }
     spectral_groups = {"total": {"all": np.arange(len(structure))}, **groups}
     structure_final = equilibrated
-    spectra, temperatures, energies = [], [], []
+    spectra, temperatures, energies, step0_energies = [], [], [], []
     for block in range(1, n_blocks + 1):
-        structure_final, block_spectra, temperature, energy_tot = _nve_block(
+        # Own directory per block, so its dump can be found and deleted; a random suffix avoids collisions on reuse.
+        block_dir = (
+            None
+            if tmp_working_directory is None
+            else tempfile.mkdtemp(prefix=f"vdos_nve_block_{block:03d}_", dir=tmp_working_directory)
+        )
+        structure_final, block_spectra, temperature, energy_tot, step0_energy = _nve_block(
             structure_final,
             nve_kwargs,
             block,
@@ -1626,13 +1715,17 @@ def vdos_simulation(
             spectral_groups,
             normalization,
             window,
+            block_dir,
+            keep_trajectory=keep_trajectory,
         )
         spectra.append(block_spectra)
         temperatures.append(temperature)
         energies.append(energy_tot)
+        step0_energies.append(step0_energy)
 
     vdos, vdos_sem = _block_statistics([block_spectra["vdos"] for block_spectra in spectra])
     vacf, vacf_sem = _block_statistics([block_spectra["vacf"] for block_spectra in spectra])
+    temperature, energy_tot = np.concatenate(temperatures), np.concatenate(energies)
 
     return {
         "frequencies_thz": spectra[0]["frequencies_thz"],
@@ -1643,8 +1736,9 @@ def vdos_simulation(
         "vacf_sem": vacf_sem,
         "groups": groups,
         "structure": structure_final,
-        "temperature": np.concatenate(temperatures),
-        "energy_tot": np.concatenate(energies),
+        "temperature": temperature,
+        "energy_tot": energy_tot,
+        "nve_drift": _nve_drift(temperature, energy_tot, step0_energies, len(structure), dt_fs),
         "dt_fs": dt_fs,
         "n_blocks": n_blocks,
         "n_frames": block_frames,
