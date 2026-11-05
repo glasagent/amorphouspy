@@ -4,8 +4,10 @@ The LAMMPS MD call is patched to return a synthetic parsed block, so the orchest
 and spectra) is exercised without a real LAMMPS installation.
 """
 
+import tempfile
 import warnings
 import weakref
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -92,6 +94,21 @@ def _run_blocks(structure, generics, **kwargs):
     return _run(structure, None, side_effect=outputs, production_ps=0.2 * len(generics), **kwargs)[0]
 
 
+def _fake_runner(structure, generics, run_dirs):
+    """Mimic the runner: a run given a directory makes its own sub-directory there and writes a dump and a log."""
+    outputs = iter(generics)
+
+    def run_md(**kwargs):
+        if kwargs["tmp_working_directory"] is not None:
+            run_dir = Path(tempfile.mkdtemp(dir=kwargs["tmp_working_directory"]))
+            for name in ("dump.out", "log.lammps"):
+                (run_dir / name).write_text(name)
+            run_dirs.append(run_dir)
+        return structure, {"generic": next(outputs)}
+
+    return run_md
+
+
 def _assert_layout(result, partial):
     """``result`` has the vdos_simulation layout; ``partial`` is the library output with the all-atoms group."""
     assert list(result) == ["total", "element", "oxygen", "qn"]
@@ -142,18 +159,21 @@ def test_vdos_simulation_stages(thermostat, equilibration_steps, ensembles, step
     generic = _generic(len(structure))
     potential = _potential()
     n_blocks = ensembles.count("nve")
-    out, mock_md = _run(
-        structure,
-        generic,
-        potential=potential,
-        side_effect=[(output, {"generic": generic}) for output in outputs],
-        thermostat=thermostat,
-        equilibration_steps=equilibration_steps,
-        production_ps=0.2 * n_blocks,
-        seed=7,
-        server_kwargs={"cores": 2},
-        tmp_working_directory=tmp_path,
-    )
+    # The mocked runs write no dump, so every block warns that it found nothing to delete, and still returns.
+    with pytest.warns(UserWarning, match=r"No dump.out found under .* for NVE block") as record:
+        out, mock_md = _run(
+            structure,
+            generic,
+            potential=potential,
+            side_effect=[(output, {"generic": generic}) for output in outputs],
+            thermostat=thermostat,
+            equilibration_steps=equilibration_steps,
+            production_ps=0.2 * n_blocks,
+            seed=7,
+            server_kwargs={"cores": 2},
+            tmp_working_directory=tmp_path,
+        )
+    assert len(record) == n_blocks
 
     assert mock_md.call_count == (2 if equilibration_steps else 1) + n_blocks
     calls = [c.kwargs for c in mock_md.call_args_list]
@@ -162,13 +182,15 @@ def test_vdos_simulation_stages(thermostat, equilibration_steps, ensembles, step
     for c, previous in zip(calls, [structure, *outputs[:-1]], strict=True):
         assert c["structure"] is previous
         assert c["potential"] is potential
-        assert (c["seed"], c["server_kwargs"], c["tmp_working_directory"]) == (7, {"cores": 2}, tmp_path)
+        assert (c["seed"], c["server_kwargs"]) == (7, {"cores": 2})
     for c in calls[:-n_blocks]:
-        assert (c["temperature"], c["initial_temperature"]) == (300.0, 300.0)
-    for c in calls[-n_blocks:]:
-        nve = {key: value for key, value in c.items() if key not in ("structure", "potential")}
+        assert (c["temperature"], c["initial_temperature"], c["tmp_working_directory"]) == (300.0, 300.0, tmp_path)
+    for block, c in enumerate(calls[-n_blocks:], start=1):
+        block_dir = Path(c["tmp_working_directory"])
+        assert block_dir.parent == tmp_path
+        assert block_dir.name.startswith(f"vdos_nve_block_{block:03d}_")
+        nve = {key: value for key, value in c.items() if key not in ("structure", "potential", "tmp_working_directory")}
         assert nve == {
-            "tmp_working_directory": tmp_path,
             "temperature": None,
             "initial_temperature": None,
             "n_ionic_steps": 200,
@@ -226,6 +248,7 @@ def test_vdos_simulation_drops_first_frame(kwargs, window, integral):
         "structure",
         "temperature",
         "energy_tot",
+        "nve_drift",
         "dt_fs",
         "n_blocks",
         "n_frames",
@@ -313,6 +336,68 @@ def test_vdos_simulation_one_block_sem_is_nan():
         for curve, sem in zip(_leaves(out[key]), _leaves(out[f"{key}_sem"]), strict=True):
             assert sem.shape == curve.shape
             assert np.isnan(sem).all()
+    assert out["nve_drift"]["boundary_energy_jump_mev_per_atom"].shape == (0,)
+
+
+@pytest.mark.parametrize("keep_trajectory", [False, True], ids=["delete", "keep"])
+def test_vdos_simulation_dump_cleanup(keep_trajectory, tmp_path):
+    """Each block runs in its own directory; unless kept, its dump goes after its spectra, before the next block."""
+    structure = _si2o7_dimer()
+    run_dirs, dumps_at_launch = [], []
+    fake = _fake_runner(structure, [_generic(len(structure))] * 5, run_dirs)
+
+    def run_md(**kwargs):
+        dumps_at_launch.append(len(list(tmp_path.glob("vdos_nve_block_*/*/dump.out"))))
+        return fake(**kwargs)
+
+    def vacf_after_dump_check(*args, **kwargs):
+        assert (run_dirs[-1] / "dump.out").exists()
+        return compute_partial_vacf(*args, **kwargs)
+
+    with patch("amorphouspy.properties.vibrational.compute_partial_vacf", side_effect=vacf_after_dump_check):
+        _run(
+            structure,
+            None,
+            side_effect=run_md,
+            production_ps=0.6,
+            tmp_working_directory=tmp_path,
+            keep_trajectory=keep_trajectory,
+        )
+
+    block_dirs = [run_dir.parent for run_dir in run_dirs[2:]]
+    assert [d.parent for d in block_dirs] == [tmp_path] * 3
+    assert all(d.name.startswith(f"vdos_nve_block_{block:03d}_") for block, d in enumerate(block_dirs, start=1))
+    assert dumps_at_launch[2:] == ([0, 1, 2] if keep_trajectory else [0, 0, 0])
+    assert len(list(tmp_path.glob("vdos_nve_block_*/*/dump.out"))) == (3 if keep_trajectory else 0)
+    assert all((run_dir / "log.lammps").exists() for run_dir in run_dirs)
+    assert all((run_dir / "dump.out").exists() for run_dir in run_dirs[:2])  # Langevin and NVT are untouched
+
+
+def test_vdos_simulation_nve_drift():
+    """Every drift key on a linear energy and temperature over 3 blocks, with known step-0 energies (boundary jumps)."""
+    structure = _si2o7_dimer()
+    n_atoms, h_ps, n_kept = len(structure), DT_FS * 1e-3, 3 * N_FRAMES
+    slope_ev_ps, slope_k_ps, jumps_ev = 0.9, 2.0, [0.018, -0.027]
+    generics = []
+    for block in range(3):
+        generic = _generic(n_atoms, seed=block + 1)
+        t_ps = (block * N_FRAMES + np.arange(1, N_FRAMES + 1)) * h_ps
+        generic["energy_tot"][1:] = -1000.0 + slope_ev_ps * t_ps
+        generic["temperature"][1:] = 300.0 + slope_k_ps * t_ps
+        generic["temperature"][0] = 1e4  # the step-0 frame never enters the statistics
+        previous_last = generics[-1]["energy_tot"][-1] if generics else -950.0
+        generic["energy_tot"][0] = previous_last + (jumps_ev[block - 1] if block else 0.0)
+        generics.append(generic)
+    drift = _run_blocks(structure, generics)["nve_drift"]
+
+    mev_per_atom = 1e3 / n_atoms
+    assert drift["energy_drift_mev_per_atom_ps"] == pytest.approx(slope_ev_ps * mev_per_atom)
+    np.testing.assert_allclose(drift["block_energy_drift_mev_per_atom_ps"], [slope_ev_ps * mev_per_atom] * 3)
+    np.testing.assert_allclose(drift["boundary_energy_jump_mev_per_atom"], np.array(jumps_ev) * mev_per_atom)
+    assert drift["max_energy_deviation_mev_per_atom"] == pytest.approx(slope_ev_ps * (n_kept - 1) * h_ps * mev_per_atom)
+    assert drift["temperature_mean_k"] == pytest.approx(300.0 + slope_k_ps * h_ps * (n_kept + 1) / 2)
+    assert drift["temperature_std_k"] == pytest.approx(slope_k_ps * h_ps * np.sqrt((n_kept**2 - 1) / 12))
+    assert drift["temperature_drift_k_per_ps"] == pytest.approx(slope_k_ps)
 
 
 def test_vdos_simulation_frees_each_block_before_the_next():
@@ -363,14 +448,25 @@ def test_vdos_simulation_frame_count_mismatch_raises(key, n_parsed):
         _run(structure, generic)
 
 
-def test_vdos_simulation_frame_count_mismatch_stops_at_named_block():
-    """A wrong frame count in block 2 of 3 names that block, and no third block is launched."""
+def test_vdos_simulation_frame_count_mismatch_stops_at_named_block(tmp_path):
+    """A wrong frame count in block 2 of 3 names that block and its kept dump, and no third block is launched."""
     structure = _si2o7_dimer()
     good, short = _generic(len(structure)), _generic(len(structure), n_frames=N_FRAMES)
-    outputs = iter([(structure, {"generic": generic}) for generic in (good, good, good, short, good)])
-    with pytest.raises(RuntimeError, match=rf"block 2 of 3 returned {N_FRAMES} frames of 'velocities', expected 41"):
-        _run(structure, None, side_effect=outputs, production_ps=0.6)
-    assert len(list(outputs)) == 1
+    run_dirs = []
+    generics = [good, good, good, short, good]
+    match = rf"block 2 of 3 returned {N_FRAMES} frames of 'velocities', expected 41"
+    with pytest.raises(RuntimeError, match=match) as e:
+        _run(
+            structure,
+            None,
+            side_effect=_fake_runner(structure, generics, run_dirs),
+            production_ps=0.6,
+            tmp_working_directory=tmp_path,
+        )
+    assert len(run_dirs) == 4  # Langevin, NVT and blocks 1 and 2
+    dump = run_dirs[-1] / "dump.out"
+    assert dump.exists()
+    assert str(e.value).endswith(f"Its dump is kept in {dump}.")
 
 
 def test_vdos_simulation_nyquist_warning():
@@ -404,6 +500,7 @@ def test_vdos_simulation_nyquist_warning():
         ({"production_ps": 0.2005}, "production_ps=0.2005 ps is not a whole number of 1.0 fs timesteps"),
         ({"production_ps": 0.5}, "production of 500 steps is not a multiple of the block of 200 steps"),
         ({"production_ps": 0.1}, "production of 100 steps is not a multiple of the block of 200 steps"),
+        ({"keep_trajectory": True}, "keep_trajectory=True needs a tmp_working_directory"),
     ],
     ids=[
         "potential-empty",
@@ -423,6 +520,7 @@ def test_vdos_simulation_nyquist_warning():
         "production-not-whole-steps",
         "production-not-multiple",
         "production-shorter-than-block",
+        "keep-trajectory-without-directory",
     ],
 )
 def test_vdos_simulation_invalid_inputs_raise(kwargs, match):
