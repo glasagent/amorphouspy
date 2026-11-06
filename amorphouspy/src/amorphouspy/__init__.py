@@ -66,6 +66,7 @@ from amorphouspy.properties.vibrational import (
     compute_vdos_from_velocities,
     compute_vibrational_thermodynamics,
     convert_frequency,
+    diagonalize_dynamical_matrix,
     read_dynamical_matrix,
     vdos_simulation,
 )
@@ -107,6 +108,7 @@ __all__ = [
     "cte_from_fluctuations_simulation",
     "cte_from_npt_fluctuations",
     "cte_from_volume_temperature_data",
+    "diagonalize_dynamical_matrix",
     "diffusion_simulation",
     "elastic_simulation",
     "extract_composition",

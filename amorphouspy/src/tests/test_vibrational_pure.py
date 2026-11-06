@@ -1,10 +1,12 @@
 """Tests for pure functions in amorphouspy.properties.vibrational."""
 
+import tracemalloc
 import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
+import scipy.linalg
 from amorphouspy.atoms.mass import get_atomic_mass
 from amorphouspy.properties import vibrational
 from amorphouspy.properties.structural.qn import compute_qn
@@ -18,6 +20,7 @@ from amorphouspy.properties.vibrational import (
     compute_vdos_from_velocities,
     compute_vibrational_thermodynamics,
     convert_frequency,
+    diagonalize_dynamical_matrix,
     read_dynamical_matrix,
 )
 from ase import Atoms
@@ -1215,3 +1218,179 @@ def test_read_dynamical_matrix_invalid_raises(monkeypatch, tmp_path, write, n_at
         write(path)
     with pytest.raises(error, match=match):
         read_dynamical_matrix(path, n_atoms, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# diagonalize_dynamical_matrix
+# ---------------------------------------------------------------------------
+
+# An eigenvalue of 1 eV/Å²/amu is an angular frequency sqrt(e / (1e-20 atomic_mass)) rad/s, i.e. 15.633 THz.
+THZ_PER_SQRT_EV_PER_A2_AMU = np.sqrt(e / (1e-20 * atomic_mass)) / (2 * np.pi) / 1e12
+
+
+def _to_thz(eigenvalues):
+    return np.sign(eigenvalues) * np.sqrt(np.abs(eigenvalues)) * THZ_PER_SQRT_EV_PER_A2_AMU
+
+
+def _ring_matrix(n_atoms, k, mass):
+    """N identical atoms on a periodic ring with isotropic nearest-neighbour springs: x, y and z decouple."""
+    eye = np.eye(n_atoms)
+    ring = 2 * eye - np.roll(eye, 1, axis=1) - np.roll(eye, -1, axis=1)
+    return np.kron(ring, np.eye(3)) * k / mass
+
+
+def _spectral_matrix(masses, eigenvalues, seed=0):
+    """D = Q diag(eigenvalues) Q^T, Q orthogonal with its first three columns spanning the rigid translations."""
+    n_dof = 3 * len(masses)
+    translations = np.zeros((n_dof, 3))
+    for alpha in range(3):
+        translations[alpha::3, alpha] = np.sqrt(masses)
+    rng = np.random.default_rng(seed)
+    q, _ = np.linalg.qr(np.hstack([translations, rng.normal(size=(n_dof, n_dof - 3))]))
+    matrix = (q * eigenvalues) @ q.T
+    return (matrix + matrix.T) / 2, q
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+@pytest.mark.parametrize("driver", ["ev", "evd", "evr", "evx"])
+def test_diagonalize_ring_matches_analytic(driver, overwrite):
+    """A periodic spring ring gives (1/2pi) 2 sqrt(k/m) |sin(pi q/N)| three times per q != 0, with eigenvectors."""
+    assert abs(THZ_PER_SQRT_EV_PER_A2_AMU - 15.633) < 5e-4
+    n_atoms, k, mass = 10, 3.0, 28.0855
+    matrix = _ring_matrix(n_atoms, k, mass)
+    original = matrix.copy()
+    result = diagonalize_dynamical_matrix(
+        matrix, masses=np.full(n_atoms, mass), overwrite_matrix=overwrite, driver=driver
+    )
+    q = np.arange(1, n_atoms)
+    expected = np.sort(np.repeat(2 * np.sqrt(k / mass) * np.abs(np.sin(np.pi * q / n_atoms)) / (2 * np.pi), 3))
+    np.testing.assert_allclose(result["frequencies_thz"], expected * 2 * np.pi * THZ_PER_SQRT_EV_PER_A2_AMU, rtol=1e-10)
+    vectors = result["eigenvectors"]
+    eigenvalues = np.sign(result["frequencies_thz"]) * (result["frequencies_thz"] / THZ_PER_SQRT_EV_PER_A2_AMU) ** 2
+    np.testing.assert_allclose(original @ vectors, vectors * eigenvalues, atol=1e-12)
+    np.testing.assert_allclose(vectors.T @ vectors, np.eye(3 * n_atoms - 3), atol=1e-12)
+    np.testing.assert_allclose(result["translational_overlap"], 1.0, atol=1e-12)
+    np.testing.assert_allclose(result["translational_frequencies_thz"], 0.0, atol=1e-5)
+    assert (result["asymmetry"], result["asymmetry_atoms"], result["n_imaginary"]) == (0.0, None, 0)
+    assert (result["n_atoms"], result["driver"]) == (n_atoms, driver)
+    if not overwrite:
+        np.testing.assert_array_equal(matrix, original)
+
+
+def test_diagonalize_lammps_morse_pair():
+    """The LAMMPS Morse pair has one nonzero frequency sqrt(2 D alpha^2 (1/m1 + 1/m2)) and near-zero rotations."""
+    result = diagonalize_dynamical_matrix(read_dynamical_matrix(DATA_DIR / "morse_si_o_dynmat.bin", 2))
+    stretch = np.sqrt(2 * 1.0 * 2.0**2 * (1 / MORSE_MASSES[0] + 1 / MORSE_MASSES[1])) * THZ_PER_SQRT_EV_PER_A2_AMU
+    np.testing.assert_allclose(result["frequencies_thz"][-1], stretch, rtol=1e-9)
+    assert np.abs(result["frequencies_thz"][:-1]).max() < 0.01
+    assert result["translational_overlap"] is None
+    assert result["eigenvectors"].shape == (6, 3)
+
+
+@pytest.mark.parametrize("order", ["C", "F"])
+def test_diagonalize_asymmetry_is_measured_before_symmetrising(monkeypatch, order):
+    """Antisymmetric perturbations give the exact relative asymmetry and atom pair; LAPACK gets (D + D^T) / 2."""
+    n_dof = 24
+    rng = np.random.default_rng(3)
+    a = rng.normal(size=(n_dof, n_dof))
+    matrix = a @ a.T / n_dof
+    matrix[3 * 4 + 1, 3 * 2 + 2] += 0.3  # atoms (4, 2), rows 13 and 8: middle blocks
+    matrix[3 * 2 + 2, 3 * 4 + 1] -= 0.3
+    matrix[3 * 7, 3 * 5 + 1] += 0.1  # atoms (7, 5), rows 21 and 16: smaller, partly in the last block
+    matrix[3 * 5 + 1, 3 * 7] -= 0.1
+    matrix = np.asarray(matrix, order=order)
+    symmetrised = (matrix + matrix.T) / 2
+    max_abs = np.abs(matrix).max()
+    expected = np.abs(matrix - matrix.T).max() / max_abs
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 5 * n_dof * 8)  # 5 rows per block, 5 blocks
+    received = []
+    eigh = scipy.linalg.eigh
+
+    def spy(a, **kwargs):
+        received.append(np.array(a))
+        return eigh(a, **kwargs)
+
+    monkeypatch.setattr(scipy.linalg, "eigh", spy)
+    result = diagonalize_dynamical_matrix(matrix, overwrite_matrix=True, eigenvectors=False)
+    assert result["asymmetry"] == pytest.approx(expected, rel=1e-12)
+    assert result["asymmetry"] == pytest.approx(0.6 / max_abs, rel=1e-12)
+    assert result["asymmetry_atoms"] == (2, 4)
+    np.testing.assert_array_equal(received[0], symmetrised)
+    np.testing.assert_allclose(
+        result["frequencies_thz"], _to_thz(np.linalg.eigvalsh(symmetrised)[3:]), rtol=1e-10, atol=1e-12
+    )
+
+
+def test_diagonalize_imaginary_modes_are_negative_and_warn():
+    """Two negative eigenvalues orthogonal to the translations give two negative frequencies and a warning."""
+    masses = np.array([15.9994, 28.0855, 15.9994, 15.9994, 28.0855])
+    eigenvalues = np.concatenate([np.zeros(3), [-2.0, -0.5], np.linspace(0.3, 3.0, 10)])
+    matrix, q = _spectral_matrix(masses, eigenvalues)
+    with pytest.warns(UserWarning, match=r"2 imaginary mode\(s\) below -0.01 THz; the most negative is -22.11") as rec:
+        result = diagonalize_dynamical_matrix(matrix, masses=masses)
+    assert len(rec) == 1
+    assert result["n_imaginary"] == 2
+    np.testing.assert_allclose(result["frequencies_thz"], _to_thz(eigenvalues[3:]), rtol=1e-10)
+    assert result["min_frequency_thz"] == result["frequencies_thz"][0]
+    # The two imaginary modes precede the translations, so their columns were moved; each matches Q up to sign.
+    np.testing.assert_allclose(np.abs((result["eigenvectors"] * q[:, 3:]).sum(axis=0)), 1.0, atol=1e-10)
+    np.testing.assert_allclose(result["translational_overlap"], 1.0, atol=1e-12)
+
+
+def test_diagonalize_warns_when_dropped_modes_are_not_translations():
+    """A soft mode below translations lifted by a sum-rule violation is dropped instead, with a warning."""
+    masses = np.array([15.9994, 28.0855, 15.9994, 15.9994, 28.0855])
+    eigenvalues = np.concatenate([np.full(3, 1e-3), [1e-5], np.linspace(0.3, 3.0, 11)])
+    matrix, _ = _spectral_matrix(masses, eigenvalues)
+    with pytest.warns(UserWarning, match="overlap the rigid translations by only"):
+        result = diagonalize_dynamical_matrix(matrix, masses=masses)
+    assert result["translational_overlap"].min() < 1e-10
+    assert result["translational_frequencies_thz"][0] == pytest.approx(_to_thz(1e-5), rel=1e-6)
+
+
+def test_diagonalize_overwrite_without_eigenvectors_does_not_copy(monkeypatch):
+    """overwrite_matrix=True and eigenvectors=False allocate well below one matrix beyond the input."""
+    matrix = _ring_matrix(300, 3.0, 28.0855)  # n = 900, 6.5 MB
+    # Real matrices are far above _CHUNK_BYTES; scale the blocks to 1/16 of the matrix so they stay small here too.
+    # Expected peak: about 3 blocks (3/16) plus O(n) LAPACK workspace (~0.03), against >= 1 for any copy.
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", matrix.nbytes // 16)
+    tracemalloc.start()
+    try:
+        diagonalize_dynamical_matrix(matrix, overwrite_matrix=True, eigenvectors=False)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 0.5 * matrix.nbytes
+
+
+def _with_nan(matrix, row, column):
+    matrix = matrix.copy()
+    matrix[row, column] = np.nan
+    return matrix
+
+
+def _diagonalize_invalid_cases():
+    good = np.eye(6)
+    return [
+        pytest.param(np.eye(6)[None], {}, "square 2-D", id="3d"),
+        pytest.param(np.ones((6, 9)), {}, "square 2-D", id="not-square"),
+        pytest.param(np.eye(4), {}, "N >= 2", id="not-multiple-of-3"),
+        pytest.param(np.eye(3), {}, "N >= 2", id="one-atom"),
+        pytest.param(np.eye(6, dtype=np.float32), {}, "float64", id="float32"),
+        pytest.param(_with_nan(good, 4, 1), {}, "NaN or inf in rows or columns 1 to 1", id="nan"),
+        pytest.param(np.eye(12)[::2, ::2], {"overwrite_matrix": True}, "C- or F-contiguous", id="overwrite-strided"),
+        pytest.param(good, {"masses": [1.0]}, "2 positive finite", id="masses-shape"),
+        pytest.param(good, {"masses": [1.0, 0.0]}, "2 positive finite", id="mass-zero"),
+        pytest.param(good, {"masses": [1.0, np.nan]}, "2 positive finite", id="mass-nan"),
+        pytest.param(good, {"masses": [1.0, 1.0], "eigenvectors": False}, "eigenvectors=True", id="masses-no-vectors"),
+        pytest.param(good, {"driver": "evx2"}, "Unknown driver", id="driver"),
+        pytest.param(good, {"imaginary_threshold_thz": -0.1}, ">= 0", id="threshold-negative"),
+    ]
+
+
+@pytest.mark.parametrize(("matrix", "kwargs", "match"), _diagonalize_invalid_cases())
+def test_diagonalize_invalid_input_raises(monkeypatch, matrix, kwargs, match):
+    """Bad shapes, dtypes, non-finite entries in a later block, masses, drivers and thresholds raise."""
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)  # one row per block
+    with pytest.raises(ValueError, match=match):
+        diagonalize_dynamical_matrix(matrix, **kwargs)
