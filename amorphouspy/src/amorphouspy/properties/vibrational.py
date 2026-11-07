@@ -2184,7 +2184,8 @@ def _mode_atom_weights(eigenvectors: NDArray[np.float64], n_atoms: int) -> Itera
 
     Each block holds about ``_CHUNK_BYTES`` of eigenvectors. The per-atom reshape of a column block is a view for C- and
     F-ordered input, so only ``a`` (a third of the block) is allocated: never a squared copy of the eigenvectors or an
-    (n_atoms, n_modes) array. The participation ratio (PR 20) reuses these weights in the same pass.
+    (n_atoms, n_modes) array. :func:`compute_participation_ratio` reuses this code, not the weights of a
+    :func:`compute_harmonic_vdos` call: its second pass over the eigenvectors costs memory bandwidth, not memory.
     """
     n_modes = eigenvectors.shape[1]
     step = max(1, _CHUNK_BYTES // (eigenvectors.shape[0] * eigenvectors.itemsize))
@@ -2313,10 +2314,7 @@ def compute_harmonic_vdos(
 
     Memory: the eigenvectors are read in blocks of columns of ``_CHUNK_BYTES`` (64 MB), each reduced at once to the
     groups, and the Gaussians are evaluated in blocks of modes of the same size. Neither a squared copy of the
-    eigenvectors nor an $(N, M)$ weight array is built. Measured on random F-ordered $(3N, 3N - 3)$ eigenvectors with 6
-    group labels: about 80 MB of peak allocations at 3000 and 6000 atoms (eigenvectors 0.6 and 2.5 GB), for
-    $\sigma$ = 0.1 and 0.2 THz, i.e. one Gaussian block plus $O(M)$ arrays, independent of $N$; wall time 0.15-0.23 s
-    and 0.6-0.8 s (Apple M-series), about 2 s at 10,000 atoms if scaled as $N^2$ (the eigenvector read).
+    eigenvectors nor an $(N, M)$ weight array is built.
 
     Args:
         frequencies_thz: The $M = 3N - 3$ mode frequencies in THz, negative for imaginary modes, e.g.
@@ -2420,3 +2418,86 @@ def compute_harmonic_vdos(
         }
     )
     return result
+
+
+def compute_participation_ratio(eigenvectors: NDArray[np.float64], masses: ArrayLike) -> NDArray[np.float64]:
+    r"""Compute the participation ratio of every mode from the displacements of its mass-weighted eigenvector.
+
+    The eigenvectors $e_{3i+\alpha,k}$ of the mass-weighted dynamical matrix (atom $i$, direction $\alpha$, mode $k$)
+    give the atomic displacements $u_{3i+\alpha,k} \propto e_{3i+\alpha,k} / \sqrt{m_i}$. With the squared displacement
+    of atom $i$, the participation ratio is (Taraskin and Elliott, Phys. Rev. B 56, 8605 (1997), Eq. 16, a definition
+    they attribute to Bell and Dean)
+
+    $$b_{ik} = \frac{1}{m_i} \sum_\alpha e_{3i+\alpha,k}^2, \qquad
+    P_k = \frac{\left(\sum_i b_{ik}\right)^2}{N \sum_i b_{ik}^2}.$$
+
+    The ratio form makes $P_k$ independent of the scale and sign of each column, so the displacements need no
+    normalisation. $P_k = 1$ when every atom moves by the same amount (a rigid translation, whatever the masses),
+    $1/N$ for a mode on one atom and $n/N$ for a mode shared equally by $n$ atoms. The per-atom weight is summed over
+    the three directions before squaring, so $P_k$ does not depend on the orientation of the axes. Unlike the
+    kinetic-energy share $m_i b_{ik}$ used by :func:`compute_harmonic_vdos`, $b_{ik}$ counts atoms by amplitude; the
+    two coincide for a single element.
+
+    An extended mode has $P$ of order 1 at any size, but a mode on a fixed number of atoms has $P \propto 1/N$, and in a
+    small box the two can be hard to tell apart: a claim that a mode is localised needs the same band compared across
+    box sizes.
+
+
+    Args:
+        eigenvectors: The $(3N, K)$ float64 eigenvectors of the mass-weighted dynamical matrix, one mode per column
+            with row $3i + \alpha$ for atom $i$ and direction $\alpha$, e.g. ``"eigenvectors"`` of
+            :func:`diagonalize_dynamical_matrix` (any memory order; no cast or copy is made). Columns need not be
+            normalised.
+        masses: Atomic masses, shape $(N,)$, in the order of the rows, e.g. ``minimised.get_masses()``. Only their
+            ratios matter.
+
+    Returns:
+        The $(K,)$ float64 participation ratios, in the order of the columns, between $1/N$ and 1.
+
+    Raises:
+        ValueError: If ``eigenvectors`` is not a 2-D float64 array, its row count is not a positive multiple of 3,
+            it has no columns, or a column is zero or contains NaN or inf; if ``masses`` does not hold $N$ positive
+            finite values.
+
+    Example:
+        ```pycon
+        >>> minimised, summary = _run_lammps_dynamical_matrix(glass, potential, "dynmat.bin")  # doctest: +SKIP
+        >>> matrix = read_dynamical_matrix(summary["matrix_path"], summary["n_atoms"])  # doctest: +SKIP
+        >>> modes = diagonalize_dynamical_matrix(  # doctest: +SKIP
+        ...     matrix, masses=minimised.get_masses(), overwrite_matrix=True
+        ... )
+        >>> ratios = compute_participation_ratio(modes["eigenvectors"], minimised.get_masses())  # doctest: +SKIP
+        >>> bands = np.digitize(modes["frequencies_thz"], [8.0, 20.0, 28.0])  # doctest: +SKIP
+        >>> np.bincount(bands, weights=ratios) / np.bincount(bands)  # mean P per band  # doctest: +SKIP
+
+        ```
+    """
+    eigenvectors = np.asarray(eigenvectors)
+    if eigenvectors.ndim != _MATRIX_NDIM or eigenvectors.dtype != np.float64:
+        msg = (
+            "eigenvectors must be a 2-D float64 array (a cast would copy it), "
+            f"got {eigenvectors.ndim}-D {eigenvectors.dtype}."
+        )
+        raise ValueError(msg)
+    n_rows, n_modes = eigenvectors.shape
+    if n_rows == 0 or n_rows % _N_COMPONENTS or n_modes == 0:
+        msg = f"eigenvectors must have 3N rows (N >= 1) and at least one column, got shape {eigenvectors.shape}."
+        raise ValueError(msg)
+    n_atoms = n_rows // _N_COMPONENTS
+    masses = np.asarray(masses, dtype=np.float64)
+    if masses.shape != (n_atoms,) or not np.all(np.isfinite(masses) & (masses > 0)):
+        msg = f"masses must be {n_atoms} positive finite values, one per atom, got shape {masses.shape}."
+        raise ValueError(msg)
+    ratios = np.empty(n_modes)
+    for columns, atom_weights in _mode_atom_weights(eigenvectors, n_atoms):
+        np.divide(atom_weights, masses[:, None], out=atom_weights)  # squared displacements, in place in our block
+        # The weights are non-negative, so NaN or inf anywhere in a column makes its sum of squares non-finite.
+        squares = np.einsum("ik,ik->k", atom_weights, atom_weights)
+        if not np.all(np.isfinite(squares)):
+            msg = f"eigenvectors contain NaN or inf (mode {columns.start + int(np.argmin(np.isfinite(squares)))})."
+            raise ValueError(msg)
+        if np.any(squares == 0):
+            msg = f"eigenvectors has a zero column (mode {columns.start + int(np.argmax(squares == 0))})."
+            raise ValueError(msg)
+        ratios[columns] = atom_weights.sum(axis=0) ** 2 / (n_atoms * squares)
+    return ratios

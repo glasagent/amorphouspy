@@ -16,6 +16,7 @@ from amorphouspy.properties.vibrational import (
     compute_harmonic_vdos,
     compute_partial_vacf,
     compute_partial_vdos,
+    compute_participation_ratio,
     compute_reduced_vdos,
     compute_vacf_from_velocities,
     compute_vdos_from_velocities,
@@ -1523,3 +1524,89 @@ def test_harmonic_vdos_invalid_input_raises(frequencies, vectors, kwargs, match)
     """Bad frequencies, eigenvectors, broadening, groups, normalisation and grids raise."""
     with pytest.raises(ValueError, match=match):
         compute_harmonic_vdos(frequencies, vectors, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# compute_participation_ratio
+# ---------------------------------------------------------------------------
+
+
+def _mode(masses, displacements):
+    """One mode as a (3N, 1) mass-weighted column e = sqrt(m) u from per-atom (x, y, z) displacements u."""
+    masses = np.asarray(masses, dtype=np.float64)
+    return (np.sqrt(masses)[:, None] * np.array(displacements, dtype=np.float64)).reshape(-1, 1)
+
+
+SIO2_MASSES = (28.0855, 15.9994, 15.9994)
+
+
+@pytest.mark.parametrize(
+    ("masses", "displacements", "expected"),
+    [
+        pytest.param(SIO2_MASSES, [(0.6, 0.8, 0)] * 3, 1.0, id="rigid-translation"),
+        pytest.param(
+            np.arange(1.0, 6.0), [(0, 0, 0), (0, 0, 0), (0, 0.3, 0), (0, 0, 0), (0, 0, 0)], 1 / 5, id="one-atom"
+        ),
+        # Equal |u| = 2 on atoms 0, 2 and 4 of 6, along different directions and with different masses.
+        pytest.param(
+            SIO2_MASSES * 2, [(2, 0, 0), (0, 0, 0), (0, 2, 0), (0, 0, 0), (1.2, 1.6, 0), (0, 0, 0)], 1 / 2, id="n-of-n"
+        ),
+        # Atom 0 split 0.36 / 0.64 over x and y, atom 1 all z: b = (1, 1, 0), P = 2² / (3 · 2).
+        pytest.param(np.ones(3), [(0.6, 0.8, 0), (0, 0, 1), (0, 0, 0)], 2 / 3, id="uneven-xyz"),
+    ],
+)
+def test_participation_ratio_analytic(masses, displacements, expected):
+    """Translation, one-atom, n-atom and direction-split modes give 1, 1/N, n/N and 2/3 at any column scale and sign."""
+    vectors = _mode(masses, displacements)
+    for scaled in (vectors, -3.7 * vectors):
+        np.testing.assert_allclose(compute_participation_ratio(scaled, masses), [expected], rtol=1e-14)
+
+
+def test_participation_ratio_lammps_morse_pair():
+    """In the stretch of the LAMMPS Morse pair |u_Si| / |u_O| = m_O / m_Si (momentum conservation)."""
+    modes = diagonalize_dynamical_matrix(
+        read_dynamical_matrix(DATA_DIR / "morse_si_o_dynmat.bin", 2), masses=MORSE_MASSES
+    )
+    m_si, m_o = MORSE_MASSES
+    expected = (m_o**2 + m_si**2) ** 2 / (2 * (m_o**4 + m_si**4))
+    assert compute_participation_ratio(modes["eigenvectors"], MORSE_MASSES)[-1] == pytest.approx(expected, abs=1e-8)
+
+
+def test_participation_ratio_chunks_order_and_no_copy(monkeypatch):
+    """F-ordered view and C copy, one mode per block, match the default blocks; no copy of the eigenvectors is made."""
+    rng = np.random.default_rng(0)
+    # (300, 400) view of a Fortran array, as diagonalize_dynamical_matrix returns it: 0.96 MB.
+    vectors = np.asfortranarray(rng.normal(size=(300, 403)))[:, 3:]
+    masses = rng.uniform(10.0, 30.0, size=100)
+    tracemalloc.start()
+    default = compute_participation_ratio(vectors, masses)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert peak < vectors.nbytes / 2  # the atom weights are a third
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)
+    for ordered in (vectors, np.ascontiguousarray(vectors)):  # einsum differs by ulps between memory orders
+        np.testing.assert_allclose(compute_participation_ratio(ordered, masses), default, rtol=1e-13)
+
+
+def _participation_invalid_cases():
+    nan_late, zero, masses = np.ones((6, 4)), np.ones((6, 4)), np.ones(2)
+    nan_late[4, 3], zero[:, 2] = np.nan, 0.0
+    return [
+        pytest.param(np.ones(6), masses, "2-D float64", id="1d"),
+        pytest.param(np.ones((6, 2), dtype=np.float32), masses, "2-D float64", id="float32"),
+        pytest.param(np.ones((5, 2)), masses, "3N rows", id="rows-not-3n"),
+        pytest.param(np.ones((0, 2)), masses, "3N rows", id="no-rows"),
+        pytest.param(np.ones((6, 0)), masses, "3N rows", id="no-columns"),
+        pytest.param(np.ones((6, 2)), np.ones(3), "2 positive finite", id="masses-length"),
+        pytest.param(np.ones((6, 2)), np.array([1.0, 0.0]), "2 positive finite", id="masses-zero"),
+        pytest.param(zero, masses, r"zero column \(mode 2\)", id="zero-column"),
+        pytest.param(nan_late, masses, r"NaN or inf \(mode 3\)", id="nan-last-block"),
+    ]
+
+
+@pytest.mark.parametrize(("vectors", "masses", "match"), _participation_invalid_cases())
+def test_participation_ratio_invalid_raises(monkeypatch, vectors, masses, match):
+    """Bad shapes, dtypes and masses, a zero column and NaN in a late block raise."""
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)  # one mode per block
+    with pytest.raises(ValueError, match=match):
+        compute_participation_ratio(vectors, masses)
