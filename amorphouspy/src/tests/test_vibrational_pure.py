@@ -13,6 +13,7 @@ from amorphouspy.properties.structural.qn import compute_qn
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
     compute_debye_level,
+    compute_harmonic_vdos,
     compute_partial_vacf,
     compute_partial_vdos,
     compute_reduced_vdos,
@@ -1394,3 +1395,131 @@ def test_diagonalize_invalid_input_raises(monkeypatch, matrix, kwargs, match):
     monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)  # one row per block
     with pytest.raises(ValueError, match=match):
         diagonalize_dynamical_matrix(matrix, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# compute_harmonic_vdos
+# ---------------------------------------------------------------------------
+
+HARMONIC_FREQUENCIES_THZ = np.array([-1.5, 0.8, 3.0, 7.2, 12.0, 12.4])  # M = 6 (N = 3), one imaginary mode
+SPRING_MASSES = np.array([28.0855, 15.9994, 15.9994, 28.0855, 15.9994, 15.9994, 15.9994, 28.0855])
+SPRING_SI, SPRING_O = np.array([0, 3, 7]), np.array([1, 2, 4, 5, 6])
+
+
+@pytest.mark.parametrize(
+    ("normalization", "c"), [pytest.param("unit", 1 / 6, id="unit"), pytest.param("3N", 9 / 6, id="3N")]
+)
+def test_harmonic_vdos_total_is_gaussian_sum(normalization, c):
+    """Without eigenvectors the total is c times the unit Gaussians of the real modes; the imaginary one is missing."""
+    sigma = 0.3
+    grid = np.linspace(-5.0, 20.0, 2501)
+    result = compute_harmonic_vdos(
+        HARMONIC_FREQUENCIES_THZ, frequency_grid_thz=grid, broadening_thz=sigma, normalization=normalization
+    )
+    real = HARMONIC_FREQUENCIES_THZ[1:]
+    expected = c * np.exp(-0.5 * ((grid[:, None] - real) / sigma) ** 2).sum(axis=1) / (sigma * np.sqrt(2 * np.pi))
+    np.testing.assert_allclose(result["vdos"]["total"], expected, rtol=1e-12, atol=1e-300)
+    assert (result["n_modes"], result["n_imaginary_excluded"], result["imaginary_weight"]) == (6, 1, 1 / 6)
+    assert result["grid_integral"] == pytest.approx(6 * c * (1 - 1 / 6), abs=1e-10)
+    assert "mode_weights" not in result
+
+
+def _spring_modes():
+    """Kept modes of a random 8-atom spring network with Si and O masses, through diagonalize_dynamical_matrix."""
+    eigenvalues = np.concatenate([np.zeros(3), np.linspace(0.3, 3.0, 21)])
+    matrix, _ = _spectral_matrix(SPRING_MASSES, eigenvalues, seed=1)
+    modes = diagonalize_dynamical_matrix(matrix, masses=SPRING_MASSES)
+    groups = {
+        "atom": {str(i): np.array([i]) for i in range(len(SPRING_MASSES))},
+        "element": {"Si": SPRING_SI, "O": SPRING_O},
+        "oxygen": {"O_BO": SPRING_O[:3], "O_NBO": SPRING_O[3:]},
+    }
+    return modes["frequencies_thz"], modes["eigenvectors"], groups
+
+
+def test_harmonic_vdos_completeness_and_partials():
+    """Each atom's weight over the kept modes is 3 - 3 m_i / m_total; partials sum to the total and to "O"."""
+    frequencies, vectors, groups = _spring_modes()
+    result = compute_harmonic_vdos(frequencies, vectors, groups=groups)
+    atom_sums = [result["mode_weights"]["atom"][str(i)].sum() for i in range(len(SPRING_MASSES))]
+    np.testing.assert_allclose(atom_sums, 3 - 3 * SPRING_MASSES / SPRING_MASSES.sum(), atol=1e-12)
+    vdos = result["vdos"]
+    np.testing.assert_allclose(vdos["element"]["Si"] + vdos["element"]["O"], vdos["total"], rtol=1e-12, atol=1e-15)
+    np.testing.assert_allclose(vdos["oxygen"]["O_BO"] + vdos["oxygen"]["O_NBO"], vdos["element"]["O"], atol=1e-15)
+
+
+def test_harmonic_vdos_lammps_morse_pair():
+    """In the stretch of the LAMMPS Morse pair each atom carries the other's mass fraction (momentum conservation)."""
+    modes = diagonalize_dynamical_matrix(
+        read_dynamical_matrix(DATA_DIR / "morse_si_o_dynmat.bin", 2), masses=MORSE_MASSES
+    )
+    groups = {"element": {"Si": np.array([0]), "O": np.array([1])}}
+    weights = compute_harmonic_vdos(modes["frequencies_thz"], modes["eigenvectors"], groups=groups)["mode_weights"]
+    m_si, m_o = MORSE_MASSES
+    assert weights["element"]["Si"][-1] == pytest.approx(m_o / (m_si + m_o), abs=1e-8)
+    assert weights["element"]["O"][-1] == pytest.approx(m_si / (m_si + m_o), abs=1e-8)
+
+
+def test_harmonic_vdos_chunks_give_same_result(monkeypatch):
+    """One mode per block, for the weights and the Gaussians, gives the result of the default blocks."""
+    frequencies, vectors, groups = _spring_modes()
+    default = compute_harmonic_vdos(frequencies, vectors, groups=groups, normalization="3N")
+    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)
+    chunked = compute_harmonic_vdos(frequencies, vectors, groups=groups, normalization="3N")
+    np.testing.assert_allclose(chunked["vdos"]["total"], default["vdos"]["total"], rtol=1e-13, atol=1e-16)
+    for grouping, labels in groups.items():
+        for label in labels:
+            for key in ("vdos", "mode_weights"):
+                np.testing.assert_allclose(
+                    chunked[key][grouping][label], default[key][grouping][label], rtol=1e-13, atol=1e-16
+                )
+
+
+def test_harmonic_vdos_caller_grid():
+    """A grid coarser than sigma / 2 warns; the VACF grid does not, and matches the default grid where they meet."""
+    frequencies, vectors, groups = _spring_modes()
+    with pytest.warns(UserWarning, match="exceeds half the broadening"):
+        compute_harmonic_vdos(frequencies, frequency_grid_thz=np.arange(0, 40, 0.15))
+    default = compute_harmonic_vdos(frequencies, vectors, groups=groups)
+    vacf_grid = np.fft.rfftfreq(2000, d=5e-3)  # vdos_simulation defaults: 10 ps blocks, 5 fs
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        on_vacf = compute_harmonic_vdos(frequencies, vectors, groups=groups, frequency_grid_thz=vacf_grid)
+    np.testing.assert_array_equal(on_vacf["frequencies_thz"], vacf_grid)
+    i, j = np.nonzero(np.isclose(default["frequencies_thz"][:, None], vacf_grid[None, :], rtol=0, atol=1e-9))
+    assert i.size > 100
+    for key in (("total",), ("oxygen", "O_NBO")):
+        a, b = default["vdos"], on_vacf["vdos"]
+        for part in key:
+            a, b = a[part], b[part]
+        np.testing.assert_allclose(b[j], a[i], rtol=1e-9, atol=1e-15)
+
+
+def _harmonic_invalid_cases():
+    f, vectors = HARMONIC_FREQUENCIES_THZ, np.zeros((9, 6))
+    groups = {"element": {"Si": np.array([0])}}
+    return [
+        pytest.param(f.reshape(2, 3), None, {}, "non-empty 1-D", id="frequencies-2d"),
+        pytest.param([np.nan, 1.0, 2.0], None, {}, "non-empty 1-D", id="frequencies-nan"),
+        pytest.param([], None, {}, "non-empty 1-D", id="frequencies-empty"),
+        pytest.param(f, np.zeros(9), {}, "2-D float64", id="vectors-1d"),
+        pytest.param(f, vectors.astype(np.float32), {}, "2-D float64", id="vectors-float32"),
+        pytest.param(f, np.zeros((6, 6)), {}, r"\(3N, 3N - 3\)", id="vectors-rows"),
+        pytest.param(f, np.zeros((9, 5)), {}, r"\(3N, 3N - 3\)", id="vectors-columns"),
+        pytest.param(f, None, {"broadening_thz": 0.0}, "positive and finite", id="broadening-zero"),
+        pytest.param(f, None, {"groups": groups}, "groups need eigenvectors", id="groups-without-vectors"),
+        pytest.param(f, vectors, {"groups": {}}, "no labels", id="groups-empty"),
+        pytest.param(f, None, {"normalization": "none"}, "Unknown normalization", id="normalization"),
+        pytest.param(f[:5], None, {"normalization": "3N"}, "not a multiple of 3", id="3n-without-vectors"),
+        pytest.param(f, None, {"frequency_grid_thz": np.zeros((2, 2))}, "strictly increasing", id="grid-2d"),
+        pytest.param(f, None, {"frequency_grid_thz": [0.0]}, "strictly increasing", id="grid-one-point"),
+        pytest.param(f, None, {"frequency_grid_thz": [0.0, np.nan, 1.0]}, "strictly increasing", id="grid-nan"),
+        pytest.param(f, None, {"frequency_grid_thz": [0.0, 1.0, 1.0]}, "strictly increasing", id="grid-repeated"),
+    ]
+
+
+@pytest.mark.parametrize(("frequencies", "vectors", "kwargs", "match"), _harmonic_invalid_cases())
+def test_harmonic_vdos_invalid_input_raises(frequencies, vectors, kwargs, match):
+    """Bad frequencies, eigenvectors, broadening, groups, normalisation and grids raise."""
+    with pytest.raises(ValueError, match=match):
+        compute_harmonic_vdos(frequencies, vectors, **kwargs)

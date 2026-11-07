@@ -59,6 +59,7 @@ from amorphouspy.properties.structural.structure_factor import compute_structure
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
     compute_debye_level,
+    compute_harmonic_vdos,
     compute_partial_vacf,
     compute_partial_vdos,
     compute_reduced_vdos,
@@ -88,6 +89,7 @@ __all__ = [
     "compute_coordination",
     "compute_debye_level",
     "compute_guttmann_rings",
+    "compute_harmonic_vdos",
     "compute_msd",
     "compute_network_connectivity",
     "compute_partial_vacf",
