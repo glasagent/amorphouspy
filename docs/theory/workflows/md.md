@@ -111,7 +111,7 @@ result = md_simulation(
 )
 ```
 
-Use NVE for unperturbed dynamics, e.g. velocity autocorrelation functions or the vibrational density of states.
+Use NVE for unperturbed dynamics, e.g. velocity autocorrelation functions or the [vibrational density of states](vdos.md).
 
 ---
 
