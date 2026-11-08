@@ -55,6 +55,7 @@ nav:
     - Elastic Properties: notebooks/ElasticProperties.ipynb
     - Viscosity: notebooks/ViscosityTutorial.ipynb
     - Self-Diffusion: notebooks/DiffusionTutorial.ipynb
+    - VDOS Tutorial: notebooks/VDOSTutorial.ipynb
     - CTE: notebooks/CTE.ipynb
     # - Meltquench + Analysis: notebooks/meltquench_Structure_analysis.ipynb
   - Theory:
@@ -74,6 +75,7 @@ nav:
         - Elastic Moduli: theory/workflows/elastic.md
         - Viscosity: theory/workflows/viscosity.md
         - CTE: theory/workflows/cte.md
+        - Vibrational DOS: theory/workflows/vdos.md
     - Structural Analysis:
         - theory/analysis/index.md
         - RDF & Coordination: theory/analysis/rdf.md

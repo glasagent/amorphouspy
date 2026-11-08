@@ -12,11 +12,14 @@ graph TD
     D --> E[Structural analysis]
     D --> F[Elastic moduli]
     D --> G[Viscosity]
-    D --> H[CTE]
-    E --> I[Visualization & export]
-    F --> I
-    G --> I
-    H --> I
+    D --> H[Diffusion]
+    D --> J[CTE]
+    D --> I[VDOS]
+    E --> K[Visualization & export]
+    F --> K
+    G --> K
+    H --> K
+    J --> K
 ```
 ## Standard Function Patterns
 
