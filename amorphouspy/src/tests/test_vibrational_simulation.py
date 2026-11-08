@@ -1,7 +1,8 @@
-"""Tests for ``vdos_simulation`` using a mocked LAMMPS runner.
+"""Tests for ``vdos_simulation`` and ``harmonic_vdos_simulation`` using mocked LAMMPS runners.
 
 The LAMMPS MD call is patched to return a synthetic parsed block, so the orchestration (stages, frame handling, groups
-and spectra) is exercised without a real LAMMPS installation.
+and spectra) is exercised without a real LAMMPS installation. The dynamical-matrix runner is patched to write a known
+mass-weighted matrix, and everything after it runs for real.
 """
 
 import tempfile
@@ -13,10 +14,17 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
+from amorphouspy.properties import vibrational
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
+    compute_harmonic_vdos,
     compute_partial_vacf,
     compute_partial_vdos,
+    compute_participation_ratio,
+    compute_vibrational_thermodynamics,
+    diagonalize_dynamical_matrix,
+    harmonic_vdos_simulation,
+    read_dynamical_matrix,
     vdos_simulation,
 )
 from ase import Atoms
@@ -532,3 +540,235 @@ def test_vdos_simulation_invalid_inputs_raise(kwargs, match):
     ):
         vdos_simulation(_si2o7_dimer(), **arguments)
     assert mock_md.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# harmonic_vdos_simulation
+# ---------------------------------------------------------------------------
+
+HARMONIC_TEMPERATURES_K = [0.0, 300.0, 3000.0]
+RUNNER_SUMMARY = {
+    "matrix_bytes": 9 * 9**2 * 8,
+    "style": "regular",
+    "max_force_ev_per_a": 1e-7,
+    "force_norm_ev_per_a": 2e-7,
+    "minimization": {"converged": True, "n_iterations": 42, "mean_pressure_gpa": 0.1},
+    "wall_time_s": 0.5,
+}
+
+
+def _minimised_dimer() -> Atoms:
+    """The dimer as the runner returns it: terminal O 3 pulled from 1.6 to 2.2 Å of its Si, past the 2 Å cutoff."""
+    atoms = _si2o7_dimer()
+    atoms.positions[3] += np.array([-0.6, 0.0, 0.0])
+    atoms.set_velocities(np.zeros((len(atoms), 3)))
+    return atoms
+
+
+def _dynamical_matrix(masses):
+    """D = Q diag(eigenvalues) Q^T in eV/Å²/amu: three zero modes along the mass-weighted translations, then 0.3-3."""
+    n_dof = 3 * len(masses)
+    translations = np.zeros((n_dof, 3))
+    for alpha in range(3):
+        translations[alpha::3, alpha] = np.sqrt(masses)
+    q, _ = np.linalg.qr(np.hstack([translations, np.random.default_rng(3).normal(size=(n_dof, n_dof - 3))]))
+    matrix = (q * np.concatenate([np.zeros(3), np.linspace(0.3, 3.0, n_dof - 3)])) @ q.T
+    return (matrix + matrix.T) / 2
+
+
+def _fake_dynamical_matrix_runner(minimised, matrix):
+    """Mimic the runner: write ``matrix`` to ``matrix_path`` and return ``minimised`` with a summary."""
+
+    def run(_structure, _potential, matrix_path, **kwargs):
+        matrix.tofile(matrix_path)
+        summary = {
+            "matrix_path": Path(matrix_path),
+            "n_atoms": len(minimised),
+            "displacement_a": kwargs["displacement"],
+            **RUNNER_SUMMARY,
+        }
+        return minimised, summary
+
+    return run
+
+
+def _run_harmonic(**kwargs):
+    """Call harmonic_vdos_simulation on the dimer with the runner mocked; return result, mock, matrix and structure."""
+    minimised = _minimised_dimer()
+    matrix = _dynamical_matrix(minimised.get_masses())
+    with patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner:
+        runner.side_effect = _fake_dynamical_matrix_runner(minimised, matrix)
+        out = harmonic_vdos_simulation(_si2o7_dimer(), _potential(), **{**GROUP_KWARGS, **kwargs})
+    return out, runner, matrix, minimised
+
+
+def _assert_same(actual, expected):
+    """Nested dicts with identical keys and exactly equal arrays and values."""
+    if isinstance(expected, dict):
+        assert actual.keys() == expected.keys()
+        for key, value in expected.items():
+            _assert_same(actual[key], value)
+    elif isinstance(expected, np.ndarray):
+        assert np.array_equal(actual, expected)
+    else:
+        assert actual == expected
+
+
+def test_harmonic_vdos_simulation_matches_manual_chain(tmp_path):
+    """The result is exactly read -> diagonalize -> VDOS -> participation ratio -> thermodynamics on the matrix."""
+    with patch.object(
+        vibrational, "diagonalize_dynamical_matrix", wraps=vibrational.diagonalize_dynamical_matrix
+    ) as diagonalize:
+        out, runner, matrix, minimised = _run_harmonic(temperatures_k=HARMONIC_TEMPERATURES_K)
+
+    structure = runner.call_args.args[0]
+    assert runner.call_count == 1
+    assert runner.call_args.kwargs == {
+        "displacement": 1e-5,
+        "minimize": True,
+        "minimize_kwargs": {"min_style": "fire", "pressure": None, "force_tolerance": 1e-6, "max_iter": 100_000},
+        "server_kwargs": None,
+        "tmp_working_directory": None,
+    }
+    assert diagonalize.call_args.kwargs["overwrite_matrix"] is True
+    assert diagonalize.call_args.kwargs["eigenvectors"] is True
+
+    path = tmp_path / "dynmat.bin"
+    matrix.tofile(path)
+    masses = minimised.get_masses()
+    groups = classify_vibrational_groups(minimised, **GROUP_KWARGS)
+    modes = diagonalize_dynamical_matrix(read_dynamical_matrix(path, len(minimised)), masses=masses)
+    vdos = compute_harmonic_vdos(modes["frequencies_thz"], modes["eigenvectors"], groups=groups)
+    positive = modes["frequencies_thz"][modes["frequencies_thz"] > 0]
+    thermodynamics = compute_vibrational_thermodynamics(
+        vdos["frequencies_thz"], vdos["vdos"]["total"], HARMONIC_TEMPERATURES_K, lowest_frequency_thz=positive.min()
+    )
+    diagonalization_keys = [
+        "asymmetry",
+        "asymmetry_atoms",
+        "translational_frequencies_thz",
+        "translational_overlap",
+        "n_imaginary",
+        "min_frequency_thz",
+        "driver",
+    ]
+    expected = {
+        "frequencies_thz": vdos["frequencies_thz"],
+        "vdos": vdos["vdos"],
+        "groups": groups,
+        "normalization": "unit",
+        "broadening_thz": 0.2,
+        "mode_frequencies_thz": modes["frequencies_thz"],
+        "participation_ratio": compute_participation_ratio(modes["eigenvectors"], masses),
+        **{key: vdos[key] for key in ("mode_weights", "n_imaginary_excluded", "imaginary_weight", "grid_integral")},
+        "eigenvectors": modes["eigenvectors"],
+        "diagonalization": {key: modes[key] for key in diagonalization_keys},
+        "thermodynamics": thermodynamics,
+        "displacement_a": 1e-5,
+    }
+    _assert_same({key: out[key] for key in expected}, expected)
+    assert out.keys() == {*expected, "structure", "dynamical_matrix", "minimization", "wall_time_s"}
+    assert out["structure"] is minimised
+    assert out["minimization"] == RUNNER_SUMMARY["minimization"]
+    assert out["dynamical_matrix"] == {
+        "matrix_path": None,
+        "n_atoms": 9,
+        "displacement_a": 1e-5,
+        **RUNNER_SUMMARY,
+    }
+    assert out["wall_time_s"].keys() == {"lammps", "diagonalization", "analysis"}
+    assert not _same_groups(out["groups"], classify_vibrational_groups(structure, **GROUP_KWARGS))
+
+
+def test_harmonic_vdos_simulation_atom_guard():
+    """N == max_atoms runs; one atom more raises before the runner, with the matrix size and the expected peak."""
+    assert _run_harmonic(max_atoms=9)[1].call_count == 1
+    match = r"9 atoms, more than max_atoms=8.*9 N² x 8 bytes = 5.83e-06 GB.*2 matrices, 1.17e-05 GB. Raise max_atoms"
+    with (
+        patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner,
+        pytest.raises(ValueError, match=match),
+    ):
+        harmonic_vdos_simulation(_si2o7_dimer(), _potential(), max_atoms=8, **GROUP_KWARGS)
+    assert runner.call_count == 0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"max_atoms": 0}, "max_atoms must be a positive integer"),
+        ({"max_atoms": True}, "max_atoms must be a positive integer"),
+        ({"max_atoms": 10.0}, "max_atoms must be a positive integer"),
+        ({"max_atoms": "10"}, "max_atoms must be a positive integer"),
+        ({"potential": pd.DataFrame()}, "No matching potential"),
+        ({"displacement": 0.0}, "displacement must be positive and finite"),
+        ({"displacement": float("nan")}, "displacement must be positive and finite"),
+        ({"force_tolerance": -1e-6}, "force_tolerance must be finite and non-negative"),
+        ({"force_tolerance": 0.0}, "cannot both be 0"),
+        ({"max_iter": 0}, "max_iter must be a positive integer"),
+        ({"broadening_thz": 0.0}, "broadening_thz must be positive and finite"),
+        ({"normalization": "none"}, "Unknown normalization"),
+        ({"frequency_grid_thz": [2.0, 1.0]}, "frequency_grid_thz must be"),
+        ({"temperatures_k": [300.0, -1.0]}, "temperatures_k must be"),
+        ({"driver": "evz"}, "Unknown driver"),
+        ({"imaginary_threshold_thz": -0.01}, "imaginary_threshold_thz must be >= 0"),
+    ],
+    ids=[
+        "max-atoms-zero",
+        "max-atoms-bool",
+        "max-atoms-float",
+        "max-atoms-str",
+        "potential-empty",
+        "displacement-zero",
+        "displacement-nan",
+        "force-tolerance-negative",
+        "force-tolerance-zero",
+        "max-iter-zero",
+        "broadening-zero",
+        "normalization-none",
+        "grid-decreasing",
+        "temperature-negative",
+        "driver",
+        "threshold-negative",
+    ],
+)
+def test_harmonic_vdos_simulation_invalid_inputs_raise(kwargs, match):
+    """Invalid arguments raise before the LAMMPS runner is called."""
+    arguments = {"potential": _potential(), **GROUP_KWARGS, **kwargs}
+    with (
+        patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner,
+        pytest.raises(ValueError, match=match),
+    ):
+        harmonic_vdos_simulation(_si2o7_dimer(), **arguments)
+    assert runner.call_count == 0
+
+
+@pytest.mark.parametrize("keep", [True, False], ids=["tmp-working-directory", "temporary"])
+def test_harmonic_vdos_simulation_matrix_file(keep, tmp_path):
+    """The matrix file is kept under tmp_working_directory; without one its directory is removed after reading."""
+    out, runner, matrix, _ = _run_harmonic(tmp_working_directory=tmp_path if keep else None)
+    path = runner.call_args.args[2]
+    assert path.name == "dynamical_matrix.bin"
+    assert runner.call_args.kwargs["tmp_working_directory"] == (tmp_path if keep else None)
+    if keep:
+        assert path.parent.parent == tmp_path
+        assert path.parent.name.startswith("harmonic_vdos_")
+        assert out["dynamical_matrix"]["matrix_path"] == path
+        assert np.array_equal(np.fromfile(path), matrix.ravel())
+    else:
+        assert not path.parent.exists()
+        assert out["dynamical_matrix"]["matrix_path"] is None
+
+
+def test_harmonic_vdos_simulation_thermodynamics():
+    """No thermodynamics without temperatures; "unit" and "3N" give the same values."""
+    assert _run_harmonic()[0]["thermodynamics"] is None
+    unit, three_n = (
+        _run_harmonic(temperatures_k=HARMONIC_TEMPERATURES_K, normalization=normalization)[0]["thermodynamics"]
+        for normalization in ("unit", "3N")
+    )
+    assert unit.keys() == three_n.keys()
+    for key, value in unit.items():
+        if isinstance(value, str):
+            assert three_n[key] == value
+        else:
+            np.testing.assert_allclose(three_n[key], value, rtol=1e-12)

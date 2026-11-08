@@ -69,6 +69,7 @@ from amorphouspy.properties.vibrational import (
     compute_vibrational_thermodynamics,
     convert_frequency,
     diagonalize_dynamical_matrix,
+    harmonic_vdos_simulation,
     read_dynamical_matrix,
     vdos_simulation,
 )
@@ -133,6 +134,7 @@ __all__ = [
     "get_neighbors",
     "get_structure_dict",
     "get_viscosity",
+    "harmonic_vdos_simulation",
     "load_lammps_dump",
     "log_linear_dump_steps",
     "md_simulation",

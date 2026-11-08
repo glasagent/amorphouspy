@@ -5,8 +5,10 @@ Frequencies in this module are ordinary frequencies in THz (not angular frequenc
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+import contextlib
 import math
 import tempfile
+import time
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -21,7 +23,14 @@ from numpy.typing import ArrayLike, NDArray
 from scipy.constants import Boltzmann, atomic_mass, c, e, h
 
 from amorphouspy.atoms.neighbors import cell_perpendicular_heights
-from amorphouspy.lammps.runner import Thermostat, _run_lammps_md, thermostat_ensembles
+from amorphouspy.lammps.runner import (
+    Thermostat,
+    _is_positive_int,
+    _run_lammps_dynamical_matrix,
+    _run_lammps_md,
+    _validate_minimize_arguments,
+    thermostat_ensembles,
+)
 from amorphouspy.properties.structural.all import (
     _build_cutoff_map,
     _classify_elements,
@@ -1110,11 +1119,16 @@ def _validate_thermodynamics_inputs(
     if not np.any(frequencies_thz > 0):
         msg = "frequencies_thz must contain at least one frequency above 0 THz."
         raise ValueError(msg)
+    _check_temperatures(temperatures_k)
+    return frequencies_thz, vdos, temperatures_k
+
+
+def _check_temperatures(temperatures_k: NDArray[np.float64]) -> None:
+    """Raise unless ``temperatures_k`` (float64, at least 1-D) is a non-empty 1-D array of finite values >= 0."""
     valid_temperatures = np.all(np.isfinite(temperatures_k) & (temperatures_k >= 0))
     if temperatures_k.ndim != 1 or temperatures_k.size == 0 or not valid_temperatures:
         msg = "temperatures_k must be a scalar or a non-empty 1-D array of finite, non-negative values."
         raise ValueError(msg)
-    return frequencies_thz, vdos, temperatures_k
 
 
 def compute_vibrational_thermodynamics(
@@ -1909,12 +1923,7 @@ def _validate_dynamical_matrix_input(
     if overwrite_matrix and not (matrix.flags.writeable and (matrix.flags.c_contiguous or matrix.flags.f_contiguous)):
         msg = "overwrite_matrix=True needs a writable C- or F-contiguous matrix; otherwise it would be copied."
         raise ValueError(msg)
-    if driver not in _EIGH_DRIVERS:
-        msg = f"Unknown driver {driver!r}; allowed drivers are {list(_EIGH_DRIVERS)}."
-        raise ValueError(msg)
-    if not imaginary_threshold_thz >= 0:
-        msg = f"imaginary_threshold_thz must be >= 0, got {imaginary_threshold_thz!r}."
-        raise ValueError(msg)
+    _validate_eigh_options(driver, imaginary_threshold_thz)
     if masses is None:
         return None
     if not eigenvectors:
@@ -1925,6 +1934,16 @@ def _validate_dynamical_matrix_input(
         msg = f"masses must be {n_dof // 3} positive finite values, one per atom, got shape {masses.shape}."
         raise ValueError(msg)
     return masses
+
+
+def _validate_eigh_options(driver: str, imaginary_threshold_thz: float) -> None:
+    """Raise for an unknown LAPACK driver or a threshold that is not >= 0."""
+    if driver not in _EIGH_DRIVERS:
+        msg = f"Unknown driver {driver!r}; allowed drivers are {list(_EIGH_DRIVERS)}."
+        raise ValueError(msg)
+    if not imaginary_threshold_thz >= 0:
+        msg = f"imaginary_threshold_thz must be >= 0, got {imaginary_threshold_thz!r}."
+        raise ValueError(msg)
 
 
 def _row_blocks(n_dof: int) -> range:
@@ -2208,12 +2227,7 @@ def _validate_harmonic_inputs(
         msg = f"frequencies_thz must be a non-empty 1-D array of finite values, got shape {frequencies.shape}."
         raise ValueError(msg)
     n_modes = frequencies.size
-    if normalization not in ("unit", "3N"):
-        msg = f"Unknown normalization {normalization!r}; allowed values are 'unit' and '3N'."
-        raise ValueError(msg)
-    if not np.isfinite(broadening_thz) or broadening_thz <= 0:
-        msg = f"broadening_thz must be positive and finite, got {broadening_thz!r}."
-        raise ValueError(msg)
+    _validate_broadening_options(broadening_thz, normalization)
     if eigenvectors is None:
         if groups is not None:
             msg = "groups need eigenvectors: the group weights come from the eigenvector components."
@@ -2235,6 +2249,25 @@ def _validate_harmonic_inputs(
     return frequencies, eigenvectors, eigenvectors.shape[0] // _N_COMPONENTS
 
 
+def _validate_broadening_options(broadening_thz: float, normalization: str) -> None:
+    """Raise for an unknown normalisation or a broadening that is not positive and finite."""
+    if normalization not in ("unit", "3N"):
+        msg = f"Unknown normalization {normalization!r}; allowed values are 'unit' and '3N'."
+        raise ValueError(msg)
+    if not np.isfinite(broadening_thz) or broadening_thz <= 0:
+        msg = f"broadening_thz must be positive and finite, got {broadening_thz!r}."
+        raise ValueError(msg)
+
+
+def _validate_frequency_grid(frequency_grid_thz: ArrayLike) -> NDArray[np.float64]:
+    """Return a caller's grid as float64; raise unless it is 1-D, finite, strictly increasing, with >= 2 points."""
+    grid = np.asarray(frequency_grid_thz, dtype=np.float64)
+    if grid.ndim != 1 or grid.size < _MIN_GRID_POINTS or not np.all(np.isfinite(grid)) or not np.all(np.diff(grid) > 0):
+        msg = "frequency_grid_thz must be a 1-D, finite, strictly increasing array with at least 2 points."
+        raise ValueError(msg)
+    return grid
+
+
 def _harmonic_grid(
     frequency_grid_thz: ArrayLike | None, frequencies: NDArray[np.float64], broadening_thz: float
 ) -> NDArray[np.float64]:
@@ -2243,10 +2276,7 @@ def _harmonic_grid(
         step = broadening_thz / _GAUSSIAN_STEPS_PER_SIGMA
         top = max(float(frequencies.max()), 0.0) + _GAUSSIAN_TAIL_SIGMAS * broadening_thz
         return np.arange(math.ceil(top / step) + 1) * step
-    grid = np.asarray(frequency_grid_thz, dtype=np.float64)
-    if grid.ndim != 1 or grid.size < _MIN_GRID_POINTS or not np.all(np.isfinite(grid)) or not np.all(np.diff(grid) > 0):
-        msg = "frequency_grid_thz must be a 1-D, finite, strictly increasing array with at least 2 points."
-        raise ValueError(msg)
+    grid = _validate_frequency_grid(frequency_grid_thz)
     spacing = float(np.diff(grid).max())
     if spacing > 0.5 * broadening_thz * (1 + _GRID_SPACING_RTOL):
         warnings.warn(
@@ -2501,3 +2531,322 @@ def compute_participation_ratio(eigenvectors: NDArray[np.float64], masses: Array
             raise ValueError(msg)
         ratios[columns] = atom_weights.sum(axis=0) ** 2 / (n_atoms * squares)
     return ratios
+
+
+# ---------------------------------------------------------------------------
+# Harmonic route: workflow
+# ---------------------------------------------------------------------------
+
+# The matrix file inside the directory that harmonic_vdos_simulation makes for it.
+_HARMONIC_MATRIX_FILE = "dynamical_matrix.bin"
+# Peak of diagonalize_dynamical_matrix with eigenvectors and overwrite_matrix=True, in matrices.
+_HARMONIC_PEAK_MATRICES = 2
+# Defaults of _run_lammps_minimize that harmonic_vdos_simulation does not expose; used only to validate upfront.
+_MINIMIZE_ENERGY_TOLERANCE = 0.0
+_MINIMIZE_N_PRINT = 100
+
+
+def _harmonic_simulation_settings(
+    structure: "Atoms",
+    potential: pd.DataFrame,
+    max_atoms: int,
+    displacement: float,
+    force_tolerance: float,
+    max_iter: int,
+    broadening_thz: float,
+    frequency_grid_thz: ArrayLike | None,
+    normalization: str,
+    temperatures_k: ArrayLike | None,
+    driver: str,
+    imaginary_threshold_thz: float,
+) -> None:
+    """Validate the arguments of :func:`harmonic_vdos_simulation` before anything runs."""
+    if not _is_positive_int(max_atoms):
+        msg = f"max_atoms must be a positive integer, got {max_atoms!r}."
+        raise ValueError(msg)
+    n_atoms = len(structure)
+    if n_atoms > max_atoms:
+        matrix_gb = 9 * n_atoms**2 * 8 / 1e9
+        msg = (
+            f"The structure has {n_atoms} atoms, more than max_atoms={max_atoms}. Its dynamical matrix takes "
+            f"9 N² x 8 bytes = {matrix_gb:.3g} GB, and the diagonalisation with eigenvectors peaks at "
+            f"{_HARMONIC_PEAK_MATRICES} matrices, {_HARMONIC_PEAK_MATRICES * matrix_gb:.3g} GB. Raise max_atoms "
+            "deliberately to run it anyway."
+        )
+        raise ValueError(msg)
+    if potential.empty:
+        msg = "No matching potential found for the given configuration."
+        raise ValueError(msg)
+    if not np.isfinite(displacement) or displacement <= 0:
+        msg = f"displacement must be positive and finite (Å), got {displacement!r}."
+        raise ValueError(msg)
+    _validate_minimize_arguments(force_tolerance, _MINIMIZE_ENERGY_TOLERANCE, max_iter, "fire", None, _MINIMIZE_N_PRINT)
+    _validate_broadening_options(broadening_thz, normalization)
+    if frequency_grid_thz is not None:
+        _validate_frequency_grid(frequency_grid_thz)
+    if temperatures_k is not None:
+        _check_temperatures(np.array(temperatures_k, dtype=np.float64, ndmin=1))
+    _validate_eigh_options(driver, imaginary_threshold_thz)
+
+
+def harmonic_vdos_simulation(
+    structure: "Atoms",
+    potential: pd.DataFrame,
+    server_kwargs: dict[str, Any] | None = None,
+    *,
+    max_atoms: int = 10_000,
+    displacement: float = 1e-5,
+    force_tolerance: float = 1e-6,
+    max_iter: int = 100_000,
+    broadening_thz: float = 0.2,
+    frequency_grid_thz: ArrayLike | None = None,
+    normalization: HarmonicNormalization = "unit",
+    temperatures_k: ArrayLike | None = None,
+    cutoff: CutoffSpec | None = None,
+    former_types: list[int] | None = None,
+    o_type: int = 8,
+    driver: EigenDriver = "evr",
+    imaginary_threshold_thz: float = 0.01,
+    tmp_working_directory: str | Path | None = None,
+) -> dict[str, Any]:
+    r"""Minimise a structure, compute its finite-difference dynamical matrix and return the harmonic VDOS and modes.
+
+    The harmonic counterpart of :func:`vdos_simulation`: the VDOS of the 0 K inherent structure from its normal modes,
+    with no MD and no statistical noise. Steps:
+
+    1. Minimisation at fixed cell and the dynamical matrix, both in LAMMPS (``_run_lammps_dynamical_matrix``).
+    2. The atom groups (element, oxygen class, $\mathrm{Q}^n$) with :func:`classify_vibrational_groups` and the
+       masses, both from the minimised structure.
+    3. The matrix is read with :func:`read_dynamical_matrix` and diagonalised in place with
+       :func:`diagonalize_dynamical_matrix`, which drops the three translations.
+    4. The broadened VDOS and its group partials with :func:`compute_harmonic_vdos`, the participation ratio of every
+       mode with :func:`compute_participation_ratio` and, with ``temperatures_k``, the harmonic thermodynamics with
+       :func:`compute_vibrational_thermodynamics`.
+
+    The structure is used as given. Preparing it (melt-quench, NPT relaxation to the target pressure) is the caller's
+    job; this function adds only the minimisation. The minimisation uses FIRE at fixed cell
+    (``min_style="fire"``, no ``box/relax``) down to ``force_tolerance``, the LAMMPS ``ftol``: the 2-norm of the global
+    force vector in eV/Å, not a per-atom maximum. A fixed cell leaves a residual pressure, reported in
+    ``"minimization"`` (``"pressure_gpa"`` and ``"mean_pressure_gpa"``; for FIRE they also hold the kinetic term of
+    the residual velocities), together with the iteration count, the stopping criterion and the final forces. If the
+    tolerance is not reached, the minimiser warns and the result is still returned; the step-0 forces of the
+    structure that was differentiated are in ``"dynamical_matrix"`` (``"max_force_ev_per_a"``).
+
+    Finite differences: each entry of the matrix is a central difference of the forces with step ``displacement``.
+
+    Imaginary modes are reported as negative frequencies in ``"mode_frequencies_thz"``. Those below
+    ``-imaginary_threshold_thz`` are counted in ``"diagonalization"`` (``"n_imaginary"``, with a warning that names
+    the asymmetry atoms); they point at an incomplete minimisation or a corrupted entry. Every negative frequency is
+    left out of the VDOS (``"n_imaginary_excluded"`` and ``"imaginary_weight"``) and of the thermodynamics.
+
+    ``max_atoms`` guards against an accidental large run: above it the function raises before anything runs, and the
+    message gives the matrix size and the expected peak. It can be raised deliberately.
+
+    The groups are classified on the minimised structure, the one whose modes are computed. Errors in ``cutoff``,
+    ``former_types`` or ``o_type`` therefore surface only after the LAMMPS runs.
+
+    The thermodynamics is computed from the broadened total VDOS on the frequency grid, not from a sum over the modes,
+    with ``lowest_frequency_thz`` set to the smallest positive mode frequency, the lowest mode the box supports: the
+    values below its temperature are flagged as unreliable. With ``normalization="3N"`` the total is divided by 3N
+    first, as :func:`compute_vibrational_thermodynamics` needs a VDOS normalised to 1. On the 300-atom PMMCS glass at
+    300 K with the default 0.2 THz broadening, the values differ from an exact sum over the modes by -1.3e-5 (C_V),
+    8.5e-4 (S), 3.0e-5 (U) and -3.7e-4 (F), relative. The default grid starts at 0, so modes within a few
+    ``broadening_thz`` of 0 lose part of their weight (``"excluded_weight"`` and ``"vdos_integral"`` report it).
+
+    Args:
+        structure: The structure, e.g. a quenched and NPT-relaxed glass, used as given. It is not modified.
+        potential: LAMMPS potential as a pandas DataFrame.
+        server_kwargs: Additional arguments for the LAMMPS server (e.g. ``{"cores": 4}``), used by both LAMMPS runs.
+        max_atoms: Largest number of atoms accepted, a positive integer.
+        displacement: Finite-difference displacement in Å.
+        force_tolerance: FIRE stops when the 2-norm of the global force vector is below this, in eV/Å.
+        max_iter: Maximum number of FIRE iterations.
+        broadening_thz: Standard deviation of the Gaussian broadening of each mode in THz (not the FWHM).
+        frequency_grid_thz: Frequencies in THz at which the VDOS is evaluated, 1-D, finite and strictly increasing.
+            ``None``: from 0 in steps of ``broadening_thz / 5`` up to the highest mode plus 5 ``broadening_thz``.
+        normalization: ``"unit"`` (the total VDOS integrates to 1, in 1/THz) or ``"3N"`` (to ``3 * n_atoms``), each
+            short by the share of imaginary modes.
+        temperatures_k: Temperatures in K for the harmonic thermodynamics, a scalar or a 1-D array of finite values
+            >= 0. ``None`` skips it.
+        cutoff: Former-O cutoff in Å for the groups, as in :func:`classify_vibrational_groups`. Derived from the RDF
+            of the minimised structure if ``None``.
+        former_types: Atomic numbers of the network formers. Derived from the composition if ``None``.
+        o_type: Atomic number of oxygen.
+        driver: LAPACK driver of ``scipy.linalg.eigh``: ``"evr"`` (default), ``"evd"``, ``"evx"`` or ``"ev"``; see
+            :func:`diagonalize_dynamical_matrix` for their memory and time.
+        imaginary_threshold_thz: A mode below ``-imaginary_threshold_thz`` counts as imaginary in
+            ``"diagonalization"``.
+        tmp_working_directory: Directory for the LAMMPS runs and the matrix file, which are then kept. If None, every
+            run and the matrix file are removed.
+
+    Returns:
+        A dict with:
+            ``"frequencies_thz"``: the frequency grid in THz.
+            ``"vdos"``: ``{"total": array, "element": {...}, "oxygen": {...}, "qn": {...}}`` with the labels of
+            ``"groups"``, in 1/THz, the layout of :func:`vdos_simulation`.
+            ``"groups"``: the output of :func:`classify_vibrational_groups` on the minimised structure.
+            ``"structure"``: the minimised structure.
+            ``"normalization"``: the VDOS normalisation.
+            ``"broadening_thz"``: the broadening in THz.
+            ``"mode_frequencies_thz"``: the $M = 3N - 3$ mode frequencies in THz, ascending, negative for imaginary
+            modes.
+            ``"participation_ratio"``: the participation ratio of every mode, shape $(M,)$.
+            ``"mode_weights"``: ``{grouping: {label: w}}``, each group's $(M,)$ share of every mode, as in
+            :func:`compute_harmonic_vdos`.
+            ``"n_imaginary_excluded"``: the number of modes with a negative frequency, left out of the VDOS.
+            ``"imaginary_weight"``: their share of the normalisation.
+            ``"grid_integral"``: the trapezoid integral of the total VDOS on the grid.
+            ``"eigenvectors"``: the $(3N, M)$ mass-weighted eigenvectors, one mode per column. A later version will
+            drop them by default.
+            ``"dynamical_matrix"``: the summary of the LAMMPS dynamical-matrix run (``"matrix_path"``,
+            ``"matrix_bytes"``, ``"n_atoms"``, ``"displacement_a"``, ``"style"``, the step-0 ``"max_force_ev_per_a"``
+            and ``"force_norm_ev_per_a"``, ``"minimization"`` and ``"wall_time_s"``). ``"matrix_path"`` is None when
+            the matrix file was removed.
+            ``"minimization"``: the FIRE summary: ``"converged"``, ``"stopping_criterion"``, ``"n_iterations"``,
+            ``"max_force_ev_per_a"``, ``"force_norm_ev_per_a"``, ``"pressure_gpa"``, ``"mean_pressure_gpa"``, the
+            energies and volumes.
+            ``"diagonalization"``: ``"asymmetry"``, ``"asymmetry_atoms"``, ``"translational_frequencies_thz"``,
+            ``"translational_overlap"``, ``"n_imaginary"``, ``"min_frequency_thz"`` and ``"driver"``.
+            ``"thermodynamics"``: the output of :func:`compute_vibrational_thermodynamics`, or None without
+            ``temperatures_k``.
+            ``"displacement_a"``: the finite-difference displacement in Å.
+            ``"wall_time_s"``: ``{"lammps", "diagonalization", "analysis"}`` in s: both LAMMPS runs; reading and
+            diagonalising the matrix; the groups, VDOS, participation ratios and thermodynamics.
+
+    Raises:
+        ValueError: Before any LAMMPS run, if ``max_atoms`` is not a positive integer, the structure has more than
+            ``max_atoms`` atoms, the potential is empty, ``displacement`` is not positive and finite,
+            ``force_tolerance`` is negative, zero or not finite, ``max_iter`` is not a positive integer,
+            ``broadening_thz`` is not positive and finite, ``normalization`` is unknown, ``frequency_grid_thz`` is not
+            1-D, finite and strictly increasing with at least 2 points, ``temperatures_k`` is not finite and >= 0,
+            ``driver`` is unknown or ``imaginary_threshold_thz`` is not >= 0. After the LAMMPS runs, if
+            ``cutoff``, ``former_types`` or ``o_type`` is invalid for :func:`classify_vibrational_groups`.
+        RuntimeError: If a LAMMPS run fails or the matrix file is missing or has the wrong size.
+
+    Warns:
+        UserWarning: If the minimisation stops on a criterion other than the force or energy tolerance, the
+            diagonalisation finds imaginary modes or dropped modes that are not translations, or a caller's
+            ``frequency_grid_thz`` is coarser than ``broadening_thz / 2``.
+
+    Example:
+        ```pycon
+        >>> out = harmonic_vdos_simulation(glass, potential, temperatures_k=[300.0])  # doctest: +SKIP
+        >>> out["minimization"]["converged"], out["diagonalization"]["asymmetry"]  # doctest: +SKIP
+        >>> out["diagonalization"]["n_imaginary"], out["grid_integral"]  # doctest: +SKIP
+        >>> out["vdos"]["oxygen"]["O_BO"]  # doctest: +SKIP
+        >>> out["thermodynamics"]["heat_capacity_kb_per_atom"]  # doctest: +SKIP
+
+        ```
+    """
+    _harmonic_simulation_settings(
+        structure,
+        potential,
+        max_atoms,
+        displacement,
+        force_tolerance,
+        max_iter,
+        broadening_thz,
+        frequency_grid_thz,
+        normalization,
+        temperatures_k,
+        driver,
+        imaginary_threshold_thz,
+    )
+    keep_matrix = tmp_working_directory is not None
+    with (
+        contextlib.nullcontext(tempfile.mkdtemp(prefix="harmonic_vdos_", dir=tmp_working_directory))
+        if keep_matrix
+        else tempfile.TemporaryDirectory()
+    ) as matrix_dir:
+        start = time.perf_counter()
+        minimised, summary = _run_lammps_dynamical_matrix(
+            structure,
+            potential,
+            Path(matrix_dir) / _HARMONIC_MATRIX_FILE,
+            displacement=displacement,
+            minimize=True,
+            minimize_kwargs={
+                "min_style": "fire",
+                "pressure": None,
+                "force_tolerance": force_tolerance,
+                "max_iter": max_iter,
+            },
+            server_kwargs=server_kwargs,
+            tmp_working_directory=tmp_working_directory,
+        )
+        lammps_s = time.perf_counter() - start
+        start = time.perf_counter()
+        groups = classify_vibrational_groups(minimised, cutoff, former_types, o_type)
+        masses = minimised.get_masses()
+        groups_s = time.perf_counter() - start
+        start = time.perf_counter()
+        matrix = read_dynamical_matrix(summary["matrix_path"], summary["n_atoms"])
+    if not keep_matrix:
+        summary = {**summary, "matrix_path": None}
+    # Diagonalised in place; dropping the only reference afterwards frees the overwritten matrix, so the peak is the
+    # matrix plus its eigenvectors and only the eigenvectors stay.
+    modes = diagonalize_dynamical_matrix(
+        matrix,
+        masses=masses,
+        overwrite_matrix=True,
+        eigenvectors=True,
+        driver=driver,
+        imaginary_threshold_thz=imaginary_threshold_thz,
+    )
+    del matrix
+    diagonalization_s = time.perf_counter() - start
+
+    start = time.perf_counter()
+    mode_frequencies, eigenvectors = modes["frequencies_thz"], modes["eigenvectors"]
+    vdos = compute_harmonic_vdos(
+        mode_frequencies,
+        eigenvectors,
+        groups=groups,
+        frequency_grid_thz=frequency_grid_thz,
+        broadening_thz=broadening_thz,
+        normalization=normalization,
+    )
+    participation_ratio = compute_participation_ratio(eigenvectors, masses)
+    thermodynamics = None
+    if temperatures_k is not None:
+        total = vdos["vdos"]["total"] if normalization == "unit" else vdos["vdos"]["total"] / (3 * len(minimised))
+        thermodynamics = compute_vibrational_thermodynamics(
+            vdos["frequencies_thz"],
+            total,
+            temperatures_k,
+            lowest_frequency_thz=float(mode_frequencies[mode_frequencies > 0].min()),
+        )
+    analysis_s = groups_s + time.perf_counter() - start
+
+    return {
+        "frequencies_thz": vdos["frequencies_thz"],
+        "vdos": vdos["vdos"],
+        "groups": groups,
+        "structure": minimised,
+        "normalization": normalization,
+        "broadening_thz": vdos["broadening_thz"],
+        "mode_frequencies_thz": mode_frequencies,
+        "participation_ratio": participation_ratio,
+        "mode_weights": vdos["mode_weights"],
+        "n_imaginary_excluded": vdos["n_imaginary_excluded"],
+        "imaginary_weight": vdos["imaginary_weight"],
+        "grid_integral": vdos["grid_integral"],
+        "eigenvectors": eigenvectors,
+        "dynamical_matrix": summary,
+        "minimization": summary["minimization"],
+        "diagonalization": {
+            key: modes[key]
+            for key in (
+                "asymmetry",
+                "asymmetry_atoms",
+                "translational_frequencies_thz",
+                "translational_overlap",
+                "n_imaginary",
+                "min_frequency_thz",
+                "driver",
+            )
+        },
+        "thermodynamics": thermodynamics,
+        "displacement_a": summary["displacement_a"],
+        "wall_time_s": {"lammps": lammps_s, "diagonalization": diagonalization_s, "analysis": analysis_s},
+    }
