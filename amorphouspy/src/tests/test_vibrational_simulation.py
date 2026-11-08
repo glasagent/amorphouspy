@@ -5,6 +5,7 @@ and spectra) is exercised without a real LAMMPS installation. The dynamical-matr
 mass-weighted matrix, and everything after it runs for real.
 """
 
+import gc
 import tempfile
 import warnings
 import weakref
@@ -577,10 +578,14 @@ def _dynamical_matrix(masses):
 
 
 def _fake_dynamical_matrix_runner(minimised, matrix):
-    """Mimic the runner: write ``matrix`` to ``matrix_path`` and return ``minimised`` with a summary."""
+    """Mimic the runner: write ``matrix`` to ``matrix_path``, a run directory in tmp_working_directory, a summary."""
 
     def run(_structure, _potential, matrix_path, **kwargs):
         matrix.tofile(matrix_path)
+        if kwargs["tmp_working_directory"] is not None:
+            run_dir = Path(kwargs["tmp_working_directory"]) / "lammps_run"
+            run_dir.mkdir(exist_ok=True)
+            (run_dir / "log.lammps").touch()
         summary = {
             "matrix_path": Path(matrix_path),
             "n_atoms": len(minimised),
@@ -619,7 +624,7 @@ def test_harmonic_vdos_simulation_matches_manual_chain(tmp_path):
     with patch.object(
         vibrational, "diagonalize_dynamical_matrix", wraps=vibrational.diagonalize_dynamical_matrix
     ) as diagonalize:
-        out, runner, matrix, minimised = _run_harmonic(temperatures_k=HARMONIC_TEMPERATURES_K)
+        out, runner, matrix, minimised = _run_harmonic(temperatures_k=HARMONIC_TEMPERATURES_K, keep_eigenvectors=True)
 
     structure = runner.call_args.args[0]
     assert runner.call_count == 1
@@ -711,6 +716,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         ({"temperatures_k": [300.0, -1.0]}, "temperatures_k must be"),
         ({"driver": "evz"}, "Unknown driver"),
         ({"imaginary_threshold_thz": -0.01}, "imaginary_threshold_thz must be >= 0"),
+        ({"keep_dynamical_matrix": True}, "keep_dynamical_matrix=True needs a tmp_working_directory"),
     ],
     ids=[
         "max-atoms-zero",
@@ -729,6 +735,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         "temperature-negative",
         "driver",
         "threshold-negative",
+        "keep-matrix-without-directory",
     ],
 )
 def test_harmonic_vdos_simulation_invalid_inputs_raise(kwargs, match):
@@ -742,21 +749,56 @@ def test_harmonic_vdos_simulation_invalid_inputs_raise(kwargs, match):
     assert runner.call_count == 0
 
 
-@pytest.mark.parametrize("keep", [True, False], ids=["tmp-working-directory", "temporary"])
-def test_harmonic_vdos_simulation_matrix_file(keep, tmp_path):
-    """The matrix file is kept under tmp_working_directory; without one its directory is removed after reading."""
-    out, runner, matrix, _ = _run_harmonic(tmp_working_directory=tmp_path if keep else None)
+@pytest.mark.parametrize(
+    ("directory", "keep_dynamical_matrix"),
+    [(True, True), (True, False), (False, False)],
+    ids=["directory-keep", "directory-delete", "temporary"],
+)
+def test_harmonic_vdos_simulation_matrix_file(directory, keep_dynamical_matrix, tmp_path):
+    """Only the matrix's own directory is removed after reading, unless kept; the LAMMPS run directories stay."""
+    tmp_working_directory = tmp_path if directory else None
+    out, runner, matrix, _ = _run_harmonic(
+        tmp_working_directory=tmp_working_directory, keep_dynamical_matrix=keep_dynamical_matrix
+    )
     path = runner.call_args.args[2]
     assert path.name == "dynamical_matrix.bin"
-    assert runner.call_args.kwargs["tmp_working_directory"] == (tmp_path if keep else None)
-    if keep:
-        assert path.parent.parent == tmp_path
-        assert path.parent.name.startswith("harmonic_vdos_")
-        assert out["dynamical_matrix"]["matrix_path"] == path
+    assert path.parent.name.startswith("harmonic_vdos_")
+    assert runner.call_args.kwargs["tmp_working_directory"] == tmp_working_directory
+    assert path.parent.exists() is keep_dynamical_matrix
+    assert out["dynamical_matrix"]["matrix_path"] == (path if keep_dynamical_matrix else None)
+    if keep_dynamical_matrix:
         assert np.array_equal(np.fromfile(path), matrix.ravel())
+    if directory:
+        assert path.parent.parent == tmp_path
+        assert (tmp_path / "lammps_run" / "log.lammps").exists()
+
+
+@pytest.mark.parametrize("keep_eigenvectors", [False, True], ids=["drop", "keep"])
+def test_harmonic_vdos_simulation_eigenvectors(keep_eigenvectors):
+    """The eigenvectors are returned only when kept; otherwise their buffer is freed and every other entry is equal."""
+    buffers = []
+
+    def spy(*args, **kwargs):
+        modes = diagonalize_dynamical_matrix(*args, **kwargs)
+        root = modes["eigenvectors"]
+        while root.base is not None:
+            root = root.base
+        buffers.append(weakref.ref(root))
+        return modes
+
+    with patch.object(vibrational, "diagonalize_dynamical_matrix", side_effect=spy):
+        out, _, matrix, minimised = _run_harmonic(keep_eigenvectors=keep_eigenvectors)
+    gc.collect()
+    assert (buffers[0]() is not None) is keep_eigenvectors
+    if keep_eigenvectors:
+        modes = diagonalize_dynamical_matrix(np.array(matrix), masses=minimised.get_masses())
+        assert np.array_equal(out["eigenvectors"], modes["eigenvectors"])
     else:
-        assert not path.parent.exists()
-        assert out["dynamical_matrix"]["matrix_path"] is None
+        assert out["eigenvectors"] is None
+    kept = _run_harmonic(keep_eigenvectors=True)[0]
+    other_keys = out.keys() - {"eigenvectors", "wall_time_s"}
+    assert out.keys() == kept.keys()
+    _assert_same({key: out[key] for key in other_keys}, {key: kept[key] for key in other_keys})
 
 
 def test_harmonic_vdos_simulation_thermodynamics():
