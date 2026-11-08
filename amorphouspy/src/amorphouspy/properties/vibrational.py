@@ -2559,6 +2559,9 @@ def _harmonic_simulation_settings(
     temperatures_k: ArrayLike | None,
     driver: str,
     imaginary_threshold_thz: float,
+    *,
+    tmp_working_directory: str | Path | None,
+    keep_dynamical_matrix: bool,
 ) -> None:
     """Validate the arguments of :func:`harmonic_vdos_simulation` before anything runs."""
     if not _is_positive_int(max_atoms):
@@ -2587,6 +2590,9 @@ def _harmonic_simulation_settings(
     if temperatures_k is not None:
         _check_temperatures(np.array(temperatures_k, dtype=np.float64, ndmin=1))
     _validate_eigh_options(driver, imaginary_threshold_thz)
+    if keep_dynamical_matrix and tmp_working_directory is None:
+        msg = "keep_dynamical_matrix=True needs a tmp_working_directory; without one every run removes its files."
+        raise ValueError(msg)
 
 
 def harmonic_vdos_simulation(
@@ -2608,6 +2614,8 @@ def harmonic_vdos_simulation(
     driver: EigenDriver = "evr",
     imaginary_threshold_thz: float = 0.01,
     tmp_working_directory: str | Path | None = None,
+    keep_dynamical_matrix: bool = False,
+    keep_eigenvectors: bool = False,
 ) -> dict[str, Any]:
     r"""Minimise a structure, compute its finite-difference dynamical matrix and return the harmonic VDOS and modes.
 
@@ -2653,6 +2661,12 @@ def harmonic_vdos_simulation(
     8.5e-4 (S), 3.0e-5 (U) and -3.7e-4 (F), relative. The default grid starts at 0, so modes within a few
     ``broadening_thz`` of 0 lose part of their weight (``"excluded_weight"`` and ``"vdos_integral"`` report it).
 
+    Disk and memory: the matrix file takes 9 N² x 8 bytes (2.6 GB at 6000 atoms, 7.2 GB at 10,000) and is deleted once
+    it is read unless ``keep_dynamical_matrix``. The peak in memory is still 2 matrices, during the diagonalisation.
+    Without the eigenvectors, the result holds only O(M x number of labels) floats (the mode frequencies, participation
+    ratios and group weights) plus the VDOS curves on the frequency grid. An eigenvector-based analysis later needs
+    ``keep_eigenvectors=True`` or a rerun.
+
     Args:
         structure: The structure, e.g. a quenched and NPT-relaxed glass, used as given. It is not modified.
         potential: LAMMPS potential as a pandas DataFrame.
@@ -2676,8 +2690,14 @@ def harmonic_vdos_simulation(
             :func:`diagonalize_dynamical_matrix` for their memory and time.
         imaginary_threshold_thz: A mode below ``-imaginary_threshold_thz`` counts as imaginary in
             ``"diagonalization"``.
-        tmp_working_directory: Directory for the LAMMPS runs and the matrix file, which are then kept. If None, every
-            run and the matrix file are removed.
+        tmp_working_directory: Directory for the LAMMPS runs and the matrix file. The run directories, with their
+            logs, input and data files, are kept. The matrix file goes to its own ``harmonic_vdos_*`` subdirectory,
+            which is removed once the matrix is read unless ``keep_dynamical_matrix``; nothing else in the directory is
+            removed. If None, every run and the matrix file are removed.
+        keep_dynamical_matrix: Keep the matrix file, in ``harmonic_vdos_*/dynamical_matrix.bin`` under
+            ``tmp_working_directory``, instead of deleting it once read. Needs a ``tmp_working_directory``.
+        keep_eigenvectors: Return the eigenvectors in ``"eigenvectors"``, one matrix in memory, instead of dropping
+            them once the VDOS, the group partials and the participation ratios are computed.
 
     Returns:
         A dict with:
@@ -2696,12 +2716,12 @@ def harmonic_vdos_simulation(
             ``"n_imaginary_excluded"``: the number of modes with a negative frequency, left out of the VDOS.
             ``"imaginary_weight"``: their share of the normalisation.
             ``"grid_integral"``: the trapezoid integral of the total VDOS on the grid.
-            ``"eigenvectors"``: the $(3N, M)$ mass-weighted eigenvectors, one mode per column. A later version will
-            drop them by default.
+            ``"eigenvectors"``: the $(3N, M)$ mass-weighted eigenvectors, one mode per column; None unless
+            ``keep_eigenvectors``.
             ``"dynamical_matrix"``: the summary of the LAMMPS dynamical-matrix run (``"matrix_path"``,
             ``"matrix_bytes"``, ``"n_atoms"``, ``"displacement_a"``, ``"style"``, the step-0 ``"max_force_ev_per_a"``
-            and ``"force_norm_ev_per_a"``, ``"minimization"`` and ``"wall_time_s"``). ``"matrix_path"`` is None when
-            the matrix file was removed.
+            and ``"force_norm_ev_per_a"``, ``"minimization"`` and ``"wall_time_s"``). ``"matrix_path"`` is the
+            absolute path of the kept file; None unless ``keep_dynamical_matrix``.
             ``"minimization"``: the FIRE summary: ``"converged"``, ``"stopping_criterion"``, ``"n_iterations"``,
             ``"max_force_ev_per_a"``, ``"force_norm_ev_per_a"``, ``"pressure_gpa"``, ``"mean_pressure_gpa"``, the
             energies and volumes.
@@ -2719,8 +2739,9 @@ def harmonic_vdos_simulation(
             ``force_tolerance`` is negative, zero or not finite, ``max_iter`` is not a positive integer,
             ``broadening_thz`` is not positive and finite, ``normalization`` is unknown, ``frequency_grid_thz`` is not
             1-D, finite and strictly increasing with at least 2 points, ``temperatures_k`` is not finite and >= 0,
-            ``driver`` is unknown or ``imaginary_threshold_thz`` is not >= 0. After the LAMMPS runs, if
-            ``cutoff``, ``former_types`` or ``o_type`` is invalid for :func:`classify_vibrational_groups`.
+            ``driver`` is unknown, ``imaginary_threshold_thz`` is not >= 0, or ``keep_dynamical_matrix`` is True
+            without a ``tmp_working_directory``. After the LAMMPS runs, if ``cutoff``, ``former_types`` or ``o_type``
+            is invalid for :func:`classify_vibrational_groups`.
         RuntimeError: If a LAMMPS run fails or the matrix file is missing or has the wrong size.
 
     Warns:
@@ -2751,12 +2772,13 @@ def harmonic_vdos_simulation(
         temperatures_k,
         driver,
         imaginary_threshold_thz,
+        tmp_working_directory=tmp_working_directory,
+        keep_dynamical_matrix=keep_dynamical_matrix,
     )
-    keep_matrix = tmp_working_directory is not None
     with (
         contextlib.nullcontext(tempfile.mkdtemp(prefix="harmonic_vdos_", dir=tmp_working_directory))
-        if keep_matrix
-        else tempfile.TemporaryDirectory()
+        if keep_dynamical_matrix
+        else tempfile.TemporaryDirectory(prefix="harmonic_vdos_", dir=tmp_working_directory)
     ) as matrix_dir:
         start = time.perf_counter()
         minimised, summary = _run_lammps_dynamical_matrix(
@@ -2781,7 +2803,7 @@ def harmonic_vdos_simulation(
         groups_s = time.perf_counter() - start
         start = time.perf_counter()
         matrix = read_dynamical_matrix(summary["matrix_path"], summary["n_atoms"])
-    if not keep_matrix:
+    if not keep_dynamical_matrix:
         summary = {**summary, "matrix_path": None}
     # Diagonalised in place; dropping the only reference afterwards frees the overwritten matrix, so the peak is the
     # matrix plus its eigenvectors and only the eigenvectors stay.
@@ -2797,7 +2819,7 @@ def harmonic_vdos_simulation(
     diagonalization_s = time.perf_counter() - start
 
     start = time.perf_counter()
-    mode_frequencies, eigenvectors = modes["frequencies_thz"], modes["eigenvectors"]
+    mode_frequencies, eigenvectors = modes["frequencies_thz"], modes.pop("eigenvectors")
     vdos = compute_harmonic_vdos(
         mode_frequencies,
         eigenvectors,
@@ -2807,6 +2829,9 @@ def harmonic_vdos_simulation(
         normalization=normalization,
     )
     participation_ratio = compute_participation_ratio(eigenvectors, masses)
+    if not keep_eigenvectors:
+        # The last reference to the eigenvector buffer: dropping it frees one matrix before the thermodynamics.
+        eigenvectors = None
     thermodynamics = None
     if temperatures_k is not None:
         total = vdos["vdos"]["total"] if normalization == "unit" else vdos["vdos"]["total"] / (3 * len(minimised))
