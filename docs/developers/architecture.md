@@ -34,6 +34,8 @@ flowchart LR
       ViscositySimulation["Viscosity<br/>Simulation"]
       CTESimulation["CTE<br/>Simulation"]
       AnisotropyAnalysis["Anisotropy<br/>Analysis"]
+      DiffusionSimulation["Diffusion<br/>Simulation"]
+      VDOSSimulation["VDOS<br/>Simulation"]
       OthersWorkflow[...]
    end
 
@@ -47,6 +49,8 @@ flowchart LR
       Viscosity[Viscosity]
       CTE[CTE]
       Anisotropy[Anisotropy]
+      Diffusion["Self-Diffusion"]
+      VDOS["VDOS"]
       OthersOutput[...]
    end
 
@@ -80,6 +84,8 @@ flowchart LR
    WorkflowSettings --> ViscositySimulation --> Viscosity
    WorkflowSettings --> CTESimulation --> CTE
    WorkflowSettings --> AnisotropyAnalysis --> Anisotropy
+   WorkflowSettings --> DiffusionSimulation --> Diffusion
+   WorkflowSettings --> VDOSSimulation --> VDOS
    WorkflowSettings --> OthersWorkflow --> OthersOutput
    StructureAnalysis --> RDF
    StructureAnalysis --> BondAngleDistribution
@@ -95,7 +101,7 @@ flowchart LR
    classDef none fill:#333333,stroke:#ffffff,stroke-width:2px,color:#fff,font-weight:bold,font-size:22px;
 
 
-class Implemented,Density,Composition,AdhocGeneration,InputStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings implemented
+class Implemented,Density,Composition,AdhocGeneration,InputStructure,TemperatureProgram,WorkflowSettings,StructureAnalysis,NetworkAnalysis,BondAngleDistribution,RDF,QnDistribution,MeltQuench,GlassStructure,UserStructure,SystemSize,GenericSimulationSettings,DiffusionSimulation,Diffusion,VDOSSimulation,VDOS implemented
 class Validated validated
 class Underway,ViscositySimulation,ElasticModuliSimulation,Strain,FF underway
 class Future,CTESimulation,AnisotropyAnalysis,Database, future
