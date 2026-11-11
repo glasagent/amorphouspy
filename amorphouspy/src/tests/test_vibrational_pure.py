@@ -1,16 +1,18 @@
 """Tests for pure functions in amorphouspy.properties.vibrational."""
 
+import math
 import tracemalloc
 import warnings
 from pathlib import Path
 
 import numpy as np
 import pytest
+import scipy.fft
 import scipy.linalg
 from amorphouspy.atoms.mass import get_atomic_mass
-from amorphouspy.properties import vibrational
 from amorphouspy.properties.structural.qn import compute_qn
 from amorphouspy.properties.vibrational import (
+    _common,
     classify_vibrational_groups,
     compute_debye_level,
     compute_harmonic_vdos,
@@ -238,6 +240,19 @@ def _random_system(n_frames: int, n_atoms: int, seed: int) -> tuple[np.ndarray, 
     return rng.normal(size=(n_frames, n_atoms, 3)), rng.uniform(1.0, 30.0, size=n_atoms)
 
 
+def _count_calls(monkeypatch, module, name: str) -> list:
+    """Wrap ``module.name`` so that the positional arguments of every call are recorded; return the record."""
+    calls = []
+    original = getattr(module, name)
+
+    def counted(*args, **kwargs):
+        calls.append(args)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, counted)
+    return calls
+
+
 def _centred_kinetic_sum(velocities: np.ndarray, masses: np.ndarray) -> float:
     """Time average of sum_i m_i |v_i - v_com|^2, computed directly."""
     com = np.einsum("tia,i->ta", velocities, masses) / masses.sum()
@@ -456,6 +471,7 @@ def _vdos_invalid_cases() -> list:
         pytest.param(good[:1], masses, DT_FS, {}, "At least 2 frames", id="one-frame"),
         pytest.param(good, masses, 0.0, {}, "dt_fs must be positive", id="dt-zero"),
         pytest.param(good, masses, np.nan, {}, "dt_fs must be positive", id="dt-nan"),
+        pytest.param(good, masses, None, {}, "dt_fs must be positive", id="dt-none"),
         pytest.param(good, np.array([M_SI, 0.0]), DT_FS, {}, "positive and finite", id="mass-zero"),
         pytest.param(good, np.array([-M_SI, M_O]), DT_FS, {}, "positive and finite", id="mass-negative"),
         pytest.param(nan_velocities, masses, DT_FS, {}, "NaN or inf", id="velocity-nan"),
@@ -591,12 +607,16 @@ def test_vdos_chunking_matches_single_chunk(monkeypatch, window, chunk_bytes, n_
     """Total and partial results do not depend on how atoms are split into chunks, with and without a window."""
     velocities, masses = _random_system(n_frames, 7, seed=27)
     groups = {"a": {"odd": np.array([1, 3, 5]), "first": np.array([0, 1, 2])}}
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 2**40)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 2**40)
     _, reference = compute_vdos_from_velocities(velocities, masses, DT_FS, window=window)
     _, reference_partial = compute_partial_vdos(velocities, masses, DT_FS, groups, window=window)
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", chunk_bytes)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", chunk_bytes)
+    transforms = _count_calls(monkeypatch, scipy.fft, "rfft")
     _, vdos = compute_vdos_from_velocities(velocities, masses, DT_FS, window=window)
     _, partial = compute_partial_vdos(velocities, masses, DT_FS, groups, window=window)
+    # One transform per chunk: the 7 atoms of the total, then the 5 atoms in the groups.
+    atoms_per_chunk = max(1, chunk_bytes // (n_frames * 3 * velocities.itemsize))
+    assert len(transforms) == math.ceil(7 / atoms_per_chunk) + math.ceil(5 / atoms_per_chunk)
     np.testing.assert_allclose(vdos, reference, rtol=1e-12)
     for label in groups["a"]:
         np.testing.assert_allclose(partial["a"][label], reference_partial["a"][label], rtol=1e-12)
@@ -732,12 +752,16 @@ def test_vacf_chunking_matches_single_chunk(monkeypatch, chunk_bytes, remove_com
     """Total and partial VACFs do not depend on how atoms are split into chunks."""
     velocities, masses = _random_system(50, 7, seed=38)
     groups = {"a": {"odd": np.array([1, 3, 5]), "first": np.array([0, 1, 2])}}
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 2**40)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 2**40)
     _, reference = compute_vacf_from_velocities(velocities, masses, DT_FS, remove_com=remove_com)
     _, reference_partial = compute_partial_vacf(velocities, masses, DT_FS, groups, remove_com=remove_com)
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", chunk_bytes)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", chunk_bytes)
+    transforms = _count_calls(monkeypatch, scipy.fft, "rfft")
     _, vacf = compute_vacf_from_velocities(velocities, masses, DT_FS, remove_com=remove_com)
     _, partial = compute_partial_vacf(velocities, masses, DT_FS, groups, remove_com=remove_com)
+    # One transform per chunk, sized for the 2N = 100 padded frames: the 7 atoms of the total, then the 5 in the groups.
+    atoms_per_chunk = max(1, chunk_bytes // (100 * 3 * velocities.itemsize))
+    assert len(transforms) == math.ceil(7 / atoms_per_chunk) + math.ceil(5 / atoms_per_chunk)
     np.testing.assert_allclose(vacf, reference, rtol=1e-12, atol=1e-14)
     for label in groups["a"]:
         np.testing.assert_allclose(partial["a"][label], reference_partial["a"][label], rtol=1e-12, atol=1e-14)
@@ -786,6 +810,7 @@ _SHARED_INVALID_IDS = {
     "masses-length",
     "one-frame",
     "dt-nan",
+    "dt-none",
     "mass-negative",
     "velocity-nan",
     "uniform-translation",
@@ -812,6 +837,7 @@ def _vacf_invalid_cases() -> list:
         pytest.param(good, masses, DT_FS, {"max_lag_frames": -1}, "max_lag_frames", id="max-lag-negative"),
         pytest.param(good, masses, DT_FS, {"max_lag_frames": 10}, r"in \[1, 9\]", id="max-lag-n-frames"),
         pytest.param(good, masses, DT_FS, {"max_lag_frames": 2.5}, "max_lag_frames", id="max-lag-float"),
+        pytest.param(good, masses, DT_FS, {"max_lag_frames": True}, "max_lag_frames", id="max-lag-bool"),
     ]
 
 
@@ -933,6 +959,7 @@ def _debye_invalid_cases() -> list:
     b, g = SILICA_BULK_GPA, SILICA_SHEAR_GPA
     return [
         pytest.param(silica, 0.0, g, {}, "bulk_modulus_gpa must be positive", id="bulk-zero"),
+        pytest.param(silica, b, None, {}, "shear_modulus_gpa must be positive", id="shear-none"),
         pytest.param(Atoms(cell=[10.0, 10.0, 10.0], pbc=True), b, g, {}, "no atoms", id="empty"),
         pytest.param(open_cell, b, g, {}, "periodic in all three", id="non-periodic"),
         pytest.param(Atoms("SiO2", pbc=True), b, g, {}, "positive volume", id="zero-volume"),
@@ -1214,7 +1241,7 @@ def _read_dynamical_matrix_invalid_cases():
 @pytest.mark.parametrize(("write", "n_atoms", "kwargs", "error", "match"), _read_dynamical_matrix_invalid_cases())
 def test_read_dynamical_matrix_invalid_raises(monkeypatch, tmp_path, write, n_atoms, kwargs, error, match):
     """Wrong sizes, non-finite values in a late row block, bad n_atoms or style, and a missing file raise."""
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)  # one row per chunk
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)  # one row per chunk
     path = tmp_path / "dynmat"
     if write is not None:
         write(path)
@@ -1304,7 +1331,7 @@ def test_diagonalize_asymmetry_is_measured_before_symmetrising(monkeypatch, orde
     symmetrised = (matrix + matrix.T) / 2
     max_abs = np.abs(matrix).max()
     expected = np.abs(matrix - matrix.T).max() / max_abs
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 5 * n_dof * 8)  # 5 rows per block, 5 blocks
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 5 * n_dof * 8)  # 5 rows per block, 5 blocks
     received = []
     eigh = scipy.linalg.eigh
 
@@ -1355,7 +1382,7 @@ def test_diagonalize_overwrite_without_eigenvectors_does_not_copy(monkeypatch):
     matrix = _ring_matrix(300, 3.0, 28.0855)  # n = 900, 6.5 MB
     # Real matrices are far above _CHUNK_BYTES; scale the blocks to 1/16 of the matrix so they stay small here too.
     # Expected peak: about 3 blocks (3/16) plus O(n) LAPACK workspace (~0.03), against >= 1 for any copy.
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", matrix.nbytes // 16)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", matrix.nbytes // 16)
     tracemalloc.start()
     try:
         diagonalize_dynamical_matrix(matrix, overwrite_matrix=True, eigenvectors=False)
@@ -1393,7 +1420,7 @@ def _diagonalize_invalid_cases():
 @pytest.mark.parametrize(("matrix", "kwargs", "match"), _diagonalize_invalid_cases())
 def test_diagonalize_invalid_input_raises(monkeypatch, matrix, kwargs, match):
     """Bad shapes, dtypes, non-finite entries in a later block, masses, drivers and thresholds raise."""
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)  # one row per block
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)  # one row per block
     with pytest.raises(ValueError, match=match):
         diagonalize_dynamical_matrix(matrix, **kwargs)
 
@@ -1465,8 +1492,14 @@ def test_harmonic_vdos_chunks_give_same_result(monkeypatch):
     """One mode per block, for the weights and the Gaussians, gives the result of the default blocks."""
     frequencies, vectors, groups = _spring_modes()
     default = compute_harmonic_vdos(frequencies, vectors, groups=groups, normalization="3N")
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)
+    einsums, exps = _count_calls(monkeypatch, np, "einsum"), _count_calls(monkeypatch, np, "exp")
     chunked = compute_harmonic_vdos(frequencies, vectors, groups=groups, normalization="3N")
+    # One mode per block: a weight block per mode, and a block of Gaussians per mode with nu >= 0.
+    weight_blocks = sum(isinstance(call[0], str) and call[0] == "iak,iak->ik" for call in einsums)
+    gaussian_blocks = len(exps)
+    assert weight_blocks == frequencies.size
+    assert gaussian_blocks == np.count_nonzero(frequencies >= 0)
     np.testing.assert_allclose(chunked["vdos"]["total"], default["vdos"]["total"], rtol=1e-13, atol=1e-16)
     for grouping, labels in groups.items():
         for label in labels:
@@ -1583,9 +1616,15 @@ def test_participation_ratio_chunks_order_and_no_copy(monkeypatch):
     peak = tracemalloc.get_traced_memory()[1]
     tracemalloc.stop()
     assert peak < vectors.nbytes / 2  # the atom weights are a third
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)
-    for ordered in (vectors, np.ascontiguousarray(vectors)):  # einsum differs by ulps between memory orders
-        np.testing.assert_allclose(compute_participation_ratio(ordered, masses), default, rtol=1e-13)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)
+    einsums = _count_calls(monkeypatch, np, "einsum")
+    orders = (vectors, np.ascontiguousarray(vectors))
+    chunked = [compute_participation_ratio(ordered, masses) for ordered in orders]
+    # One weight block per mode in each of the two calls.
+    weight_blocks = sum(isinstance(call[0], str) and call[0] == "iak,iak->ik" for call in einsums)
+    assert weight_blocks == len(orders) * vectors.shape[1]
+    for ratios in chunked:  # einsum differs by ulps between memory orders
+        np.testing.assert_allclose(ratios, default, rtol=1e-13)
 
 
 def _participation_invalid_cases():
@@ -1607,6 +1646,6 @@ def _participation_invalid_cases():
 @pytest.mark.parametrize(("vectors", "masses", "match"), _participation_invalid_cases())
 def test_participation_ratio_invalid_raises(monkeypatch, vectors, masses, match):
     """Bad shapes, dtypes and masses, a zero column and NaN in a late block raise."""
-    monkeypatch.setattr(vibrational, "_CHUNK_BYTES", 1)  # one mode per block
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)  # one mode per block
     with pytest.raises(ValueError, match=match):
         compute_participation_ratio(vectors, masses)

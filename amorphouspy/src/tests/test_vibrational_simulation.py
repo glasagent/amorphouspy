@@ -15,7 +15,6 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
-from amorphouspy.properties import vibrational
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
     compute_harmonic_vdos,
@@ -24,6 +23,7 @@ from amorphouspy.properties.vibrational import (
     compute_participation_ratio,
     compute_vibrational_thermodynamics,
     diagonalize_dynamical_matrix,
+    harmonic_simulation,
     harmonic_vdos_simulation,
     read_dynamical_matrix,
     vdos_simulation,
@@ -90,7 +90,7 @@ def _potential():
 def _run(structure, generic, *, potential=None, side_effect=None, **kwargs):
     """Call vdos_simulation with the MD runner mocked; by default every stage returns the input structure."""
     arguments = {"thermostat": "nose_hoover", "equilibration_steps": 50, **BLOCK, **GROUP_KWARGS, **kwargs}
-    with patch("amorphouspy.properties.vibrational._run_lammps_md", autospec=True) as mock_md:
+    with patch("amorphouspy.properties.vibrational.simulation._run_lammps_md", autospec=True) as mock_md:
         mock_md.return_value = (structure, {"generic": generic})
         mock_md.side_effect = side_effect
         out = vdos_simulation(structure, _potential() if potential is None else potential, **arguments)
@@ -359,11 +359,13 @@ def test_vdos_simulation_dump_cleanup(keep_trajectory, tmp_path):
         dumps_at_launch.append(len(list(tmp_path.glob("vdos_nve_block_*/*/dump.out"))))
         return fake(**kwargs)
 
+    checked = []
+
     def vacf_after_dump_check(*args, **kwargs):
-        assert (run_dirs[-1] / "dump.out").exists()
+        checked.append((run_dirs[-1] / "dump.out").exists())
         return compute_partial_vacf(*args, **kwargs)
 
-    with patch("amorphouspy.properties.vibrational.compute_partial_vacf", side_effect=vacf_after_dump_check):
+    with patch("amorphouspy.properties.vibrational.simulation.compute_partial_vacf", side_effect=vacf_after_dump_check):
         _run(
             structure,
             None,
@@ -373,6 +375,7 @@ def test_vdos_simulation_dump_cleanup(keep_trajectory, tmp_path):
             keep_trajectory=keep_trajectory,
         )
 
+    assert checked == [True] * 3  # the patch took effect: each block's dump existed when its VACF was computed
     block_dirs = [run_dir.parent for run_dir in run_dirs[2:]]
     assert [d.parent for d in block_dirs] == [tmp_path] * 3
     assert all(d.name.startswith(f"vdos_nve_block_{block:03d}_") for block, d in enumerate(block_dirs, start=1))
@@ -500,6 +503,7 @@ def test_vdos_simulation_nyquist_warning():
         ({"dump_every": 2.5}, "dump_every must be a positive integer"),
         ({"dump_every": True}, "dump_every must be a positive integer"),
         ({"equilibration_steps": -1}, "equilibration_steps must not be negative"),
+        ({"equilibration_steps": 1.5}, "equilibration_steps must not be negative and must be an integer"),
         ({"normalization": "none"}, "Unknown normalization"),
         ({"window": "gaussian"}, "Unknown window 'gaussian'"),
         ({"timestep": 3.0}, "not a whole number of 3.0 fs timesteps"),
@@ -520,6 +524,7 @@ def test_vdos_simulation_nyquist_warning():
         "dump-float",
         "dump-bool",
         "equilibration-negative",
+        "equilibration-float",
         "normalization-none",
         "window-gaussian-without-std",
         "block-not-whole-steps",
@@ -536,7 +541,7 @@ def test_vdos_simulation_invalid_inputs_raise(kwargs, match):
     """Invalid arguments raise before any MD stage is launched."""
     arguments = {"potential": _potential(), "thermostat": "nose_hoover", **BLOCK, **GROUP_KWARGS, **kwargs}
     with (
-        patch("amorphouspy.properties.vibrational._run_lammps_md", autospec=True) as mock_md,
+        patch("amorphouspy.properties.vibrational.simulation._run_lammps_md", autospec=True) as mock_md,
         pytest.raises(ValueError, match=match),
     ):
         vdos_simulation(_si2o7_dimer(), **arguments)
@@ -601,7 +606,9 @@ def _run_harmonic(**kwargs):
     """Call harmonic_vdos_simulation on the dimer with the runner mocked; return result, mock, matrix and structure."""
     minimised = _minimised_dimer()
     matrix = _dynamical_matrix(minimised.get_masses())
-    with patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner:
+    with patch(
+        "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+    ) as runner:
         runner.side_effect = _fake_dynamical_matrix_runner(minimised, matrix)
         out = harmonic_vdos_simulation(_si2o7_dimer(), _potential(), **{**GROUP_KWARGS, **kwargs})
     return out, runner, matrix, minimised
@@ -622,7 +629,7 @@ def _assert_same(actual, expected):
 def test_harmonic_vdos_simulation_matches_manual_chain(tmp_path):
     """The result is exactly read -> diagonalize -> VDOS -> participation ratio -> thermodynamics on the matrix."""
     with patch.object(
-        vibrational, "diagonalize_dynamical_matrix", wraps=vibrational.diagonalize_dynamical_matrix
+        harmonic_simulation, "diagonalize_dynamical_matrix", wraps=harmonic_simulation.diagonalize_dynamical_matrix
     ) as diagonalize:
         out, runner, matrix, minimised = _run_harmonic(temperatures_k=HARMONIC_TEMPERATURES_K, keep_eigenvectors=True)
 
@@ -690,7 +697,9 @@ def test_harmonic_vdos_simulation_atom_guard():
     assert _run_harmonic(max_atoms=9)[1].call_count == 1
     match = r"9 atoms, more than max_atoms=8.*9 N² x 8 bytes = 5.83e-06 GB.*2 matrices, 1.17e-05 GB. Raise max_atoms"
     with (
-        patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner,
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+        ) as runner,
         pytest.raises(ValueError, match=match),
     ):
         harmonic_vdos_simulation(_si2o7_dimer(), _potential(), max_atoms=8, **GROUP_KWARGS)
@@ -742,7 +751,9 @@ def test_harmonic_vdos_simulation_invalid_inputs_raise(kwargs, match):
     """Invalid arguments raise before the LAMMPS runner is called."""
     arguments = {"potential": _potential(), **GROUP_KWARGS, **kwargs}
     with (
-        patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner,
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+        ) as runner,
         pytest.raises(ValueError, match=match),
     ):
         harmonic_vdos_simulation(_si2o7_dimer(), **arguments)
@@ -786,7 +797,7 @@ def test_harmonic_vdos_simulation_eigenvectors(keep_eigenvectors):
         buffers.append(weakref.ref(root))
         return modes
 
-    with patch.object(vibrational, "diagonalize_dynamical_matrix", side_effect=spy):
+    with patch.object(harmonic_simulation, "diagonalize_dynamical_matrix", side_effect=spy):
         out, _, matrix, minimised = _run_harmonic(keep_eigenvectors=keep_eigenvectors)
     gc.collect()
     assert (buffers[0]() is not None) is keep_eigenvectors
@@ -814,3 +825,23 @@ def test_harmonic_vdos_simulation_thermodynamics():
             assert three_n[key] == value
         else:
             np.testing.assert_allclose(three_n[key], value, rtol=1e-12)
+
+
+def test_harmonic_vdos_simulation_without_positive_mode_skips_thermodynamics():
+    """With every kept mode imaginary, the result is still returned, with a warning and no thermodynamics."""
+    minimised = _minimised_dimer()
+    matrix = -_dynamical_matrix(minimised.get_masses())  # translations stay at 0, every other mode turns imaginary
+    with (
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix",
+            autospec=True,
+            side_effect=_fake_dynamical_matrix_runner(minimised, matrix),
+        ),
+        pytest.warns(UserWarning, match="24 imaginary mode"),
+        pytest.warns(UserWarning, match="No mode has a positive frequency"),
+    ):
+        out = harmonic_vdos_simulation(
+            _si2o7_dimer(), _potential(), temperatures_k=HARMONIC_TEMPERATURES_K, **GROUP_KWARGS
+        )
+    assert out["thermodynamics"] is None
+    assert out["n_imaginary_excluded"] == len(out["mode_frequencies_thz"])
