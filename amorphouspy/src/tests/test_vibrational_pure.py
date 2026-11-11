@@ -463,6 +463,8 @@ def _vdos_invalid_cases() -> list:
     nan_velocities = good.copy()
     nan_velocities[4, 1, 2] = np.nan
     translation = np.broadcast_to(np.array([0.1, 0.2, 0.3]), (10, 2, 3))
+    first_frame_only = np.zeros((10, 2, 3))  # the periodic Hann window is exactly 0 at frame 0
+    first_frame_only[0] = good[0]
     return [
         pytest.param(good[:, :, 0], masses, DT_FS, {}, "shape", id="2d-velocities"),
         pytest.param(good[:, :, :2], masses, DT_FS, {}, "shape", id="two-components"),
@@ -475,6 +477,11 @@ def _vdos_invalid_cases() -> list:
         pytest.param(good, np.array([M_SI, 0.0]), DT_FS, {}, "positive and finite", id="mass-zero"),
         pytest.param(good, np.array([-M_SI, M_O]), DT_FS, {}, "positive and finite", id="mass-negative"),
         pytest.param(nan_velocities, masses, DT_FS, {}, "NaN or inf", id="velocity-nan"),
+        pytest.param(good.astype(np.complex128), masses, DT_FS, {}, "real numeric", id="velocity-complex"),
+        pytest.param(good.astype(object), masses, DT_FS, {}, "real numeric", id="velocity-object"),
+        pytest.param(
+            first_frame_only, masses, DT_FS, {"window": "hann"}, "window removes all motion", id="window-removes-motion"
+        ),
         pytest.param(translation, masses, DT_FS, {}, "zero after removing", id="uniform-translation"),
         pytest.param(np.zeros((10, 2, 3)), masses, DT_FS, {}, "all velocities are zero", id="all-zero"),
         pytest.param(good, masses, DT_FS, {"normalization": "per-atom"}, "Unknown normalization", id="normalization"),
@@ -813,6 +820,7 @@ _SHARED_INVALID_IDS = {
     "dt-none",
     "mass-negative",
     "velocity-nan",
+    "velocity-complex",
     "uniform-translation",
     "all-zero",
     "indices-range",
@@ -1047,6 +1055,19 @@ def test_thermodynamics_debye_solid():
     np.testing.assert_allclose(result["heat_capacity_kb_per_atom"], expected, rtol=1e-7)
 
 
+@pytest.mark.parametrize("temperature", [5e-324, 1e-310, 1e-307])
+def test_thermodynamics_subnormal_temperature(temperature):
+    """H nu / (k_B T) overflows at a subnormal T; the T = 0 limits are returned, without NaN or a warning."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = compute_vibrational_thermodynamics(DEBYE_GRID_THZ, DEBYE_VDOS, temperature)
+    zpe = result["zero_point_energy_mev_per_atom"]
+    assert result["heat_capacity_kb_per_atom"][0] == 0.0
+    assert result["entropy_kb_per_atom"][0] == 0.0
+    assert result["internal_energy_mev_per_atom"][0] == zpe
+    assert result["free_energy_mev_per_atom"][0] == zpe
+
+
 def test_thermodynamics_limits_and_free_energy():
     """T = 0 gives the exact limits, high T the classical 3 k_B, F = U - T S throughout, and nothing overflows."""
     temps = np.array([0.0, 1e-3, 300.0, 1e6])
@@ -1128,7 +1149,11 @@ def _thermodynamics_invalid_cases() -> list:
         pytest.param(freqs[::-1], DEBYE_VDOS, 300.0, {}, "strictly increasing", id="unsorted"),
         pytest.param([-1.0, 0.0], [1.0, 1.0], 300.0, {}, "above 0 THz", id="no-positive-frequency"),
         pytest.param(freqs, DEBYE_VDOS, [-1.0, 300.0], {}, "non-negative", id="temperature-negative"),
+        pytest.param(freqs, DEBYE_VDOS, True, {}, "not booleans", id="temperature-bool"),
+        pytest.param(freqs, DEBYE_VDOS, [True, False], {}, "not booleans", id="temperature-bool-list"),
         pytest.param(freqs, DEBYE_VDOS, 300.0, {"lowest_frequency_thz": 0.0}, "positive and finite", id="lowest-zero"),
+        pytest.param(freqs, DEBYE_VDOS, 300.0, {"lowest_frequency_thz": "1"}, "positive and finite", id="lowest-str"),
+        pytest.param(freqs, DEBYE_VDOS, 300.0, {"lowest_frequency_thz": True}, "positive and finite", id="lowest-bool"),
     ]
 
 
@@ -1541,6 +1566,8 @@ def _harmonic_invalid_cases():
         pytest.param(f, np.zeros((6, 6)), {}, r"\(3N, 3N - 3\)", id="vectors-rows"),
         pytest.param(f, np.zeros((9, 5)), {}, r"\(3N, 3N - 3\)", id="vectors-columns"),
         pytest.param(f, None, {"broadening_thz": 0.0}, "positive and finite", id="broadening-zero"),
+        pytest.param(f, None, {"broadening_thz": None}, "positive and finite", id="broadening-none"),
+        pytest.param(f, None, {"broadening_thz": True}, "positive and finite", id="broadening-bool"),
         pytest.param(f, None, {"groups": groups}, "groups need eigenvectors", id="groups-without-vectors"),
         pytest.param(f, vectors, {"groups": {}}, "no labels", id="groups-empty"),
         pytest.param(f, None, {"normalization": "none"}, "Unknown normalization", id="normalization"),

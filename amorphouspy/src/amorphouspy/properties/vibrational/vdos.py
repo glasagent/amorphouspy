@@ -77,6 +77,9 @@ def _vdos_columns(
         if weights is None:
             return frequencies_thz, power * (2 * dt_ps / n_frames)
         return frequencies_thz, power * (2 * dt_ps / float(np.sum(weights**2)))
+    if not parseval_sum > 0:
+        msg = "The windowed velocity spectrum is zero (the window removes all motion)."
+        raise ValueError(msg)
     reference_integral = 0.5 * float(frequencies_thz[1]) * parseval_sum
     scale = 1.0 if normalization == "unit" else 3.0 * n_atoms
     return frequencies_thz, power * (scale / reference_integral)
@@ -178,10 +181,11 @@ def compute_vdos_from_velocities(
     Raises:
         ValueError: If ``velocities`` is not ``(n_frames, n_atoms, 3)`` with at least one atom, ``masses`` does not
             have shape ``(n_atoms,)``, there are fewer than 2 frames, ``dt_fs`` is not a positive finite number, any
-            mass is not positive and finite, ``velocities`` contains NaN or inf, ``normalization`` or ``window`` is
-            unknown, ``indices`` is empty, not 1-D integer, out of range or has duplicates, or the spectrum vanishes
-            (all velocities zero, or no motion left after centre-of-mass removal, e.g. every atom moves with the same
-            velocity).
+            mass is not positive and finite, ``velocities`` is not real numeric or contains NaN or inf,
+            ``normalization`` or ``window`` is unknown, ``indices`` is empty, not 1-D integer, out of range or has
+            duplicates, or the spectrum vanishes (all velocities zero, no motion left after centre-of-mass removal,
+            e.g. every atom moves with the same velocity, or, with ``"unit"`` or ``"3N"``, no motion left after the
+            window).
 
     Example:
         ```pycon

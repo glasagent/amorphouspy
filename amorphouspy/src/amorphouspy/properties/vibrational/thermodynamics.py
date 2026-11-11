@@ -6,12 +6,14 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.constants import Boltzmann, e, h
 
-from amorphouspy.properties.vibrational._common import _MIN_GRID_POINTS
+from amorphouspy.properties.vibrational._common import _MIN_GRID_POINTS, _is_real_number
 from amorphouspy.properties.vibrational.units import _THZ_TO_UNIT
 
 # h nu / k_B in K for nu = 1 THz (about 48 K), and k_B T in meV for T = 1 K.
 _THZ_TO_K = h * 1e12 / Boltzmann
 _K_TO_MEV = Boltzmann / e * 1e3
+# Cap of x = h nu / (k_B T): exp(-x / 2) is exactly 0 from x = 1491 on, so every term of a capped mode is 0.
+_MAX_REDUCED_FREQUENCY = 1500.0
 
 
 def _validate_thermodynamics_inputs(
@@ -19,7 +21,7 @@ def _validate_thermodynamics_inputs(
 ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     frequencies_thz = np.asarray(frequencies_thz, dtype=np.float64)
     vdos = np.asarray(vdos, dtype=np.float64)
-    temperatures_k = np.array(temperatures_k, dtype=np.float64, ndmin=1)
+    temperatures_k = _temperatures_array(temperatures_k)
     if frequencies_thz.ndim != 1 or vdos.shape != frequencies_thz.shape:
         msg = (
             "frequencies_thz and vdos must be 1-D arrays of the same length, "
@@ -43,6 +45,14 @@ def _validate_thermodynamics_inputs(
         raise ValueError(msg)
     _check_temperatures(temperatures_k)
     return frequencies_thz, vdos, temperatures_k
+
+
+def _temperatures_array(temperatures_k: ArrayLike) -> NDArray[np.float64]:
+    """Return ``temperatures_k`` as a float64 array of at least 1-D; raise for booleans, which would cast to 0 and 1."""
+    if np.asarray(temperatures_k).dtype == np.bool_:
+        msg = "temperatures_k must be a scalar or a non-empty 1-D array of finite, non-negative values, not booleans."
+        raise ValueError(msg)
+    return np.array(temperatures_k, dtype=np.float64, ndmin=1)
 
 
 def _check_temperatures(temperatures_k: NDArray[np.float64]) -> None:
@@ -143,7 +153,8 @@ def compute_vibrational_thermodynamics(
         lowest_thz = float(frequencies_thz[positive][0])
         source = "grid"
     else:
-        if not (np.isfinite(lowest_frequency_thz) and lowest_frequency_thz > 0):
+        is_number = _is_real_number(lowest_frequency_thz)
+        if not (is_number and np.isfinite(lowest_frequency_thz) and lowest_frequency_thz > 0):
             msg = f"lowest_frequency_thz must be positive and finite, got {lowest_frequency_thz}."
             raise ValueError(msg)
         lowest_thz = float(lowest_frequency_thz)
@@ -167,7 +178,9 @@ def compute_vibrational_thermodynamics(
     internal_energy = np.full_like(temperatures_k, zero_point)
     free_energy = np.full_like(temperatures_k, zero_point)
     for i in np.flatnonzero(temperatures_k > 0):
-        x = mode_k / temperatures_k[i]
+        # Capped where exp(-x / 2) is already exactly 0, so an overflow of x at a subnormal T cannot give inf * 0.
+        with np.errstate(over="ignore"):
+            x = np.minimum(mode_k / temperatures_k[i], _MAX_REDUCED_FREQUENCY)
         exp_neg = np.exp(-x)
         one_minus_exp_neg = -np.expm1(-x)
         occupation = exp_neg / one_minus_exp_neg  # 1 / (e^x - 1) without overflow

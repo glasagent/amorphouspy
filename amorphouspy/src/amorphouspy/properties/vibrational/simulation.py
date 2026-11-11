@@ -12,6 +12,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from amorphouspy.lammps.runner import Thermostat, _run_lammps_md, thermostat_ensembles
 from amorphouspy.properties.structural.qn import CutoffSpec
+from amorphouspy.properties.vibrational._common import _is_real_number
 from amorphouspy.properties.vibrational._trajectory import _MIN_FRAMES
 from amorphouspy.properties.vibrational.classification import classify_vibrational_groups
 from amorphouspy.properties.vibrational.vacf import compute_partial_vacf
@@ -57,7 +58,7 @@ def _vdos_simulation_settings(
         ("block_ps", block_ps),
         ("production_ps", production_ps),
     ):
-        if not (np.isfinite(value) and value > 0):
+        if not (_is_real_number(value) and np.isfinite(value) and value > 0):
             msg = f"{name} must be positive and finite, got {value}."
             raise ValueError(msg)
     if isinstance(dump_every, bool) or not isinstance(dump_every, int | np.integer) or dump_every < 1:

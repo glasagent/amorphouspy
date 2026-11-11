@@ -141,10 +141,10 @@ def compute_vacf_from_velocities(
     Raises:
         ValueError: If ``velocities`` is not ``(n_frames, n_atoms, 3)`` with at least one atom, ``masses`` does not
             have shape ``(n_atoms,)``, there are fewer than 2 frames, ``dt_fs`` is not a positive finite number, any
-            mass is not positive and finite, ``velocities`` contains NaN or inf, ``normalization`` is unknown,
-            ``max_lag_frames`` is not an integer from 1 to ``n_frames - 1``, ``indices`` is empty, not 1-D integer,
-            out of range or has duplicates, or there is no motion (all velocities zero, or none left after
-            centre-of-mass removal).
+            mass is not positive and finite, ``velocities`` is not real numeric or contains NaN or inf,
+            ``normalization`` is unknown, ``max_lag_frames`` is not an integer from 1 to ``n_frames - 1``,
+            ``indices`` is empty, not 1-D integer, out of range or has duplicates, or there is no motion (all
+            velocities zero, or none left after centre-of-mass removal).
 
     Example:
         ```pycon

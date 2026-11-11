@@ -16,6 +16,7 @@ from amorphouspy.properties.vibrational._common import (
     _N_TRANSLATIONS,
     _columns_by_group,
     _group_selections,
+    _is_real_number,
     _membership,
 )
 
@@ -83,7 +84,7 @@ def _validate_broadening_options(broadening_thz: float, normalization: str) -> N
     if normalization not in ("unit", "3N"):
         msg = f"Unknown normalization {normalization!r}; allowed values are 'unit' and '3N'."
         raise ValueError(msg)
-    if not np.isfinite(broadening_thz) or broadening_thz <= 0:
+    if not _is_real_number(broadening_thz) or not np.isfinite(broadening_thz) or broadening_thz <= 0:
         msg = f"broadening_thz must be positive and finite, got {broadening_thz!r}."
         raise ValueError(msg)
 

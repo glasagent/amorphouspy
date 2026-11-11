@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from scipy.constants import Boltzmann, atomic_mass, h
 
 from amorphouspy.atoms.neighbors import cell_perpendicular_heights
-from amorphouspy.properties.vibrational._common import VdosNormalization
+from amorphouspy.properties.vibrational._common import VdosNormalization, _is_real_number
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -87,8 +87,7 @@ def compute_debye_level(
         ```
     """
     for name, modulus in (("bulk_modulus_gpa", bulk_modulus_gpa), ("shear_modulus_gpa", shear_modulus_gpa)):
-        is_number = isinstance(modulus, int | float | np.integer | np.floating) and not isinstance(modulus, bool)
-        if not (is_number and np.isfinite(modulus) and modulus > 0):
+        if not (_is_real_number(modulus) and np.isfinite(modulus) and modulus > 0):
             msg = f"{name} must be positive and finite, got {modulus}."
             raise ValueError(msg)
     if normalization not in ("unit", "3N"):

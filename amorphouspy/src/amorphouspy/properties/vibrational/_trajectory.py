@@ -5,7 +5,7 @@ import scipy.fft
 from numpy.typing import NDArray
 
 from amorphouspy.properties.vibrational import _common
-from amorphouspy.properties.vibrational._common import _N_COMPONENTS
+from amorphouspy.properties.vibrational._common import _N_COMPONENTS, _is_real_number
 
 _VELOCITY_NDIM = 3  # (n_frames, n_atoms, 3)
 _MIN_FRAMES = 2
@@ -24,6 +24,9 @@ def _validate_trajectory(velocities: NDArray, masses: NDArray, dt_fs: float) -> 
     if velocities.ndim != _VELOCITY_NDIM or velocities.shape[2] != _N_COMPONENTS or velocities.shape[1] == 0:
         msg = f"velocities must have shape (n_frames, n_atoms, 3) with n_atoms >= 1, got {velocities.shape}."
         raise ValueError(msg)
+    if not (np.issubdtype(velocities.dtype, np.floating) or np.issubdtype(velocities.dtype, np.integer)):
+        msg = f"velocities must be a real numeric array, got dtype {velocities.dtype}."
+        raise ValueError(msg)
     n_frames, n_atoms, _ = velocities.shape
     if masses.shape != (n_atoms,):
         msg = f"masses must have shape ({n_atoms},) to match velocities, got {masses.shape}."
@@ -31,8 +34,7 @@ def _validate_trajectory(velocities: NDArray, masses: NDArray, dt_fs: float) -> 
     if n_frames < _MIN_FRAMES:
         msg = f"At least 2 frames are needed, got {n_frames}."
         raise ValueError(msg)
-    is_number = isinstance(dt_fs, int | float | np.integer | np.floating) and not isinstance(dt_fs, bool)
-    if not is_number or not np.isfinite(dt_fs) or dt_fs <= 0:
+    if not _is_real_number(dt_fs) or not np.isfinite(dt_fs) or dt_fs <= 0:
         msg = f"dt_fs must be positive and finite, got {dt_fs}."
         raise ValueError(msg)
     if not np.all(np.isfinite(masses) & (masses > 0)):

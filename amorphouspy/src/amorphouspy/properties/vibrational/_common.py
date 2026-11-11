@@ -11,6 +11,11 @@ _CHUNK_BYTES = 64 * 2**20
 _N_COMPONENTS = 3
 
 
+def _is_real_number(value: object) -> bool:
+    """True for a Python or numpy real scalar; False for bool, None, strings and arrays."""
+    return isinstance(value, int | float | np.integer | np.floating) and not isinstance(value, bool)
+
+
 def _validate_selection(indices: NDArray, n_atoms: int, name: str) -> NDArray[np.intp]:
     selection = np.asarray(indices)
     if selection.ndim != 1 or selection.size == 0 or not np.issubdtype(selection.dtype, np.integer):

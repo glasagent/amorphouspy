@@ -1,6 +1,7 @@
 """Harmonic route workflow: minimisation, dynamical matrix, VDOS and thermodynamics."""
 
 import contextlib
+import shutil
 import tempfile
 import time
 import warnings
@@ -13,6 +14,7 @@ from numpy.typing import ArrayLike
 
 from amorphouspy.lammps.runner import _is_positive_int, _run_lammps_dynamical_matrix, _validate_minimize_arguments
 from amorphouspy.properties.structural.qn import CutoffSpec
+from amorphouspy.properties.vibrational._common import _is_real_number
 from amorphouspy.properties.vibrational.classification import classify_vibrational_groups
 from amorphouspy.properties.vibrational.dynamical_matrix import (
     EigenDriver,
@@ -27,7 +29,11 @@ from amorphouspy.properties.vibrational.harmonic import (
     compute_harmonic_vdos,
     compute_participation_ratio,
 )
-from amorphouspy.properties.vibrational.thermodynamics import _check_temperatures, compute_vibrational_thermodynamics
+from amorphouspy.properties.vibrational.thermodynamics import (
+    _check_temperatures,
+    _temperatures_array,
+    compute_vibrational_thermodynamics,
+)
 
 if TYPE_CHECKING:
     from ase import Atoms
@@ -75,7 +81,7 @@ def _harmonic_simulation_settings(
     if potential.empty:
         msg = "No matching potential found for the given configuration."
         raise ValueError(msg)
-    if not np.isfinite(displacement) or displacement <= 0:
+    if not _is_real_number(displacement) or not np.isfinite(displacement) or displacement <= 0:
         msg = f"displacement must be positive and finite (Å), got {displacement!r}."
         raise ValueError(msg)
     _validate_minimize_arguments(force_tolerance, _MINIMIZE_ENERGY_TOLERANCE, max_iter, "fire", None, _MINIMIZE_N_PRINT)
@@ -83,10 +89,19 @@ def _harmonic_simulation_settings(
     if frequency_grid_thz is not None:
         _validate_frequency_grid(frequency_grid_thz)
     if temperatures_k is not None:
-        _check_temperatures(np.array(temperatures_k, dtype=np.float64, ndmin=1))
+        _check_temperatures(_temperatures_array(temperatures_k))
     _validate_eigh_options(driver, imaginary_threshold_thz)
     if keep_dynamical_matrix and tmp_working_directory is None:
         msg = "keep_dynamical_matrix=True needs a tmp_working_directory; without one every run removes its files."
+        raise ValueError(msg)
+    matrix_parent = tempfile.gettempdir() if tmp_working_directory is None else tmp_working_directory
+    matrix_bytes = 9 * n_atoms**2 * 8
+    free_bytes = shutil.disk_usage(matrix_parent).free
+    if free_bytes < matrix_bytes:
+        msg = (
+            f"The dynamical-matrix file takes 9 N² x 8 bytes = {matrix_bytes / 1e9:.3g} GB, but {matrix_parent} has "
+            f"only {free_bytes / 1e9:.3g} GB free. Pass a tmp_working_directory with enough space."
+        )
         raise ValueError(msg)
 
 
@@ -157,7 +172,9 @@ def harmonic_vdos_simulation(
     ``broadening_thz`` of 0 lose part of their weight (``"excluded_weight"`` and ``"vdos_integral"`` report it).
 
     Disk and memory: the matrix file takes 9 N² x 8 bytes (2.6 GB at 6000 atoms, 7.2 GB at 10,000) and is deleted once
-    it is read unless ``keep_dynamical_matrix``. The peak in memory is still 2 matrices, during the diagonalisation.
+    it is read unless ``keep_dynamical_matrix``. It is written under ``tmp_working_directory`` or, if that is None,
+    under the system temporary directory (``tempfile.gettempdir()``, set by ``TMPDIR``); the free space there is
+    checked before anything runs. The peak in memory is still 2 matrices, during the diagonalisation.
     Without the eigenvectors, the result holds only O(M x number of labels) floats (the mode frequencies, participation
     ratios and group weights) plus the VDOS curves on the frequency grid. An eigenvector-based analysis later needs
     ``keep_eigenvectors=True`` or a rerun.
@@ -234,8 +251,9 @@ def harmonic_vdos_simulation(
             ``force_tolerance`` is negative, zero or not finite, ``max_iter`` is not a positive integer,
             ``broadening_thz`` is not positive and finite, ``normalization`` is unknown, ``frequency_grid_thz`` is not
             1-D, finite and strictly increasing with at least 2 points, ``temperatures_k`` is not finite and >= 0,
-            ``driver`` is unknown, ``imaginary_threshold_thz`` is not >= 0, or ``keep_dynamical_matrix`` is True
-            without a ``tmp_working_directory``. After the LAMMPS runs, if ``cutoff``, ``former_types`` or ``o_type``
+            ``driver`` is unknown, ``imaginary_threshold_thz`` is not >= 0, ``keep_dynamical_matrix`` is True
+            without a ``tmp_working_directory``, or the directory of the matrix file has less free space than the
+            file needs. After the LAMMPS runs, if ``cutoff``, ``former_types`` or ``o_type``
             is invalid for :func:`classify_vibrational_groups`.
         RuntimeError: If a LAMMPS run fails or the matrix file is missing or has the wrong size.
 

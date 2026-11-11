@@ -6,6 +6,7 @@ mass-weighted matrix, and everything after it runs for real.
 """
 
 import gc
+import shutil
 import tempfile
 import warnings
 import weakref
@@ -497,6 +498,8 @@ def test_vdos_simulation_nyquist_warning():
     [
         ({"potential": pd.DataFrame()}, "No matching potential"),
         ({"timestep": 0.0}, "timestep must be positive and finite"),
+        ({"timestep": None}, "timestep must be positive and finite"),
+        ({"temperature_sim": True}, "temperature_sim must be positive and finite"),
         ({"block_ps": -1.0}, "block_ps must be positive and finite"),
         ({"temperature_sim": float("nan")}, "temperature_sim must be positive and finite"),
         ({"dump_every": 0}, "dump_every must be a positive integer"),
@@ -518,6 +521,8 @@ def test_vdos_simulation_nyquist_warning():
     ids=[
         "potential-empty",
         "timestep-zero",
+        "timestep-none",
+        "temperature-bool",
         "block-negative",
         "temperature-nan",
         "dump-zero",
@@ -716,6 +721,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         ({"potential": pd.DataFrame()}, "No matching potential"),
         ({"displacement": 0.0}, "displacement must be positive and finite"),
         ({"displacement": float("nan")}, "displacement must be positive and finite"),
+        ({"displacement": None}, "displacement must be positive and finite"),
         ({"force_tolerance": -1e-6}, "force_tolerance must be finite and non-negative"),
         ({"force_tolerance": 0.0}, "cannot both be 0"),
         ({"max_iter": 0}, "max_iter must be a positive integer"),
@@ -723,6 +729,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         ({"normalization": "none"}, "Unknown normalization"),
         ({"frequency_grid_thz": [2.0, 1.0]}, "frequency_grid_thz must be"),
         ({"temperatures_k": [300.0, -1.0]}, "temperatures_k must be"),
+        ({"temperatures_k": True}, "temperatures_k must be.*not booleans"),
         ({"driver": "evz"}, "Unknown driver"),
         ({"imaginary_threshold_thz": -0.01}, "imaginary_threshold_thz must be >= 0"),
         ({"keep_dynamical_matrix": True}, "keep_dynamical_matrix=True needs a tmp_working_directory"),
@@ -735,6 +742,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         "potential-empty",
         "displacement-zero",
         "displacement-nan",
+        "displacement-none",
         "force-tolerance-negative",
         "force-tolerance-zero",
         "max-iter-zero",
@@ -742,6 +750,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         "normalization-none",
         "grid-decreasing",
         "temperature-negative",
+        "temperature-bool",
         "driver",
         "threshold-negative",
         "keep-matrix-without-directory",
@@ -782,6 +791,35 @@ def test_harmonic_vdos_simulation_matrix_file(directory, keep_dynamical_matrix, 
     if directory:
         assert path.parent.parent == tmp_path
         assert (tmp_path / "lammps_run" / "log.lammps").exists()
+
+
+@pytest.mark.parametrize("directory", [False, True], ids=["system-temp", "tmp_working_directory"])
+def test_harmonic_vdos_simulation_checks_free_space(monkeypatch, directory, tmp_path):
+    """Too little free space where the matrix file goes raises before the runner; exactly enough space runs."""
+    matrix_bytes = 9 * 9**2 * 8
+    parent = str(tmp_path) if directory else tempfile.gettempdir()
+    kwargs = {"tmp_working_directory": tmp_path} if directory else {}
+    checked = []
+
+    def usage(free):
+        def disk_usage(path):
+            checked.append(str(path))
+            return shutil._ntuple_diskusage(2 * free, free, free)  # noqa: SLF001
+
+        return disk_usage
+
+    monkeypatch.setattr(harmonic_simulation.shutil, "disk_usage", usage(matrix_bytes - 1))
+    with (
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+        ) as runner,
+        pytest.raises(ValueError, match=r"9 N² x 8 bytes = 5.83e-06 GB, but .* has only 5.83e-06 GB free"),
+    ):
+        harmonic_vdos_simulation(_si2o7_dimer(), _potential(), **GROUP_KWARGS, **kwargs)
+    assert runner.call_count == 0
+    monkeypatch.setattr(harmonic_simulation.shutil, "disk_usage", usage(matrix_bytes))
+    assert _run_harmonic(**kwargs)[1].call_count == 1
+    assert checked == [parent, parent]
 
 
 @pytest.mark.parametrize("keep_eigenvectors", [False, True], ids=["drop", "keep"])
