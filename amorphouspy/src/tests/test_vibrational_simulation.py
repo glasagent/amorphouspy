@@ -6,6 +6,7 @@ mass-weighted matrix, and everything after it runs for real.
 """
 
 import gc
+import shutil
 import tempfile
 import warnings
 import weakref
@@ -15,7 +16,6 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
-from amorphouspy.properties import vibrational
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
     compute_harmonic_vdos,
@@ -24,6 +24,7 @@ from amorphouspy.properties.vibrational import (
     compute_participation_ratio,
     compute_vibrational_thermodynamics,
     diagonalize_dynamical_matrix,
+    harmonic_simulation,
     harmonic_vdos_simulation,
     read_dynamical_matrix,
     vdos_simulation,
@@ -90,7 +91,7 @@ def _potential():
 def _run(structure, generic, *, potential=None, side_effect=None, **kwargs):
     """Call vdos_simulation with the MD runner mocked; by default every stage returns the input structure."""
     arguments = {"thermostat": "nose_hoover", "equilibration_steps": 50, **BLOCK, **GROUP_KWARGS, **kwargs}
-    with patch("amorphouspy.properties.vibrational._run_lammps_md", autospec=True) as mock_md:
+    with patch("amorphouspy.properties.vibrational.simulation._run_lammps_md", autospec=True) as mock_md:
         mock_md.return_value = (structure, {"generic": generic})
         mock_md.side_effect = side_effect
         out = vdos_simulation(structure, _potential() if potential is None else potential, **arguments)
@@ -359,11 +360,13 @@ def test_vdos_simulation_dump_cleanup(keep_trajectory, tmp_path):
         dumps_at_launch.append(len(list(tmp_path.glob("vdos_nve_block_*/*/dump.out"))))
         return fake(**kwargs)
 
+    checked = []
+
     def vacf_after_dump_check(*args, **kwargs):
-        assert (run_dirs[-1] / "dump.out").exists()
+        checked.append((run_dirs[-1] / "dump.out").exists())
         return compute_partial_vacf(*args, **kwargs)
 
-    with patch("amorphouspy.properties.vibrational.compute_partial_vacf", side_effect=vacf_after_dump_check):
+    with patch("amorphouspy.properties.vibrational.simulation.compute_partial_vacf", side_effect=vacf_after_dump_check):
         _run(
             structure,
             None,
@@ -373,6 +376,7 @@ def test_vdos_simulation_dump_cleanup(keep_trajectory, tmp_path):
             keep_trajectory=keep_trajectory,
         )
 
+    assert checked == [True] * 3  # the patch took effect: each block's dump existed when its VACF was computed
     block_dirs = [run_dir.parent for run_dir in run_dirs[2:]]
     assert [d.parent for d in block_dirs] == [tmp_path] * 3
     assert all(d.name.startswith(f"vdos_nve_block_{block:03d}_") for block, d in enumerate(block_dirs, start=1))
@@ -494,12 +498,15 @@ def test_vdos_simulation_nyquist_warning():
     [
         ({"potential": pd.DataFrame()}, "No matching potential"),
         ({"timestep": 0.0}, "timestep must be positive and finite"),
+        ({"timestep": None}, "timestep must be positive and finite"),
+        ({"temperature_sim": True}, "temperature_sim must be positive and finite"),
         ({"block_ps": -1.0}, "block_ps must be positive and finite"),
         ({"temperature_sim": float("nan")}, "temperature_sim must be positive and finite"),
         ({"dump_every": 0}, "dump_every must be a positive integer"),
         ({"dump_every": 2.5}, "dump_every must be a positive integer"),
         ({"dump_every": True}, "dump_every must be a positive integer"),
         ({"equilibration_steps": -1}, "equilibration_steps must not be negative"),
+        ({"equilibration_steps": 1.5}, "equilibration_steps must not be negative and must be an integer"),
         ({"normalization": "none"}, "Unknown normalization"),
         ({"window": "gaussian"}, "Unknown window 'gaussian'"),
         ({"timestep": 3.0}, "not a whole number of 3.0 fs timesteps"),
@@ -514,12 +521,15 @@ def test_vdos_simulation_nyquist_warning():
     ids=[
         "potential-empty",
         "timestep-zero",
+        "timestep-none",
+        "temperature-bool",
         "block-negative",
         "temperature-nan",
         "dump-zero",
         "dump-float",
         "dump-bool",
         "equilibration-negative",
+        "equilibration-float",
         "normalization-none",
         "window-gaussian-without-std",
         "block-not-whole-steps",
@@ -536,7 +546,7 @@ def test_vdos_simulation_invalid_inputs_raise(kwargs, match):
     """Invalid arguments raise before any MD stage is launched."""
     arguments = {"potential": _potential(), "thermostat": "nose_hoover", **BLOCK, **GROUP_KWARGS, **kwargs}
     with (
-        patch("amorphouspy.properties.vibrational._run_lammps_md", autospec=True) as mock_md,
+        patch("amorphouspy.properties.vibrational.simulation._run_lammps_md", autospec=True) as mock_md,
         pytest.raises(ValueError, match=match),
     ):
         vdos_simulation(_si2o7_dimer(), **arguments)
@@ -601,7 +611,9 @@ def _run_harmonic(**kwargs):
     """Call harmonic_vdos_simulation on the dimer with the runner mocked; return result, mock, matrix and structure."""
     minimised = _minimised_dimer()
     matrix = _dynamical_matrix(minimised.get_masses())
-    with patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner:
+    with patch(
+        "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+    ) as runner:
         runner.side_effect = _fake_dynamical_matrix_runner(minimised, matrix)
         out = harmonic_vdos_simulation(_si2o7_dimer(), _potential(), **{**GROUP_KWARGS, **kwargs})
     return out, runner, matrix, minimised
@@ -622,7 +634,7 @@ def _assert_same(actual, expected):
 def test_harmonic_vdos_simulation_matches_manual_chain(tmp_path):
     """The result is exactly read -> diagonalize -> VDOS -> participation ratio -> thermodynamics on the matrix."""
     with patch.object(
-        vibrational, "diagonalize_dynamical_matrix", wraps=vibrational.diagonalize_dynamical_matrix
+        harmonic_simulation, "diagonalize_dynamical_matrix", wraps=harmonic_simulation.diagonalize_dynamical_matrix
     ) as diagonalize:
         out, runner, matrix, minimised = _run_harmonic(temperatures_k=HARMONIC_TEMPERATURES_K, keep_eigenvectors=True)
 
@@ -690,7 +702,9 @@ def test_harmonic_vdos_simulation_atom_guard():
     assert _run_harmonic(max_atoms=9)[1].call_count == 1
     match = r"9 atoms, more than max_atoms=8.*9 N² x 8 bytes = 5.83e-06 GB.*2 matrices, 1.17e-05 GB. Raise max_atoms"
     with (
-        patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner,
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+        ) as runner,
         pytest.raises(ValueError, match=match),
     ):
         harmonic_vdos_simulation(_si2o7_dimer(), _potential(), max_atoms=8, **GROUP_KWARGS)
@@ -707,6 +721,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         ({"potential": pd.DataFrame()}, "No matching potential"),
         ({"displacement": 0.0}, "displacement must be positive and finite"),
         ({"displacement": float("nan")}, "displacement must be positive and finite"),
+        ({"displacement": None}, "displacement must be positive and finite"),
         ({"force_tolerance": -1e-6}, "force_tolerance must be finite and non-negative"),
         ({"force_tolerance": 0.0}, "cannot both be 0"),
         ({"max_iter": 0}, "max_iter must be a positive integer"),
@@ -714,6 +729,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         ({"normalization": "none"}, "Unknown normalization"),
         ({"frequency_grid_thz": [2.0, 1.0]}, "frequency_grid_thz must be"),
         ({"temperatures_k": [300.0, -1.0]}, "temperatures_k must be"),
+        ({"temperatures_k": True}, "temperatures_k must be.*not booleans"),
         ({"driver": "evz"}, "Unknown driver"),
         ({"imaginary_threshold_thz": -0.01}, "imaginary_threshold_thz must be >= 0"),
         ({"keep_dynamical_matrix": True}, "keep_dynamical_matrix=True needs a tmp_working_directory"),
@@ -726,6 +742,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         "potential-empty",
         "displacement-zero",
         "displacement-nan",
+        "displacement-none",
         "force-tolerance-negative",
         "force-tolerance-zero",
         "max-iter-zero",
@@ -733,6 +750,7 @@ def test_harmonic_vdos_simulation_atom_guard():
         "normalization-none",
         "grid-decreasing",
         "temperature-negative",
+        "temperature-bool",
         "driver",
         "threshold-negative",
         "keep-matrix-without-directory",
@@ -742,7 +760,9 @@ def test_harmonic_vdos_simulation_invalid_inputs_raise(kwargs, match):
     """Invalid arguments raise before the LAMMPS runner is called."""
     arguments = {"potential": _potential(), **GROUP_KWARGS, **kwargs}
     with (
-        patch("amorphouspy.properties.vibrational._run_lammps_dynamical_matrix", autospec=True) as runner,
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+        ) as runner,
         pytest.raises(ValueError, match=match),
     ):
         harmonic_vdos_simulation(_si2o7_dimer(), **arguments)
@@ -773,6 +793,35 @@ def test_harmonic_vdos_simulation_matrix_file(directory, keep_dynamical_matrix, 
         assert (tmp_path / "lammps_run" / "log.lammps").exists()
 
 
+@pytest.mark.parametrize("directory", [False, True], ids=["system-temp", "tmp_working_directory"])
+def test_harmonic_vdos_simulation_checks_free_space(monkeypatch, directory, tmp_path):
+    """Too little free space where the matrix file goes raises before the runner; exactly enough space runs."""
+    matrix_bytes = 9 * 9**2 * 8
+    parent = str(tmp_path) if directory else tempfile.gettempdir()
+    kwargs = {"tmp_working_directory": tmp_path} if directory else {}
+    checked = []
+
+    def usage(free):
+        def disk_usage(path):
+            checked.append(str(path))
+            return shutil._ntuple_diskusage(2 * free, free, free)  # noqa: SLF001
+
+        return disk_usage
+
+    monkeypatch.setattr(harmonic_simulation.shutil, "disk_usage", usage(matrix_bytes - 1))
+    with (
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+        ) as runner,
+        pytest.raises(ValueError, match=r"9 N² x 8 bytes = 5.83e-06 GB, but .* has only 5.83e-06 GB free"),
+    ):
+        harmonic_vdos_simulation(_si2o7_dimer(), _potential(), **GROUP_KWARGS, **kwargs)
+    assert runner.call_count == 0
+    monkeypatch.setattr(harmonic_simulation.shutil, "disk_usage", usage(matrix_bytes))
+    assert _run_harmonic(**kwargs)[1].call_count == 1
+    assert checked == [parent, parent]
+
+
 @pytest.mark.parametrize("keep_eigenvectors", [False, True], ids=["drop", "keep"])
 def test_harmonic_vdos_simulation_eigenvectors(keep_eigenvectors):
     """The eigenvectors are returned only when kept; otherwise their buffer is freed and every other entry is equal."""
@@ -786,7 +835,7 @@ def test_harmonic_vdos_simulation_eigenvectors(keep_eigenvectors):
         buffers.append(weakref.ref(root))
         return modes
 
-    with patch.object(vibrational, "diagonalize_dynamical_matrix", side_effect=spy):
+    with patch.object(harmonic_simulation, "diagonalize_dynamical_matrix", side_effect=spy):
         out, _, matrix, minimised = _run_harmonic(keep_eigenvectors=keep_eigenvectors)
     gc.collect()
     assert (buffers[0]() is not None) is keep_eigenvectors
@@ -814,3 +863,23 @@ def test_harmonic_vdos_simulation_thermodynamics():
             assert three_n[key] == value
         else:
             np.testing.assert_allclose(three_n[key], value, rtol=1e-12)
+
+
+def test_harmonic_vdos_simulation_without_positive_mode_skips_thermodynamics():
+    """With every kept mode imaginary, the result is still returned, with a warning and no thermodynamics."""
+    minimised = _minimised_dimer()
+    matrix = -_dynamical_matrix(minimised.get_masses())  # translations stay at 0, every other mode turns imaginary
+    with (
+        patch(
+            "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix",
+            autospec=True,
+            side_effect=_fake_dynamical_matrix_runner(minimised, matrix),
+        ),
+        pytest.warns(UserWarning, match="24 imaginary mode"),
+        pytest.warns(UserWarning, match="No mode has a positive frequency"),
+    ):
+        out = harmonic_vdos_simulation(
+            _si2o7_dimer(), _potential(), temperatures_k=HARMONIC_TEMPERATURES_K, **GROUP_KWARGS
+        )
+    assert out["thermodynamics"] is None
+    assert out["n_imaginary_excluded"] == len(out["mode_frequencies_thz"])
