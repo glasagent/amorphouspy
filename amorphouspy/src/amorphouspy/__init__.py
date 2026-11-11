@@ -20,7 +20,7 @@ from amorphouspy.fabrication.meltquench import extract_equilibration_frames, mel
 from amorphouspy.lammps.io import frames_from_melt_quench_result, load_lammps_dump, structure_from_parsed_output
 from amorphouspy.lammps.md import md_simulation
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
-from amorphouspy.lammps.potentials.potential import generate_potential
+from amorphouspy.lammps.potentials.potential import charges_from_potential, generate_potential
 from amorphouspy.pipelines.meltquench import generate_structure, run_melt_quench
 from amorphouspy.properties.cte import cte_from_fluctuations_simulation, temperature_scan_simulation
 from amorphouspy.properties.cte_analysis import (
@@ -59,7 +59,11 @@ from amorphouspy.properties.structural.structure_factor import compute_structure
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
     compute_debye_level,
+    compute_dielectric_from_velocities,
+    compute_dielectric_function,
     compute_harmonic_vdos,
+    compute_ir_oscillator_strengths,
+    compute_optical_response,
     compute_partial_vacf,
     compute_partial_vdos,
     compute_participation_ratio,
@@ -83,6 +87,7 @@ __all__ = [
     "WolfConfig",
     "analyze_structure",
     "average_over_frames",
+    "charges_from_potential",
     "check_neutral_oxide",
     "classify_oxygens",
     "classify_vibrational_groups",
@@ -90,10 +95,14 @@ __all__ = [
     "compute_cavities",
     "compute_coordination",
     "compute_debye_level",
+    "compute_dielectric_from_velocities",
+    "compute_dielectric_function",
     "compute_guttmann_rings",
     "compute_harmonic_vdos",
+    "compute_ir_oscillator_strengths",
     "compute_msd",
     "compute_network_connectivity",
+    "compute_optical_response",
     "compute_partial_vacf",
     "compute_partial_vdos",
     "compute_participation_ratio",

@@ -76,6 +76,7 @@ nav:
         - Viscosity: theory/workflows/viscosity.md
         - CTE: theory/workflows/cte.md
         - Vibrational DOS: theory/workflows/vdos.md
+        - Infrared Response: theory/workflows/infrared.md
     - Structural Analysis:
         - theory/analysis/index.md
         - RDF & Coordination: theory/analysis/rdf.md

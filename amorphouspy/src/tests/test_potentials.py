@@ -41,6 +41,7 @@ from amorphouspy.lammps.potentials.potential import (
     EwaldConfig,
     PppmConfig,
     WolfConfig,
+    charges_from_potential,
     compatible_potentials,
     generate_potential,
     get_supported_elements,
@@ -65,6 +66,7 @@ from amorphouspy.lammps.potentials.yang_potential import (
 from amorphouspy.lammps.potentials.yang_potential import (
     supported_elements as yang_supported_elements,
 )
+from ase import Atoms
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1322,3 +1324,48 @@ def test_yang2026_omits_melt_block():
     config = "".join(result["Config"].iloc[0])
     assert "run 10000" not in config
     assert "langevinnve" not in config
+
+
+# ---------------------------------------------------------------------------
+# charges_from_potential
+# ---------------------------------------------------------------------------
+
+
+def test_charges_from_potential_pmmcs_follows_atom_order():
+    """PMMCS gives Si 2.4 and O -1.2 in the order of the atoms, whatever the order of the species."""
+    potential = generate_pmmcs_potential(_sio2_atoms_dict())
+    assert potential["Species"].iloc[0] == ["O", "Si"]
+    charges = charges_from_potential(potential, Atoms("OSiOSiO2"))
+    np.testing.assert_array_equal(charges, [-1.2, 2.4, -1.2, 2.4, -1.2, -1.2])
+    assert charges.dtype == np.float64
+
+
+def test_charges_from_potential_shik_oxygen_charge_is_neutral():
+    """SHIK's composition-dependent oxygen charge is read from the config, so the cell is neutral."""
+    atoms_dict = {"atoms": [{"element": "Na"}] * 2 + [{"element": "Si"}] * 3 + [{"element": "O"}] * 7}
+    potential = generate_shik_potential(atoms_dict)
+    charges = charges_from_potential(potential, Atoms("Na2Si3O7"))
+    assert charges[:2] == pytest.approx(shik_charges["Na"])
+    assert charges[2:5] == pytest.approx(shik_charges["Si"])
+    assert charges[5:] == pytest.approx(compute_oxygen_charge(atoms_dict, shik_charges), abs=1e-6)
+    assert abs(charges.sum()) < 1e-5
+
+
+@pytest.mark.parametrize(
+    ("potential", "match"),
+    [
+        pytest.param(pd.DataFrame(), "No matching potential", id="empty"),
+        pytest.param(
+            pd.DataFrame({"Species": [["O", "Si"]], "Config": [["pair_style mlip\n"]]}), "sets no charges", id="none"
+        ),
+        pytest.param(
+            pd.DataFrame({"Species": [["O", "Si"]], "Config": [["set type 1 charge -1.2\n"]]}),
+            "no charge for Si",
+            id="missing-element",
+        ),
+    ],
+)
+def test_charges_from_potential_invalid_raises(potential, match):
+    """An empty potential, one without charge lines and one without a charge for an element raise."""
+    with pytest.raises(ValueError, match=match):
+        charges_from_potential(potential, Atoms("SiO2"))

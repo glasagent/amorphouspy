@@ -3,8 +3,11 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+import re
 import warnings
+from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
 from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, InteractionConfig, PppmConfig, WolfConfig
@@ -16,7 +19,13 @@ from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
 from . import yang_potential as yang2026
 
+if TYPE_CHECKING:
+    from ase import Atoms
+
 __all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfConfig"]
+
+# A charge assignment of a potential: "set type 2 charge -1.2".
+_SET_CHARGE = re.compile(r"^\s*set\s+type\s+(\d+)\s+charge\s+(\S+)")
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
 POTENTIAL_PREFERENCE = (
@@ -207,3 +216,49 @@ def generate_potential(
         return yang2026.generate_yang2026_potential(atoms_dict, electrostatics=electrostatics)
     msg = f"Unsupported potential type: {potential_type}"
     raise ValueError(msg)
+
+
+def charges_from_potential(potential: pd.DataFrame, structure: "Atoms") -> np.ndarray:
+    """Return the charge that a potential assigns to every atom of a structure.
+
+    The potentials of :func:`generate_potential` set one fixed charge per atom type with lines
+    ``set type N charge q`` in their ``Config``, and LAMMPS numbers the types in the order of ``Species``. This
+    reads those lines back, so the charges are the ones the simulation uses, including a charge that depends on
+    the composition such as the oxygen charge of SHIK.
+
+    Args:
+        potential: The potential DataFrame with the columns ``Species`` and ``Config``, e.g. from
+            :func:`generate_potential`.
+        structure: The structure whose atoms are to be charged.
+
+    Returns:
+        The charges in units of the elementary charge, shape ``(len(structure),)``, in the order of the atoms.
+
+    Raises:
+        ValueError: If the potential is empty, has no ``set type N charge q`` line, or does not define a charge
+            for an element of the structure.
+
+    Example:
+        >>> potential = generate_potential(struct_dict, potential_type="pmmcs")
+        >>> charges = charges_from_potential(potential, structure)
+
+    """
+    if potential.empty:
+        msg = "No matching potential found for the given configuration."
+        raise ValueError(msg)
+    species = list(potential["Species"].iloc[0])
+    by_type = {}
+    for line in potential["Config"].iloc[0]:
+        match = _SET_CHARGE.match(line)
+        if match:
+            by_type[int(match.group(1))] = float(match.group(2))
+    if not by_type:
+        msg = "The potential sets no charges (no 'set type N charge q' line in its Config); pass charges explicitly."
+        raise ValueError(msg)
+    by_element = {element: by_type[number] for number, element in enumerate(species, start=1) if number in by_type}
+    symbols = structure.get_chemical_symbols()
+    missing = sorted(set(symbols) - set(by_element))
+    if missing:
+        msg = f"The potential defines no charge for {', '.join(missing)}; its species are {species}."
+        raise ValueError(msg)
+    return np.array([by_element[symbol] for symbol in symbols], dtype=np.float64)

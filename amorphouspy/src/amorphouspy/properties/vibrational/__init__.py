@@ -20,6 +20,12 @@ from amorphouspy.properties.vibrational.harmonic import (
     compute_participation_ratio,
 )
 from amorphouspy.properties.vibrational.harmonic_simulation import harmonic_vdos_simulation
+from amorphouspy.properties.vibrational.infrared import (
+    compute_dielectric_from_velocities,
+    compute_dielectric_function,
+    compute_ir_oscillator_strengths,
+    compute_optical_response,
+)
 from amorphouspy.properties.vibrational.simulation import vdos_simulation
 from amorphouspy.properties.vibrational.thermodynamics import compute_vibrational_thermodynamics
 from amorphouspy.properties.vibrational.units import FrequencyUnit, convert_frequency
@@ -40,7 +46,11 @@ __all__ = [
     "VdosWindow",
     "classify_vibrational_groups",
     "compute_debye_level",
+    "compute_dielectric_from_velocities",
+    "compute_dielectric_function",
     "compute_harmonic_vdos",
+    "compute_ir_oscillator_strengths",
+    "compute_optical_response",
     "compute_partial_vacf",
     "compute_partial_vdos",
     "compute_participation_ratio",
