@@ -15,7 +15,11 @@ from amorphouspy.properties.vibrational import (
     _common,
     classify_vibrational_groups,
     compute_debye_level,
+    compute_dielectric_from_velocities,
+    compute_dielectric_function,
     compute_harmonic_vdos,
+    compute_ir_oscillator_strengths,
+    compute_optical_response,
     compute_partial_vacf,
     compute_partial_vdos,
     compute_participation_ratio,
@@ -29,7 +33,7 @@ from amorphouspy.properties.vibrational import (
 )
 from ase import Atoms
 from ase.io import read
-from scipy.constants import N_A, Boltzmann, atomic_mass, e, h
+from scipy.constants import N_A, Boltzmann, atomic_mass, c, e, epsilon_0, h
 from scipy.integrate import quad
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -1676,3 +1680,404 @@ def test_participation_ratio_invalid_raises(monkeypatch, vectors, masses, match)
     monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)  # one mode per block
     with pytest.raises(ValueError, match=match):
         compute_participation_ratio(vectors, masses)
+
+
+# ---------------------------------------------------------------------------
+# compute_ir_oscillator_strengths
+# ---------------------------------------------------------------------------
+
+
+def _ir_system(n_atoms=8, seed=0, *, neutral=True, tensor=False):
+    """Random masses, the 3N - 3 non-translational modes of a random orthogonal basis, and random charges."""
+    rng = np.random.default_rng(seed)
+    masses = rng.uniform(10.0, 30.0, size=n_atoms)
+    _, basis = _spectral_matrix(masses, np.ones(3 * n_atoms), seed)
+    charges = rng.normal(size=(n_atoms, 3, 3) if tensor else n_atoms)
+    if neutral:
+        charges -= charges.mean(axis=0)
+    return masses, np.ascontiguousarray(basis[:, 3:]), charges
+
+
+@pytest.mark.parametrize("tensor", [False, True], ids=["scalar", "tensor"])
+@pytest.mark.parametrize("neutral", [True, False], ids=["neutral", "charged"])
+def test_ir_strengths_completeness_sum_rule(neutral, tensor):
+    """Over the 3N - 3 modes sum_m Z_m Z_m^T = sum_i Z_i Z_i^T / m_i - (sum_i Z_i)(sum_i Z_i)^T / M."""
+    masses, vectors, charges = _ir_system(neutral=neutral, tensor=tensor)
+    if neutral:
+        result = compute_ir_oscillator_strengths(vectors, masses, charges)
+    else:
+        with pytest.warns(UserWarning, match="do not sum to zero"):
+            result = compute_ir_oscillator_strengths(vectors, masses, charges)
+    tensors = charges if tensor else charges[:, None, None] * np.eye(3)
+    total = tensors.sum(axis=0)
+    expected = np.einsum("iab,icb,i->ac", tensors, tensors, 1 / masses) - total @ total.T / masses.sum()
+    mode_charges = result["mode_charges"]
+    assert mode_charges.shape == (vectors.shape[1], 3)
+    np.testing.assert_allclose(mode_charges.T @ mode_charges, expected, rtol=1e-12, atol=1e-14)
+    np.testing.assert_allclose(result["strengths"], np.sum(mode_charges**2, axis=1) / 3, rtol=1e-14)
+    assert result["strengths"].sum() == pytest.approx(np.trace(expected) / 3, rel=1e-12)
+
+
+def test_ir_strengths_pair_stretch_is_q2_over_reduced_mass():
+    """The stretch of a +q / -q pair has |Z|^2 = q^2 / mu along the bond, and the rigid translation has none."""
+    m_si, m_o = SIO2_MASSES[:2]
+    charge = 2.4
+    stretch = _mode([m_si, m_o], [(1 / m_si, 0, 0), (-1 / m_o, 0, 0)])
+    translation = _mode([m_si, m_o], [(0, 1, 0), (0, 1, 0)])
+    vectors = np.hstack([stretch / np.linalg.norm(stretch), translation / np.linalg.norm(translation)])
+    result = compute_ir_oscillator_strengths(vectors, [m_si, m_o], [charge, -charge])
+    reduced_mass = m_si * m_o / (m_si + m_o)
+    np.testing.assert_allclose(result["strengths"], [charge**2 / (3 * reduced_mass), 0.0], rtol=1e-13, atol=1e-16)
+    np.testing.assert_allclose(np.abs(result["mode_charges"][0]), [charge / math.sqrt(reduced_mass), 0, 0], rtol=1e-13)
+
+
+def test_ir_strengths_scalar_matches_isotropic_tensor():
+    """Scalar charges q_i give the same result as the tensors q_i times the identity."""
+    masses, vectors, charges = _ir_system()
+    scalar = compute_ir_oscillator_strengths(vectors, masses, charges)
+    tensor = compute_ir_oscillator_strengths(vectors, masses, charges[:, None, None] * np.eye(3))
+    for key in ("mode_charges", "strengths"):
+        np.testing.assert_allclose(tensor[key], scalar[key], rtol=1e-12, atol=1e-15)
+
+
+@pytest.mark.parametrize("tensor", [False, True], ids=["scalar", "tensor"])
+def test_ir_partial_strengths_sum_to_total(tensor):
+    """For a grouping holding every atom once the partial mode charges and the pair strengths sum to the totals."""
+    masses, vectors, charges = _ir_system(n_atoms=9, tensor=tensor)
+    groups = {
+        "element": {"Si": np.arange(0, 3), "O": np.arange(3, 8), "Na": np.array([8])},
+        "subset": {"first": np.array([0, 4])},
+    }
+    result = compute_ir_oscillator_strengths(vectors, masses, charges, groups=groups)
+    assert list(result["partial_strengths"]["element"]) == ["Si-Si", "Si-O", "Si-Na", "O-O", "O-Na", "Na-Na"]
+    assert list(result["partial_strengths"]["subset"]) == ["first-first"]
+    np.testing.assert_allclose(
+        sum(result["partial_mode_charges"]["element"].values()), result["mode_charges"], rtol=1e-12, atol=1e-14
+    )
+    np.testing.assert_allclose(
+        sum(result["partial_strengths"]["element"].values()), result["strengths"], rtol=1e-11, atol=1e-14
+    )
+    only_si = np.where(np.arange(9)[:, None, None] < 3, 1.0, 0.0) * (charges if tensor else charges[:, None, None])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        silicon = compute_ir_oscillator_strengths(vectors, masses, only_si if tensor else only_si[:, 0, 0])
+    np.testing.assert_allclose(result["partial_strengths"]["element"]["Si-Si"], silicon["strengths"], rtol=1e-12)
+
+
+def test_ir_strengths_chunks_and_memory_order(monkeypatch):
+    """One mode per block and an F-ordered view give the default result."""
+    masses, vectors, charges = _ir_system(tensor=True)
+    groups = {"half": {"low": np.arange(4), "high": np.arange(4, 8)}}
+    default = compute_ir_oscillator_strengths(vectors, masses, charges, groups=groups)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)
+    chunked = compute_ir_oscillator_strengths(np.asfortranarray(vectors), masses, charges, groups=groups)
+    np.testing.assert_allclose(chunked["mode_charges"], default["mode_charges"], rtol=1e-13, atol=1e-15)
+    for pair, strengths in default["partial_strengths"]["half"].items():
+        np.testing.assert_allclose(chunked["partial_strengths"]["half"][pair], strengths, rtol=1e-12, atol=1e-15)
+
+
+def _ir_strengths_invalid_cases():
+    vectors, masses, charges = np.ones((6, 2)), np.ones(2), np.array([1.0, -1.0])
+    nan = vectors.copy()
+    nan[4, 1] = np.nan
+    return [
+        pytest.param(np.ones(6), masses, charges, {}, "2-D float64", id="vectors-1d"),
+        pytest.param(vectors.astype(np.float32), masses, charges, {}, "2-D float64", id="vectors-float32"),
+        pytest.param(np.ones((5, 2)), masses, charges, {}, "3N rows", id="rows-not-3n"),
+        pytest.param(np.ones((6, 0)), masses, charges, {}, "3N rows", id="no-columns"),
+        pytest.param(nan, masses, charges, {}, "NaN or inf", id="vectors-nan"),
+        pytest.param(vectors, np.ones(3), charges, {}, "2 positive finite", id="masses-length"),
+        pytest.param(vectors, np.array([1.0, -1.0]), charges, {}, "2 positive finite", id="masses-negative"),
+        pytest.param(vectors, masses, np.ones(3), {}, r"shape \(2,\) or \(2, 3, 3\)", id="charges-length"),
+        pytest.param(vectors, masses, np.ones((2, 3)), {}, r"shape \(2,\) or \(2, 3, 3\)", id="charges-2d"),
+        pytest.param(vectors, masses, [1.0, np.nan], {}, r"shape \(2,\) or \(2, 3, 3\)", id="charges-nan"),
+        pytest.param(vectors, masses, charges, {"groups": {"element": {}}}, "no labels", id="groups-empty"),
+        pytest.param(
+            vectors, masses, charges, {"groups": {"element": {"Si": np.array([2])}}}, "outside", id="groups-range"
+        ),
+    ]
+
+
+@pytest.mark.parametrize(("vectors", "masses", "charges", "kwargs", "match"), _ir_strengths_invalid_cases())
+def test_ir_strengths_invalid_input_raises(vectors, masses, charges, kwargs, match):
+    """Bad eigenvectors, masses, charges and groups raise."""
+    with pytest.raises(ValueError, match=match):
+        compute_ir_oscillator_strengths(vectors, masses, charges, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# compute_dielectric_function and compute_optical_response
+# ---------------------------------------------------------------------------
+
+# e^2 / (4 pi^2 epsilon_0 amu A^3) in THz^2, from SI: (rad/s)^2 to THz^2 is 1e-24 / (2 pi)^2.
+IR_THZ2_A3 = e**2 / (epsilon_0 * atomic_mass * 1e-30) * 1e-24 / (2 * math.pi) ** 2
+
+
+def test_dielectric_single_oscillator_static_limit_and_peak():
+    """One mode gives eps(0) = eps_inf + C f / (V nu0^2) and Im eps(nu0) = C f / (V gamma nu0)."""
+    assert pytest.approx(44224.53, rel=1e-6) == IR_THZ2_A3
+    nu0, strength, volume, eps_inf, damping = 30.0, 0.4, 45.0, 2.1, 0.5
+    result = compute_dielectric_function(
+        [nu0], [strength], volume, frequency_grid_thz=[0.0, nu0, 3 * nu0], eps_inf=eps_inf, damping_thz=damping
+    )
+    scale = IR_THZ2_A3 * strength / volume
+    epsilon = result["epsilon"]
+    assert epsilon[0] == pytest.approx(eps_inf + scale / nu0**2, rel=1e-13)
+    assert result["epsilon_static"] == pytest.approx(eps_inf + scale / nu0**2, rel=1e-13)
+    assert epsilon[1] == pytest.approx(eps_inf + 1j * scale / (damping * nu0), rel=1e-13)
+    assert epsilon[2] == pytest.approx(eps_inf + scale / (nu0**2 - 9 * nu0**2 - 3j * damping * nu0), rel=1e-13)
+    assert (result["n_modes_excluded"], result["eps_inf"], result["damping_thz"]) == (0, eps_inf, damping)
+
+
+def test_dielectric_lyddane_sachs_teller_zero():
+    """With vanishing damping eps crosses zero at nu_LO = nu_TO sqrt(eps(0) / eps_inf)."""
+    nu_to, eps_inf = 13.5, 2.1
+    static = compute_dielectric_function([nu_to], [0.3], 45.0, eps_inf=eps_inf)["epsilon_static"]
+    nu_lo = nu_to * math.sqrt(static / eps_inf)
+    grid = [0.5 * nu_lo, nu_lo, 2 * nu_lo]
+    result = compute_dielectric_function(
+        [nu_to], [0.3], 45.0, frequency_grid_thz=grid, eps_inf=eps_inf, damping_thz=1e-9
+    )
+    assert abs(result["epsilon"][1]) < 1e-8
+    assert result["epsilon"][0].real > static
+    assert 0 < result["epsilon"][2].real < eps_inf
+    loss = compute_optical_response(grid, result["epsilon"])["loss_function"]
+    assert loss[1] > 1e6 * max(loss[0], loss[2])
+
+
+def test_dielectric_modes_add_and_default_grid(monkeypatch):
+    """The modes add up, absorption is non-negative, modes at nu <= 0 are left out, and blocks do not matter."""
+    rng = np.random.default_rng(0)
+    frequencies = np.concatenate([[-2.0, 0.0], rng.uniform(3.0, 40.0, size=20)])
+    strengths = rng.uniform(0.0, 0.5, size=22)
+    result = compute_dielectric_function(frequencies, strengths, 300.0, damping_thz=0.4)
+    grid = result["frequencies_thz"]
+    assert grid[0] == 0.0
+    assert np.diff(grid) == pytest.approx(0.4 / 5)
+    assert grid[-1] >= frequencies.max() + 5 * 0.4
+    assert result["n_modes_excluded"] == 2
+    assert np.all(result["epsilon"].imag >= 0)
+    singles = sum(
+        compute_dielectric_function([nu], [f], 300.0, frequency_grid_thz=grid, damping_thz=0.4)["epsilon"] - 1.0
+        for nu, f in zip(frequencies[2:], strengths[2:], strict=True)
+    )
+    np.testing.assert_allclose(result["epsilon"] - 1.0, singles, rtol=1e-11)
+    assert result["epsilon"][0].real == pytest.approx(result["epsilon_static"], rel=1e-12)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)
+    chunked = compute_dielectric_function(frequencies, strengths, 300.0, damping_thz=0.4)
+    np.testing.assert_allclose(chunked["epsilon"], result["epsilon"], rtol=1e-12)
+
+
+def test_dielectric_kramers_kronig_static_sum_rule():
+    """eps(0) - eps_inf = (2 / pi) int Im eps / nu dnu, the Kramers-Kronig relation at zero frequency."""
+    grid = np.linspace(0.0, 4000.0, 2_000_001)
+    result = compute_dielectric_function([12.0, 30.0], [0.2, 0.5], 80.0, frequency_grid_thz=grid, damping_thz=1.0)
+    integrand = np.divide(result["epsilon"].imag, grid, out=np.zeros_like(grid), where=grid > 0)
+    integrand[0] = 2 * integrand[1] - integrand[2]  # Im eps / nu tends to a constant at nu = 0
+    assert 2 / math.pi * np.trapezoid(integrand, grid) == pytest.approx(result["epsilon_static"] - 1.0, rel=1e-4)
+
+
+def _dielectric_invalid_cases():
+    return [
+        pytest.param([], [], 1.0, {}, "non-empty 1-D", id="no-modes"),
+        pytest.param([[1.0]], [[1.0]], 1.0, {}, "non-empty 1-D", id="frequencies-2d"),
+        pytest.param([1.0, np.inf], [1.0, 1.0], 1.0, {}, "non-empty 1-D", id="frequencies-inf"),
+        pytest.param([1.0, 2.0], [1.0], 1.0, {}, "2 finite values", id="strengths-length"),
+        pytest.param([1.0], [np.nan], 1.0, {}, "1 finite values", id="strengths-nan"),
+        pytest.param([1.0], [1.0], 0.0, {}, "volume_a3 must be positive", id="volume-zero"),
+        pytest.param([1.0], [1.0], np.nan, {}, "volume_a3 must be positive", id="volume-nan"),
+        pytest.param([1.0], [1.0], 1.0, {"eps_inf": 0.0}, "eps_inf must be positive", id="eps-inf-zero"),
+        pytest.param([1.0], [1.0], 1.0, {"eps_inf": True}, "eps_inf must be positive", id="eps-inf-bool"),
+        pytest.param([1.0], [1.0], 1.0, {"damping_thz": -0.1}, "damping_thz must be positive", id="damping-negative"),
+        pytest.param([1.0], [1.0], 1.0, {"frequency_grid_thz": [1.0, 0.0]}, "strictly increasing", id="grid-order"),
+    ]
+
+
+@pytest.mark.parametrize(("frequencies", "strengths", "volume", "kwargs", "match"), _dielectric_invalid_cases())
+def test_dielectric_invalid_input_raises(frequencies, strengths, volume, kwargs, match):
+    """Bad frequencies, strengths, volume, eps_inf, damping and grids raise."""
+    with pytest.raises(ValueError, match=match):
+        compute_dielectric_function(frequencies, strengths, volume, **kwargs)
+
+
+def test_optical_response_analytic():
+    """A real eps = 4 is transparent with R = 1/9; eps = (n + ik)^2 returns n, k, alpha = 4 pi k nu / c and loss."""
+    index = 1.5 + 0.2j
+    result = compute_optical_response([10.0, 30.0, 0.0], [4.0, index**2, np.nan])
+    np.testing.assert_allclose(result["refractive_index"][:2], [2.0, 1.5], rtol=1e-14)
+    np.testing.assert_allclose(result["extinction"][:2], [0.0, 0.2], rtol=1e-14, atol=1e-16)
+    np.testing.assert_allclose(result["absorption_cm"][:2], [0.0, 4 * math.pi * 0.2 * 30e12 / (100 * c)], rtol=1e-13)
+    np.testing.assert_allclose(result["reflectivity"][:2], [1 / 9, abs((index - 1) / (index + 1)) ** 2], rtol=1e-14)
+    np.testing.assert_allclose(result["loss_function"][:2], [0.0, (-1 / index**2).imag], rtol=1e-14, atol=1e-16)
+    assert all(np.isnan(values[2]) for values in result.values())
+
+
+@pytest.mark.parametrize(
+    ("frequencies", "epsilon", "match"),
+    [
+        pytest.param([], [], "non-empty 1-D", id="empty"),
+        pytest.param([-1.0], [1.0], "non-empty 1-D", id="negative-frequency"),
+        pytest.param([1.0, 2.0], [1.0], "2 values without inf", id="length"),
+        pytest.param([1.0], [np.inf], "1 values without inf", id="inf"),
+    ],
+)
+def test_optical_response_invalid_input_raises(frequencies, epsilon, match):
+    """Bad frequencies and a mismatched or infinite dielectric function raise."""
+    with pytest.raises(ValueError, match=match):
+        compute_optical_response(frequencies, epsilon)
+
+
+# ---------------------------------------------------------------------------
+# compute_dielectric_from_velocities
+# ---------------------------------------------------------------------------
+
+# e^2 ps / (amu A^3) in S/m.
+S_PER_M_A3 = e**2 * 1e-12 / (atomic_mass * 1e-30)
+
+
+def _conductivity_sum(result):
+    """Sum of Re sigma over the full FFT grid (end bins once, inner bins twice), in e^2 ps / (amu A^3)."""
+    sigma = result["conductivity_s_per_m"].real
+    return (sigma[0] + 2 * sigma[1:-1].sum() + sigma[-1]) / S_PER_M_A3
+
+
+def _harmonic_trajectory(n_frames=4000, n_atoms=6, seed=0):
+    """Velocities of a harmonic solid at equipartition: every mode a cosine of equal amplitude on the rfft grid."""
+    masses, vectors, charges = _ir_system(n_atoms, seed)
+    rng = np.random.default_rng(seed)
+    n_modes = vectors.shape[1]
+    frequencies = np.array([_grid_frequency(n_frames, 200 + 40 * (mode + 1)) for mode in range(n_modes)])
+    t_ps = np.arange(n_frames) * DT_FS * 1e-3
+    rates = np.cos(2 * np.pi * frequencies * t_ps[:, None] + rng.uniform(0, 2 * np.pi, size=n_modes))
+    velocities = (rates @ vectors.T).reshape(n_frames, n_atoms, 3) / np.sqrt(masses)[None, :, None]
+    return velocities, masses, vectors, charges, frequencies
+
+
+@pytest.mark.parametrize("remove_com", [True, False], ids=["com-removed", "com-kept"])
+@pytest.mark.parametrize("tensor", [False, True], ids=["scalar", "tensor"])
+@pytest.mark.parametrize("window", [None, "hann", ("gaussian", 20.0)], ids=["none", "hann", "gaussian"])
+def test_md_dielectric_f_sum_rule(window, tensor, remove_com):
+    """The sum of Re sigma over the grid is n_fft dt <|J|^2> / (6 V kT), with kT from the same velocities."""
+    n_frames, n_atoms, volume = 257, 7, 80.0
+    velocities, masses = _random_system(n_frames, n_atoms, seed=3)
+    rng = np.random.default_rng(4)
+    charges = rng.normal(size=(n_atoms, 3, 3) if tensor else n_atoms)
+    charges -= charges.mean(axis=0)
+    result = compute_dielectric_from_velocities(
+        velocities, masses, charges, DT_FS, volume, window=window, remove_com=remove_com
+    )
+    centred = velocities
+    if remove_com:
+        centred = velocities - (np.einsum("tia,i->ta", velocities, masses) / masses.sum())[:, None, :]
+    thermal = np.einsum("tia,tia,i->", centred, centred, masses) / (n_frames * 3 * (n_atoms - remove_com))
+    tensors = charges if tensor else charges[:, None, None] * np.eye(3)
+    current = np.einsum("iab,tib->ta", tensors, centred)
+    zero_lag = np.sum(current**2) / n_frames / (3 * thermal)
+    n_lags = n_frames // 2
+    assert result["n_lag_frames"] == n_lags
+    assert result["frequencies_thz"] == pytest.approx(np.fft.rfftfreq(2 * n_lags, d=DT_FS * 1e-3))
+    assert _conductivity_sum(result) * volume == pytest.approx(2 * n_lags * DT_FS * 1e-3 * zero_lag / 2, rel=1e-12)
+
+
+def test_md_dielectric_matches_harmonic_route():
+    """A harmonic trajectory at equipartition gives the strengths and the dielectric function of the modes."""
+    velocities, masses, vectors, charges, frequencies = _harmonic_trajectory()
+    volume = 100.0
+    strengths = compute_ir_oscillator_strengths(vectors, masses, charges)["strengths"]
+    result = compute_dielectric_from_velocities(velocities, masses, charges, DT_FS, volume)
+    grid, n_lags = result["frequencies_thz"], result["n_lag_frames"]
+    # f-sum rule: the zero-lag current correlation over 3 kT is the sum of the strengths.
+    assert _conductivity_sum(result) * volume == pytest.approx(n_lags * DT_FS * 1e-3 * strengths.sum(), rel=1e-10)
+    # Each mode holds a quarter of its strength under its peak of Re sigma on the positive axis.
+    sigma = result["conductivity_s_per_m"].real * volume / S_PER_M_A3
+    areas = [sigma[np.abs(grid - nu) < 0.6].sum() * (grid[1] - grid[0]) for nu in frequencies]
+    np.testing.assert_allclose(areas, strengths / 4, rtol=0.02)
+    # Below every mode the dielectric function is that of the undamped oscillators.
+    harmonic = compute_dielectric_function(frequencies, strengths, volume, frequency_grid_thz=grid[1:40])
+    np.testing.assert_allclose(result["epsilon"][1:40].real - 1, harmonic["epsilon"].real - 1, rtol=2e-3)
+    assert np.isnan(result["epsilon"][0])
+    # Far below the modes only a small leakage of the peaks is left in Re sigma (Im eps divides it by nu).
+    assert np.abs(sigma[:40]).max() < 1e-4 * sigma.max()
+
+
+def test_md_dielectric_pair_peak_at_mode_frequency():
+    """A +q / -q pair oscillating at one frequency absorbs there, and 2.1 is added by eps_inf."""
+    n_frames = 2000
+    nu0 = _grid_frequency(n_frames, 300)
+    velocities = _pair_velocities(n_frames, nu0)
+    velocities[:, 1, 0] *= SIO2_MASSES[0] / SIO2_MASSES[1]  # zero total momentum
+    kwargs = {"masses": SIO2_MASSES[:2], "charges": [2.4, -2.4], "dt_fs": DT_FS, "volume_a3": 50.0}
+    result = compute_dielectric_from_velocities(velocities, **kwargs)
+    shifted = compute_dielectric_from_velocities(velocities, **kwargs, eps_inf=2.1)
+    assert result["frequencies_thz"][np.nanargmax(result["epsilon"].imag)] == pytest.approx(nu0, rel=1e-12)
+    np.testing.assert_allclose(shifted["epsilon"][1:], result["epsilon"][1:] + 1.1, rtol=1e-13)
+    assert (shifted["eps_inf"], result["eps_inf"]) == (2.1, 1.0)
+    np.testing.assert_array_equal(shifted["conductivity_s_per_m"], result["conductivity_s_per_m"])
+
+
+@pytest.mark.parametrize("tensor", [False, True], ids=["scalar", "tensor"])
+def test_md_dielectric_partials_sum_to_total(tensor, monkeypatch):
+    """Pairs of a grouping holding every atom once sum to eps - eps_inf; atom chunks do not matter."""
+    n_atoms = 9
+    velocities, masses = _random_system(200, n_atoms, seed=5)
+    rng = np.random.default_rng(6)
+    charges = rng.normal(size=(n_atoms, 3, 3) if tensor else n_atoms)
+    charges -= charges.mean(axis=0)
+    groups = {
+        "element": {"Si": np.arange(0, 3), "O": np.arange(3, 8), "Na": np.array([8])},
+        "subset": {"first": np.array([0, 4])},
+    }
+    result = compute_dielectric_from_velocities(
+        velocities, masses, charges, DT_FS, 60.0, groups=groups, eps_inf=2.0, n_lag_frames=50
+    )
+    partial = result["partial_susceptibility"]
+    assert list(partial["element"]) == ["Si-Si", "Si-O", "Si-Na", "O-O", "O-Na", "Na-Na"]
+    assert list(partial["subset"]) == ["first-first"]
+    assert result["epsilon"].shape == partial["element"]["Si-O"].shape == (51,)
+    np.testing.assert_allclose(sum(partial["element"].values())[1:], result["epsilon"][1:] - 2.0, rtol=1e-9, atol=1e-9)
+    monkeypatch.setattr(_common, "_CHUNK_BYTES", 1)  # one atom per chunk
+    chunked = compute_dielectric_from_velocities(
+        velocities, masses, charges, DT_FS, 60.0, groups=groups, eps_inf=2.0, n_lag_frames=50
+    )
+    np.testing.assert_allclose(chunked["epsilon"][1:], result["epsilon"][1:], rtol=1e-9, atol=1e-9)
+    for pair, values in partial["element"].items():
+        np.testing.assert_allclose(chunked["partial_susceptibility"]["element"][pair][1:], values[1:], atol=1e-9)
+
+
+def test_md_dielectric_velocity_unit_dtype_and_tensor_form():
+    """The velocity unit cancels, float32 input agrees to single precision, and q is the tensor q times identity."""
+    velocities, masses = _random_system(300, 6, seed=7)
+    charges = np.array([2.4, 2.4, -1.2, -1.2, -1.2, -1.2])
+    reference = compute_dielectric_from_velocities(velocities, masses, charges, DT_FS, 70.0)["epsilon"][1:]
+    scaled = compute_dielectric_from_velocities(1e-3 * velocities, masses, charges, DT_FS, 70.0)["epsilon"][1:]
+    single = compute_dielectric_from_velocities(velocities.astype(np.float32), masses, charges, DT_FS, 70.0)
+    tensor = compute_dielectric_from_velocities(velocities, masses, charges[:, None, None] * np.eye(3), DT_FS, 70.0)
+    np.testing.assert_allclose(scaled, reference, rtol=1e-10)
+    np.testing.assert_allclose(single["epsilon"][1:], reference, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(tensor["epsilon"][1:], reference, rtol=1e-10)
+
+
+def _md_dielectric_invalid_cases():
+    velocities, masses, charges = np.ones((10, 2, 3)), np.ones(2), np.array([1.0, -1.0])
+    velocities[:, 1] = -1.0
+    return [
+        pytest.param(np.ones((10, 2)), masses, charges, 1.0, {}, "velocities", id="velocities-2d"),
+        pytest.param(np.zeros((10, 2, 3)), masses, charges, 1.0, {}, "spectrum is zero", id="velocities-zero"),
+        pytest.param(velocities, masses, np.ones(3), 1.0, {}, r"shape \(2,\) or \(2, 3, 3\)", id="charges-length"),
+        pytest.param(velocities, masses, charges, 0.0, {}, "volume_a3 must be positive", id="volume-zero"),
+        pytest.param(velocities, masses, charges, 1.0, {"eps_inf": -1.0}, "eps_inf must be positive", id="eps-inf"),
+        pytest.param(velocities, masses, charges, 1.0, {"window": "boxcar"}, "Unknown window", id="window"),
+        pytest.param(velocities, masses, charges, 1.0, {"n_lag_frames": 1}, r"integer in \[2, 9\]", id="lags-low"),
+        pytest.param(velocities, masses, charges, 1.0, {"n_lag_frames": 10}, r"integer in \[2, 9\]", id="lags-high"),
+        pytest.param(velocities, masses, charges, 1.0, {"n_lag_frames": 4.0}, r"integer in \[2, 9\]", id="lags-float"),
+        pytest.param(velocities, masses, charges, 1.0, {"groups": {"element": {}}}, "no labels", id="groups-empty"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("velocities", "masses", "charges", "volume", "kwargs", "match"), _md_dielectric_invalid_cases()
+)
+def test_md_dielectric_invalid_input_raises(velocities, masses, charges, volume, kwargs, match):
+    """Bad trajectories, charges, volume, eps_inf, window, lag count and groups raise."""
+    with pytest.raises(ValueError, match=match):
+        compute_dielectric_from_velocities(velocities, masses, charges, DT_FS, volume, **kwargs)

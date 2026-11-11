@@ -29,6 +29,7 @@ from amorphouspy.properties.vibrational.harmonic import (
     compute_harmonic_vdos,
     compute_participation_ratio,
 )
+from amorphouspy.properties.vibrational.infrared import _harmonic_infrared, _infrared_settings, _validate_positive
 from amorphouspy.properties.vibrational.thermodynamics import (
     _check_temperatures,
     _temperatures_array,
@@ -126,6 +127,10 @@ def harmonic_vdos_simulation(
     tmp_working_directory: str | Path | None = None,
     keep_dynamical_matrix: bool = False,
     keep_eigenvectors: bool = False,
+    infrared: bool = False,
+    charges: ArrayLike | None = None,
+    eps_inf: float = 1.0,
+    ir_damping_thz: float = 0.5,
 ) -> dict[str, Any]:
     r"""Minimise a structure, compute its finite-difference dynamical matrix and return the harmonic VDOS and modes.
 
@@ -210,6 +215,15 @@ def harmonic_vdos_simulation(
             ``tmp_working_directory``, instead of deleting it once read. Needs a ``tmp_working_directory``.
         keep_eigenvectors: Return the eigenvectors in ``"eigenvectors"``, one matrix in memory, instead of dropping
             them once the VDOS, the group partials and the participation ratios are computed.
+        infrared: Also compute the infrared response of the modes: oscillator strengths, dielectric function and
+            optical constants, returned in ``"infrared"``.
+        charges: Atomic charges in units of the elementary charge for the infrared response, shape $(N,)$ or Born
+            tensors $(N, 3, 3)$, in the order of the atoms. ``None`` reads the fixed charges of ``potential`` with
+            :func:`charges_from_potential`. Ignored without ``infrared``.
+        eps_inf: The high-frequency dielectric constant $\varepsilon_\infty$ of the infrared response; see
+            :func:`compute_dielectric_function`.
+        ir_damping_thz: The damping $\gamma$ of the dielectric function in THz; see
+            :func:`compute_dielectric_function`.
 
     Returns:
         A dict with:
@@ -244,6 +258,15 @@ def harmonic_vdos_simulation(
             ``"displacement_a"``: the finite-difference displacement in Å.
             ``"wall_time_s"``: ``{"lammps", "diagonalization", "analysis"}`` in s: both LAMMPS runs; reading and
             diagonalising the matrix; the groups, VDOS, participation ratios and thermodynamics.
+            ``"infrared"``: None without ``infrared``, else a dict on the grid of the VDOS (``"frequencies_thz"``):
+            ``"mode_charges"``, ``"strengths"`` and ``"partial_strengths"`` of
+            :func:`compute_ir_oscillator_strengths` for the groups of ``"groups"``; ``"epsilon"``,
+            ``"epsilon_static"`` and ``"n_modes_excluded"`` of :func:`compute_dielectric_function` for the volume
+            of the minimised cell; ``"partial_susceptibility"``, ``{grouping: {"A-B": complex array}}``, the share
+            of every pair of labels in $\varepsilon - \varepsilon_\infty$; ``"refractive_index"``,
+            ``"extinction"``, ``"absorption_cm"``, ``"reflectivity"`` and ``"loss_function"`` of
+            :func:`compute_optical_response`; and the ``"charges"``, ``"volume_a3"``, ``"eps_inf"`` and
+            ``"damping_thz"`` used.
 
     Raises:
         ValueError: Before any LAMMPS run, if ``max_atoms`` is not a positive integer, the structure has more than
@@ -252,8 +275,10 @@ def harmonic_vdos_simulation(
             ``broadening_thz`` is not positive and finite, ``normalization`` is unknown, ``frequency_grid_thz`` is not
             1-D, finite and strictly increasing with at least 2 points, ``temperatures_k`` is not finite and >= 0,
             ``driver`` is unknown, ``imaginary_threshold_thz`` is not >= 0, ``keep_dynamical_matrix`` is True
-            without a ``tmp_working_directory``, or the directory of the matrix file has less free space than the
-            file needs. After the LAMMPS runs, if ``cutoff``, ``former_types`` or ``o_type``
+            without a ``tmp_working_directory``, the directory of the matrix file has less free space than the
+            file needs, or, with ``infrared``, ``eps_inf`` or ``ir_damping_thz`` is not positive and finite, the cell
+            has no volume, ``charges`` does not have shape $(N,)$ or $(N, 3, 3)$ or the potential defines no
+            charge for an element. After the LAMMPS runs, if ``cutoff``, ``former_types`` or ``o_type``
             is invalid for :func:`classify_vibrational_groups`.
         RuntimeError: If a LAMMPS run fails or the matrix file is missing or has the wrong size.
 
@@ -289,6 +314,11 @@ def harmonic_vdos_simulation(
         tmp_working_directory=tmp_working_directory,
         keep_dynamical_matrix=keep_dynamical_matrix,
     )
+    infrared_settings = None
+    if infrared:
+        _validate_positive("ir_damping_thz", ir_damping_thz)
+        _validate_positive("The cell volume", float(structure.cell.volume))
+        infrared_settings = _infrared_settings(charges, eps_inf, potential, structure)
     with (
         contextlib.nullcontext(tempfile.mkdtemp(prefix="harmonic_vdos_", dir=tmp_working_directory))
         if keep_dynamical_matrix
@@ -343,6 +373,18 @@ def harmonic_vdos_simulation(
         normalization=normalization,
     )
     participation_ratio = compute_participation_ratio(eigenvectors, masses)
+    infrared_result = None
+    if infrared_settings is not None:
+        infrared_result = _harmonic_infrared(
+            mode_frequencies,
+            eigenvectors,
+            masses,
+            groups,
+            float(minimised.cell.volume),
+            vdos["frequencies_thz"],
+            ir_damping_thz,
+            infrared_settings,
+        )
     if not keep_eigenvectors:
         # The last reference to the eigenvector buffer: dropping it frees one matrix before the thermodynamics.
         eigenvectors = None
@@ -396,4 +438,5 @@ def harmonic_vdos_simulation(
         "thermodynamics": thermodynamics,
         "displacement_a": summary["displacement_a"],
         "wall_time_s": {"lammps": lammps_s, "diagonalization": diagonalization_s, "analysis": analysis_s},
+        "infrared": infrared_result,
     }

@@ -15,6 +15,12 @@ from amorphouspy.properties.structural.qn import CutoffSpec
 from amorphouspy.properties.vibrational._common import _is_real_number
 from amorphouspy.properties.vibrational._trajectory import _MIN_FRAMES
 from amorphouspy.properties.vibrational.classification import classify_vibrational_groups
+from amorphouspy.properties.vibrational.infrared import (
+    _averaged_infrared,
+    _block_infrared,
+    _infrared_settings,
+    _validate_positive,
+)
 from amorphouspy.properties.vibrational.vacf import compute_partial_vacf
 from amorphouspy.properties.vibrational.vdos import VdosWindow, _validate_window, compute_partial_vdos
 
@@ -25,6 +31,8 @@ if TYPE_CHECKING:
 _MIN_NYQUIST_THZ = 50.0
 # Name of the text dump written by lammpsparser in each run directory.
 _DUMP_FILE = "dump.out"
+# Frames per block below which the infrared correlation function has fewer than 2 lags.
+_MIN_INFRARED_FRAMES = 4
 
 
 def _whole_steps(name: str, duration_ps: float, timestep: float) -> int:
@@ -109,6 +117,7 @@ def _nve_block(
     block_dir: str | None,
     *,
     keep_trajectory: bool,
+    infrared: dict[str, Any] | None = None,
 ) -> tuple["Atoms", dict[str, Any], NDArray[np.float64], NDArray[np.float64], float]:
     """Run NVE block number ``block`` (1-based) in ``block_dir``.
 
@@ -146,6 +155,8 @@ def _nve_block(
     lag_ps, vacf = compute_partial_vacf(velocities, masses, dt_fs, spectral_groups)
 
     spectra = {"frequencies_thz": frequencies_thz, "lag_ps": lag_ps, "vdos": vdos, "vacf": _split_total(vacf)}
+    if infrared is not None:
+        spectra["infrared"] = _block_infrared(velocities, masses, dt_fs, window, infrared)
     temperature, energy_tot = np.asarray(generic["temperature"]), np.asarray(generic["energy_tot"])
 
     if block_dir is not None and not keep_trajectory:
@@ -228,6 +239,9 @@ def vdos_simulation(
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
     keep_trajectory: bool = False,
+    infrared: bool = False,
+    charges: ArrayLike | None = None,
+    eps_inf: float = 1.0,
 ) -> dict[str, Any]:
     r"""Equilibrate a structure, run consecutive NVE blocks and average their VDOS and VACF, total and per atom group.
 
@@ -338,6 +352,14 @@ def vdos_simulation(
         tmp_working_directory: Directory for temporary simulation files. If None, every run removes its files.
         keep_trajectory: Keep the dump of every NVE block in ``tmp_working_directory`` instead of deleting it once its
             spectra are computed. Requires ``tmp_working_directory``.
+        infrared: Also compute the infrared response from the charge current of every block, with ``window`` as
+            the lag window (``None`` cuts the correlation function sharply and makes the spectrum ring), returned
+            in ``"infrared"``.
+        charges: Atomic charges in units of the elementary charge for the infrared response, shape $(N,)$ or Born
+            tensors $(N, 3, 3)$, in the order of the atoms. ``None`` reads the fixed charges of ``potential`` with
+            :func:`charges_from_potential`. Ignored without ``infrared``.
+        eps_inf: The high-frequency dielectric constant $\varepsilon_\infty$ of the infrared response; see
+            :func:`compute_dielectric_function`.
 
     Returns:
         A dict with:
@@ -371,6 +393,15 @@ def vdos_simulation(
             ``"nyquist_thz"``: 1 / (2 ``dt_fs``) in THz.
             ``"normalization"``: the VDOS normalisation.
             ``"window"``: the window of ``vdos["windowed"]``, as passed.
+            ``"infrared"``: None without ``infrared``, else a dict of means over blocks on its own grid
+            ``"frequencies_thz"`` (length ``n_frames // 2 + 1``): ``"epsilon"``, ``"conductivity_s_per_m"`` and
+            ``"partial_susceptibility"`` of :func:`compute_dielectric_from_velocities` for the groups of
+            ``"groups"`` and the volume of the cell; their block standard errors ``"epsilon_sem"``,
+            ``"conductivity_sem_s_per_m"`` and ``"partial_susceptibility_sem"``, complex with the errors of the
+            real and imaginary parts, NaN for one block; ``"refractive_index"``, ``"extinction"``,
+            ``"absorption_cm"``, ``"reflectivity"`` and ``"loss_function"`` of :func:`compute_optical_response`
+            for the mean ``"epsilon"``; and the ``"n_lag_frames"``, ``"charges"``, ``"volume_a3"`` and
+            ``"eps_inf"`` used.
 
     Raises:
         ValueError: Before any MD, if the potential is empty, ``temperature_sim``, ``timestep``, ``block_ps`` or
@@ -378,7 +409,10 @@ def vdos_simulation(
             ``equilibration_steps`` is negative or not an integer, ``normalization`` is not ``"unit"`` or ``"3N"``,
             ``window`` is unknown, ``block_ps`` or ``production_ps`` is not a whole number of timesteps, the block is
             not a multiple of ``dump_every`` or holds fewer than 2 frames, the production is not a multiple of the
-            block, ``thermostat`` is unknown, or ``keep_trajectory`` is True without a ``tmp_working_directory``.
+            block, ``thermostat`` is unknown, ``keep_trajectory`` is True without a ``tmp_working_directory``, or,
+            with ``infrared``, a block holds fewer than 4 frames, ``eps_inf`` is not positive and finite, the cell
+            has no volume, ``charges`` does not have shape $(N,)$ or $(N, 3, 3)$ or the potential defines no
+            charge for an element.
         RuntimeError: If the output of an NVE block does not hold ``n_frames + 1`` frames of velocities, temperature
             and total energy. The message names the block and, with a ``tmp_working_directory``, its kept dump; no
             later block is run.
@@ -422,6 +456,18 @@ def vdos_simulation(
     nvt_ensemble, _ = thermostat_ensembles(thermostat)
     groups = classify_vibrational_groups(structure, cutoff, former_types, o_type)
     masses = structure.get_masses()
+    infrared_settings = None
+    if infrared:
+        if block_frames < _MIN_INFRARED_FRAMES:
+            msg = f"infrared=True needs at least {_MIN_INFRARED_FRAMES} frames per block, got {block_frames}."
+            raise ValueError(msg)
+        volume_a3 = float(structure.cell.volume)
+        _validate_positive("The cell volume", volume_a3)
+        infrared_settings = {
+            **_infrared_settings(charges, eps_inf, potential, structure),
+            "volume_a3": volume_a3,
+            "groups": groups,
+        }
 
     equilibrated, _ = _run_lammps_md(
         structure=structure,
@@ -485,6 +531,7 @@ def vdos_simulation(
             window,
             block_dir,
             keep_trajectory=keep_trajectory,
+            infrared=infrared_settings,
         )
         spectra.append(block_spectra)
         temperatures.append(temperature)
@@ -494,6 +541,12 @@ def vdos_simulation(
     vdos, vdos_sem = _block_statistics([block_spectra["vdos"] for block_spectra in spectra])
     vacf, vacf_sem = _block_statistics([block_spectra["vacf"] for block_spectra in spectra])
     temperature, energy_tot = np.concatenate(temperatures), np.concatenate(energies)
+    infrared_result = None
+    if infrared_settings is not None:
+        blocks = [block_spectra["infrared"] for block_spectra in spectra]
+        infrared_result = _averaged_infrared(
+            blocks, *_block_statistics([block["curves"] for block in blocks]), infrared_settings
+        )
 
     return {
         "frequencies_thz": spectra[0]["frequencies_thz"],
@@ -514,4 +567,5 @@ def vdos_simulation(
         "nyquist_thz": nyquist_thz,
         "normalization": normalization,
         "window": window,
+        "infrared": infrared_result,
     }

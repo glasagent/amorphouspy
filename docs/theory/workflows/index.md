@@ -14,6 +14,7 @@ All simulation workflows use LAMMPS as the MD engine via `lammpsparser`. Each wo
 | [**Viscosity**](viscosity.md) | `viscosity_simulation()` | Compute viscosity via Green-Kubo (SACF) |
 | [**CTE**](cte.md) | `cte_simulation()` | Coefficient of thermal expansion from NPT |
 | [**Vibrational DOS**](vdos.md) | `vdos_simulation()`, [`harmonic_vdos_simulation()`](vdos.md#harmonic-route) | VDOS from NVE velocities (with the VACF) or from the dynamical matrix, total and partial |
+| [**Infrared Response**](infrared.md) | `harmonic_vdos_simulation(infrared=True)`, `vdos_simulation(infrared=True)` | Oscillator strengths, dielectric function, absorption and reflectivity from the modes or from the charge current |
 
 ---
 
@@ -60,3 +61,4 @@ Each workflow has a dedicated page with full parameter documentation, implementa
 - [**Viscosity**](viscosity.md) — Green-Kubo stress autocorrelation
 - [**CTE Simulation**](cte.md) — NPT fluctuation-based thermal expansion
 - [**Vibrational DOS**](vdos.md) — VDOS and VACF from block-averaged NVE velocities, and the harmonic VDOS and modes from the [dynamical matrix](vdos.md#harmonic-route)
+- [**Infrared Response**](infrared.md) — Oscillator strengths and the dielectric function, harmonic or from the charge current of NVE MD

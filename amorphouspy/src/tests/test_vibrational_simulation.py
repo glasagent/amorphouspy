@@ -18,7 +18,11 @@ import pandas as pd
 import pytest
 from amorphouspy.properties.vibrational import (
     classify_vibrational_groups,
+    compute_dielectric_from_velocities,
+    compute_dielectric_function,
     compute_harmonic_vdos,
+    compute_ir_oscillator_strengths,
+    compute_optical_response,
     compute_partial_vacf,
     compute_partial_vdos,
     compute_participation_ratio,
@@ -266,7 +270,9 @@ def test_vdos_simulation_drops_first_frame(kwargs, window, integral):
         "nyquist_thz",
         "normalization",
         "window",
+        "infrared",
     }
+    assert out["infrared"] is None
     np.testing.assert_array_equal(out["temperature"], generic["temperature"][1:])
     np.testing.assert_array_equal(out["energy_tot"], generic["energy_tot"][1:])
     assert (out["dt_fs"], out["n_frames"], out["normalization"], out["window"]) == (
@@ -607,7 +613,7 @@ def _fake_dynamical_matrix_runner(minimised, matrix):
     return run
 
 
-def _run_harmonic(**kwargs):
+def _run_harmonic(potential=None, **kwargs):
     """Call harmonic_vdos_simulation on the dimer with the runner mocked; return result, mock, matrix and structure."""
     minimised = _minimised_dimer()
     matrix = _dynamical_matrix(minimised.get_masses())
@@ -615,7 +621,9 @@ def _run_harmonic(**kwargs):
         "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
     ) as runner:
         runner.side_effect = _fake_dynamical_matrix_runner(minimised, matrix)
-        out = harmonic_vdos_simulation(_si2o7_dimer(), _potential(), **{**GROUP_KWARGS, **kwargs})
+        out = harmonic_vdos_simulation(
+            _si2o7_dimer(), _potential() if potential is None else potential, **{**GROUP_KWARGS, **kwargs}
+        )
     return out, runner, matrix, minimised
 
 
@@ -684,7 +692,8 @@ def test_harmonic_vdos_simulation_matches_manual_chain(tmp_path):
         "displacement_a": 1e-5,
     }
     _assert_same({key: out[key] for key in expected}, expected)
-    assert out.keys() == {*expected, "structure", "dynamical_matrix", "minimization", "wall_time_s"}
+    assert out.keys() == {*expected, "structure", "dynamical_matrix", "minimization", "wall_time_s", "infrared"}
+    assert out["infrared"] is None
     assert out["structure"] is minimised
     assert out["minimization"] == RUNNER_SUMMARY["minimization"]
     assert out["dynamical_matrix"] == {
@@ -883,3 +892,163 @@ def test_harmonic_vdos_simulation_without_positive_mode_skips_thermodynamics():
         )
     assert out["thermodynamics"] is None
     assert out["n_imaginary_excluded"] == len(out["mode_frequencies_thz"])
+
+
+# ---------------------------------------------------------------------------
+# infrared=True in both workflows
+# ---------------------------------------------------------------------------
+
+# Charges of a neutral Si2O7 unit: 2 * 4.2 - 7 * 1.2 = 0.
+DIMER_CHARGES = np.array([4.2, 4.2] + [-1.2] * 7)
+OPTICAL_KEYS = ("refractive_index", "extinction", "absorption_cm", "reflectivity", "loss_function")
+
+
+def _charged_potential():
+    """A potential that sets the charges of DIMER_CHARGES, with the species in LAMMPS type order."""
+    config = ["atom_style charge\n", "set type 1 charge -1.2\n", "set type 2 charge 4.2\n", "pair_style none\n"]
+    return pd.DataFrame({"Name": ["test"], "Species": [["O", "Si"]], "Config": [config]})
+
+
+def _assert_close(actual, expected):
+    """Nested dicts with identical keys and arrays equal to rounding, NaN included."""
+    if isinstance(expected, dict):
+        assert actual.keys() == expected.keys()
+        for key, value in expected.items():
+            _assert_close(actual[key], value)
+    else:
+        np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-14, equal_nan=True)
+
+
+def test_harmonic_vdos_simulation_infrared_matches_manual_chain():
+    """The infrared entry is strengths -> dielectric function -> optical response with the potential's charges."""
+    out, _, _, minimised = _run_harmonic(
+        _charged_potential(), infrared=True, eps_inf=2.1, ir_damping_thz=0.3, keep_eigenvectors=True
+    )
+    infrared, masses, volume = out["infrared"], minimised.get_masses(), minimised.cell.volume
+    strengths = compute_ir_oscillator_strengths(out["eigenvectors"], masses, DIMER_CHARGES, groups=out["groups"])
+    kwargs = {"frequency_grid_thz": out["frequencies_thz"], "eps_inf": 2.1, "damping_thz": 0.3}
+    dielectric = compute_dielectric_function(out["mode_frequencies_thz"], strengths["strengths"], volume, **kwargs)
+    optics = compute_optical_response(out["frequencies_thz"], dielectric["epsilon"])
+    pair = compute_dielectric_function(
+        out["mode_frequencies_thz"], strengths["partial_strengths"]["element"]["O-Si"], volume, **kwargs
+    )
+    np.testing.assert_array_equal(infrared["charges"], DIMER_CHARGES)
+    np.testing.assert_array_equal(infrared["frequencies_thz"], out["frequencies_thz"])
+    for key in ("mode_charges", "strengths", "partial_strengths"):
+        _assert_same(infrared[key], strengths[key])
+    for key in ("epsilon", "epsilon_static", "n_modes_excluded"):
+        _assert_same(infrared[key], dielectric[key])
+    _assert_same({key: infrared[key] for key in OPTICAL_KEYS}, optics)
+    np.testing.assert_array_equal(infrared["partial_susceptibility"]["element"]["O-Si"], pair["epsilon"] - 2.1)
+    assert infrared["partial_susceptibility"].keys() == out["groups"].keys()
+    np.testing.assert_allclose(
+        sum(infrared["partial_susceptibility"]["element"].values()), infrared["epsilon"] - 2.1, rtol=1e-10
+    )
+    assert (infrared["volume_a3"], infrared["eps_inf"], infrared["damping_thz"]) == (pytest.approx(27000.0), 2.1, 0.3)
+    assert infrared["strengths"].sum() == pytest.approx(np.sum(DIMER_CHARGES**2 / masses), rel=1e-12)
+
+
+def test_vdos_simulation_infrared_matches_manual_chain():
+    """The infrared entry is the block mean and standard error of compute_dielectric_from_velocities."""
+    structure = _si2o7_dimer()
+    generics = [_generic(len(structure), seed=block + 1) for block in range(3)]
+    out = _run_blocks(structure, generics, potential=_charged_potential(), infrared=True, eps_inf=2.1)
+    infrared = out["infrared"]
+    blocks = [
+        compute_dielectric_from_velocities(
+            generic["velocities"][1:],
+            structure.get_masses(),
+            DIMER_CHARGES,
+            DT_FS,
+            structure.cell.volume,
+            groups=out["groups"],
+            eps_inf=2.1,
+            window="hann",
+        )
+        for generic in generics
+    ]
+
+    def mean(values):
+        return np.mean(values, axis=0)
+
+    def sem(values):
+        values = np.array(values)
+        return (np.std(values.real, axis=0, ddof=1) + 1j * np.std(values.imag, axis=0, ddof=1)) / np.sqrt(3)
+
+    np.testing.assert_array_equal(infrared["frequencies_thz"], blocks[0]["frequencies_thz"])
+    np.testing.assert_array_equal(infrared["frequencies_thz"], out["frequencies_thz"])
+    for key, sem_key in (("epsilon", "epsilon_sem"), ("conductivity_s_per_m", "conductivity_sem_s_per_m")):
+        _assert_close(infrared[key], mean([block[key] for block in blocks]))
+        _assert_close(infrared[sem_key], sem([block[key] for block in blocks]))
+    for statistic, key in ((mean, "partial_susceptibility"), (sem, "partial_susceptibility_sem")):
+        expected = {
+            grouping: {
+                pair: statistic([block["partial_susceptibility"][grouping][pair] for block in blocks]) for pair in pairs
+            }
+            for grouping, pairs in blocks[0]["partial_susceptibility"].items()
+        }
+        _assert_close(infrared[key], expected)
+    assert list(infrared["partial_susceptibility"]["element"]) == ["O-O", "O-Si", "Si-Si"]
+    _assert_close(
+        {key: infrared[key] for key in OPTICAL_KEYS},
+        compute_optical_response(infrared["frequencies_thz"], infrared["epsilon"]),
+    )
+    np.testing.assert_array_equal(infrared["charges"], DIMER_CHARGES)
+    assert (infrared["n_lag_frames"], infrared["eps_inf"]) == (N_FRAMES // 2, 2.1)
+    assert infrared["volume_a3"] == pytest.approx(27000.0)
+    assert np.isnan(infrared["epsilon"][0])
+    assert np.all(np.isfinite(infrared["epsilon"][1:]))
+
+
+def test_vdos_simulation_infrared_charges_override_and_one_block():
+    """Explicit Born tensors replace the charges of the potential; one block has NaN standard errors."""
+    structure = _si2o7_dimer()
+    tensors = DIMER_CHARGES[:, None, None] * np.diag([1.0, 1.1, 0.9])
+    out, _ = _run(structure, _generic(len(structure)), infrared=True, charges=tensors)
+    infrared = out["infrared"]
+    np.testing.assert_array_equal(infrared["charges"], tensors)
+    assert np.all(np.isnan(infrared["epsilon_sem"].real))
+    assert np.all(np.isnan(infrared["epsilon_sem"].imag))
+    assert infrared["eps_inf"] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        pytest.param({}, "'Species'", id="potential-without-species"),
+        pytest.param({"charges": np.ones(3)}, r"shape \(9,\) or \(9, 3, 3\)", id="charges-shape"),
+        pytest.param({"charges": DIMER_CHARGES, "eps_inf": 0.0}, "eps_inf must be positive", id="eps-inf"),
+        pytest.param(
+            {"charges": DIMER_CHARGES, "block_ps": 0.01, "production_ps": 0.01}, "at least 4 frames", id="short-block"
+        ),
+    ],
+)
+def test_vdos_simulation_infrared_invalid_inputs_raise_before_md(kwargs, match):
+    """Missing or malformed charges, a bad eps_inf and a block too short for two lags raise before any MD."""
+    structure = _si2o7_dimer()
+    arguments = {"thermostat": "nose_hoover", **BLOCK, **GROUP_KWARGS, "infrared": True, **kwargs}
+    with patch("amorphouspy.properties.vibrational.simulation._run_lammps_md", autospec=True) as mock_md:
+        with pytest.raises((ValueError, KeyError), match=match):
+            vdos_simulation(structure, _potential(), **arguments)
+        assert mock_md.call_count == 0
+
+
+@pytest.mark.parametrize(
+    ("potential", "kwargs", "match"),
+    [
+        pytest.param(
+            pd.DataFrame({"Species": [["O", "Si"]], "Config": [["pair_style none"]]}), {}, "sets no charges", id="none"
+        ),
+        pytest.param(_charged_potential(), {"ir_damping_thz": 0.0}, "ir_damping_thz must be positive", id="damping"),
+        pytest.param(_charged_potential(), {"eps_inf": np.inf}, "eps_inf must be positive", id="eps-inf"),
+        pytest.param(_charged_potential(), {"charges": np.ones((9, 3))}, r"shape \(9,\) or \(9, 3, 3\)", id="charges"),
+    ],
+)
+def test_harmonic_vdos_simulation_infrared_invalid_inputs_raise_before_lammps(potential, kwargs, match):
+    """A potential without charges and bad damping, eps_inf or charges raise before the runner is called."""
+    with patch(
+        "amorphouspy.properties.vibrational.harmonic_simulation._run_lammps_dynamical_matrix", autospec=True
+    ) as runner:
+        with pytest.raises(ValueError, match=match):
+            harmonic_vdos_simulation(_si2o7_dimer(), potential, **GROUP_KWARGS, infrared=True, **kwargs)
+        assert runner.call_count == 0
