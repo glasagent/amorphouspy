@@ -58,6 +58,7 @@ glass = result["structure"]     # Quenched ASE Atoms
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
 | `thermostat` | `str` | — (required) | `"nose_hoover"` or `"langevin"`; applies to every protocol stage after stage 0. Whether a stage runs NVT or NPT is fixed by the protocol |
 | `pre_equilibrate` | `bool` | `True` | Run the 10,000-step Langevin + `nve/limit` stage 0 at `temperature_high`. Needed for randomly placed structures; set `False` when the starting structure is already equilibrated (its history entry is then `None`). |
+| `pre_equilibration_seed` | `int` | `48279` | Seed of the Langevin random forces in stage 0. Independent of `seed`, which sets the velocities of the melt stage; give each replica its own value. |
 
 **Returns:** A dictionary with:
 

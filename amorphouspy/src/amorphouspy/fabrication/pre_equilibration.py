@@ -12,8 +12,10 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 from __future__ import annotations
 
+DEFAULT_PRE_EQUILIBRATION_SEED = 48279
 
-def pre_equilibration_fix_override(melt_temperature: float) -> str:
+
+def pre_equilibration_fix_override(melt_temperature: float, seed: int = DEFAULT_PRE_EQUILIBRATION_SEED) -> str:
     """Return the input-control ``fix`` override for a standalone pre-equilibration stage.
 
     Passing ``{"fix": pre_equilibration_fix_override(T)}`` as the runner's
@@ -24,11 +26,18 @@ def pre_equilibration_fix_override(melt_temperature: float) -> str:
 
     Args:
         melt_temperature: Target temperature (K) for the Langevin thermostat.
+        seed: Seed of the Langevin random forces; LAMMPS requires a positive integer.
 
     Returns:
         Value for the ``"fix"`` key of ``input_control_file``.
+
+    Raises:
+        ValueError: If ``seed`` is not a positive integer.
     """
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed <= 0:
+        msg = f"Langevin seed must be a positive integer, got {seed!r}."
+        raise ValueError(msg)
     return (
-        f"langevinnve all langevin {melt_temperature:g} {melt_temperature:g} 0.01 48279\n"
+        f"langevinnve all langevin {melt_temperature:g} {melt_temperature:g} 0.01 {seed}\n"
         "fix ensemblenve all nve/limit 0.5"
     )

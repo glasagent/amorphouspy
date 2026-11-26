@@ -16,6 +16,7 @@ from amorphouspy.fabrication.meltquench_protocols import (
     PROTOCOL_MAP,
     MeltQuenchParams,
 )
+from amorphouspy.fabrication.pre_equilibration import DEFAULT_PRE_EQUILIBRATION_SEED
 from amorphouspy.lammps.runner import Thermostat, _run_lammps_md
 
 
@@ -35,6 +36,7 @@ def melt_quench_simulation(
     seed: int = 12345,
     tmp_working_directory: str | Path | None = None,
     pre_equilibrate: bool = True,
+    pre_equilibration_seed: int = DEFAULT_PRE_EQUILIBRATION_SEED,
 ) -> dict:  # pylint: disable=too-many-positional-arguments
     """Perform a melt-quench simulation using LAMMPS.
 
@@ -67,6 +69,8 @@ def melt_quench_simulation(
         pre_equilibrate: Run a Langevin + nve/limit pre-equilibration block at
             `temperature_high` before the first stage. Needed for randomly placed
             structures; set to False when the starting structure is already equilibrated.
+        pre_equilibration_seed: Seed of the Langevin random forces of the pre-equilibration
+            stage. Independent of `seed`, which initializes the velocities of the melt stage.
 
     Returns:
         A dictionary containing the simulation steps and temperature data.
@@ -126,6 +130,7 @@ def melt_quench_simulation(
         tmp_working_directory=tmp_working_directory,
         equilibration_steps=equilibration_steps,
         pre_equilibrate=pre_equilibrate,
+        pre_equilibration_seed=pre_equilibration_seed,
     )
 
     # Run the protocol using the function-based approach
