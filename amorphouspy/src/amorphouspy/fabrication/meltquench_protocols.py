@@ -16,7 +16,7 @@ from typing import Any
 import pandas as pd
 from ase.atoms import Atoms
 
-from amorphouspy.fabrication.pre_equilibration import pre_equilibration_fix_override
+from amorphouspy.fabrication.pre_equilibration import DEFAULT_PRE_EQUILIBRATION_SEED, pre_equilibration_fix_override
 from amorphouspy.lammps.runner import Thermostat, thermostat_ensembles
 
 # Default melt temperatures per protocol (K)
@@ -62,6 +62,8 @@ class MeltQuenchParams:
             ``temperature_high`` before the first stage. Needed for randomly
             placed structures; set to ``False`` when the starting structure is
             already equilibrated.
+        pre_equilibration_seed: Seed of the Langevin random forces of the
+            pre-equilibration stage.
 
     """
 
@@ -79,6 +81,7 @@ class MeltQuenchParams:
     tmp_working_directory: str | Path | None = None
     equilibration_steps: int | None = None
     pre_equilibrate: bool = True
+    pre_equilibration_seed: int = DEFAULT_PRE_EQUILIBRATION_SEED
 
 
 def _pre_equilibration_stage(
@@ -116,7 +119,9 @@ def _pre_equilibration_stage(
         temperature=params.temperature_high,
         n_ionic_steps=10_000,
         initial_temperature=0,
-        input_control_file={"fix": pre_equilibration_fix_override(params.temperature_high)},
+        input_control_file={
+            "fix": pre_equilibration_fix_override(params.temperature_high, params.pre_equilibration_seed)
+        },
         ensemble="nvt",
     )
     history.append(parsed.get("generic", None))

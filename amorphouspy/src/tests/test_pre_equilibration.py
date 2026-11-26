@@ -4,6 +4,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 """
 
 import amorphouspy.fabrication.meltquench as mq_module
+import pytest
 from amorphouspy.fabrication.pre_equilibration import pre_equilibration_fix_override
 from amorphouspy.lammps.potentials.pmmcs_potential import generate_pmmcs_potential
 from ase import Atoms
@@ -65,3 +66,22 @@ def test_melt_quench_simulation_pre_equilibrate_false_omits_stage0(monkeypatch):
     assert len(captured) == len(with_stage0) - 1
     for stage in captured:
         assert "input_control_file" not in stage
+
+
+def test_fix_override_uses_given_seed():
+    """A given seed replaces the default 48279 in the Langevin fix."""
+    assert pre_equilibration_fix_override(4500.0, seed=777).startswith("langevinnve all langevin 4500 4500 0.01 777\n")
+
+
+@pytest.mark.parametrize("seed", [0, -5, 1.5, True])
+def test_fix_override_rejects_invalid_seed(seed):
+    """LAMMPS needs a positive integer seed; anything else fails before a run is set up."""
+    with pytest.raises(ValueError, match="positive integer"):
+        pre_equilibration_fix_override(4500.0, seed=seed)
+
+
+def test_melt_quench_simulation_passes_pre_equilibration_seed(monkeypatch):
+    """pre_equilibration_seed reaches stage 0 only; the velocity seed of stage 1 stays separate."""
+    captured = _run_melt_quench_with_fake_runner(monkeypatch, seed=111, pre_equilibration_seed=222)
+    assert captured[0]["input_control_file"]["fix"] == pre_equilibration_fix_override(4500.0, seed=222)
+    assert captured[1]["seed"] == 111
