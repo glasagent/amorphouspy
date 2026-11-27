@@ -12,6 +12,7 @@ import pandas as pd
 from ase.atoms import Atoms
 
 from amorphouspy.fabrication.meltquench_protocols import (
+    DEFAULT_COOLING_RATES,
     DEFAULT_MELT_TEMPERATURES,
     PROTOCOL_MAP,
     MeltQuenchParams,
@@ -26,7 +27,7 @@ def melt_quench_simulation(
     temperature_high: float | None = None,
     temperature_low: float = 300.0,
     timestep: float = 1.0,
-    cooling_rate: float = 1e12,
+    cooling_rate: float | None = None,
     n_dump: int | None = None,
     n_print_thermo: int | None = 100,
     equilibration_steps: int | None = None,
@@ -55,7 +56,8 @@ def melt_quench_simulation(
         temperature_low: The low temperature to which the structure will be cooled.
         timestep: Time step for integration in femtoseconds.
         cooling_rate: The rate at which the temperature is decreased during the cooling phase,
-            in K/s.
+            in K/s. If None, the protocol's default cooling rate is used (1e13 K/s for GRACE,
+            1e12 K/s for others).
         n_dump: Dump frequency in simulation steps. If None, falls back to the
             final step so only the last structure is dumped.
         n_print_thermo: Thermodynamic print frequency in simulation steps.
@@ -95,6 +97,8 @@ def melt_quench_simulation(
 
     if temperature_high is None:
         temperature_high = DEFAULT_MELT_TEMPERATURES.get(potential_name, 5000.0)
+    if cooling_rate is None:
+        cooling_rate = DEFAULT_COOLING_RATES.get(potential_name, 1e12)
 
     if temperature_high == temperature_low:
         msg = (

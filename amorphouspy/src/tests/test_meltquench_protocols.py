@@ -11,6 +11,7 @@ from amorphouspy.fabrication.meltquench_protocols import (
     bjp_protocol,
     bmp_protocol,
     du_teter_protocol,
+    grace_protocol,
     pmmcs_protocol,
     shik_protocol,
     yang2026_protocol,
@@ -319,6 +320,7 @@ _ALL_PROTOCOLS = {
     "shik": shik_protocol,
     "du_teter": du_teter_protocol,
     "yang2026": yang2026_protocol,
+    "grace": grace_protocol,
 }
 
 # Runner calls per protocol with pre_equilibrate=True (stage 0 included).
@@ -329,11 +331,12 @@ _EXPECTED_STAGE_COUNTS = {
     "shik": 5,
     "du_teter": 4,
     "yang2026": 7,
+    "grace": 6,
 }
 
 # Protocols whose stage 1 equilibrates directly at temperature_high with
 # freshly created velocities (shik and yang2026 have their own stage-1 shapes).
-_DIRECT_MELT_PROTOCOLS = ("pmmcs", "bmp", "bjp", "du_teter")
+_DIRECT_MELT_PROTOCOLS = ("pmmcs", "bmp", "bjp", "du_teter", "grace")
 
 
 @pytest.mark.parametrize("name", list(_ALL_PROTOCOLS))
@@ -365,6 +368,83 @@ def test_pmmcs_protocol_selects_ensemble_per_stage(thermostat, mock_runner, mock
     ensembles = [c.kwargs["ensemble"] for c in mock_runner.call_args_list]
     assert ensembles == ["nvt", f"nvt{suffix}", f"nvt{suffix}", f"npt{suffix}"]
     assert mock_runner.call_args_list[3].kwargs["npt_pressure"] == 0.0
+
+
+@pytest.mark.parametrize("thermostat", ["nose_hoover", "langevin"])
+def test_grace_protocol_stage_schedule(thermostat, mock_runner, mock_structure, mock_potential):
+    """Grace runs NVT melt, NPT melt, NPT cooling, NPT anneal, NVT anneal; NPT stages at 0 GPa."""
+    params = _make_params(mock_structure, mock_potential, thermostat=thermostat)
+    grace_protocol(mock_runner, params)
+
+    suffix = "_langevin" if thermostat == "langevin" else ""
+    calls = [c.kwargs for c in mock_runner.call_args_list]
+    assert [c["ensemble"] for c in calls] == [
+        "nvt",
+        f"nvt{suffix}",
+        f"npt{suffix}",
+        f"npt{suffix}",
+        f"npt{suffix}",
+        f"nvt{suffix}",
+    ]
+    assert [c["n_ionic_steps"] for c in calls] == [10_000, 10_000, 50_000, 100_000, 100_000, 10_000]
+    assert [c["temperature"] for c in calls[1:]] == [4000.0, 4000.0, 4000.0, 300.0, 300.0]
+    assert [c.get("npt_pressure") for c in calls[1:]] == [None, 0.0, 0.0, 0.0, None]
+    assert [c.get("temperature_end") for c in calls[1:]] == [None, None, 300.0, None, None]
+
+
+def test_grace_protocol_hold_steps_scale_with_timestep(mock_runner, mock_structure, mock_potential):
+    """Hold durations are in ps, so a 2 fs timestep halves the step counts."""
+    params = _make_params(mock_structure, mock_potential, timestep=2.0)
+    grace_protocol(mock_runner, params)
+
+    steps = [c.kwargs["n_ionic_steps"] for c in mock_runner.call_args_list[1:]]
+    assert steps == [5_000, 25_000, 100_000, 50_000, 5_000]
+
+
+def test_grace_protocol_equilibration_steps_overrides_only_npt_holds(mock_runner, mock_structure, mock_potential):
+    """equilibration_steps replaces the NPT holds (stages 2 and 4); both NVT holds stay at 10 ps."""
+    params = _make_params(mock_structure, mock_potential, equilibration_steps=1234)
+    grace_protocol(mock_runner, params)
+
+    steps = [c.kwargs["n_ionic_steps"] for c in mock_runner.call_args_list[1:]]
+    assert steps == [10_000, 1234, 100_000, 1234, 10_000]
+
+
+@pytest.mark.parametrize(("name", "expected_steps"), [("GRACE", 320_000), ("pmmcs", 3_200_000)])
+def test_melt_quench_simulation_default_cooling_rate_per_potential(monkeypatch, mock_structure, name, expected_steps):
+    """Without cooling_rate, grace cools at 10 K/ps and other potentials at 1 K/ps (3500 -> 300 K, 1 fs)."""
+    captured = []
+
+    def fake_runner(structure, **kwargs):
+        captured.append(kwargs)
+        return structure, {"generic": {}}
+
+    monkeypatch.setattr(mq_module, "_run_lammps_md", fake_runner)
+    potential = pd.DataFrame({"Name": [name], "Config": [["line1"]]})
+    melt_quench_simulation(
+        structure=mock_structure,
+        potential=potential,
+        temperature_high=3500.0,
+        temperature_low=300.0,
+        thermostat="nose_hoover",
+    )
+
+    assert next(c["n_ionic_steps"] for c in captured if "temperature_end" in c) == expected_steps
+
+
+def test_melt_quench_simulation_grace_default_melt_temperature(monkeypatch, mock_structure):
+    """Grace defaults to a 3500 K melt temperature."""
+    captured = []
+
+    def fake_runner(structure, **kwargs):
+        captured.append(kwargs)
+        return structure, {"generic": {}}
+
+    monkeypatch.setattr(mq_module, "_run_lammps_md", fake_runner)
+    potential = pd.DataFrame({"Name": ["GRACE"], "Config": [["line1"]]})
+    melt_quench_simulation(structure=mock_structure, potential=potential, thermostat="nose_hoover")
+
+    assert captured[1]["temperature"] == 3500.0
 
 
 @pytest.mark.parametrize("name", list(_ALL_PROTOCOLS))

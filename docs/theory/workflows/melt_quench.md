@@ -53,8 +53,8 @@ glass = result["structure"]     # Quenched ASE Atoms
 | `potential` | `DataFrame` | — | Potential configuration (from `generate_potential()`) |
 | `temperature_high` | `float` | — | Maximum (melting) temperature in K |
 | `temperature_low` | `float` | — | Final (glass) temperature in K |
-| `cooling_rate` | `float` | `1e12` | Cooling rate in K/s |
-| `equilibration_steps` | `int \| None` | `None` | Override for all fixed equilibration stages inside the protocol. If `None`, each protocol uses its own production defaults. |
+| `cooling_rate` | `float \| None` | `None` | Cooling rate in K/s; `None` uses the protocol default (`1e13` for GRACE, `1e12` otherwise) |
+| `equilibration_steps` | `int \| None` | `None` | Override for the fixed equilibration stages inside the protocol (for GRACE, only the NPT holds). If `None`, each protocol uses its own production defaults. |
 | `timestep` | `float` | `1.0` | MD timestep in femtoseconds |
 | `thermostat` | `str` | — (required) | `"nose_hoover"` or `"langevin"`; applies to every protocol stage after stage 0. Whether a stage runs NVT or NPT is fixed by the protocol |
 | `pre_equilibrate` | `bool` | `True` | Run the 10,000-step Langevin + `nve/limit` stage 0 at `temperature_high`. Needed for randomly placed structures; set `False` when the starting structure is already equilibrated (its history entry is then `None`). |
@@ -80,7 +80,7 @@ from amorphouspy import melt_quench_simulation
 
 result = melt_quench_simulation(
     structure=atoms,
-    potential=potential,  # potential name determines the protocol (pmmcs, bjp, shik, bmp-*)
+    potential=potential,  # potential name determines the protocol (pmmcs, bjp, shik, bmp-*, yang2026, grace)
     thermostat="nose_hoover",
 )
 ```
@@ -148,11 +148,26 @@ NPT-based protocol from Yang et al., *J. Non-Cryst. Solids* **684**, 124104 (202
 | 5. Cool | T_high → 300 K | NPT (P=0) | Variable (cooling rate) |
 | 6. Final equilibration | 300 K | NPT (P=0) | ~100 ps |
 
+### GRACE Protocol
+
+Protocol for the GRACE-FS machine-learned potential, with a default melt temperature of **3500 K** and a default cooling rate of **10 K/ps**:
+
+| Stage | Temperature range | Ensemble | Duration |
+|---|---|---|---|
+| 0. Pre-equilibration | T_high | Langevin + `nve/limit` | 10,000 steps (skipped when `pre_equilibrate=False`) |
+| 1. Melt equilibration | T_high | NVT | 10,000 / timestep steps (~10 ps, fixed) |
+| 2. Melt equilibration | T_high | NPT (P=0) | 50,000 / timestep steps (~50 ps) |
+| 3. Cool | T_high → T_low | NPT (P=0) | Variable (cooling rate) |
+| 4. Anneal | T_low | NPT (P=0) | 100,000 / timestep steps (~100 ps) |
+| 5. Final equilibration | T_low | NVT | 10,000 / timestep steps (~10 ps, fixed) |
+
+`equilibration_steps` replaces only stages 2 and 4. For independent per-stage durations, chain `md_simulation` calls (see the GRACE tutorial notebook).
+
 ### Stage 0 and the returned history
 
 No protocol has a heating ramp: stage 0 relaxes the random structure with a Langevin + `nve/limit` run at `temperature_high`, and the following stage equilibrates the liquid directly at the melt temperature. Stage 0 is its own protocol stage, so it appears as the first entry of the returned history; when skipped (`pre_equilibrate=False`), its entry is `None` so stage indices stay stable.
 
-> **Override:** Pass `equilibration_steps=N` to `melt_quench_simulation` (or the API's `simulation.equilibration_steps`) to replace all fixed-duration stages with `N` steps. This is useful for fast CI tests or exploratory runs without changing production defaults.
+> **Override:** Pass `equilibration_steps=N` to `melt_quench_simulation` (or the API's `simulation.equilibration_steps`) to replace all fixed-duration stages with `N` steps (for GRACE, only the NPT holds). This is useful for fast CI tests or exploratory runs without changing production defaults.
 
 ---
 

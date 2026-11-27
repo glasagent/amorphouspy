@@ -21,7 +21,7 @@ dependencies = [
   "numba",
   "pandas",
   "pydantic",
-  "lammpsparser>=0.0.7",
+  "lammpsparser>=0.0.9",
   "pymatgen",
   "PyMCubes",
   "scipy",

@@ -16,7 +16,7 @@ amorphouspy = { path = ".", editable = true, extras = ["api"] }
 python = "3.13.*"
 h5py = "*"
 jupyter = "*"
-lammps = { version = "==2024.08.29", build = "*_openmpi_*" }
+lammps = { version = "==2025.07.22", build = "*_openmpi_*" }
 numba = "*"
 numpy = "*"
 pandas = "*"
