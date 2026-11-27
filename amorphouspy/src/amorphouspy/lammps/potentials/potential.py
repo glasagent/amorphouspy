@@ -5,6 +5,7 @@ Author: Achraf Atila (achraf.atila@bam.de)
 
 import re
 import warnings
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -15,6 +16,7 @@ from amorphouspy.lammps.potentials._config import DsfConfig, EwaldConfig, Intera
 from . import bjp_potential as bjp
 from . import bmp_potential as bmp
 from . import du_teter_potential as du_teter
+from . import grace_potential as grace
 from . import pmmcs_potential as pmmcs
 from . import shik_potential as shik
 from . import yang_potential as yang2026
@@ -28,7 +30,7 @@ __all__ = ["DsfConfig", "EwaldConfig", "InteractionConfig", "PppmConfig", "WolfC
 _SET_CHARGE = re.compile(r"^\s*set\s+type\s+(\d+)\s+charge\s+(\S+)")
 
 # Preference order: pmmcs covers the most elements, shik adds B, bjp is most limited.
-POTENTIAL_PREFERENCE = (
+_CLASSICAL_PREFERENCE = (
     "pmmcs",
     "bmp-harmonic",
     "bmp-screened-harmonic",
@@ -38,6 +40,8 @@ POTENTIAL_PREFERENCE = (
     "du_teter_dbx_generalized",
     "yang2026",
 )
+# grace is never auto-selected (see select_potential); it is only used when chosen explicitly.
+POTENTIAL_PREFERENCE = (*_CLASSICAL_PREFERENCE, "grace")
 
 _POTENTIAL_MODULES = {
     "pmmcs": pmmcs,
@@ -48,6 +52,7 @@ _POTENTIAL_MODULES = {
     "bmp-harmonic": bmp,
     "bmp-screened-harmonic": bmp,
     "yang2026": yang2026,
+    "grace": grace,
 }
 
 
@@ -131,17 +136,19 @@ def select_potential(elements: set[str]) -> str | None:
     Potentials are tried in preference order: pmmcs → bmp → shik → bjp → du_teter → yang2026.
     When boron (B) is present, ``bmp-screened-harmonic`` is preferred over ``bmp-harmonic``
     because its three-body term explicitly covers B-O-B and B-O-Si interactions.
+    ``grace`` is never auto-selected: it needs a manually exported model and is far more
+    expensive, so it is only used when chosen explicitly.
 
     Args:
         elements: Element symbols required by the composition.
 
     Returns:
-        The name of the best compatible potential, or ``None`` if none can
+        The name of the best compatible classical potential, or ``None`` if none can
         handle the full element set.
 
     """
     preference = (
-        ("pmmcs", "bmp-screened-harmonic", "bmp-harmonic", "shik", "bjp") if "B" in elements else POTENTIAL_PREFERENCE
+        ("pmmcs", "bmp-screened-harmonic", "bmp-harmonic", "shik", "bjp") if "B" in elements else _CLASSICAL_PREFERENCE
     )
     for name in preference:
         if _is_compatible(name, elements):
@@ -162,30 +169,35 @@ def compatible_potentials(elements: set[str]) -> list[str]:
     return [name for name in POTENTIAL_PREFERENCE if _is_compatible(name, elements)]
 
 
-def generate_potential(
+def generate_potential(  # noqa: PLR0911
     atoms_dict: dict,
     potential_type: str = "pmmcs",
     *,
     electrostatics: InteractionConfig | None = None,
     use_three_body: bool = False,
+    model_path: str | Path | None = None,
 ) -> pd.DataFrame:
     """Generate LAMMPS potential configuration for glass simulations.
 
     Args:
         atoms_dict: Structure dict from ``get_structure_dict()``.
         potential_type: One of ``"pmmcs"``, ``"bjp"``, ``"shik"``, ``"du_teter"``,
-            ``"bmp-harmonic"``, ``"bmp-screened-harmonic"``, or ``"yang2026"``.
+            ``"bmp-harmonic"``, ``"bmp-screened-harmonic"``, ``"yang2026"``, or ``"grace"``.
         electrostatics: Coulomb solver settings. Defaults to DSF with each
             potential's built-in cutoffs and damping parameter.
         use_three_body: For du_teter potential, include Stillinger-Weber three-body
             terms for O-P-O / P-O-P interactions (requires P in composition).
             No effect for other potentials.
+        model_path: For the grace potential, an explicit path to an already-exported
+            native GRACE-FS YAML file; None uses the default cache location. Only valid
+            when ``potential_type="grace"``.
 
     Returns:
         DataFrame with columns Name, Filename, Model, Species, Config.
 
     Raises:
-        ValueError: If use_three_body is True for a non-du_teter potential.
+        ValueError: If use_three_body is True for a non-du_teter potential, or if
+            model_path is given for a non-grace potential.
 
     Example:
         >>> potential = generate_potential(struct_dict, potential_type="shik")
@@ -193,11 +205,17 @@ def generate_potential(
         >>> potential = generate_potential(struct_dict, potential_type="bmp-screened-harmonic")
         >>> potential = generate_potential(struct_dict, potential_type="du_teter", use_three_body=True)
         >>> potential = generate_potential(struct_dict, potential_type="yang2026")
+        >>> potential = generate_potential(struct_dict, potential_type="grace")
+        >>> potential = generate_potential(struct_dict, potential_type="grace", model_path="/data/models/FS_model.yaml")
 
     """
     # Validate that use_three_body is only set for du_teter potentials
     if use_three_body and potential_type.lower() not in ("du_teter", "du_teter_dbx_generalized"):
         msg = f"use_three_body is only supported for du_teter potential, got '{potential_type}'"
+        raise ValueError(msg)
+
+    if model_path is not None and potential_type.lower() != "grace":
+        msg = f"model_path is only supported for the grace potential, got '{potential_type}'"
         raise ValueError(msg)
 
     if potential_type.lower() == "pmmcs":
@@ -214,6 +232,8 @@ def generate_potential(
         return bmp.generate_bmp_potential(atoms_dict, variant=variant, electrostatics=electrostatics)
     if potential_type.lower() == "yang2026":
         return yang2026.generate_yang2026_potential(atoms_dict, electrostatics=electrostatics)
+    if potential_type.lower() == "grace":
+        return grace.generate_grace_potential(atoms_dict, model_path=model_path)
     msg = f"Unsupported potential type: {potential_type}"
     raise ValueError(msg)
 

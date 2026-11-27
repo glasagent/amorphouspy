@@ -3,6 +3,8 @@
 Author: Achraf Atila (achraf.atila@bam.de)
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -33,6 +35,16 @@ from amorphouspy.lammps.potentials.du_teter_potential import (
 )
 from amorphouspy.lammps.potentials.du_teter_potential import (
     write_table_file as du_teter_write_table_file,
+)
+from amorphouspy.lammps.potentials.grace_potential import (
+    DEFAULT_MODEL_NAME as GRACE_DEFAULT_MODEL_NAME,
+)
+from amorphouspy.lammps.potentials.grace_potential import (
+    _resolve_model_path,
+    generate_grace_potential,
+)
+from amorphouspy.lammps.potentials.grace_potential import (
+    supported_elements as grace_supported_elements,
 )
 from amorphouspy.lammps.potentials.pmmcs_potential import generate_pmmcs_potential
 from amorphouspy.lammps.potentials.pmmcs_potential import supported_elements as pmmcs_supported_elements
@@ -135,9 +147,14 @@ def test_compatible_potentials_sio2_contains_pmmcs_and_shik():
     assert "shik" in result
 
 
-def test_compatible_potentials_unsupported_elements_returns_empty():
-    """No potential supports noble gas elements."""
-    assert compatible_potentials({"Xe", "Kr"}) == []
+def test_compatible_potentials_falls_back_to_grace_for_noble_gases():
+    """No classical potential supports noble gas elements, but grace (universal) does."""
+    assert compatible_potentials({"Xe", "Kr"}) == ["grace"]
+
+
+def test_compatible_potentials_returns_empty_for_nonexistent_elements():
+    """compatible_potentials returns empty even including grace when elements aren't real."""
+    assert compatible_potentials({"Zz", "Qx"}) == []
 
 
 def test_compatible_potentials_preserves_preference_order():
@@ -228,9 +245,18 @@ def test_select_potential_prefers_pmmcs_over_bjp_for_cas():
     assert select_potential({"Ca", "Al", "Si", "O"}) == "pmmcs"
 
 
-def test_select_potential_returns_none_for_unsupported():
-    """select_potential returns None when no potential covers all elements."""
+def test_select_potential_never_auto_selects_grace():
+    """select_potential returns None when no classical potential fits, even if grace would.
+
+    Xe/Kr are real elements grace supports, but grace is only used when chosen explicitly.
+    """
     assert select_potential({"Xe", "Kr"}) is None
+    assert select_potential({"Xe", "Kr", "B"}) is None
+
+
+def test_select_potential_returns_none_for_nonexistent_elements():
+    """select_potential returns None when elements aren't real periodic-table symbols."""
+    assert select_potential({"Zz", "Qx"}) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1369,3 +1395,201 @@ def test_charges_from_potential_invalid_raises(potential, match):
     """An empty potential, one without charge lines and one without a charge for an element raise."""
     with pytest.raises(ValueError, match=match):
         charges_from_potential(potential, Atoms("SiO2"))
+
+
+# ---------------------------------------------------------------------------
+# grace_potential — supported_elements
+# ---------------------------------------------------------------------------
+
+
+def test_grace_supported_elements_is_set():
+    """supported_elements returns a set."""
+    assert isinstance(grace_supported_elements(), set)
+
+
+def test_grace_supported_elements_covers_omat24_range():
+    """Elements within Z=1-83/89-94 (the OMat24 training range) are supported."""
+    result = grace_supported_elements()
+    assert {"Si", "O", "Xe", "Kr", "Fe", "U"}.issubset(result)
+
+
+def test_grace_supported_elements_excludes_out_of_range():
+    """Po/At/Rn/Fr/Ra (Z=84-88) and everything heavier than Pu (Z>=95) are excluded."""
+    result = grace_supported_elements()
+    assert not {"Fr", "Ra", "Am", "Rf", "Og"} & result
+
+
+def test_grace_supported_elements_count():
+    """Exactly 89 elements are supported, matching the OMat24 paper's stated count."""
+    assert len(grace_supported_elements()) == 89
+
+
+# ---------------------------------------------------------------------------
+# grace_potential — _resolve_model_path
+# ---------------------------------------------------------------------------
+
+
+def _make_fs_model_file(tmp_path) -> Path:
+    """Write a placeholder FS_model.yaml so grace functions can resolve a path.
+
+    No network access or a real GRACE checkpoint is needed.
+    """
+    model_file = tmp_path / "FS_model.yaml"
+    model_file.write_text("# placeholder GRACE-FS model file for tests\n")
+    return model_file
+
+
+def test_resolve_model_path_explicit_existing_file(tmp_path):
+    """_resolve_model_path resolves an explicit, existing model_path."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = _resolve_model_path(model_path=model_file)
+    assert result == model_file.resolve()
+
+
+def test_resolve_model_path_missing_raises_with_commands(tmp_path):
+    """_resolve_model_path raises FileNotFoundError with the export commands when missing."""
+    missing_path = tmp_path / "nonexistent.yaml"
+    with pytest.raises(FileNotFoundError, match="grace_models checkpoint"):
+        _resolve_model_path(model_path=missing_path)
+
+
+def test_resolve_model_path_missing_error_mentions_grace_utils(tmp_path):
+    """The FileNotFoundError message also mentions grace_utils and the default model name."""
+    missing_path = tmp_path / "nonexistent.yaml"
+    with pytest.raises(FileNotFoundError) as excinfo:
+        _resolve_model_path(model_path=missing_path)
+    assert "grace_utils" in str(excinfo.value)
+    assert GRACE_DEFAULT_MODEL_NAME in str(excinfo.value)
+
+
+def test_resolve_model_path_default_location_missing_raises(monkeypatch, tmp_path):
+    """With no model_path, a missing default cache location raises with the default model name.
+
+    Patches the HOME env var (which Path.expanduser() actually consults on POSIX), not
+    Path.home() (which expanduser() does not call) -- so this test is not fooled by a real
+    checkpoint that may already be exported at the real default cache location on the
+    machine running the tests.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(FileNotFoundError, match=GRACE_DEFAULT_MODEL_NAME):
+        _resolve_model_path()
+
+
+# ---------------------------------------------------------------------------
+# generate_grace_potential
+# ---------------------------------------------------------------------------
+
+
+def test_generate_grace_potential_returns_dataframe(tmp_path):
+    """generate_grace_potential returns a non-empty pandas DataFrame."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) > 0
+
+
+def test_generate_grace_potential_name_is_grace(tmp_path):
+    """Name is 'GRACE' — load-bearing for PROTOCOL_MAP/DEFAULT_MELT_TEMPERATURES lookup."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    assert result["Name"].iloc[0] == "GRACE"
+
+
+def test_generate_grace_potential_contains_pair_style_grace_fs(tmp_path):
+    """Config contains the pair_style grace/fs line."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    config = result["Config"].iloc[0]
+    assert any("pair_style grace/fs" in line for line in config)
+
+
+def test_generate_grace_potential_pair_coeff_species_order_matches_types(tmp_path):
+    """pair_coeff element order matches the alphabetical get_element_types_dict order."""
+    model_file = _make_fs_model_file(tmp_path)
+    atoms_dict = {"atoms": [{"element": "Si"}, {"element": "O"}, {"element": "Al"}]}
+    result = generate_grace_potential(atoms_dict, model_path=model_file)
+    config = result["Config"].iloc[0]
+    coeff_line = next(line for line in config if line.startswith("pair_coeff"))
+    assert coeff_line.split()[-3:] == ["Al", "O", "Si"]
+
+
+def test_generate_grace_potential_quotes_model_path_with_spaces(tmp_path):
+    """The model path is double-quoted in pair_coeff so LAMMPS keeps a path with spaces as one argument."""
+    model_dir = tmp_path / "my models"
+    model_dir.mkdir()
+    model_file = _make_fs_model_file(model_dir)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    coeff_line = next(line for line in result["Config"].iloc[0] if line.startswith("pair_coeff"))
+    assert coeff_line == f'pair_coeff * * "{model_file.resolve()}" O Si\n'
+
+
+def test_generate_grace_potential_atom_style_atomic(tmp_path):
+    """atom_style is 'atomic', not 'charge' — grace needs no partial charges."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "atom_style atomic" in config_text
+    assert "atom_style charge" not in config_text
+
+
+def test_generate_grace_potential_no_charges_or_electrostatics(tmp_path):
+    """No 'set type' charge lines, coul/* pair styles, or pair_modify shift."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "set type" not in config_text
+    assert "coul/" not in config_text
+    assert "pair_modify shift" not in config_text
+
+
+def test_generate_grace_potential_units_metal(tmp_path):
+    """Units metal is set."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    config_text = "".join(result["Config"].iloc[0])
+    assert "units metal" in config_text
+
+
+def test_generate_grace_potential_missing_model_raises(tmp_path):
+    """A missing model file raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        generate_grace_potential(_sio2_atoms_dict(), model_path=tmp_path / "missing.yaml")
+
+
+def test_generate_grace_potential_filename_column_is_resolved_path(tmp_path):
+    """Filename holds a one-element list with the resolved model path (same shape as bmp)."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_grace_potential(_sio2_atoms_dict(), model_path=model_file)
+    assert result["Filename"].iloc[0] == [str(model_file.resolve())]
+
+
+# ---------------------------------------------------------------------------
+# generate_potential — grace dispatch
+# ---------------------------------------------------------------------------
+
+
+def test_generate_potential_grace(tmp_path):
+    """generate_potential dispatches to grace with potential_type='grace'."""
+    model_file = _make_fs_model_file(tmp_path)
+    result = generate_potential(_sio2_atoms_dict(), potential_type="grace", model_path=model_file)
+    assert len(result) > 0
+    assert result["Name"].iloc[0] == "GRACE"
+
+
+def test_generate_potential_grace_model_path_rejected_for_other_potentials(tmp_path):
+    """model_path is only valid for potential_type='grace'."""
+    model_file = _make_fs_model_file(tmp_path)
+    with pytest.raises(ValueError, match="model_path is only supported for the grace potential"):
+        generate_potential(_sio2_atoms_dict(), potential_type="pmmcs", model_path=model_file)
+
+
+# ---------------------------------------------------------------------------
+# get_supported_elements — grace
+# ---------------------------------------------------------------------------
+
+
+def test_get_supported_elements_grace():
+    """get_supported_elements returns grace's universal element set."""
+    result = get_supported_elements("grace")
+    assert isinstance(result, set)
+    assert "Xe" in result

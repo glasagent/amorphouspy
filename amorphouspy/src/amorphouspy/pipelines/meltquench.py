@@ -14,12 +14,14 @@ import numpy as np
 from amorphouspy.fabrication.geometry import get_ase_structure, get_structure_dict
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pandas as pd
     from ase import Atoms
 
     from amorphouspy.lammps.potentials._config import InteractionConfig
 from amorphouspy.fabrication.meltquench import melt_quench_simulation
-from amorphouspy.fabrication.meltquench_protocols import DEFAULT_MELT_TEMPERATURES
+from amorphouspy.fabrication.meltquench_protocols import DEFAULT_COOLING_RATES, DEFAULT_MELT_TEMPERATURES
 from amorphouspy.lammps.potentials.potential import generate_potential
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,7 @@ def generate_structure(
     *,
     electrostatics_config: InteractionConfig | None = None,
     use_three_body: bool = False,
+    model_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Generate an initial random structure and matching LAMMPS potential.
 
@@ -46,6 +49,8 @@ def generate_structure(
         electrostatics_config: Electrostatics configuration (e.g. ``DsfConfig``).
         use_three_body: For du_teter potential, include Stillinger-Weber three-body
             terms for O-P-O / P-O-P interactions (requires P in composition).
+        model_path: For the grace potential, an explicit path to an already-exported
+            native GRACE-FS YAML file. Only valid when ``potential_type="grace"``.
 
     Returns:
         Dict with ``atoms_dict``, ``structure`` (ASE Atoms), and ``potential``.
@@ -62,6 +67,7 @@ def generate_structure(
         potential_type=potential_type,
         electrostatics=electrostatics_config,
         use_three_body=use_three_body,
+        model_path=model_path,
     )
 
     return {
@@ -76,7 +82,7 @@ def run_melt_quench(
     potential: pd.DataFrame,
     *,
     potential_type: str = "pmmcs",
-    cooling_rate: float = 1e12,
+    cooling_rate: float | None = None,
     timestep: float = 1.0,
     temperature_high: float | None = None,
     temperature_low: float = 300.0,
@@ -91,8 +97,8 @@ def run_melt_quench(
     Args:
         structure: Initial ASE Atoms object.
         potential: LAMMPS potential object from ``generate_potential``.
-        potential_type: Potential name, used for default ``temperature_high`` lookup.
-        cooling_rate: Cooling rate in K/s.
+        potential_type: Potential name, used for default ``temperature_high`` and ``cooling_rate`` lookup.
+        cooling_rate: Cooling rate in K/s; ``None`` uses the protocol default.
         timestep: MD timestep in fs.
         temperature_high: Melt temperature in K; ``None`` uses the protocol default.
         temperature_low: Final quench temperature in K.
@@ -114,6 +120,8 @@ def run_melt_quench(
 
     if temperature_high is None:
         temperature_high = DEFAULT_MELT_TEMPERATURES.get(potential_type, 5000.0)
+    if cooling_rate is None:
+        cooling_rate = DEFAULT_COOLING_RATES.get(potential_type, 1e12)
 
     mq = melt_quench_simulation(
         structure=structure,

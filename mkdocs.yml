@@ -46,6 +46,7 @@ nav:
     - Meltquench Tutorial: notebooks/MeltquenchTutorial.ipynb
     - MD Tutorial: notebooks/MDTutorial.ipynb
     - Potential Settings: notebooks/PotentialSettings.ipynb
+    - GRACE Melt-Quench: notebooks/GraceMeltQuenchTutorial.ipynb
     # - Meltquench PMMCS: notebooks/Meltquench_PMMCS.ipynb
     # - Meltquench BJP: notebooks/Meltquench_BJP.ipynb
     # - Meltquench SHIK: notebooks/Meltquench_SHIK.ipynb
@@ -68,6 +69,7 @@ nav:
         - SHIK (Sundararaman): theory/potentials/shik.md
         - BMP (Bertani-Menziani-Pedone): theory/potentials/bmp.md
         - Yang2026 (Yang et al.): theory/potentials/yang2026.md
+        - GRACE-FS (machine-learned): theory/potentials/grace.md
     - Simulation Workflows:
         - theory/workflows/index.md
         - Melt-Quench: theory/workflows/melt_quench.md

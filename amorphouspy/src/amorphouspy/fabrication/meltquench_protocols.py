@@ -27,6 +27,12 @@ DEFAULT_MELT_TEMPERATURES: dict[str, float] = {
     "shik": 4000.0,
     "du/teter": 5000.0,
     "yang2026": 4000.0,
+    "grace": 3500.0,
+}
+
+# Default cooling rates per protocol (K/s); protocols not listed use 1e12 K/s (1 K/ps).
+DEFAULT_COOLING_RATES: dict[str, float] = {
+    "grace": 1e13,
 }
 
 # Dump interval (in fs) for the structural-averaging sampling stage.
@@ -601,6 +607,109 @@ def yang2026_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> t
     return structure, history
 
 
+def grace_protocol(runner: Callable[..., Any], params: MeltQuenchParams) -> tuple[Atoms, list[dict | None]]:
+    """Execute the simulation protocol for the GRACE-FS potential.
+
+    Stage 0 optionally pre-equilibrates the random structure at
+    ``temperature_high`` (see :func:`_pre_equilibration_stage`). Stages 1-5
+    (defaults: T_high = 3500 K, T_low = 300 K, 10 K/ps):
+        1.  10 ps NVT  T_high
+        2.  50 ps NPT  T_high, P = 0
+        3. cooling T_high → T_low, NPT P = 0  (cooling_steps controls duration)
+        4. 100 ps NPT  T_low, P = 0
+        5.  10 ps NVT  T_low
+
+    ``equilibration_steps`` overrides only the NPT holds (stages 2 and 4); the
+    NVT holds are fixed. For a fully custom schedule, chain ``md_simulation``
+    calls instead.
+
+    Args:
+        runner: The function to run LAMMPS MD simulations.
+        params: MeltQuenchParams dataclass containing all simulation parameters.
+
+    Returns:
+        Final structure and list of per-stage thermo dicts (one per stage, in order).
+
+    """
+    run = partial(
+        runner,
+        potential=params.potential,
+        tmp_working_directory=params.tmp_working_directory,
+        timestep=params.timestep,
+        n_dump=params.n_dump,
+        n_print_thermo=params.n_print_thermo,
+        server_kwargs=params.server_kwargs,
+    )
+
+    nvt_ensemble, npt_ensemble = thermostat_ensembles(params.thermostat)
+    history: list[dict | None] = []
+
+    # Stage 0: Pre-equilibration of the random structure at high T
+    structure = _pre_equilibration_stage(run, params, history)
+
+    eq_steps = params.equilibration_steps
+    steps_10ps = int(10_000 / params.timestep)
+    steps_50ps = eq_steps if eq_steps is not None else int(50_000 / params.timestep)
+    steps_100ps = eq_steps if eq_steps is not None else int(100_000 / params.timestep)
+
+    # Stage 1: NVT T_high for 10 ps
+    structure, parsed = run(
+        structure=structure,
+        temperature=params.temperature_high,
+        n_ionic_steps=steps_10ps,
+        initial_temperature=params.temperature_high,
+        seed=params.seed,
+        ensemble=nvt_ensemble,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 2: NPT T_high, P = 0 for 50 ps
+    structure, parsed = run(
+        structure=structure,
+        temperature=params.temperature_high,
+        n_ionic_steps=steps_50ps,
+        initial_temperature=0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 3: cooling T_high → T_low, NPT P = 0
+    structure, parsed = run(
+        structure=structure,
+        temperature=params.temperature_high,
+        temperature_end=params.temperature_low,
+        n_ionic_steps=params.cooling_steps,
+        initial_temperature=0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 4: NPT T_low, P = 0 for 100 ps
+    structure, parsed = run(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=steps_100ps,
+        initial_temperature=0,
+        npt_pressure=0.0,
+        ensemble=npt_ensemble,
+    )
+    history.append(parsed.get("generic", None))
+
+    # Stage 5: NVT T_low for 10 ps
+    structure, parsed = run(
+        structure=structure,
+        temperature=params.temperature_low,
+        n_ionic_steps=steps_10ps,
+        initial_temperature=0,
+        ensemble=nvt_ensemble,
+    )
+    history.append(parsed.get("generic", None))
+
+    return structure, history
+
+
 # Map potential names to protocol functions
 PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, list[dict | None]]]] = {
     "pmmcs": pmmcs_protocol,
@@ -609,4 +718,5 @@ PROTOCOL_MAP: dict[str, Callable[..., tuple[Atoms, list[dict | None]]]] = {
     "du/teter": du_teter_protocol,
     "bmp": bmp_protocol,  # Use the same protocol for both BMP variants, which only differ in the harmonic vs. SHRM
     "yang2026": yang2026_protocol,
+    "grace": grace_protocol,
 }

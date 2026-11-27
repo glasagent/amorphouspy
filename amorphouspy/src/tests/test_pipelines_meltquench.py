@@ -135,6 +135,18 @@ class TestRunMeltQuench:
         # Should use DEFAULT_MELT_TEMPERATURES["pmmcs"] or fallback 5000.0
         assert kwargs["temperature_high"] is not None
 
+    @pytest.mark.parametrize(("potential_type", "expected"), [("grace", 10**13), ("pmmcs", 10**12)])
+    @patch("amorphouspy.pipelines.meltquench.melt_quench_simulation")
+    def test_default_cooling_rate_from_protocol(self, mock_mq: MagicMock, potential_type: str, expected: int) -> None:
+        """Default cooling_rate is looked up per potential and returned in the result."""
+        mock_mq.return_value = self._mock_mq_result()
+
+        result = run_melt_quench(structure=Atoms("Si"), potential=MagicMock(), potential_type=potential_type)
+
+        _, kwargs = mock_mq.call_args
+        assert kwargs["cooling_rate"] == expected
+        assert result["cooling_rate"] == expected
+
     @patch("amorphouspy.pipelines.meltquench.melt_quench_simulation")
     def test_explicit_temperature_high(self, mock_mq: MagicMock) -> None:
         """Explicit temperature_high is forwarded to the simulation."""
